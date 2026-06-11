@@ -1,0 +1,50 @@
+# ===== 依赖与包管理 =====
+node_modules/
+.pnpm-store/
+
+# ===== 构建产物 =====
+# Vite (admin) / uni-app (client) / Tauri (desktop)
+dist/
+build/
+unpackage/
+src-tauri/target/
+src-tauri/gen/
+
+# ===== 环境变量 =====
+.env
+.env.local
+.env.*.local
+packages/server/.env
+packages/admin/.env.local
+
+# ===== 日志 =====
+*.log
+pnpm-debug.log*
+logs/
+
+# ===== 缓存 =====
+.cache/
+.eslintcache
+.prettiercache
+node_modules/.vite/
+
+# ===== 运行时数据 =====
+# 后端文件上传
+packages/server/uploads/
+# curl / Postman 等调试工具生成的 cookie 文件
+cookies.txt
+
+# ===== 测试与覆盖率 =====
+coverage/
+.nyc_output/
+
+# ===== 编辑器与系统 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.history/
+
+# ===== 其他 =====
+*.local

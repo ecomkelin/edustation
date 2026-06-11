@@ -1,0 +1,31 @@
+'use strict'
+
+const CourseEnrollment = require('@models/CourseEnrollment.model')
+
+/**
+ * 把每个开班都让前 3 个学生报上名。
+ * 注：seeds 阶段不会校验课包（顺序上 studentPackages 还没生成），
+ * 因此绕开 service 的三重校验，直接 insertMany，模拟"种子场景下已通过校验"。
+ */
+async function run(ctx) {
+  const { org, courseInstances, students } = ctx
+  await CourseEnrollment.deleteMany({ org: org._id })
+
+  const docs = []
+  for (const inst of courseInstances) {
+    for (let i = 0; i < 3; i++) {
+      const s = students[i]
+      if (!s) break
+      docs.push({
+        org: org._id,
+        courseInstance: inst._id,
+        student: s._id,
+        status: 'enrolled',
+        enrolledAt: new Date()
+      })
+    }
+  }
+  return CourseEnrollment.insertMany(docs)
+}
+
+module.exports = { run }

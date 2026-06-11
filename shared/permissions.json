@@ -1,0 +1,234 @@
+{
+  "_comment": "权限码 = 模块名.操作。'platform.*' 仅平台超管可拥有。",
+  "groups": [
+    {
+      "key": "platform",
+      "label": "平台管理",
+      "description": "管理 SaaS 平台层面的数据：机构、字典等。仅平台超管可见。",
+      "permissions": [
+        "platform.org.read",
+        "platform.org.write",
+        "platform.dict.read",
+        "platform.dict.write"
+      ],
+      "permissionLabels": {
+        "platform.org.read": { "label": "查看机构", "description": "浏览全平台机构列表与详情（含类型、地区、负责人）" },
+        "platform.org.write": { "label": "编辑机构", "description": "新建 / 编辑 / 启用停用 / 删除机构" },
+        "platform.dict.read": { "label": "查看字典", "description": "查看类别、地区等系统字典" },
+        "platform.dict.write": { "label": "编辑字典", "description": "维护系统字典（增删改类别、地区）" }
+      }
+    },
+    {
+      "key": "org",
+      "label": "机构",
+      "description": "管理当前机构自身的基本信息（名称、地址、联系人、地区等），不含员工 / 学生 / 课程。",
+      "permissions": [
+        "org.read",
+        "org.write"
+      ],
+      "permissionLabels": {
+        "org.read": { "label": "查看本机构", "description": "查看当前机构的基础信息" },
+        "org.write": { "label": "编辑本机构", "description": "修改当前机构的基础信息" }
+      }
+    },
+    {
+      "key": "user",
+      "label": "用户",
+      "description": "管理部门员工 / 老师 / 教务的账号：邀请、重置密码、绑定职位、启停用等。家长不在此模块。",
+      "permissions": [
+        "user.read",
+        "user.write",
+        "user.resetPassword"
+      ],
+      "permissionLabels": {
+        "user.read": { "label": "查看用户", "description": "浏览本机构员工 / 老师列表与详情" },
+        "user.write": { "label": "编辑用户", "description": "新增、编辑、移出本机构员工 / 老师；调整其职位" },
+        "user.resetPassword": { "label": "重置员工密码", "description": "强制重置员工的登录密码" }
+      }
+    },
+    {
+      "key": "position",
+      "label": "职位 / 权限",
+      "description": "维护本机构的「职位 = 角色 + 权限码集合」。修改后立即影响所有持有该职位的员工的实际权限。",
+      "permissions": [
+        "position.read",
+        "position.write"
+      ],
+      "permissionLabels": {
+        "position.read": { "label": "查看职位", "description": "查看本机构所有职位及权限码" },
+        "position.write": { "label": "编辑职位", "description": "新建、编辑、删除职位（系统职位不可删）" }
+      }
+    },
+    {
+      "key": "student",
+      "label": "学生",
+      "description": "管理部门内学员档案：基本信息、报班、考勤、作品等。C 端家长不在此范围。",
+      "permissions": [
+        "student.read",
+        "student.write"
+      ],
+      "permissionLabels": {
+        "student.read": { "label": "查看学员", "description": "浏览学员档案、报班、考勤、作品" },
+        "student.write": { "label": "编辑学员", "description": "新增 / 编辑学员档案、报班、退班" }
+      }
+    },
+    {
+      "key": "subject",
+      "label": "学科",
+      "description": "维护学科字典（美术、舞蹈、编程、声乐……），是课程模板与课包的基础分类。",
+      "permissions": [
+        "subject.read",
+        "subject.write"
+      ],
+      "permissionLabels": {
+        "subject.read": { "label": "查看学科", "description": "浏览学科列表" },
+        "subject.write": { "label": "编辑学科", "description": "新增 / 编辑 / 启停用学科" }
+      }
+    },
+    {
+      "key": "courseProduct",
+      "label": "课程产品",
+      "description": "维护课程产品（可开班的「课」原型）：名称、学科、总课时、售价、有效期、教学大纲。是开班与售卖课包的共同基础。",
+      "permissions": [
+        "courseProduct.read",
+        "courseProduct.write"
+      ],
+      "permissionLabels": {
+        "courseProduct.read": { "label": "查看课程产品", "description": "浏览课程产品" },
+        "courseProduct.write": { "label": "编辑课程产品", "description": "新增 / 编辑 / 启停用课程产品" }
+      }
+    },
+    {
+      "key": "courseInstance",
+      "label": "开班",
+      "description": "维护开班（把课程产品落到具体老师 / 教室 / 时间窗口的可执行班级），是排课的前置。",
+      "permissions": [
+        "courseInstance.read",
+        "courseInstance.write",
+        "courseInstance.cancel",
+        "courseInstance.delete"
+      ],
+      "permissionLabels": {
+        "courseInstance.read": { "label": "查看开班", "description": "浏览开班及明细" },
+        "courseInstance.write": { "label": "编辑开班", "description": "新增 / 编辑 / 推进状态（enrolling/active/closed）+ 单步回退" },
+        "courseInstance.cancel": { "label": "取消开班", "description": "将开班置为「已取消」状态（死胡同状态，不可重开；通常仅平台超管拥有）" },
+        "courseInstance.delete": { "label": "删除开班", "description": "软删筹备/取消状态的开班（不可逆；通常仅平台超管拥有）" }
+      }
+    },
+    {
+      "key": "courseEnrollment",
+      "label": "课程报名",
+      "description": "维护学生 ↔ 开班的报名关系：报名 / 退班 / 结业。报名时校验名额、状态、匹配的课包。",
+      "permissions": [
+        "courseEnrollment.read",
+        "courseEnrollment.write"
+      ],
+      "permissionLabels": {
+        "courseEnrollment.read": { "label": "查看报名", "description": "浏览开班报名明细" },
+        "courseEnrollment.write": { "label": "编辑报名", "description": "新增 / 退班 / 结业报名" }
+      }
+    },
+    {
+      "key": "room",
+      "label": "教室",
+      "description": "维护教室字典（容纳人数、设备、备注），供排课时选择。",
+      "permissions": [
+        "room.read",
+        "room.write"
+      ],
+      "permissionLabels": {
+        "room.read": { "label": "查看教室", "description": "浏览教室列表" },
+        "room.write": { "label": "编辑教室", "description": "新增 / 编辑 / 启停用教室" }
+      }
+    },
+    {
+      "key": "lessonSchedule",
+      "label": "排课",
+      "description": "维护排课（按课节安排老师、教室、时间），与开班 / 排课冲突强相关。",
+      "permissions": [
+        "lessonSchedule.read",
+        "lessonSchedule.write"
+      ],
+      "permissionLabels": {
+        "lessonSchedule.read": { "label": "查看排课", "description": "查看课表（按老师 / 教室 / 班级 / 时间）" },
+        "lessonSchedule.write": { "label": "调整排课", "description": "新增 / 修改 / 取消单节课" }
+      }
+    },
+    {
+      "key": "order",
+      "label": "订单",
+      "description": "管理订单：合同、收款、退款。order.pay 通常仅给财务 / 校长。",
+      "permissions": [
+        "order.read",
+        "order.write",
+        "order.pay"
+      ],
+      "permissionLabels": {
+        "order.read": { "label": "查看订单", "description": "浏览订单及收款记录" },
+        "order.write": { "label": "编辑订单", "description": "新建 / 编辑订单、调整金额（不含收款）" },
+        "order.pay": { "label": "收款 / 退款", "description": "把订单标记为已收款或发起退款" }
+      }
+    },
+    {
+      "key": "studentProduct",
+      "label": "学员课包",
+      "description": "管理 StudentProduct（学员持有的课包）。常规创建走订单支付流程；gift 权限独立授予，允许员工赠课（标红 + 必填原因）。",
+      "permissions": [
+        "studentProduct.read",
+        "studentProduct.gift"
+      ],
+      "permissionLabels": {
+        "studentProduct.read": { "label": "查看学员课包", "description": "浏览学员持有的课包（含赠课记录）" },
+        "studentProduct.gift": { "label": "赠课", "description": "为学员直接创建赠课课包（不经过订单支付；标红 + 必填赠课原因）" }
+      }
+    },
+    {
+      "key": "lessonAttendance",
+      "label": "考勤",
+      "description": "维护学员出勤 / 缺勤 / 请假等考勤记录。考勤确认后会自动消课（扣减 StudentProduct.remainingLessons）。",
+      "permissions": [
+        "lessonAttendance.read",
+        "lessonAttendance.write"
+      ],
+      "permissionLabels": {
+        "lessonAttendance.read": { "label": "查看考勤", "description": "查看单节课的出勤明细" },
+        "lessonAttendance.write": { "label": "编辑考勤", "description": "标记出勤、缺勤、请假、补消课" }
+      }
+    },
+    {
+      "key": "lessonWork",
+      "label": "作品",
+      "description": "维护学员在课上的作品（图片 / 视频 / 描述），可在 C 端家长端查看与分享。",
+      "permissions": [
+        "lessonWork.read",
+        "lessonWork.write"
+      ],
+      "permissionLabels": {
+        "lessonWork.read": { "label": "查看作品", "description": "查看学员上传的作品及描述" },
+        "lessonWork.write": { "label": "编辑作品", "description": "上传 / 编辑 / 删除作品" }
+      }
+    },
+    {
+      "key": "points",
+      "label": "积分",
+      "description": "查看学员积分账户及流水（仅查看，流水由系统 / 分享任务自动产生）。",
+      "permissions": [
+        "points.read"
+      ],
+      "permissionLabels": {
+        "points.read": { "label": "查看积分", "description": "查看学员积分余额与流水" }
+      }
+    },
+    {
+      "key": "pet",
+      "label": "宠物",
+      "description": "查看学员的虚拟宠物（等级、经验、外观）。C 端家长端可喂养。",
+      "permissions": [
+        "pet.read"
+      ],
+      "permissionLabels": {
+        "pet.read": { "label": "查看宠物", "description": "查看学员的宠物等级与经验" }
+      }
+    }
+  ]
+}

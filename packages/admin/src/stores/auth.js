@@ -1,0 +1,124 @@
+import { defineStore } from 'pinia'
+import http from '@/api/http'
+
+const LS_KEY = 'edustation_auth'
+
+function readLs() {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writeLs(state) {
+  if (state) localStorage.setItem(LS_KEY, JSON.stringify(state))
+  else localStorage.removeItem(LS_KEY)
+}
+
+export const useAuthStore = defineStore('auth', {
+  state: () => {
+    const saved = readLs() || {}
+    return {
+      accessToken: saved.accessToken || '',
+      // 注意：refresh token 始终走 httpOnly cookie，前端不可见也不持久化
+      user: saved.user || null,
+      orgs: saved.orgs || [],
+      currentOrgId: saved.currentOrgId || '',
+      activeStudentId: saved.activeStudentId || ''
+    }
+  },
+  getters: {
+    isAuthenticated: (s) => !!s.accessToken && !!s.user,
+    isPlatformAdmin: (s) => !!s.user && s.user.isPlatformAdmin
+  },
+  actions: {
+    async login({ mobile, password }) {
+      const res = await http.post('/auth/login', { mobile, password })
+      this.accessToken = res.data.accessToken
+      this.user = res.data.user
+      // 拉取 /me 拿 orgs
+      const me = await http.get('/auth/me')
+      this.orgs = me.data.orgs
+      if (me.data.orgs.length && !this.currentOrgId) {
+        const main = me.data.orgs.find((o) => o.isMain) || me.data.orgs[0]
+        this.currentOrgId = main.id
+      }
+      this.persist()
+      return this
+    },
+
+    async refresh() {
+      const res = await http.post('/auth/refresh')
+      this.accessToken = res.data.accessToken
+      this.persist()
+      return res.data
+    },
+
+    async logout() {
+      try {
+        await http.post('/auth/logout')
+      } catch (_) {
+        /* ignore */
+      }
+      this.clear()
+    },
+
+    async fetchMe() {
+      const me = await http.get('/auth/me')
+      this.user = me.data
+      this.orgs = me.data.orgs
+      this.persist()
+      return me.data
+    },
+
+    setOrg(orgId) {
+      this.currentOrgId = orgId
+      this.persist()
+    },
+
+    setActiveStudent(studentId) {
+      this.activeStudentId = studentId
+      this.persist()
+    },
+
+    /**
+     * 启动时从 localStorage 恢复并调 /me 验证。
+     * 若 access token 已过期，http 拦截器会自动用 cookie 里的 refresh token 续签后重放本次请求；
+     * 续签也失败再 clear，由路由守卫推到登录页。
+     */
+    async restore() {
+      // 没本地 access token 也试一次 refresh：浏览器 cookie 可能还在(7 天)
+      try {
+        if (!this.accessToken) {
+          await this.refresh()
+        }
+        await this.fetchMe()
+        return this.user
+      } catch (e) {
+        this.clear()
+        return null
+      }
+    },
+
+    persist() {
+      writeLs({
+        accessToken: this.accessToken,
+        user: this.user,
+        orgs: this.orgs,
+        currentOrgId: this.currentOrgId,
+        activeStudentId: this.activeStudentId
+      })
+    },
+
+    clear() {
+      this.accessToken = ''
+      this.user = null
+      this.orgs = []
+      this.currentOrgId = ''
+      this.activeStudentId = ''
+      writeLs(null)
+    }
+  }
+})

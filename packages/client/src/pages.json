@@ -1,0 +1,153 @@
+{
+  "pages": [
+    {
+      "path": "pages/tabbar/home",
+      "style": {
+        "navigationBarTitleText": "课表",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/tabbar/pet",
+      "style": {
+        "navigationBarTitleText": "宠物乐园"
+      }
+    },
+    {
+      "path": "pages/tabbar/share",
+      "style": {
+        "navigationBarTitleText": "分享得积分"
+      }
+    },
+    {
+      "path": "pages/tabbar/me",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/auth/login",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/student/switch",
+      "style": {
+        "navigationBarTitleText": "切换孩子",
+        "navigationBarBackgroundColor": "#ffffff"
+      }
+    },
+    {
+      "path": "pages/lessonSchedule/detail",
+      "style": {
+        "navigationBarTitleText": "课程详情"
+      }
+    },
+    {
+      "path": "pages/lessonWork/list",
+      "style": {
+        "navigationBarTitleText": "作品墙"
+      }
+    },
+    {
+      "path": "pages/lessonWork/detail",
+      "style": {
+        "navigationBarTitleText": "作品详情"
+      }
+    },
+    {
+      "path": "pages/order/list",
+      "style": {
+        "navigationBarTitleText": "我的订单"
+      }
+    },
+    {
+      "path": "pages/order/detail",
+      "style": {
+        "navigationBarTitleText": "订单详情"
+      }
+    },
+    {
+      "path": "pages/studentProduct/list",
+      "style": {
+        "navigationBarTitleText": "我的课包"
+      }
+    },
+    {
+      "path": "pages/courseProduct/list",
+      "style": {
+        "navigationBarTitleText": "课程产品"
+      }
+    },
+    {
+      "path": "pages/courseProduct/detail",
+      "style": {
+        "navigationBarTitleText": "产品详情"
+      }
+    },
+    {
+      "path": "pages/courseInstance/detail",
+      "style": {
+        "navigationBarTitleText": "开班详情"
+      }
+    },
+    {
+      "path": "pages/courseEnrollment/list",
+      "style": {
+        "navigationBarTitleText": "我的报名"
+      }
+    },
+    {
+      "path": "pages/points/transaction",
+      "style": {
+        "navigationBarTitleText": "积分流水"
+      }
+    },
+    {
+      "path": "pages/points/exchange",
+      "style": {
+        "navigationBarTitleText": "积分商城"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "EduStation",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f7f8fa"
+  },
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#5B8FF9",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/tabbar/home",
+        "text": "课表",
+        "iconPath": "static/tabbar/home.png",
+        "selectedIconPath": "static/tabbar/home-active.png"
+      },
+      {
+        "pagePath": "pages/tabbar/pet",
+        "text": "宠物乐园",
+        "iconPath": "static/tabbar/pet.png",
+        "selectedIconPath": "static/tabbar/pet-active.png"
+      },
+      {
+        "pagePath": "pages/tabbar/share",
+        "text": "分享",
+        "iconPath": "static/tabbar/share.png",
+        "selectedIconPath": "static/tabbar/share-active.png"
+      },
+      {
+        "pagePath": "pages/tabbar/me",
+        "text": "我的",
+        "iconPath": "static/tabbar/me.png",
+        "selectedIconPath": "static/tabbar/me-active.png"
+      }
+    ]
+  }
+}

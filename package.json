@@ -1,0 +1,31 @@
+{
+  "name": "edustation",
+  "private": true,
+  "version": "0.3.0",
+  "description": "校外培训机构管理系统 monorepo (server + admin + client)",
+  "scripts": {
+    "dev:server": "pnpm --filter @edustation/server dev",
+    "dev:admin": "pnpm --filter @edustation/admin dev",
+    "start:server": "pnpm --filter @edustation/server start",
+    "build:admin": "pnpm --filter @edustation/admin build",
+    "db:seeds": "pnpm --filter @edustation/server db:seeds",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.1.1",
+    "eslint-plugin-vue": "^9.25.0",
+    "prettier": "^3.2.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}

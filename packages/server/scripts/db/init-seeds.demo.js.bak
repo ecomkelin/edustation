@@ -1,0 +1,94 @@
+'use strict'
+
+/**
+ * 种子编排。顺序：Org → User → Position → UserOrgRel → Student → Subject →
+ *       CourseProduct → Room → CourseInstance → CourseEnrollment →
+ *       LessonSchedule (+ auto-generate LessonAttendance) →
+ *       Order → StudentProduct → PointsAccount + Pet
+ */
+
+const categorySeed = require('./seeds/category.seed')
+const regionSeed = require('./seeds/region.seed')
+const orgSeed = require('./seeds/org.seed')
+const userSeed = require('./seeds/user.seed')
+const positionSeed = require('./seeds/position.seed')
+const userOrgRelSeed = require('./seeds/userOrgRel.seed')
+const studentSeed = require('./seeds/student.seed')
+const subjectSeed = require('./seeds/subject.seed')
+const courseProductSeed = require('./seeds/courseProduct.seed')
+const roomSeed = require('./seeds/room.seed')
+const courseInstanceSeed = require('./seeds/courseInstance.seed')
+const courseEnrollmentSeed = require('./seeds/courseEnrollment.seed')
+const lessonScheduleSeed = require('./seeds/lessonSchedule.seed')
+const orderSeed = require('./seeds/order.seed')
+const studentProductSeed = require('./seeds/studentProduct.seed')
+const miscSeed = require('./seeds/misc.seed')
+
+async function initSeeds() {
+  const ctx = {}
+
+  ctx.categories = await categorySeed.run()
+  // eslint-disable-next-line no-console
+  console.log('[seed] categories: done')
+
+  await regionSeed.run()
+  // eslint-disable-next-line no-console
+  console.log('[seed] regions: done')
+
+  ctx.org = await orgSeed.run()
+  // eslint-disable-next-line no-console
+  console.log(`[seed] org: ${ctx.org ? ctx.org.name : '-'}`)
+
+  ctx.platformAdmin = await userSeed.runPlatformAdmin()
+  ctx.users = await userSeed.runOrgUsers()
+  // eslint-disable-next-line no-console
+  console.log(`[seed] users: 1 platform + ${ctx.users.length} org`)
+
+  ctx.positions = await positionSeed.run(ctx.org)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] positions: ${ctx.positions.length}`)
+
+  await userOrgRelSeed.run(ctx)
+
+  ctx.students = await studentSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] students: ${ctx.students.length}`)
+
+  ctx.subjects = await subjectSeed.run(ctx.org, ctx.categories.subject)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] subjects: ${ctx.subjects.length}`)
+
+  ctx.courseProducts = await courseProductSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] course products: ${ctx.courseProducts.length}`)
+
+  ctx.rooms = await roomSeed.run(ctx.org)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] rooms: ${ctx.rooms.length}`)
+
+  ctx.courseInstances = await courseInstanceSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] course instances: ${ctx.courseInstances.length}`)
+
+  ctx.courseEnrollments = await courseEnrollmentSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] course enrollments: ${ctx.courseEnrollments.length}`)
+
+  ctx.lessonSchedules = await lessonScheduleSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] lesson schedules: ${ctx.lessonSchedules.length} (含自动生成的 lesson attendances)`)
+
+  ctx.orders = await orderSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] orders: ${ctx.orders.length}`)
+
+  ctx.studentProducts = await studentProductSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log(`[seed] student products: ${ctx.studentProducts.length}`)
+
+  await miscSeed.run(ctx)
+  // eslint-disable-next-line no-console
+  console.log('[seed] points accounts + pets: done')
+}
+
+module.exports = { initSeeds }

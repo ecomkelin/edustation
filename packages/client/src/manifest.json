@@ -1,0 +1,105 @@
+{
+  "name": "EduStation",
+  "appid": "__UNI__EDUSTATION",
+  "description": "EduStation 校外培训管理客户端",
+  "versionName": "0.1.0",
+  "versionCode": "1",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {
+      "Push": {
+        "version": "3.0.0",
+        "provider": "unipush"
+      },
+      "Share": {},
+      "OAuth": {}
+    },
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
+          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
+          "<uses-permission android:name=\"android.permission.VIBRATE\"/>",
+          "<uses-permission android:name=\"android.permission.WAKE_LOCK\"/>",
+          "<uses-permission android:name=\"android.permission.RECEIVE_BOOT_COMPLETED\"/>",
+          "<uses-permission android:name=\"android.permission.GET_ACCOUNTS\"/>",
+          "<uses-permission android:name=\"com.google.android.c2dm.permission.RECEIVE\"/>",
+          "<uses-feature android:name=\"android.hardware.camera\"/>",
+          "<uses-feature android:name=\"android.hardware.camera.autofocus\"/>"
+        ],
+        "minSdkVersion": 21,
+        "targetSdkVersion": 30
+      },
+      "ios": {
+        "privacyDescription": {
+          "NSPhotoLibraryUsageDescription": "需要访问相册以上传课堂作品",
+          "NSPhotoLibraryAddUsageDescription": "需要保存图片到相册",
+          "NSCameraUsageDescription": "需要使用相机拍摄作品",
+          "NSMicrophoneUsageDescription": "需要使用麦克风录制作品"
+        },
+        "idfa": false
+      },
+      "sdkConfigs": {
+        "push": {
+          "unipush": {
+            "appid": "",
+            "appkey": "",
+            "appsecret": ""
+          }
+        }
+      }
+    }
+  },
+  "quickapp": {},
+  "mp-weixin": {
+    "appid": "wx0000000000000000",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true,
+      "postcss": true
+    },
+    "usingComponents": true,
+    "permission": {
+      "scope.userLocation": {
+        "desc": "您的位置信息将用于定位附近的培训机构"
+      }
+    },
+    "requiredPrivateInfos": [],
+    "__usePrivacyCheck__": true
+  },
+  "h5": {
+    "title": "EduStation 客户端",
+    "router": {
+      "mode": "hash",
+      "base": "/"
+    },
+    "devServer": {
+      "port": 9000,
+      "https": false
+    },
+    "sdkConfigs": {
+      "push": {
+        "unipush": {
+          "appid": "",
+          "appkey": "",
+          "appsecret": ""
+        }
+      }
+    }
+  },
+  "vueVersion": "3"
+}
