@@ -1329,7 +1329,7 @@ async function onDeleteConfirm(row, { password }) {
     ElMessage.success('已删除')
     load()
   } catch (e) {
-    await handleRemoveError(e, '无法删除 · 高风险')
+    await handleRemoveError(e, '无法删除 · 高风险', `开班 ${row.name || row.courseProduct?.name || '?'}`)
   }
 }
 

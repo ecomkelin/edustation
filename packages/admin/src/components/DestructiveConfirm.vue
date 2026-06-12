@@ -70,7 +70,8 @@ async function onClick() {
     if (!result || result.canRemove !== true) {
       const blockers = (result && result.blockers) || []
       emit('blocked', blockers)
-      await showBlockedAlert(blockers, `无法删除 · ${props.warning}`)
+      // 把 target 一并交给弹窗,让用户清楚是"哪个对象"不能删
+      await showBlockedAlert(blockers, `无法删除 · ${props.warning}`, props.target)
       return
     }
   }

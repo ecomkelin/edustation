@@ -437,7 +437,7 @@ async function onRemoveConfirm(row, { password }) {
     }
     load()
   } catch (e) {
-    await handleRemoveError(e, '无法删除 · 中风险')
+    await handleRemoveError(e, '无法删除 · 中风险', `作品 ${row.title}`)
   }
 }
 

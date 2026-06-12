@@ -577,7 +577,7 @@ async function onRemoveConfirm(row, { password }) {
     ElMessage.success('已删除')
     load()
   } catch (e) {
-    await handleRemoveError(e, '无法删除 · 中风险')
+    await handleRemoveError(e, '无法删除 · 中风险', `职位 ${row.name}`)
   }
 }
 

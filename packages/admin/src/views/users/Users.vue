@@ -485,7 +485,7 @@ async function onRemoveFromOrgConfirm(row, { password }) {
     ElMessage.success('已移出')
     load()
   } catch (e) {
-    await handleRemoveError(e, '无法解绑 · 高风险')
+    await handleRemoveError(e, '无法解绑 · 高风险', `用户 ${row.realName || row.mobile}`)
   }
 }
 

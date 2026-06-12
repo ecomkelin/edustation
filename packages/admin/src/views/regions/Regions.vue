@@ -268,7 +268,7 @@ async function onRemoveConfirm(node, { password }) {
     }
     if (selected.value) await loadChildren()
   } catch (e) {
-    await handleRemoveError(e, '无法删除 · 中风险')
+    await handleRemoveError(e, '无法删除 · 中风险', `地区 ${node.name}`)
   }
 }
 

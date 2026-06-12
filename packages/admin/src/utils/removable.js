@@ -6,52 +6,54 @@
  *  - 前端做"展示 blockers 给用户" + "批量预检路由"封装。
  *
  * 用法：
- *   import { formatBlockers, showBlockedAlert, removableCheckThen } from '@/utils/removable'
+ *   import { showBlockedAlert, removableCheckThen, handleRemoveError } from '@/utils/removable'
  *
- *   // 1) 直接用 ElMessageBox.alert 弹挡板说明
- *   showBlockedAlert(blockers)
+ *   // 1) 弹挡板说明（结构化弹窗：对象 + 关联数据列表 + 建议操作）
+ *   await showBlockedAlert(blockers, '无法删除 · 高风险', '课程产品 少儿钢琴')
  *
- *   // 2) 渲染成 markdown 多行文本（塞 alert 的 message 或自定义弹窗）
- *   const md = formatBlockers(blockers)
+ *   // 2) 渲染成 markdown 多行文本（兜底 / 日志）
+ *   const md = formatBlockers(blockers, '教室 101')
+ *
+ * 弹窗本身由 <RemovableBlockedDialog> 单例组件渲染（挂在 App.vue），
+ * 这里只是修改共享 ref，触发它显示。详见 @/composables/useBlockedDialog。
  */
 
+import { showBlockedAlert as _showBlockedAlert } from '@/composables/useBlockedDialog'
+
 /**
- * 把后端返回的 blockers 数组渲染成多行中文文本。
+ * 把后端返回的 blockers 数组渲染成多行 markdown 文本。
+ * 保留这个纯文本版本，用于：
+ *   - 日志/调试
+ *   - 不便挂载 Vue 组件的场景（如 SSR、单测）
+ * 实际弹窗请直接用 showBlockedAlert。
+ *
  * 每行："<label>：<count> 条（<hint>）"
  *
  * @param {Array<{label:string,count:number,hint:string}>} blockers
+ * @param {string} [target]  被删除对象名（会作为首行标题）
  * @returns {string}
  */
-export function formatBlockers(blockers) {
+export function formatBlockers(blockers, target = '') {
   if (!Array.isArray(blockers) || blockers.length === 0) return ''
-  return blockers
-    .map((b) => `• ${b.label || '关联数据'}：${b.count} 条（${b.hint || '请先处理相关数据'}）`)
+  const head = target ? `对象：${target}\n` : ''
+  const body = blockers
+    .map((b) => `• ${b.label || '关联数据'}：${b.count || 0} 条（${b.hint || '请先处理相关数据'}）`)
     .join('\n')
+  return head + body
 }
 
 /**
- * 弹一个 ElMessageBox.alert，把 blockers 列出来。
- * 失败/异常时 fallback 到 ElMessage.error。
+ * 弹一个挡板说明弹窗，列出 blockers。
+ *
+ * 实现：直接修改 <RemovableBlockedDialog> 单例的 ref，组件会显示。
+ * 替代 ElMessageBox.alert + dangerouslyUseHTMLString: true 方案（不稳）。
  *
  * @param {Array} blockers
- * @param {string} [title='无法删除']
+ * @param {string} [title='无法删除']   弹窗标题
+ * @param {string} [target='']         被删除对象名（点明是哪一条）
  */
-export async function showBlockedAlert(blockers, title = '无法删除') {
-  // 动态 import 避免循环依赖(http.js 也会引 utils,这里又引 elmessage)
-  const [{ default: ElMessageBox }, { ElMessage }] = await Promise.all([
-    import('element-plus'),
-    import('element-plus')
-  ])
-  const body = formatBlockers(blockers) || '存在未知关联数据，请联系管理员'
-  try {
-    await ElMessageBox.alert(body, title, {
-      type: 'warning',
-      dangerouslyUseHTMLString: false,
-      confirmButtonText: '我知道了'
-    })
-  } catch (_) {
-    // 用户关了弹窗，不做任何事
-  }
+export async function showBlockedAlert(blockers, title = '无法删除', target = '') {
+  _showBlockedAlert(blockers, title, target)
 }
 
 /**
@@ -63,12 +65,13 @@ export async function showBlockedAlert(blockers, title = '无法删除') {
  *
  * @param {{canRemove:boolean,blockers:Array}} checkResult 后端 GET /:id/removable-check 的 data
  * @param {() => any} onPass 可以删除时调（弹 DestructiveConfirm 等）
+ * @param {string} [target]  可选：被删除对象名，用于挡板弹窗中点明
  */
-export async function removableCheckThen(checkResult, onPass) {
+export async function removableCheckThen(checkResult, onPass, target = '') {
   if (!checkResult || checkResult.canRemove) {
     return onPass(checkResult)
   }
-  return showBlockedAlert(checkResult.blockers || [])
+  return showBlockedAlert(checkResult.blockers || [], '无法删除', target)
 }
 
 /**
@@ -92,20 +95,21 @@ export async function removableCheckThen(checkResult, onPass) {
  *       ElMessage.success('已删除')
  *       load()
  *     } catch (e) {
- *       await handleRemoveError(e, '无法删除 · 高风险')
+ *       await handleRemoveError(e, '无法删除 · 高风险', `课程产品 ${row.name}`)
  *     }
  *   }
  *
  * @param {any} err axios 错误对象
  * @param {string} [fallbackTitle='无法删除'] 弹挡板时的标题
+ * @param {string} [target='']                被删除对象名（点明是哪一条）
  */
-export async function handleRemoveError(err, fallbackTitle = '无法删除') {
+export async function handleRemoveError(err, fallbackTitle = '无法删除', target = '') {
   const resp = err && err.response
   const data = resp && resp.data
   // ApiError.unprocessable 形态：{ success:false, message, data:{ blockers: [...] } }
   const blockers = data && data.data && Array.isArray(data.data.blockers) ? data.data.blockers : null
   if (blockers && blockers.length) {
-    await showBlockedAlert(blockers, fallbackTitle)
+    await showBlockedAlert(blockers, fallbackTitle, target)
     return
   }
   // 没有结构化 blockers：原样抛出让 axios 拦截器 ElMessage
