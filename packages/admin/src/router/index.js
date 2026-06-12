@@ -21,6 +21,7 @@ const routes = [
       { path: 'course-instances', component: () => import('@/views/courseInstances/CourseInstances.vue') },
       { path: 'course-enrollments', component: () => import('@/views/courseEnrollments/CourseEnrollments.vue') },
       { path: 'rooms', component: () => import('@/views/rooms/Rooms.vue') },
+      { path: 'schools', component: () => import('@/views/schools/Schools.vue') },
       { path: 'schedule', component: () => import('@/views/lessonSchedule/ScheduleList.vue') },
       { path: 'schedule/calendar', component: () => import('@/views/lessonSchedule/ScheduleCalendar.vue') },
       { path: 'schedule/class', component: () => import('@/views/lessonSchedule/ClassSchedulePage.vue') },

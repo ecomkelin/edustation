@@ -30,3 +30,11 @@ export const PAYMENT_METHOD_LABEL = {
   bank: '银行转账',
   other: '其他'
 }
+
+// 学校学段标签（与后端 @shared/enums.SCHOOL_TYPES 对应）
+export const SCHOOL_TYPE_LABEL = {
+  kindergarten: '幼儿园',
+  elementary: '小学',
+  middle: '初中',
+  high: '高中'
+}

@@ -34,6 +34,8 @@ const StudentSchema = new Schema(
     guardianUser: { type: Schema.Types.ObjectId, ref: 'User' },
     // 所有监护人列表（含主监护人）—— 支持"一个孩子多个家长都能在 App 看课表"
     guardians: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // 所属学校（选填，关联 School 档案，用于市场发传单 / 按学校聚合学生）
+    school: { type: Schema.Types.ObjectId, ref: 'School' },
     // 备注（过敏史/特殊需求/老师注意事项等）
     notes: { type: String },
     // 是否在读；false 时不再出现在新报名/排课的学生下拉中（历史数据保留）
@@ -59,5 +61,7 @@ StudentSchema.index({ org: 1, name: 1 })
 StudentSchema.index({ guardians: 1 })
 // 按机构 + 是否黑名单过滤（管理员查看禁用学员）
 StudentSchema.index({ org: 1, isBlocked: 1 })
+// 按机构 + 学校聚合（"这所小学在我这报了多少学生"）
+StudentSchema.index({ org: 1, school: 1 })
 
 module.exports = model('Student', StudentSchema)

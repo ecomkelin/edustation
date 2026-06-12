@@ -94,7 +94,8 @@ const menuGroups = [
       { path: '/categories', label: '类别字典', icon: Files, requirePlatform: true },
       { path: '/regions', label: '地区字典', icon: Box, requirePlatform: true },
       { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
-      { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' }
+      { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
+      { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
     ]
   },
   {

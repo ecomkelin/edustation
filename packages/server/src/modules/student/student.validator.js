@@ -10,6 +10,7 @@ const create = [
   body('guardianMobile').optional().isString().isLength({ min: 11, max: 11 }),
   body('guardians').optional().isArray(),
   body('guardians.*').optional().isMongoId(),
+  body('school').optional({ nullable: true }).isMongoId().withMessage('school 必须是学校 id 或 null'),
   body('notes').optional().isString().isLength({ max: 500 })
 ]
 
@@ -19,6 +20,7 @@ const update = [
   body('birthday').optional().isISO8601(),
   body('guardians').optional().isArray(),
   body('guardians.*').optional().isMongoId(),
+  body('school').optional({ nullable: true }).isMongoId(),
   body('notes').optional().isString().isLength({ max: 500 }),
   body('isActive').optional().isBoolean()
 ]

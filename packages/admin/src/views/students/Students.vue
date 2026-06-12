@@ -9,6 +9,21 @@
         <el-option label="已退学" value="inactive" />
         <el-option label="禁用" value="blocked" />
       </el-select>
+      <el-select
+        v-model="schoolFilter"
+        placeholder="所属学校"
+        clearable
+        filterable
+        style="width: 180px"
+        @change="load"
+      >
+        <el-option
+          v-for="s in schoolOptions"
+          :key="s._id"
+          :label="`${s.name}${SCHOOL_TYPE_LABEL[s.type] ? ' · ' + SCHOOL_TYPE_LABEL[s.type] : ''}`"
+          :value="s._id"
+        />
+      </el-select>
       <el-button @click="load">搜索</el-button>
       <el-button type="primary" @click="openCreate">新建学生</el-button>
     </el-space>
@@ -19,6 +34,12 @@
       </el-table-column>
       <el-table-column prop="birthday" label="生日" width="140">
         <template #default="{ row }">{{ formatDate(row.birthday, 'YYYY-MM-DD') }}</template>
+      </el-table-column>
+      <el-table-column label="学校" width="160">
+        <template #default="{ row }">
+          <span v-if="row.school">{{ row.school.name }}</span>
+          <span v-else style="color: #999">—</span>
+        </template>
       </el-table-column>
       <el-table-column label="监护人">
         <template #default="{ row }">
@@ -89,6 +110,22 @@
         <el-form-item label="监护人手机" v-if="!form._id">
           <el-input v-model="form.guardianMobile" placeholder="不存在的手机号将自动创建家长账号" />
         </el-form-item>
+        <el-form-item label="所属学校">
+          <el-select
+            v-model="form.school"
+            filterable
+            clearable
+            placeholder="不选则无(选填)"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="s in schoolOptions"
+              :key="s._id"
+              :label="`${s.name}${SCHOOL_TYPE_LABEL[s.type] ? ' · ' + SCHOOL_TYPE_LABEL[s.type] : ''}`"
+              :value="s._id"
+            />
+          </el-select>
+        </el-form-item>
         <!-- 重绑监护人: 仅编辑模式 + 仅超管可见 -->
         <el-form-item v-if="form._id && auth.isPlatformAdmin" label="监护人">
           <el-select
@@ -124,11 +161,12 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { studentApi } from '@/api/student'
+import { schoolApi } from '@/api/school'
 import { handleRemoveError } from '@/utils/removable'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/format'
-import { GENDER_LABEL } from '@/utils/constants'
+import { GENDER_LABEL, SCHOOL_TYPE_LABEL } from '@/utils/constants'
 
 const auth = useAuthStore()
 const list = ref([])
@@ -140,7 +178,9 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const stateFilter = ref('active')
+const schoolFilter = ref('')
 const orgUsers = ref([])
+const schoolOptions = ref([])
 const form = reactive({
   _id: '',
   name: '',
@@ -148,6 +188,7 @@ const form = reactive({
   birthday: '',
   guardianMobile: '',
   guardians: [],
+  school: '',
   notes: ''
 })
 
@@ -159,6 +200,7 @@ async function load() {
       page: page.value,
       pageSize: pageSize.value
     }
+    if (schoolFilter.value) params.school = schoolFilter.value
     if (stateFilter.value === 'active') {
       params.isActive = 'true'
       params.isBlocked = 'false'
@@ -184,6 +226,21 @@ async function loadOrgUsers() {
   }
 }
 
+async function loadSchools() {
+  try {
+    // 仅拉启用学校(用作下拉),按学段/名称排序
+    const r = await schoolApi.list({ isActive: 'true', pageSize: 500 })
+    const items = r.data.items || []
+    items.sort((a, b) => {
+      if (a.type !== b.type) return (a.type || '').localeCompare(b.type || '')
+      return (a.name || '').localeCompare(b.name || '')
+    })
+    schoolOptions.value = items
+  } catch (e) {
+    schoolOptions.value = []
+  }
+}
+
 function openCreate() {
   Object.assign(form, {
     _id: '',
@@ -192,6 +249,7 @@ function openCreate() {
     birthday: '',
     guardianMobile: '',
     guardians: [],
+    school: '',
     notes: ''
   })
   dialog.value = true
@@ -204,6 +262,7 @@ function openEdit(row) {
     gender: row.gender,
     birthday: row.birthday ? formatDate(row.birthday, 'YYYY-MM-DD') : '',
     guardians: (row.guardians || []).map((g) => (g._id ? String(g._id) : String(g))),
+    school: row.school ? (row.school._id || String(row.school)) : '',
     notes: row.notes
   })
   dialog.value = true
@@ -218,6 +277,7 @@ async function submit() {
         name: form.name,
         gender: form.gender,
         birthday: form.birthday,
+        school: form.school || null,
         notes: form.notes
       })
       // 重绑监护人(仅超管,且表单上有该字段才走)
@@ -230,6 +290,7 @@ async function submit() {
         gender: form.gender,
         birthday: form.birthday,
         guardianMobile: form.guardianMobile,
+        school: form.school || null,
         notes: form.notes
       })
     }
@@ -278,5 +339,6 @@ async function onRemoveConfirm(row, { password }) {
 onMounted(() => {
   load()
   loadOrgUsers()
+  loadSchools()
 })
 </script>

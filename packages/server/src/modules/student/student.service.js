@@ -13,7 +13,7 @@ const removable = require('@utils/removable')
 const config = require('@config/index')
 const { CLIENT_LEVEL } = require('@shared/enums')
 
-async function list({ orgId, keyword, isActive, isBlocked, page, pageSize }) {
+async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (isActive === 'true' || isActive === true) filter.isActive = true
@@ -21,11 +21,13 @@ async function list({ orgId, keyword, isActive, isBlocked, page, pageSize }) {
   // isBlocked=true 仅查黑名单；isBlocked=false 含未设置字段的学员(避免历史数据 null 漏掉)
   if (isBlocked === 'true' || isBlocked === true) filter.isBlocked = true
   if (isBlocked === 'false' || isBlocked === false) filter.isBlocked = { $ne: true }
+  if (school) filter.school = school
   if (keyword) filter.name = { $regex: keyword, $options: 'i' }
   const [items, total] = await Promise.all([
     Student.find(filter)
       .populate('guardians', 'mobile realName avatar')
       .populate('guardianUser', 'mobile realName')
+      .populate('school', 'name type address')
       .sort({ createdAt: -1 })
       .skip(p.skip)
       .limit(p.limit)
@@ -39,12 +41,13 @@ async function detail(id, orgId) {
   const s = await Student.findOne({ _id: id, org: orgId })
     .populate('guardians', 'mobile realName avatar')
     .populate('guardianUser', 'mobile realName')
+    .populate('school', 'name type address')
     .lean()
   if (!s) throw ApiError.notFound('学生不存在')
   return s
 }
 
-async function create({ orgId, name, gender, birthday, guardianMobile, guardians = [], notes }) {
+async function create({ orgId, name, gender, birthday, guardianMobile, guardians = [], school, notes }) {
   // 如果传 guardianMobile，自动按手机号查 / 创 user，并建立与本机构的关联（家长角色）
   if (guardianMobile) {
     let u = await User.findOne({ mobile: guardianMobile })
@@ -102,6 +105,7 @@ async function create({ orgId, name, gender, birthday, guardianMobile, guardians
     birthday,
     guardians,
     guardianUser: guardians[0],
+    school: school || undefined,
     notes
   })
   return detail(s._id, orgId)

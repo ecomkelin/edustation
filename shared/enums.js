@@ -123,6 +123,21 @@ const SchedulePlanMode = Object.freeze({
 const SCHEDULE_PLAN_MODES = Object.values(SchedulePlanMode)
 
 /**
+ * 学校学段（School.type 字段）
+ *  - kindergarten: 幼儿园
+ *  - elementary:   小学（默认）
+ *  - middle:       初中
+ *  - high:         高中
+ */
+const SchoolType = Object.freeze({
+  KINDERGARTEN: 'kindergarten',
+  ELEMENTARY: 'elementary',
+  MIDDLE: 'middle',
+  HIGH: 'high'
+})
+const SCHOOL_TYPES = Object.values(SchoolType)
+
+/**
  * 客户端（家长）岗位等级
  *  0 = 非家长（staff 端岗位）
  *  1 = 基础家长
@@ -179,6 +194,8 @@ module.exports = {
   STUDENT_PRODUCT_SOURCES,
   SchedulePlanMode,
   SCHEDULE_PLAN_MODES,
+  SchoolType,
+  SCHOOL_TYPES,
   CLIENT_LEVEL,
   CLIENT_LEVEL_LABEL,
   labelOfClientLevel

@@ -24,6 +24,7 @@ const petRoutes = require('@modules/pet/pet.routes')
 const healthRoutes = require('@modules/health/health.routes')
 const categoryRoutes = require('@modules/category/category.routes')
 const regionRoutes = require('@modules/region/region.routes')
+const schoolRoutes = require('@modules/school/school.routes')
 
 router.use('/auth', authRoutes)
 router.use('/orgs', orgRoutes)
@@ -45,5 +46,6 @@ router.use('/pet', petRoutes)
 router.use('/health', healthRoutes)
 router.use('/categories', categoryRoutes)
 router.use('/regions', regionRoutes)
+router.use('/schools', schoolRoutes)
 
 module.exports = router
