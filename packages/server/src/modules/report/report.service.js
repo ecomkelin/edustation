@@ -23,6 +23,7 @@ const LessonAttendance = require('@models/LessonAttendance.model')
 const PointsAccount = require('@models/PointsAccount.model')
 const PointsTransaction = require('@models/PointsTransaction.model')
 const Pet = require('@models/Pet.model')
+const { withCache, invalidate } = require('./reportCache')
 const {
   OrderStatus,
   CourseEnrollmentStatus,
@@ -30,6 +31,16 @@ const {
   LessonScheduleStatus,
   AttendanceStatus
 } = require('@shared/enums')
+
+/**
+ * 切片升级指引（CLAUDE.md §16.3 已预留 MetricSnapshot 物化表）
+ *  ─ 当前：所有看板用 reportCache.withCache 包一层，60s 进程内缓存。
+ *  ─ Phase 2（订单/考勤过 10w 时）：在 withCache 之前用
+ *     `if (range === 'month' && needsSnapshot) return readSnapshot(...)`
+ *     把 overview / teacherProductivity / roomUtilization 这 3 块替换为 snapshot 读。
+ *  ─ 不需要改 5 个公开方法的导出名 / 入参 / 出参，调用方零改动。
+ */
+const REPORT_TTL_MS = 60_000
 
 // =====================================================================
 // 公共工具
@@ -105,6 +116,10 @@ const ATTENDED_STATUSES = [AttendanceStatus.CHECKED_IN, AttendanceStatus.COMPLET
  *  - 7 日出勤率（LessonAttendance: actualEndTime in last 7d, attended/total）
  */
 async function overview({ orgId }) {
+  return withCache(`overview:${orgId}:month`, () => overviewRaw({ orgId }), REPORT_TTL_MS)
+}
+
+async function overviewRaw({ orgId }) {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -271,6 +286,10 @@ async function overview({ orgId }) {
  *  - 老师产能 Top 10（按本月已排课时数）
  */
 async function lessonConsumption({ orgId }) {
+  return withCache(`lessonConsumption:${orgId}:month`, () => lessonConsumptionRaw({ orgId }), REPORT_TTL_MS)
+}
+
+async function lessonConsumptionRaw({ orgId }) {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -534,6 +553,10 @@ async function lessonConsumption({ orgId }) {
  *  - 开班满班率：CourseEnrollment.count / CourseInstance.maxStudents
  */
 async function roomUtilization({ orgId }) {
+  return withCache(`roomUtilization:${orgId}:month`, () => roomUtilizationRaw({ orgId }), REPORT_TTL_MS)
+}
+
+async function roomUtilizationRaw({ orgId }) {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -740,6 +763,10 @@ async function roomUtilization({ orgId }) {
  *  - 整体均值
  */
 async function teacherProductivity({ orgId }) {
+  return withCache(`teacherProductivity:${orgId}:month`, () => teacherProductivityRaw({ orgId }), REPORT_TTL_MS)
+}
+
+async function teacherProductivityRaw({ orgId }) {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
   const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -934,6 +961,10 @@ async function teacherProductivity({ orgId }) {
  *  - 宠物等级分布（Pet.level 直方图）
  */
 async function pointsActivity({ orgId }) {
+  return withCache(`pointsActivity:${orgId}:month`, () => pointsActivityRaw({ orgId }), REPORT_TTL_MS)
+}
+
+async function pointsActivityRaw({ orgId }) {
   const now = new Date()
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)

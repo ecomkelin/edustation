@@ -10,6 +10,7 @@ const Student = require('@models/Student.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { CourseEnrollmentStatus, CourseInstanceStatus, AttendanceStatus } = require('@shared/enums')
+const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
 function toObjectId(v) {
   if (v instanceof mongoose.Types.ObjectId) return v
@@ -454,6 +455,7 @@ async function create({ orgId, courseInstance, student, students }) {
   //   也避免「学生在开班 active 之前报名 → active 之后再被补考勤」造成的混乱。
   //   兜底：教务仍可通过 POST /api/v1/lesson-attendances 手动加考勤（遗留补报名场景）。
 
+  if (success.length > 0) invalidateReportCache(orgId)
   return { success, failed, courseInstance }
 }
 
@@ -494,6 +496,7 @@ async function setStatus({ id, orgId, toStatus, reason }) {
     e.dropReason = reason || e.dropReason
   }
   await e.save()
+  invalidateReportCache(orgId)
   return detail(e._id, orgId)
 }
 
@@ -516,6 +519,7 @@ async function remove({ id, orgId }) {
     throw ApiError.badRequest('仅 enrolled 状态可删除(已结业/退班请走状态变更)')
   }
   await e.deleteOne()
+  invalidateReportCache(orgId)
   return { success: true }
 }
 
@@ -628,6 +632,7 @@ async function update(id, orgId, payload) {
   }
 
   await cur.save()
+  invalidateReportCache(orgId)
   return detail(cur._id, orgId)
 }
 
@@ -678,6 +683,7 @@ async function bindStudentProductToEnrollments({ orgId, student, studentProductI
     { _id: { $in: targets }, studentProduct: null },
     { $set: { studentProduct: studentProductId } }
   )
+  invalidateReportCache(orgId)
   return { matched: broken.length, bound: r.modifiedCount || 0 }
 }
 
@@ -739,6 +745,7 @@ async function backfillEnrollmentsMainProduct({ orgId }) {
     )
     fixed++
   }
+  invalidateReportCache(orgId)
   return { scanned: broken.length, fixed, skipped }
 }
 

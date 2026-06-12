@@ -3,15 +3,16 @@
 /**
  * 经营看板路由（report.routes）
  *
- * - 5 个 GET 接口，按业务模块挂权限码：
- *   /overview             → order.read         经营总览（核心是营收 / 订单 / 财务）
- *   /lesson-consumption   → lessonSchedule.read 课消与课表
- *   /room-utilization     → lessonSchedule.read 教室与排课利用率
- *   /teacher-productivity → lessonSchedule.read 老师产能与绩效
- *   /points-activity      → student.read         积分与家长活跃（无 points 专用权限码）
+ * - 5 个 GET 接口，统一挂 report.read 权限码（2026-06 新增，packages/shared/permissions.json）
+ *   /overview             → 经营总览（营收 / 订单 / 学员 / 课包 / 出勤率）
+ *   /lesson-consumption   → 课消与课表
+ *   /room-utilization     → 教室与排课利用率
+ *   /teacher-productivity → 老师产能与绩效
+ *   /points-activity      → 积分与家长活跃
  *
  * - 全部走 authenticate + requireOrg 中间件
  * - 不需要参数校验（query 参数全 optional）
+ * - service 层有 60s 进程内缓存（reportCache.js）；写操作后自动失效
  */
 
 const router = require('express').Router()
@@ -21,10 +22,10 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
-router.get('/overview', mws.requirePermission('order.read'), asyncHandler(c.overview))
-router.get('/lesson-consumption', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.lessonConsumption))
-router.get('/room-utilization', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.roomUtilization))
-router.get('/teacher-productivity', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.teacherProductivity))
-router.get('/points-activity', mws.requirePermission('student.read'), asyncHandler(c.pointsActivity))
+router.get('/overview', mws.requirePermission('report.read'), asyncHandler(c.overview))
+router.get('/lesson-consumption', mws.requirePermission('report.read'), asyncHandler(c.lessonConsumption))
+router.get('/room-utilization', mws.requirePermission('report.read'), asyncHandler(c.roomUtilization))
+router.get('/teacher-productivity', mws.requirePermission('report.read'), asyncHandler(c.teacherProductivity))
+router.get('/points-activity', mws.requirePermission('report.read'), asyncHandler(c.pointsActivity))
 
 module.exports = router

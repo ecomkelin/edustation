@@ -7,6 +7,7 @@ const StudentProduct = require('@models/StudentProduct.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { OrderStatus, StudentProductSource } = require('@shared/enums')
+const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
 /**
  * 计算订单 originalPrice（按 items 各项的 unitPrice * quantity 求和）
@@ -195,8 +196,10 @@ async function create({ orgId, student, items, actualPrice, paymentMethod, paidA
     .lean()
 
   if (isOfflinePaid) {
+    invalidateReportCache(orgId)
     return { order: populated, studentProducts: createdStudentProducts }
   }
+  invalidateReportCache(orgId)
   return populated
 }
 
@@ -246,6 +249,7 @@ async function pay({ id, orgId, paymentMethod, paidAmount }) {
 
   const createdStudentProducts = await createStudentProductsForOrder({ order, orgId })
 
+  invalidateReportCache(orgId)
   return {
     order: order.toObject(),
     studentProducts: createdStudentProducts
@@ -262,6 +266,7 @@ async function cancel({ id, orgId, reason }) {
   order.status = OrderStatus.CANCELLED
   if (reason) order.remark = (order.remark || '') + `[取消] ${reason}`
   await order.save()
+  invalidateReportCache(orgId)
   return order.toObject()
 }
 

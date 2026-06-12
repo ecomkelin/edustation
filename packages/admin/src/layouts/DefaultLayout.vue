@@ -80,7 +80,8 @@ import {
   Connection,
   Warning,
   ChatLineRound,
-  SwitchButton
+  SwitchButton,
+  DataAnalysis
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -133,6 +134,18 @@ const menuGroups = [
       { path: '/student-works', label: '学生作品', icon: Goods, perm: 'studentWork.read' },
       { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
       { path: '/ai-chat', label: 'AI 客服测试', icon: ChatLineRound, perm: 'order.read' }
+    ]
+  },
+  {
+    key: 'analytics',
+    title: '经营分析',
+    icon: DataAnalysis,
+    children: [
+      { path: '/reports/overview', label: '经营总览', icon: Odometer, perm: 'report.read' },
+      { path: '/reports/lesson-consumption', label: '课消与课表', icon: Reading, perm: 'report.read' },
+      { path: '/reports/room-utilization', label: '教室利用率', icon: School, perm: 'report.read' },
+      { path: '/reports/teacher-productivity', label: '老师产能', icon: User, perm: 'report.read' },
+      { path: '/reports/points-activity', label: '积分与活跃', icon: Present, perm: 'report.read' }
     ]
   },
   {

@@ -12,6 +12,7 @@ const { normalizePagination } = require('@utils/pagination')
 const { CourseEnrollmentStatus, AttendanceStatus, LessonScheduleStatus, CourseInstanceStatus } = require('@shared/enums')
 const { pickStudentProductFIFO } = require('@modules/lessonAttendance/studentProductHelper')
 const lessonAttendanceService = require('@modules/lessonAttendance/lessonAttendance.service')
+const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
 // ─── 冲突检测 ─────────────────────────────────────────────
 // 同时返回冲突的排课列表（id / 时间 / 老师 / 教室 / 课程），用于 UI 上的具体提示
@@ -483,6 +484,7 @@ async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plann
   //   报名 / 购课 / 赠课 不再触发补考勤 —— 下一次 prepare() 会基于当时最新的 enrolled 名单全量重生成。
   //   课程结束之前教务也可以手动添加 LessonAttendance（POST /api/v1/lesson-attendances）。
 
+  invalidateReportCache(orgId)
   return detail(doc._id, orgId)
 }
 
@@ -807,6 +809,7 @@ async function archive({ id, orgId }) {
   exist.status = LessonScheduleStatus.ARCHIVED
   if (!exist.actualEndTime) exist.actualEndTime = exist.plannedEndTime
   await exist.save()
+  invalidateReportCache(orgId)
   return detail(exist._id, orgId)
 }
 
@@ -844,6 +847,7 @@ async function remove({ id, orgId }) {
   // 同步清掉未开始的考勤(避免悬挂引用)
   await LessonAttendance.deleteMany({ lessonSchedule: id, status: AttendanceStatus.SCHEDULED })
   await doc.deleteOne()
+  invalidateReportCache(orgId)
   return { success: true }
 }
 

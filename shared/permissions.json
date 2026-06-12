@@ -183,6 +183,17 @@
       }
     },
     {
+      "key": "report",
+      "label": "经营分析",
+      "description": "查看机构经营看板：营收 / 课消 / 教室利用率 / 老师产能 / 积分。聚合较重，权限按需授予（通常校长/教务/财务可看）。",
+      "permissions": [
+        "report.read"
+      ],
+      "permissionLabels": {
+        "report.read": { "label": "查看经营分析", "description": "查看经营总览、课消与课表、教室利用率、老师产能、积分活动 5 块看板" }
+      }
+    },
+    {
       "key": "studentProduct",
       "label": "学员课包",
       "description": "管理 StudentProduct（学员持有的课包）。常规创建走订单支付流程；gift 权限独立授予，允许员工赠课（标红 + 必填原因）。",

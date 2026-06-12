@@ -3,6 +3,7 @@
 const PointsAccount = require('@models/PointsAccount.model')
 const PointsTransaction = require('@models/PointsTransaction.model')
 const ApiError = require('@utils/ApiError')
+const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
 async function balanceForStudent({ orgId, student }) {
   const acc = await PointsAccount.findOne({ org: orgId, student }).lean()
@@ -19,6 +20,7 @@ async function earn({ orgId, student, amount, remark }) {
   if (!amount || amount <= 0) throw ApiError.badRequest('amount 必须 > 0')
   // stub: 仅返回新余额（实际生产用 findOneAndUpdate $inc + 写 transaction）
   const balance = await balanceForStudent({ orgId, student })
+  invalidateReportCache(orgId)
   return { newBalance: balance, added: amount, remark }
 }
 

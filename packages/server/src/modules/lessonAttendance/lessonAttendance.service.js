@@ -9,6 +9,7 @@ const StudentWork = require('@models/StudentWork.model')
 const ApiError = require('@utils/ApiError')
 const { AttendanceStatus, LessonScheduleStatus, CourseEnrollmentStatus } = require('@shared/enums')
 const { pickStudentProductFIFO, deductOneLesson } = require('./studentProductHelper')
+const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
 /**
  * 状态机（仅说明，COMPLETED 路径必须由消课接口触发，避免误扣课时）：
@@ -99,6 +100,7 @@ async function checkIn({ orgId, id, studentProduct, remark }) {
   att.actualStartTime = new Date()
   if (remark !== undefined) att.remark = remark
   await att.save()
+  invalidateReportCache(orgId)
   return att.toObject()
 }
 
@@ -131,6 +133,7 @@ async function complete({ id, orgId, actualEndTime, remark, studentProduct }) {
   att.actualEndTime = actualEndTime ? new Date(actualEndTime) : new Date()
   if (remark !== undefined) att.remark = remark
   await att.save()
+  invalidateReportCache(orgId)
   return {
     attendance: att.toObject(),
     studentProduct: {
@@ -154,6 +157,7 @@ async function markStatus({ id, orgId, toStatus, remark }) {
   att.status = toStatus
   if (remark !== undefined) att.remark = remark
   await att.save()
+  invalidateReportCache(orgId)
   return att.toObject()
 }
 
@@ -226,6 +230,7 @@ async function bulkMarkForLesson({ orgId, lessonSchedule, items }) {
     await att.save()
     results.push(att.toObject())
   }
+  invalidateReportCache(orgId)
   return results
 }
 
@@ -274,6 +279,7 @@ async function updateEvaluation({ id, orgId, actorId, patch }) {
   evalDoc.evaluatedAt = new Date()
   att.evaluation = evalDoc
   await att.save()
+  invalidateReportCache(orgId)
   return att.toObject()
 }
 
@@ -365,6 +371,7 @@ async function bulkCompleteForSchedule({ orgId, lessonSchedule }) {
     })
   }
 
+  invalidateReportCache(orgId)
   return { consumed, skipped, failed }
 }
 
@@ -509,6 +516,7 @@ async function addManual({ orgId, lessonSchedule, student, studentProduct, remar
     status: AttendanceStatus.SCHEDULED,
     remark: remark || undefined
   })
+  invalidateReportCache(orgId)
   return doc.toObject()
 }
 
@@ -578,6 +586,7 @@ async function makeup({ id, orgId, actualStartTime, actualEndTime, remark }) {
  makeupAt: now
  }
  await orig.save()
+ invalidateReportCache(orgId)
  return {
  attendance: orig.toObject(),
  studentProduct: {

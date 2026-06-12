@@ -33,6 +33,12 @@ const routes = [
       { path: 'ai-chat', component: () => import('@/views/agent/AiChatTest.vue') },
       { path: 'student-products', component: () => import('@/views/studentProducts/StudentProducts.vue') },
       { path: 'student-works', component: () => import('@/views/studentWorks/StudentWorks.vue') },
+      // 经营分析:5 块看板对应后端 /api/v1/reports/* ；二级菜单入口见 DefaultLayout
+      { path: 'reports/overview', component: () => import('@/views/reports/OverviewReport.vue') },
+      { path: 'reports/lesson-consumption', component: () => import('@/views/reports/LessonConsumptionReport.vue') },
+      { path: 'reports/room-utilization', component: () => import('@/views/reports/RoomUtilizationReport.vue') },
+      { path: 'reports/teacher-productivity', component: () => import('@/views/reports/TeacherProductivityReport.vue') },
+      { path: 'reports/points-activity', component: () => import('@/views/reports/PointsActivityReport.vue') },
       { path: 'platform/info', component: () => import('@/views/platformInfo/PlatformInfo.vue') },
       { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') }
     ]
