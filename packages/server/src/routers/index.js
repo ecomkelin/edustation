@@ -26,6 +26,7 @@ const categoryRoutes = require('@modules/category/category.routes')
 const regionRoutes = require('@modules/region/region.routes')
 const schoolRoutes = require('@modules/school/school.routes')
 const agentRoutes = require('@modules/agent/agent.routes')
+const reportRoutes = require('@modules/report/report.routes')
 
 router.use('/auth', authRoutes)
 router.use('/orgs', orgRoutes)
@@ -49,5 +50,6 @@ router.use('/categories', categoryRoutes)
 router.use('/regions', regionRoutes)
 router.use('/schools', schoolRoutes)
 router.use('/agent', agentRoutes)
+router.use('/reports', reportRoutes)
 
 module.exports = router
