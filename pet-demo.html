@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EduStation · 宠物乐园 Demo</title>
+  <style>
+    /* ========== 基础重置 ========== */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+
+    /* ========== 场景容器 ========== */
+    .stage {
+      position: relative; width: 100vw; height: 100vh;
+      background: linear-gradient(180deg, #ffe5ec 0%, #ffd6e8 35%, #fff5e1 75%, #e8f5d8 100%);
+      overflow: hidden;
+      transition: background 1.2s ease;
+    }
+    .stage.night {
+      background: linear-gradient(180deg, #1a1b3a 0%, #2d3561 40%, #4a3b6b 75%, #2a3a4a 100%);
+    }
+    .stage.dusk {
+      background: linear-gradient(180deg, #ff9a8b 0%, #ff6a88 35%, #ff99ac 75%, #ffc3a0 100%);
+    }
+
+    /* ========== 远景：山 / 云 / 太阳 / 星 ========== */
+    .sun, .moon {
+      position: absolute; top: 60px; right: 100px; width: 80px; height: 80px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #ffe066 0%, #ffb700 60%, transparent 70%);
+      box-shadow: 0 0 60px 10px rgba(255, 200, 60, 0.5);
+      animation: sunPulse 4s ease-in-out infinite;
+    }
+    .moon {
+      background: radial-gradient(circle, #fef3c7 0%, #fde68a 60%, transparent 75%);
+      box-shadow: 0 0 50px 8px rgba(254, 243, 199, 0.4);
+    }
+    .stage.night .sun { display: none; }
+    .stage:not(.night) .moon { display: none; }
+
+    @keyframes sunPulse {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.06); }
+    }
+
+    .cloud {
+      position: absolute; background: rgba(255,255,255,0.9);
+      border-radius: 50px;
+      filter: blur(0.3px);
+      animation: cloudDrift linear infinite;
+    }
+    .cloud::before, .cloud::after {
+      content: ''; position: absolute; background: inherit; border-radius: 50%;
+    }
+    .cloud.c1 { top: 80px;  left: -200px; width: 120px; height: 40px; animation-duration: 60s; }
+    .cloud.c1::before { width: 60px; height: 60px; top: -25px; left: 20px; }
+    .cloud.c1::after  { width: 50px; height: 50px; top: -20px; left: 60px; }
+    .cloud.c2 { top: 140px; left: -250px; width: 150px; height: 50px; animation-duration: 90s; animation-delay: -30s; }
+    .cloud.c2::before { width: 70px; height: 70px; top: -30px; left: 30px; }
+    .cloud.c2::after  { width: 60px; height: 60px; top: -25px; left: 80px; }
+    .cloud.c3 { top: 50px;  left: -300px; width: 180px; height: 55px; animation-duration: 120s; animation-delay: -60s; opacity: 0.7; }
+    .cloud.c3::before { width: 80px; height: 80px; top: -35px; left: 40px; }
+    .cloud.c3::after  { width: 70px; height: 70px; top: -30px; left: 95px; }
+
+    @keyframes cloudDrift {
+      from { transform: translateX(0); }
+      to   { transform: translateX(calc(100vw + 300px)); }
+    }
+
+    .hills {
+      position: absolute; bottom: 22%; left: 0; right: 0; height: 25vh;
+      pointer-events: none;
+    }
+    .hill {
+      position: absolute; bottom: 0; border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+    }
+    .hill.h1 { left: -10%; width: 70%; height: 60%; background: #a7d8a3; }
+    .hill.h2 { right: -5%; width: 65%; height: 75%; background: #86c784; }
+    .hill.h3 { left: 30%;  width: 50%; height: 50%; background: #b8e0b3; }
+
+    .ground {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 22vh;
+      background: linear-gradient(180deg, #8ed18b 0%, #6cb569 100%);
+      border-top: 4px solid #5fa85c;
+    }
+    .ground::before {
+      content: ''; position: absolute; top: -8px; left: 0; right: 0; height: 12px;
+      background: repeating-linear-gradient(90deg, #8ed18b 0 20px, #7ec47a 20px 22px, #8ed18b 22px 40px);
+    }
+    /* 小花 */
+    .flower {
+      position: absolute; bottom: 0; font-size: 18px;
+      animation: flowerSway 3s ease-in-out infinite;
+    }
+    @keyframes flowerSway {
+      0%, 100% { transform: rotate(-3deg); }
+      50%      { transform: rotate(3deg); }
+    }
+
+    /* 星空 (仅夜间) */
+    .stars { position: absolute; inset: 0; pointer-events: none; }
+    .stage:not(.night) .stars { display: none; }
+    .star {
+      position: absolute; width: 3px; height: 3px; background: white; border-radius: 50%;
+      box-shadow: 0 0 4px 1px rgba(255,255,255,0.6);
+      animation: twinkle 2s ease-in-out infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50%      { opacity: 1;   transform: scale(1.2); }
+    }
+
+    /* ========== 宠物舞台 ========== */
+    .pet-stage {
+      position: absolute; left: 50%; bottom: 18vh;
+      transform: translateX(-50%);
+      width: 360px; height: 360px;
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .cushion {
+      position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%);
+      width: 320px; height: 70px;
+      background: radial-gradient(ellipse at center, #fbb040 0%, #f59e0b 70%, #d97706 100%);
+      border-radius: 50%;
+      box-shadow: 0 12px 30px rgba(217, 119, 6, 0.4), inset 0 -8px 0 rgba(0,0,0,0.1);
+    }
+    .cushion::before {
+      content: ''; position: absolute; inset: 8px 30px 18px 30px;
+      background: radial-gradient(ellipse at center, rgba(255,255,255,0.3), transparent 70%);
+      border-radius: 50%;
+    }
+
+    .pet-wrap {
+      position: relative; width: 280px; height: 280px;
+      cursor: pointer;
+      transform-origin: 50% 100%;
+      animation: idle 4s ease-in-out infinite;
+    }
+    .pet-wrap.sleeping { animation: none; }
+    .pet-wrap.jumping  { animation: jump 0.6s ease-out; }
+    .pet-wrap.eating   { animation: nod 0.5s ease-in-out 3; }
+
+    @keyframes idle {
+      0%, 100% { transform: translateY(0)    scale(1, 1); }
+      50%      { transform: translateY(-4px) scale(1.02, 0.98); }
+    }
+    @keyframes jump {
+      0%   { transform: translateY(0); }
+      40%  { transform: translateY(-50px) scale(1.1, 0.9); }
+      60%  { transform: translateY(-50px) scale(1.1, 0.9); }
+      100% { transform: translateY(0); }
+    }
+    @keyframes nod {
+      0%, 100% { transform: rotate(0); }
+      50%      { transform: rotate(-8deg); }
+    }
+
+    .pet-svg { width: 100%; height: 100%; overflow: visible; }
+
+    /* 身体各部位动画 */
+    .tail {
+      transform-origin: 150px 200px;
+      animation: tailWag 1.4s ease-in-out infinite;
+    }
+    .pet-wrap.sleeping .tail { animation: tailSleep 6s ease-in-out infinite; }
+    @keyframes tailWag { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(12deg); } }
+    @keyframes tailSleep { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+
+    .ear-l { transform-origin: 90px 95px;  animation: earL 5s ease-in-out infinite; }
+    .ear-r { transform-origin: 210px 95px; animation: earR 5s ease-in-out infinite; }
+    @keyframes earL { 0%, 90%, 100% { transform: rotate(0); } 93% { transform: rotate(-12deg); } }
+    @keyframes earR { 0%, 40%, 100% { transform: rotate(0); } 43% { transform: rotate(12deg); } }
+
+    .eye {
+      transform-origin: center;
+      animation: blink 4s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%, 92%, 96%, 100% { transform: scaleY(1); }
+      94%                { transform: scaleY(0.1); }
+    }
+    .pet-wrap.sleeping .eye { animation: none; transform: scaleY(0.1); }
+
+    .pupil {
+      transition: transform 0.15s ease-out;
+    }
+
+    .mouth-idle { opacity: 1; }
+    .mouth-happy, .mouth-eat, .mouth-sleep { opacity: 0; }
+    .pet-wrap[data-state="happy"]  .mouth-idle,
+    .pet-wrap[data-state="happy"]  .mouth-happy { opacity: 1; }
+    .pet-wrap[data-state="happy"]  .mouth-eat,
+    .pet-wrap[data-state="happy"]  .mouth-sleep { opacity: 0; }
+    .pet-wrap[data-state="happy"]  .mouth-idle { opacity: 0; }
+    .pet-wrap[data-state="happy"]  .mouth-happy { opacity: 1; }
+    .pet-wrap[data-state="eating"]  .mouth-eat   { opacity: 1; }
+    .pet-wrap[data-state="eating"]  .mouth-idle  { opacity: 0; }
+    .pet-wrap[data-state="sleeping"] .mouth-sleep { opacity: 1; }
+    .pet-wrap[data-state="sleeping"] .mouth-idle  { opacity: 0; }
+    .pet-wrap[data-state="sleeping"] .mouth-happy { opacity: 0; }
+
+    /* Z 字符 (睡觉) */
+    .zzz {
+      position: absolute; color: #93c5fd; font-weight: 800; font-family: sans-serif;
+      pointer-events: none; opacity: 0;
+    }
+    .pet-wrap.sleeping .zzz { animation: zzz 2.5s ease-out infinite; }
+    .zzz:nth-child(1) { top: 30px; right: 20px; font-size: 24px; animation-delay: 0s !important; }
+    .zzz:nth-child(2) { top: 0;   right: -10px; font-size: 32px; animation-delay: 0.8s !important; }
+    .zzz:nth-child(3) { top: -30px; right: -40px; font-size: 40px; animation-delay: 1.6s !important; }
+    @keyframes zzz {
+      0%   { opacity: 0; transform: translate(0, 0) scale(0.5); }
+      20%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(20px, -60px) scale(1.2); }
+    }
+
+    /* ========== 飘浮粒子（环境） ========== */
+    .ambient {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .sparkle {
+      position: absolute; width: 6px; height: 6px; border-radius: 50%;
+      background: radial-gradient(circle, white 0%, rgba(255,255,255,0.5) 50%, transparent 70%);
+      box-shadow: 0 0 8px 2px rgba(255,255,255,0.6);
+      animation: sparkleFloat linear infinite;
+    }
+    @keyframes sparkleFloat {
+      0%   { transform: translateY(0)    scale(0); opacity: 0; }
+      20%  { opacity: 1; }
+      80%  { opacity: 1; }
+      100% { transform: translateY(-100vh) scale(1); opacity: 0; }
+    }
+
+    /* ========== 粒子层（点击反馈） ========== */
+    .fx-layer {
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }
+    .heart, .star-fx, .food, .confetti, .bubble {
+      position: absolute; pointer-events: none;
+      will-change: transform, opacity;
+    }
+    .heart {
+      font-size: 28px;
+      animation: heartUp 1.6s ease-out forwards;
+      filter: drop-shadow(0 2px 4px rgba(244, 63, 94, 0.4));
+    }
+    @keyframes heartUp {
+      0%   { transform: translate(0, 0)    scale(0)    rotate(0);   opacity: 0; }
+      20%  { transform: translate(0, -10px) scale(1.2) rotate(-10deg); opacity: 1; }
+      100% { transform: translate(var(--dx), -200px) scale(0.8) rotate(var(--rot)); opacity: 0; }
+    }
+
+    .star-fx {
+      font-size: 32px;
+      animation: starBurst 1.2s ease-out forwards;
+      filter: drop-shadow(0 0 8px #fbbf24);
+    }
+    @keyframes starBurst {
+      0%   { transform: translate(0,0) scale(0)    rotate(0);   opacity: 0; }
+      30%  { transform: translate(var(--bx), var(--by)) scale(1.4) rotate(180deg); opacity: 1; }
+      100% { transform: translate(calc(var(--bx) * 1.5), calc(var(--by) * 1.5 + 100px)) scale(0.5) rotate(720deg); opacity: 0; }
+    }
+
+    .food {
+      font-size: 30px;
+      animation: foodDrop 1.4s ease-in forwards;
+    }
+    @keyframes foodDrop {
+      0%   { transform: translate(0, -300px) rotate(0);    opacity: 0; }
+      20%  { transform: translate(0, -200px) rotate(180deg); opacity: 1; }
+      80%  { transform: translate(0, 0)      rotate(540deg); opacity: 1; }
+      100% { transform: translate(0, 0)      rotate(720deg); opacity: 0; }
+    }
+
+    .confetti {
+      width: 8px; height: 14px;
+      animation: confettiFall 2.5s ease-in forwards;
+    }
+    @keyframes confettiFall {
+      0%   { transform: translate(0, -50vh) rotate(0);     opacity: 1; }
+      100% { transform: translate(var(--cx), 100vh) rotate(720deg); opacity: 0; }
+    }
+
+    /* 升级时的彩虹环 */
+    .levelup-ring {
+      position: absolute; left: 50%; bottom: 18vh;
+      transform: translateX(-50%) scale(0);
+      width: 280px; height: 280px;
+      border-radius: 50%;
+      border: 8px solid transparent;
+      background:
+        conic-gradient(from 0deg,
+          #f43f5e, #fb923c, #fbbf24, #84cc16, #06b6d4, #6366f1, #d946ef, #f43f5e
+        ) border-box;
+      -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      animation: ringExpand 1.2s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes ringExpand {
+      0%   { transform: translateX(-50%) scale(0.3); opacity: 0; }
+      30%  { opacity: 1; }
+      100% { transform: translateX(-50%) scale(2.5); opacity: 0; }
+    }
+
+    .levelup-text {
+      position: absolute; left: 50%; bottom: 50vh;
+      transform: translate(-50%, -50%) scale(0);
+      font-size: 72px; font-weight: 900;
+      background: linear-gradient(90deg, #f43f5e, #fbbf24, #84cc16, #06b6d4, #d946ef);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      animation: levelupText 1.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    @keyframes levelupText {
+      0%   { transform: translate(-50%, -50%) scale(0)    rotate(-15deg); opacity: 0; }
+      40%  { transform: translate(-50%, -50%) scale(1.3)  rotate(5deg);   opacity: 1; }
+      60%  { transform: translate(-50%, -50%) scale(1)    rotate(0);      opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1.5)  rotate(0);      opacity: 0; }
+    }
+
+    /* 屏幕震动 */
+    .shake { animation: shake 0.4s ease-in-out; }
+    @keyframes shake {
+      0%, 100% { transform: translate(0, 0); }
+      25%      { transform: translate(-5px, 3px); }
+      50%      { transform: translate(5px, -3px); }
+      75%      { transform: translate(-3px, 5px); }
+    }
+
+    /* ========== HUD ========== */
+    .hud {
+      position: absolute; left: 24px; top: 24px;
+      width: 280px;
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      border-radius: 24px;
+      padding: 20px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    }
+    .stage.night .hud { background: rgba(30, 30, 50, 0.75); color: #f0f0f5; border-color: rgba(255,255,255,0.2); }
+    .stage.night .hud .label, .stage.night .hud .value { color: #e5e7eb; }
+    .stage.night .hud .stat-bar-bg { background: rgba(255,255,255,0.15); }
+
+    .name-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .name { font-size: 20px; font-weight: 800; color: #1f2937; }
+    .stage.night .name { color: white; }
+    .lvl-badge {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: white; font-weight: 800; font-size: 14px;
+      padding: 4px 12px; border-radius: 999px;
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+    }
+
+    .state-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 13px; font-weight: 600;
+      padding: 6px 12px; border-radius: 999px;
+      margin-bottom: 14px;
+      transition: all 0.4s ease;
+    }
+    .state-happy     { background: #fef3c7; color: #b45309; }
+    .state-hungry    { background: #fee2e2; color: #b91c1c; }
+    .state-sleepy    { background: #dbeafe; color: #1e40af; }
+    .state-playful   { background: #dcfce7; color: #15803d; }
+    .state-eat       { background: #fce7f3; color: #be185d; }
+    .state-sleeping  { background: #ede9fe; color: #6d28d9; }
+    .state-energetic { background: #fed7aa; color: #c2410c; }
+
+    .stat-row { margin-bottom: 10px; }
+    .stat-head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .label { color: #6b7280; font-weight: 600; }
+    .value { color: #1f2937; font-weight: 700; }
+    .stat-bar-bg {
+      height: 8px; background: rgba(0, 0, 0, 0.08); border-radius: 999px; overflow: hidden;
+    }
+    .stat-bar {
+      height: 100%; border-radius: 999px;
+      transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+      position: relative;
+    }
+    .stat-bar::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+      animation: barShimmer 2s linear infinite;
+    }
+    @keyframes barShimmer {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .bar-hunger  { background: linear-gradient(90deg, #fb923c, #f97316); }
+    .bar-happy   { background: linear-gradient(90deg, #f472b6, #ec4899); }
+    .bar-energy  { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
+    .bar-xp      { background: linear-gradient(90deg, #a78bfa, #8b5cf6, #6366f1); }
+
+    .xp-row { margin-top: 14px; }
+    .xp-text { display: flex; justify-content: space-between; font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+    .stage.night .xp-text { color: #cbd5e1; }
+
+    /* ========== 操作按钮 ========== */
+    .actions {
+      position: absolute; right: 24px; bottom: 24px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .btn {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      font-size: 28px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      position: relative;
+    }
+    .stage.night .btn { background: rgba(50, 50, 80, 0.85); }
+    .btn:hover  { transform: translateY(-3px) scale(1.05); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18); }
+    .btn:active { transform: scale(0.95); }
+    .btn[data-tip]::after {
+      content: attr(data-tip);
+      position: absolute; right: 76px; top: 50%; transform: translateY(-50%);
+      background: rgba(31, 41, 55, 0.9); color: white;
+      font-size: 12px; padding: 4px 10px; border-radius: 8px;
+      white-space: nowrap; opacity: 0; pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .btn:hover[data-tip]::after { opacity: 1; }
+
+    .btn.feed   { color: #f97316; }
+    .btn.pet    { color: #ec4899; }
+    .btn.play   { color: #10b981; }
+    .btn.sleep  { color: #6366f1; }
+    .btn.levelup { color: #fbbf24; }
+
+    /* ========== 信息提示 ========== */
+    .toast {
+      position: absolute; left: 50%; top: 30px;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(31, 41, 55, 0.92);
+      color: white; font-size: 14px; font-weight: 600;
+      padding: 10px 20px; border-radius: 999px;
+      opacity: 0; transition: all 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ========== 标题 ========== */
+    .title {
+      position: absolute; left: 50%; top: 24px;
+      transform: translateX(-50%);
+      font-size: 16px; font-weight: 700;
+      color: #1f2937;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 8px 20px; border-radius: 999px;
+      backdrop-filter: blur(8px);
+      letter-spacing: 2px;
+    }
+    .stage.night .title { background: rgba(30, 30, 50, 0.7); color: white; }
+    .title b {
+      background: linear-gradient(90deg, #ec4899, #f59e0b);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <!-- 天空：太阳 / 月亮 / 云 / 星 -->
+    <div class="sun"></div>
+    <div class="moon"></div>
+    <div class="cloud c1"></div>
+    <div class="cloud c2"></div>
+    <div class="cloud c3"></div>
+    <div class="stars" id="stars"></div>
+
+    <!-- 远山 / 草地 -->
+    <div class="hills">
+      <div class="hill h1"></div>
+      <div class="hill h2"></div>
+      <div class="hill h3"></div>
+    </div>
+    <div class="ground">
+      <div class="flower" style="left: 10%;">🌸</div>
+      <div class="flower" style="left: 25%; animation-delay: 0.5s;">🌼</div>
+      <div class="flower" style="right: 12%; animation-delay: 1s;">🌷</div>
+      <div class="flower" style="right: 30%; animation-delay: 1.5s;">🌻</div>
+    </div>
+
+    <!-- 宠物 -->
+    <div class="pet-stage">
+      <div class="cushion"></div>
+      <div class="pet-wrap" id="pet" data-state="happy">
+        <span class="zzz">Z</span>
+        <span class="zzz">Z</span>
+        <span class="zzz">Z</span>
+
+        <svg class="pet-svg" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="bodyGrad" cx="50%" cy="40%" r="60%">
+              <stop offset="0%"  stop-color="#ffffff" />
+              <stop offset="70%" stop-color="#fafafa" />
+              <stop offset="100%" stop-color="#e5e7eb" />
+            </radialGradient>
+            <radialGradient id="bellyGrad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stop-color="#fdf2f8" />
+              <stop offset="100%" stop-color="#fbcfe8" />
+            </radialGradient>
+            <radialGradient id="cheekGrad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stop-color="#fda4af" stop-opacity="0.9" />
+              <stop offset="100%" stop-color="#fda4af" stop-opacity="0" />
+            </radialGradient>
+            <filter id="softShadow">
+              <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.15"/>
+            </filter>
+          </defs>
+
+          <!-- 尾巴 -->
+          <g class="tail">
+            <path d="M 230 200 Q 270 180 270 130 Q 270 110 255 110 Q 245 110 245 130 Q 245 145 235 160 Z"
+                  fill="url(#bodyGrad)" filter="url(#softShadow)" />
+          </g>
+
+          <!-- 身体 -->
+          <g>
+            <ellipse cx="150" cy="210" rx="70" ry="60" fill="url(#bodyGrad)" filter="url(#softShadow)" />
+            <!-- 肚子 -->
+            <ellipse cx="150" cy="220" rx="40" ry="35" fill="url(#bellyGrad)" />
+          </g>
+
+          <!-- 后脚 -->
+          <ellipse cx="115" cy="258" rx="18" ry="10" fill="#e5e7eb" />
+          <ellipse cx="185" cy="258" rx="18" ry="10" fill="#e5e7eb" />
+          <!-- 脚掌粉色 -->
+          <ellipse cx="115" cy="262" rx="10" ry="4" fill="#fda4af" opacity="0.6" />
+          <ellipse cx="185" cy="262" rx="10" ry="4" fill="#fda4af" opacity="0.6" />
+
+          <!-- 头 -->
+          <circle cx="150" cy="120" r="75" fill="url(#bodyGrad)" filter="url(#softShadow)" />
+
+          <!-- 耳朵 -->
+          <g class="ear-l">
+            <ellipse cx="92"  cy="75" rx="22" ry="30" fill="url(#bodyGrad)" transform="rotate(-15 92 75)" />
+            <ellipse cx="92"  cy="80" rx="11" ry="18" fill="#fda4af" transform="rotate(-15 92 80)" />
+          </g>
+          <g class="ear-r">
+            <ellipse cx="208" cy="75" rx="22" ry="30" fill="url(#bodyGrad)" transform="rotate(15 208 75)" />
+            <ellipse cx="208" cy="80" rx="11" ry="18" fill="#fda4af" transform="rotate(15 208 80)" />
+          </g>
+
+          <!-- 腮红 -->
+          <circle cx="95"  cy="135" r="18" fill="url(#cheekGrad)" />
+          <circle cx="205" cy="135" r="18" fill="url(#cheekGrad)" />
+
+          <!-- 眼睛 -->
+          <g class="eye">
+            <ellipse cx="120" cy="115" rx="10" ry="14" fill="#1f2937" />
+            <g class="pupil" id="pupilL">
+              <circle cx="123" cy="111" r="3" fill="white" />
+              <circle cx="118" cy="118" r="1.5" fill="white" />
+            </g>
+          </g>
+          <g class="eye">
+            <ellipse cx="180" cy="115" rx="10" ry="14" fill="#1f2937" />
+            <g class="pupil" id="pupilR">
+              <circle cx="183" cy="111" r="3" fill="white" />
+              <circle cx="178" cy="118" r="1.5" fill="white" />
+            </g>
+          </g>
+
+          <!-- 鼻子 -->
+          <path d="M 145 138 Q 150 145 155 138 Q 150 142 145 138 Z" fill="#ec4899" />
+
+          <!-- 嘴 (三态) -->
+          <path class="mouth-idle"  d="M 138 152 Q 150 160 162 152" stroke="#1f2937" stroke-width="2.5" fill="none" stroke-linecap="round" />
+          <path class="mouth-happy" d="M 132 150 Q 150 168 168 150 Q 150 158 132 150 Z" fill="#ec4899" opacity="0.8" />
+          <ellipse class="mouth-eat"   cx="150" cy="158" rx="10" ry="6" fill="#1f2937" />
+          <path class="mouth-sleep" d="M 144 154 Q 150 152 156 154" stroke="#1f2937" stroke-width="2" fill="none" stroke-linecap="round" />
+
+          <!-- 胡须 -->
+          <line x1="105" y1="140" x2="80"  y2="138" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="105" y1="148" x2="80"  y2="150" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="195" y1="140" x2="220" y2="138" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="195" y1="148" x2="220" y2="150" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- 飘浮粒子 -->
+    <div class="ambient" id="ambient"></div>
+    <!-- 互动粒子 -->
+    <div class="fx-layer" id="fx"></div>
+
+    <!-- HUD -->
+    <div class="title">EduStation · <b>宠物乐园</b> Demo</div>
+
+    <div class="hud">
+      <div class="name-row">
+        <div class="name" id="petName">麻薯 Mochi</div>
+        <div class="lvl-badge" id="lvlBadge">Lv.1</div>
+      </div>
+
+      <div class="state-badge state-happy" id="stateBadge">😊 心情大好</div>
+
+      <div class="stat-row">
+        <div class="stat-head">
+          <span class="label">🍖 饱腹</span>
+          <span class="value" id="hungerVal">80</span>
+        </div>
+        <div class="stat-bar-bg"><div class="stat-bar bar-hunger" id="hungerBar" style="width: 80%"></div></div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-head">
+          <span class="label">💕 心情</span>
+          <span class="value" id="happyVal">80</span>
+        </div>
+        <div class="stat-bar-bg"><div class="stat-bar bar-happy" id="happyBar" style="width: 80%"></div></div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-head">
+          <span class="label">⚡ 精力</span>
+          <span class="value" id="energyVal">80</span>
+        </div>
+        <div class="stat-bar-bg"><div class="stat-bar bar-energy" id="energyBar" style="width: 80%"></div></div>
+      </div>
+
+      <div class="xp-row">
+        <div class="xp-text">
+          <span>经验值</span>
+          <span id="xpText">0 / 100</span>
+        </div>
+        <div class="stat-bar-bg"><div class="stat-bar bar-xp" id="xpBar" style="width: 0%"></div></div>
+      </div>
+    </div>
+
+    <!-- 操作 -->
+    <div class="actions">
+      <button class="btn feed"    data-tip="喂食"      data-act="feed">🍎</button>
+      <button class="btn pet"     data-tip="抚摸"      data-act="pet">💕</button>
+      <button class="btn play"    data-tip="玩耍"      data-act="play">⚽</button>
+      <button class="btn sleep"   data-tip="睡觉"      data-act="sleep">💤</button>
+      <button class="btn levelup" data-tip="升级演示"  data-act="levelup">⭐</button>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">提示</div>
+  </div>
+
+  <script>
+    // ========== 状态 ==========
+    const state = {
+      hunger: 80,    // 饱腹 0-100 (高=饱)
+      happy:  80,    // 心情 0-100
+      energy: 80,    // 精力 0-100
+      xp:     0,     // 经验
+      level:  1,     // 等级
+      mode:   'idle', // idle / eating / sleeping / playing
+      mood:   'happy', // happy / hungry / sleepy / playful / eat / sleeping / energetic
+    };
+
+    // ========== 元素 ==========
+    const $ = id => document.getElementById(id);
+    const stage  = $('stage');
+    const pet    = $('pet');
+    const fx     = $('fx');
+    const amb    = $('ambient');
+    const stars  = $('stars');
+    const toast  = $('toast');
+    const stateBadge = $('stateBadge');
+
+    // ========== Toast ==========
+    let toastTimer = null;
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    // ========== 更新 HUD ==========
+    function updateHUD() {
+      $('hungerVal').textContent = Math.round(state.hunger);
+      $('happyVal').textContent  = Math.round(state.happy);
+      $('energyVal').textContent = Math.round(state.energy);
+      $('hungerBar').style.width = state.hunger + '%';
+      $('happyBar').style.width  = state.happy  + '%';
+      $('energyBar').style.width = state.energy + '%';
+
+      const need = xpForLevel(state.level);
+      $('xpText').textContent = `${state.xp} / ${need}`;
+      $('xpBar').style.width = (state.xp / need * 100) + '%';
+      $('lvlBadge').textContent = `Lv.${state.level}`;
+
+      // 状态标签
+      let label = '😊 心情大好', cls = 'state-happy';
+      if (state.mode === 'sleeping')  { label = '😴 呼呼大睡'; cls = 'state-sleeping'; }
+      else if (state.mode === 'eating')   { label = '🍽️ 干饭中';   cls = 'state-eat'; }
+      else if (state.mode === 'playing')  { label = '🎉 玩耍中';   cls = 'state-playful'; }
+      else if (state.hunger < 30)         { label = '🍖 我饿了…';   cls = 'state-hungry'; }
+      else if (state.energy < 25)         { label = '😪 困了…';     cls = 'state-sleepy'; }
+      else if (state.happy > 85)          { label = '🥰 超级开心';  cls = 'state-energetic'; }
+      else if (state.happy > 60)          { label = '😊 心情不错';  cls = 'state-happy'; }
+      else                                { label = '😢 有点低落';  cls = 'state-sleepy'; }
+      stateBadge.className = 'state-badge ' + cls;
+      stateBadge.textContent = label;
+
+      pet.setAttribute('data-state', state.mode === 'sleeping' ? 'sleeping' : (state.mode === 'eating' ? 'eating' : 'happy'));
+    }
+
+    function xpForLevel(lv) { return 80 + lv * 40; }
+
+    function gainXP(n) {
+      state.xp += n;
+      let need = xpForLevel(state.level);
+      while (state.xp >= need) {
+        state.xp -= need;
+        state.level += 1;
+        showToast(`✨ 升级啦！Lv.${state.level}`);
+        levelUpFX();
+        need = xpForLevel(state.level);
+      }
+      updateHUD();
+    }
+
+    // ========== 升级特效 ==========
+    function levelUpFX() {
+      const ring = document.createElement('div');
+      ring.className = 'levelup-ring';
+      document.querySelector('.pet-stage').appendChild(ring);
+      setTimeout(() => ring.remove(), 1300);
+
+      const text = document.createElement('div');
+      text.className = 'levelup-text';
+      text.textContent = `LEVEL ${state.level} !`;
+      stage.appendChild(text);
+      setTimeout(() => text.remove(), 1900);
+
+      // 撒花
+      const colors = ['#f43f5e', '#fb923c', '#fbbf24', '#84cc16', '#06b6d4', '#6366f1', '#d946ef'];
+      for (let i = 0; i < 30; i++) {
+        const c = document.createElement('div');
+        c.className = 'confetti';
+        c.style.left = '50%';
+        c.style.top = '50%';
+        c.style.background = colors[i % colors.length];
+        c.style.setProperty('--cx', (Math.random() * 800 - 400) + 'px');
+        c.style.animationDelay = (Math.random() * 0.4) + 's';
+        fx.appendChild(c);
+        setTimeout(() => c.remove(), 2800);
+      }
+    }
+
+    // ========== 粒子工具 ==========
+    function spawnAt(x, y, emoji, cls, count = 1) {
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.className = cls;
+        el.textContent = emoji;
+        el.style.left = x + 'px';
+        el.style.top  = y + 'px';
+        el.style.setProperty('--dx', (Math.random() * 100 - 50) + 'px');
+        el.style.setProperty('--rot', (Math.random() * 60 - 30) + 'deg');
+        fx.appendChild(el);
+        setTimeout(() => el.remove(), 2000);
+      }
+    }
+    function spawnStarBurst(x, y, count = 8) {
+      const colors = ['⭐', '🌟', '✨'];
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.className = 'star-fx';
+        el.textContent = colors[i % colors.length];
+        el.style.left = x + 'px';
+        el.style.top  = y + 'px';
+        const a = (i / count) * Math.PI * 2;
+        el.style.setProperty('--bx', Math.cos(a) * 120 + 'px');
+        el.style.setProperty('--by', Math.sin(a) * 120 + 'px');
+        fx.appendChild(el);
+        setTimeout(() => el.remove(), 1500);
+      }
+    }
+    function spawnFood(x, y, emoji) {
+      const el = document.createElement('div');
+      el.className = 'food';
+      el.textContent = emoji;
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+      fx.appendChild(el);
+      setTimeout(() => el.remove(), 1500);
+    }
+
+    // ========== 互动动作 ==========
+    const petRect = () => pet.getBoundingClientRect();
+
+    function actFeed() {
+      if (state.mode === 'sleeping') { showToast('它在睡觉呢…'); return; }
+      const r = petRect();
+      spawnFood(r.left + r.width/2 - 15, r.top - 50, '🍎');
+      setTimeout(() => {
+        pet.classList.add('eating');
+        state.mode = 'eating';
+        state.hunger = Math.min(100, state.hunger + 25);
+        gainXP(5);
+        showToast('+25 饱腹 · +5 经验');
+        updateHUD();
+        setTimeout(() => { pet.classList.remove('eating'); state.mode = 'idle'; updateHUD(); }, 1600);
+      }, 1100);
+    }
+
+    function actPet() {
+      const r = petRect();
+      const cx = r.left + r.width/2, cy = r.top + r.height/3;
+      spawnAt(cx + (Math.random()*40-20), cy, '💕', 'heart', 6);
+      pet.classList.add('jumping');
+      state.happy = Math.min(100, state.happy + 8);
+      gainXP(2);
+      showToast('+8 心情 · +2 经验');
+      setTimeout(() => pet.classList.remove('jumping'), 600);
+      updateHUD();
+    }
+
+    function actPlay() {
+      if (state.energy < 10) { showToast('它没力气玩了…'); return; }
+      if (state.mode === 'sleeping') { showToast('它在睡觉呢…'); return; }
+      const r = petRect();
+      // 球
+      const ball = document.createElement('div');
+      ball.className = 'food';
+      ball.textContent = '⚽';
+      ball.style.left = (r.left + r.width/2) + 'px';
+      ball.style.top  = (r.top - 80) + 'px';
+      fx.appendChild(ball);
+      setTimeout(() => ball.remove(), 1500);
+
+      pet.classList.add('jumping');
+      state.happy  = Math.min(100, state.happy  + 15);
+      state.energy = Math.max(0,   state.energy - 15);
+      state.hunger = Math.max(0,   state.hunger - 5);
+      gainXP(8);
+      showToast('+15 心情 · -15 精力 · +8 经验');
+      setTimeout(() => pet.classList.remove('jumping'), 600);
+      updateHUD();
+    }
+
+    function actSleep() {
+      if (state.mode === 'sleeping') {
+        // 唤醒
+        pet.classList.remove('sleeping');
+        state.mode = 'idle';
+        stage.classList.remove('night');
+        showToast('醒啦~');
+        updateHUD();
+        return;
+      }
+      pet.classList.add('sleeping');
+      state.mode = 'sleeping';
+      stage.classList.add('night');
+      // 关掉部分动画省心：暂停飘浮云
+      showToast('嘘…它睡着了');
+      updateHUD();
+    }
+
+    function actLevelUp() {
+      gainXP(200); // 直接涨经验直到升级
+    }
+
+    // 点击宠物
+    pet.addEventListener('click', actPet);
+
+    // 按钮
+    document.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const a = btn.dataset.act;
+        if (a === 'feed')    actFeed();
+        if (a === 'pet')     actPet();
+        if (a === 'play')    actPlay();
+        if (a === 'sleep')   actSleep();
+        if (a === 'levelup') actLevelUp();
+      });
+    });
+
+    // ========== 鼠标/触摸：眼睛跟随 ==========
+    const pupilL = $('pupilL');
+    const pupilR = $('pupilR');
+    let lastMoveTime = 0;
+    document.addEventListener('mousemove', e => {
+      if (state.mode === 'sleeping') return;
+      const r = petRect();
+      const cx = r.left + r.width * 0.4;  // 左眼中心
+      const cy = r.top  + r.height * 0.38;
+      const dx = (e.clientX - cx) / 60;
+      const dy = (e.clientY - cy) / 60;
+      const dist = Math.min(3, Math.hypot(dx, dy));
+      const a = Math.atan2(dy, dx);
+      pupilL.style.transform = `translate(${Math.cos(a)*dist}px, ${Math.sin(a)*dist}px)`;
+      pupilR.style.transform = `translate(${Math.cos(a)*dist}px, ${Math.sin(a)*dist}px)`;
+      lastMoveTime = Date.now();
+    });
+
+    // ========== 自动降低 ==========
+    setInterval(() => {
+      if (state.mode === 'sleeping') {
+        state.energy = Math.min(100, state.energy + 1.5);
+        state.hunger = Math.max(0,   state.hunger - 0.2);
+        state.happy  = Math.max(0,   state.happy  - 0.1);
+      } else {
+        state.hunger = Math.max(0, state.hunger - 0.4);
+        state.energy = Math.max(0, state.energy - 0.2);
+        // 心情受饱腹/精力影响
+        if (state.hunger < 40) state.happy = Math.max(0, state.happy - 0.5);
+        if (state.energy < 30) state.happy = Math.max(0, state.happy - 0.3);
+      }
+      updateHUD();
+    }, 2000);
+
+    // ========== 飘浮粒子（环境） ==========
+    function spawnSparkle() {
+      const s = document.createElement('div');
+      s.className = 'sparkle';
+      s.style.left = Math.random() * 100 + 'vw';
+      s.style.top  = '100vh';
+      s.style.animationDuration = (6 + Math.random() * 6) + 's';
+      amb.appendChild(s);
+      setTimeout(() => s.remove(), 12000);
+    }
+    setInterval(spawnSparkle, 600);
+
+    // ========== 星空 ==========
+    (function makeStars() {
+      for (let i = 0; i < 60; i++) {
+        const s = document.createElement('div');
+        s.className = 'star';
+        s.style.left = Math.random() * 100 + 'vw';
+        s.style.top  = Math.random() * 60 + 'vh';
+        s.style.animationDelay = (Math.random() * 3) + 's';
+        s.style.transform = `scale(${0.5 + Math.random() * 1.2})`;
+        stars.appendChild(s);
+      }
+    })();
+
+    // ========== 启动 ==========
+    updateHUD();
+    showToast('👋 戳一戳宠物试试看');
+  </script>
+</body>
+</html>
