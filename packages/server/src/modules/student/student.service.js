@@ -70,7 +70,7 @@ async function create({ orgId, name, gender, birthday, guardianMobile, guardians
             'student.read',
             'lessonSchedule.read',
             'lessonAttendance.read',
-            'lessonWork.read', 'lessonWork.write',
+            'studentWork.read', 'studentWork.write',
             'points.read', 'pet.read'
           ]
         })

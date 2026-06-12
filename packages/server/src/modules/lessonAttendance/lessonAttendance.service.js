@@ -5,7 +5,7 @@ const LessonSchedule = require('@models/LessonSchedule.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const CourseInstance = require('@models/CourseInstance.model')
 const CourseEnrollment = require('@models/CourseEnrollment.model')
-const LessonWork = require('@models/LessonWork.model')
+const StudentWork = require('@models/StudentWork.model')
 const ApiError = require('@utils/ApiError')
 const { AttendanceStatus, LessonScheduleStatus, CourseEnrollmentStatus } = require('@shared/enums')
 const { pickStudentProductFIFO, deductOneLesson } = require('./studentProductHelper')
@@ -52,9 +52,19 @@ const READONLY_SCHEDULE_STATUSES = [
   LessonScheduleStatus.CANCELLED
 ]
 
-async function list({ orgId, lessonSchedule, student, status }) {
+async function list({ orgId, lessonSchedule, courseInstance, student, status }) {
   const filter = { org: orgId }
-  if (lessonSchedule) filter.lessonSchedule = lessonSchedule
+  // courseInstance: 走 lessonSchedule.courseInstance 二级关联过滤（前端选课程→学生→考勤时使用）
+  if (courseInstance) {
+    const scheduleIds = await LessonSchedule.find({ org: orgId, courseInstance }).select('_id').lean()
+    const ids = scheduleIds.map((s) => s._id)
+    if (ids.length === 0) {
+      return [] // 该课程下还没有排课，直接返回空
+    }
+    filter.lessonSchedule = { $in: ids }
+  } else if (lessonSchedule) {
+    filter.lessonSchedule = lessonSchedule
+  }
   if (student) filter.student = student
   if (status) filter.status = status
   return LessonAttendance.find(filter)
@@ -222,7 +232,9 @@ async function bulkMarkForLesson({ orgId, lessonSchedule, items }) {
 async function works({ id, orgId }) {
   const att = await LessonAttendance.findOne({ _id: id, org: orgId }).lean()
   if (!att) throw ApiError.notFound('考勤记录不存在')
-  return LessonWork.find({ org: orgId, lessonSchedule: att.lessonSchedule, student: att.student })
+  return StudentWork.find({ org: orgId, lessonAttendance: att._id })
+    .populate('student', 'name')
+    .populate('uploadedBy', 'realName mobile')
     .sort({ createdAt: -1 })
     .lean()
 }

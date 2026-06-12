@@ -30,7 +30,7 @@ packages/client/
     │   ├── auth.js
     │   ├── student.js
     │   ├── lessonSchedule.js
-    │   ├── lessonWork.js
+    │   ├── studentWork.js
     │   ├── order.js
     │   ├── studentProduct.js
     │   ├── courseProduct.js
@@ -62,7 +62,7 @@ packages/client/
         ├── auth/login.vue
         ├── student/switch.vue
         ├── lessonSchedule/detail.vue
-        ├── lessonWork/{list,detail}.vue
+        ├── studentWork/{list,detail}.vue
         ├── order/{list,detail}.vue
         ├── studentProduct/list.vue
         ├── courseProduct/{list,detail}.vue

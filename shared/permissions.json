@@ -196,16 +196,16 @@
       }
     },
     {
-      "key": "lessonWork",
+      "key": "studentWork",
       "label": "作品",
-      "description": "维护学员在课上的作品（图片 / 视频 / 描述），可在 C 端家长端查看与分享。",
+      "description": "维护学员在课上的作品（图片 / 视频 / 描述），可在 C 端家长端查看与分享。2026-06：与考勤 lessonAttendance 直接锚定，并按学科 / 开班维度冗余快照。",
       "permissions": [
-        "lessonWork.read",
-        "lessonWork.write"
+        "studentWork.read",
+        "studentWork.write"
       ],
       "permissionLabels": {
-        "lessonWork.read": { "label": "查看作品", "description": "查看学员上传的作品及描述" },
-        "lessonWork.write": { "label": "编辑作品", "description": "上传 / 编辑 / 删除作品" }
+        "studentWork.read": { "label": "查看作品", "description": "查看学员上传的作品及描述" },
+        "studentWork.write": { "label": "编辑作品", "description": "上传 / 删除作品（创建后不可改，需改则删除重建）" }
       }
     },
     {

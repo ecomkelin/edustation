@@ -279,7 +279,7 @@ const POSITION_DEFINITIONS = [
       'order.read', 'order.write', 'order.pay',
       'studentProduct.read', 'studentProduct.gift',
       'lessonAttendance.read', 'lessonAttendance.write',
-      'lessonWork.read', 'lessonWork.write',
+      'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read'
     ]
   },
@@ -297,7 +297,7 @@ const POSITION_DEFINITIONS = [
       'order.read', 'order.write', 'order.pay',
       'studentProduct.read',
       'lessonAttendance.read',
-      'lessonWork.read',
+      'studentWork.read',
       'points.read', 'pet.read'
     ]
   },
@@ -310,7 +310,7 @@ const POSITION_DEFINITIONS = [
       'room.read',
       'lessonSchedule.read',
       'lessonAttendance.read', 'lessonAttendance.write',
-      'lessonWork.read', 'lessonWork.write',
+      'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read'
     ]
   },
@@ -321,7 +321,7 @@ const POSITION_DEFINITIONS = [
       'student.read',
       'lessonSchedule.read',
       'lessonAttendance.read',
-      'lessonWork.read', 'lessonWork.write',
+      'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read'
     ]
   },

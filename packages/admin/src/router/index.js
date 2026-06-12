@@ -28,6 +28,7 @@ const routes = [
       { path: 'schedule/makeup', component: () => import('@/views/lessonSchedule/MakeupPage.vue') },
       { path: 'orders', component: () => import('@/views/orders/Orders.vue') },
       { path: 'student-products', component: () => import('@/views/studentProducts/StudentProducts.vue') },
+      { path: 'student-works', component: () => import('@/views/studentWorks/StudentWorks.vue') },
       { path: 'platform/info', component: () => import('@/views/platformInfo/PlatformInfo.vue') },
       { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') }
     ]

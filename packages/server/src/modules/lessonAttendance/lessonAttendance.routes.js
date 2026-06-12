@@ -17,7 +17,7 @@ router.post('/bulk-mark', mws.requirePermission('lessonAttendance.write'), v.bul
 router.put('/:id/complete', mws.requirePermission('lessonAttendance.write'), v.complete, mws.validateRequest, asyncHandler(c.complete))
 router.put('/:id/no-show', mws.requirePermission('lessonAttendance.write'), v.noShow, mws.validateRequest, asyncHandler(c.noShow))
 router.put('/:id/evaluation', mws.requirePermission('lessonAttendance.write'), v.updateEvaluation, mws.validateRequest, asyncHandler(c.updateEvaluation))
-router.get('/:id/works', mws.requirePermission('lessonWork.read'), asyncHandler(c.works))
+router.get('/:id/works', mws.requirePermission('studentWork.read'), asyncHandler(c.works))
 // 「补课」：为已结束/已归档排课的某条未消课考勤补建一条 completed记录
 router.post('/:id/makeup', mws.requirePermission('lessonAttendance.write'), v.makeup, mws.validateRequest, asyncHandler(c.makeup))
 

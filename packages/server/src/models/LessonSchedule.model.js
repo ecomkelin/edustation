@@ -6,7 +6,7 @@ const { LESSON_SCHEDULE_STATUSES } = require('@shared/enums')
 /**
  * 排课（LessonSchedule）
  *
- * "一个开班在某个时间点的一节课" 的实体。是考勤（LessonAttendance）和作品（LessonWork）
+ * "一个开班在某个时间点的一节课" 的实体。是考勤（LessonAttendance）和作品（StudentWork）
  * 的直接父对象。
  *
  * 关键业务逻辑：

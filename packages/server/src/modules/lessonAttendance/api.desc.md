@@ -132,9 +132,9 @@
 ## 5. 关联作品列表
 
 - **Method / Path**：`GET /api/v1/lesson-attendances/:id/works`
-- **权限**：`lessonWork.read`
-- **说明**：列出该考勤学生在本节课关联的 `LessonWork` 作品。
-- **成功响应** (`200 OK`)：`{ data: LessonWork[] }`。
+- **权限**：`studentWork.read`
+- **说明**：列出该考勤学生在本节课关联的 `StudentWork` 作品。
+- **成功响应** (`200 OK`)：`{ data: StudentWork[] }`。
 
 ---
 

@@ -59,7 +59,7 @@
       <view class="card">
         <view class="flex-row" style="justify-content: space-between;">
           <text class="text-16 text-strong">课堂作品</text>
-          <text class="text-12 text-muted" @tap="go(`/pages/lessonWork/list?lessonSchedule=${data.id}`)">
+          <text class="text-12 text-muted" @tap="go(`/pages/studentWork/list?lessonSchedule=${data.id}`)">
             查看全部 ›
           </text>
         </view>
@@ -69,7 +69,7 @@
             v-for="w in works.slice(0, 3)"
             :key="w.id"
             class="work-card"
-            @tap="go(`/pages/lessonWork/detail?id=${w.id}`)"
+            @tap="go(`/pages/studentWork/detail?id=${w.id}`)"
           >
             <image v-if="w.fileUrls && w.fileUrls[0]" :src="w.fileUrls[0]" mode="aspectFill" class="cover" />
             <view v-else class="cover cover-empty">📷</view>
@@ -85,7 +85,7 @@
 <script>
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { lessonAttendanceApi } from '@/api/lessonAttendance'
-import { lessonWorkApi } from '@/api/lessonWork'
+import { studentWorkApi } from '@/api/studentWork'
 import { useStudentStore } from '@/stores/student'
 import { mapState } from 'pinia'
 import { formatDateTime, formatTime } from '@/utils/format'
@@ -166,7 +166,7 @@ export default {
     },
     async loadWorks() {
       try {
-        const res = await lessonWorkApi.list({
+        const res = await studentWorkApi.list({
           lessonSchedule: this.id,
           student: this.activeStudentId,
           pageSize: 30

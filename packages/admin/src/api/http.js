@@ -48,11 +48,14 @@ function shouldSkipRefresh(url = '') {
 }
 
 // 响应拦截：401 自动 refresh；业务失败弹 ElMessage
+// config.silent = true 时不弹错误 toast（用于"非关键路径"的下拉/预加载；调用方自己处理）
 apiClient.interceptors.response.use(
   (response) => {
     const body = response.data
     if (body && body.success === false) {
-      ElMessage.error(body.message || '请求失败')
+      if (!response.config || !response.config.silent) {
+        ElMessage.error(body.message || '请求失败')
+      }
       return Promise.reject(body)
     }
     return body
@@ -92,7 +95,7 @@ apiClient.interceptors.response.use(
     }
 
     const message = response.data && response.data.message ? response.data.message : `请求失败 ${response.status}`
-    if (response.status !== 401) ElMessage.error(message)
+    if (response.status !== 401 && !(config && config.silent)) ElMessage.error(message)
     return Promise.reject(error)
   }
 )

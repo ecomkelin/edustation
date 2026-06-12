@@ -298,7 +298,7 @@ const defaultPositions = [
       'lessonSchedule.read', 'lessonSchedule.write',
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read', 'lessonAttendance.write',
-      'lessonWork.read', 'lessonWork.write',
+      'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read'
     ]
   },
@@ -317,7 +317,7 @@ const defaultPositions = [
       'lessonSchedule.read', 'lessonSchedule.write',
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read',
-      'lessonWork.read',
+      'studentWork.read',
       'points.read', 'pet.read'
     ]
   },
@@ -332,7 +332,7 @@ const defaultPositions = [
       'room.read',
       'lessonSchedule.read',
       'lessonAttendance.read', 'lessonAttendance.write',
-      'lessonWork.read', 'lessonWork.write'
+      'studentWork.read', 'studentWork.write'
     ]
   },
   {
@@ -344,7 +344,7 @@ const defaultPositions = [
       'student.read',
       'lessonSchedule.read',
       'lessonAttendance.read',
-      'lessonWork.read', 'lessonWork.write',
+      'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read'
     ]
   },

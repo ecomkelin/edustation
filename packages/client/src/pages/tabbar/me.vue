@@ -24,7 +24,7 @@
         <text class="icon">📚</text>
         <text class="name">我的报名</text>
       </view>
-      <view class="cell" @tap="go('/pages/lessonWork/list')">
+      <view class="cell" @tap="go('/pages/studentWork/list')">
         <text class="icon">🖼️</text>
         <text class="name">作品墙</text>
       </view>

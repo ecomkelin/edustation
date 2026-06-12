@@ -815,7 +815,7 @@ async function archive({ id, orgId }) {
  * 入口:超管+密码(routing);业务上:
  *  - 若本排课下有任何「已消课」考勤(completed),禁止删除 —— 课时已扣,
  *    删除会破坏账目,需要走"作废"流程(status -> cancelled)
- *  - 若有作品(LessonWork)挂在本排课下,禁止删除 —— 作品是家长/老师的可
+ *  - 若有作品(StudentWork)挂在本排课下,禁止删除 —— 作品是家长/老师的可
  *    见产物,删除会丢历史
  *  - 同步清掉本排课的「未开始」考勤(scheduled),避免悬挂引用
  */
@@ -823,14 +823,14 @@ async function remove({ id, orgId }) {
   const doc = await LessonSchedule.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('排课不存在')
 
-  const LessonWork = require('@models/LessonWork.model')
+  const StudentWork = require('@models/StudentWork.model')
   const [consumedCount, workCount] = await Promise.all([
     // 已消课 + 已补 都算"已扣课时"，删除会破坏账目
     LessonAttendance.countDocuments({
       lessonSchedule: id,
       status: { $in: [AttendanceStatus.COMPLETED, AttendanceStatus.MADEUP] }
     }),
-    LessonWork.countDocuments({ lessonSchedule: id, org: orgId })
+    StudentWork.countDocuments({ lessonSchedule: id, org: orgId })
   ])
   if (consumedCount > 0) {
     throw ApiError.unprocessable(

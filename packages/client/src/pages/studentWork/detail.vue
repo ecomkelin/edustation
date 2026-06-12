@@ -33,16 +33,19 @@
       <view class="card">
         <text class="text-16 text-strong">关联课程</text>
         <view class="divider" />
-        <text class="text-12 text-muted" @tap="go(`/pages/lessonSchedule/detail?id=${data.lessonSchedule?.id}`)">
-          {{ productName }} · {{ formatDateTime(data.lessonSchedule?.plannedStartTime) }} ›
-        </text>
+        <view v-if="data.lessonSchedule" class="lesson-line" @tap="goSchedule">
+          <text class="text-14">{{ productName }}</text>
+          <text v-if="subjectName" class="text-12 text-muted">· {{ subjectName }}</text>
+          <text class="text-12 text-muted">· {{ formatDateTime(data.lessonSchedule.plannedStartTime) }} ›</text>
+        </view>
+        <view v-else class="text-12 text-muted">无关联排课</view>
       </view>
     </view>
   </view>
 </template>
 
 <script>
-import { lessonWorkApi } from '@/api/lessonWork'
+import { studentWorkApi } from '@/api/studentWork'
 import { formatDateTime } from '@/utils/format'
 
 export default {
@@ -50,23 +53,28 @@ export default {
   computed: {
     productName() {
       const ci = this.data?.lessonSchedule?.courseInstance
-      return ci?.courseProduct?.name || '课程'
+      return ci?.courseProduct?.name || ci?.name || '课程'
+    },
+    subjectName() {
+      return this.data?.subject?.name || ''
     }
   },
   onLoad(query) {
     this.id = query.id
-    // 后端没有单作品 GET /lesson-works/:id（仅 list）；从 list 过滤
-    this.loadFromList()
+    this.load()
   },
   methods: {
     formatDateTime,
     go(url) { uni.navigateTo({ url }) },
-    async loadFromList() {
+    goSchedule() {
+      const sid = this.data?.lessonSchedule?._id || this.data?.lessonSchedule?.id
+      if (sid) this.go(`/pages/lessonSchedule/detail?id=${sid}`)
+    },
+    async load() {
       this.loading = true
       try {
-        const res = await lessonWorkApi.list({ pageSize: 200 })
-        const items = res.data?.items || []
-        this.data = items.find((x) => String(x.id) === String(this.id)) || null
+        const res = await studentWorkApi.detail(this.id)
+        this.data = res.data || null
       } catch (_) {
         this.data = null
       } finally {
@@ -90,5 +98,11 @@ export default {
   flex-direction: column;
   gap: 16rpx;
   .file { width: 100%; border-radius: 12rpx; }
+}
+.lesson-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  align-items: baseline;
 }
 </style>
