@@ -59,5 +59,26 @@ module.exports = {
 
   seed: {
     defaultPassword: process.env.SEED_DEFAULT_PASSWORD || 'Admin@123'
+  },
+
+  /**
+   * AI 智能客服（阶段 3）
+   * 当前 provider：MiniMax（OpenAI 兼容 chat completions）。
+   * 留空 API_KEY / AI_ENABLED=false 时，agent/ping 会以 ok=false 返回，前端可正常展示。
+   */
+  ai: {
+    enabled: process.env.AI_ENABLED === 'true',
+    provider: process.env.AI_PROVIDER || 'MiniMax',
+    apiKey: process.env.MINIMAX_API_KEY || '',
+    baseUrl: process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1',
+    model: process.env.MINIMAX_MODEL || 'MiniMax-M3',
+    temperature: process.env.AI_TEMPERATURE ? Number(process.env.AI_TEMPERATURE) : 0.7,
+    maxTokens: process.env.AI_MAX_TOKENS ? Number(process.env.AI_MAX_TOKENS) : 1024,
+    timeoutMs: process.env.AI_TIMEOUT_MS ? Number(process.env.AI_TIMEOUT_MS) : 60_000,
+    // 默认 system prompt：让模型知道"自己"是机构客服，约束胡编课程包/价格
+    systemPrompt:
+      process.env.AI_SYSTEM_PROMPT ||
+      '你是 EduStation 校外培训机构管理系统的 AI 客服助手。回答要简洁、专业、礼貌。' +
+        '若用户问到具体课程包价格/课次/教师姓名等可能随时变化的业务信息，请提示用户"以系统内最新数据为准"，不要凭空编造。'
   }
 }

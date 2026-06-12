@@ -153,7 +153,7 @@ server/src/
 │             ├── ***
 │     └── ***
 └── utils/
-```
+
 
 ### 8.1 破坏性操作门控（删除保护）
 
@@ -270,6 +270,16 @@ server/src/
   - `STORAGE_DRIVER=minio`  (可选 minio, s3, oss)
   - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET=edustation`
 - **安全**：预签名 URL 有效期限制（如 10 分钟），上传后文件公开读或通过签名 URL 访问（可配置）。
+
+## 15. AI 智能客服
+- **目标**：基于机构私有知识（科目、老师、学校）的智能问答。
+- **技术**：RAG 模式，使用向量数据库（Chroma）+ 大模型 API（OpenAI/通义千问）。
+- **集成位置**：`server/src/modules/agent/`
+- **核心接口**：`POST /api/v1/agent/chat` (初期非流式，后续升级为 SSE 流式)
+- **数据同步**：业务数据（Subject, User, Org）变更时自动更新向量库。
+- **前端展示**：客户小程序内嵌聊天界面；管理后台可维护知识库并查看统计。
+- **成本控制**：缓存高频问题，限流，远期可迁移至本地大模型（Ollama）。
+- **实施阶段**：阶段 3 后期搭建基础，阶段 4 完成流式交互与用户体验优化。
 
 ---
 **维护规则**：每次重大架构变更或决策后，更新此文件并通知协作者。

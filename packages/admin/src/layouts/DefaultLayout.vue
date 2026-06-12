@@ -67,7 +67,8 @@ import {
   Platform,
   Key,
   Connection,
-  Warning
+  Warning,
+  ChatLineRound
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -118,7 +119,8 @@ const menuGroups = [
       { path: '/students', label: '学生管理', icon: Reading, perm: 'student.read' },
       { path: '/student-products', label: '学生课包', icon: Present, perm: 'studentProduct.read' },
       { path: '/student-works', label: '学生作品', icon: Goods, perm: 'studentWork.read' },
-      { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' }
+      { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
+      { path: '/ai-chat', label: 'AI 客服测试', icon: ChatLineRound, perm: 'order.read' }
     ]
   },
   {

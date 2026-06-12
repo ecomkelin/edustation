@@ -25,6 +25,7 @@ const healthRoutes = require('@modules/health/health.routes')
 const categoryRoutes = require('@modules/category/category.routes')
 const regionRoutes = require('@modules/region/region.routes')
 const schoolRoutes = require('@modules/school/school.routes')
+const agentRoutes = require('@modules/agent/agent.routes')
 
 router.use('/auth', authRoutes)
 router.use('/orgs', orgRoutes)
@@ -47,5 +48,6 @@ router.use('/health', healthRoutes)
 router.use('/categories', categoryRoutes)
 router.use('/regions', regionRoutes)
 router.use('/schools', schoolRoutes)
+router.use('/agent', agentRoutes)
 
 module.exports = router
