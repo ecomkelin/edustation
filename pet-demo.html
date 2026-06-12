@@ -136,6 +136,65 @@
       cursor: pointer;
       transform-origin: 50% 100%;
       animation: idle 4s ease-in-out infinite;
+      /* 皮肤默认色变量 (白猫) */
+      --body-light: #ffffff;
+      --body-mid:   #fafafa;
+      --body-dark:  #e5e7eb;
+      --belly-light:#fdf2f8;
+      --belly-dark: #fbcfe8;
+      --ear:        #fda4af;
+    }
+    /* 皮肤 1: 经典白猫 (默认) */
+    .pet-wrap[data-skin="white"] { /* 使用默认值 */ }
+    /* 皮肤 2: 橘猫 */
+    .pet-wrap[data-skin="orange"] {
+      --body-light: #fff7ed;
+      --body-mid:   #fed7aa;
+      --body-dark:  #fb923c;
+      --belly-light:#fffbeb;
+      --belly-dark: #fde68a;
+      --ear:        #ea580c;
+    }
+    /* 皮肤 3: 熊猫 */
+    .pet-wrap[data-skin="panda"] {
+      --body-light: #ffffff;
+      --body-mid:   #f3f4f6;
+      --body-dark:  #d1d5db;
+      --belly-light:#ffffff;
+      --belly-dark: #e5e7eb;
+      --ear:        #1f2937;
+    }
+    .pet-wrap[data-skin="panda"] .ear-l ellipse:nth-child(1),
+    .pet-wrap[data-skin="panda"] .ear-r ellipse:nth-child(1) {
+      fill: #1f2937;
+    }
+    /* 皮肤 4: 黄金圣猫 */
+    .pet-wrap[data-skin="gold"] {
+      --body-light: #fef9c3;
+      --body-mid:   #fde047;
+      --body-dark:  #ca8a04;
+      --belly-light:#fef3c7;
+      --belly-dark: #fbbf24;
+      --ear:        #b45309;
+    }
+    .pet-wrap[data-skin="gold"] .pet-svg {
+      filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.6));
+      animation: goldPulse 2.5s ease-in-out infinite;
+    }
+    @keyframes goldPulse {
+      50% { filter: drop-shadow(0 0 20px rgba(251, 191, 36, 0.9)); }
+    }
+    /* 皮肤 5: 紫水晶 */
+    .pet-wrap[data-skin="amethyst"] {
+      --body-light: #faf5ff;
+      --body-mid:   #e9d5ff;
+      --body-dark:  #a855f7;
+      --belly-light:#f3e8ff;
+      --belly-dark: #d8b4fe;
+      --ear:        #7e22ce;
+    }
+    .pet-wrap[data-skin="amethyst"] .pet-svg {
+      filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.5));
     }
     .pet-wrap.sleeping { animation: none; }
     .pet-wrap.jumping  { animation: jump 0.6s ease-out; }
@@ -199,6 +258,86 @@
     .pet-wrap[data-state="sleeping"] .mouth-sleep { opacity: 1; }
     .pet-wrap[data-state="sleeping"] .mouth-idle  { opacity: 0; }
     .pet-wrap[data-state="sleeping"] .mouth-happy { opacity: 0; }
+
+    /* ========== 进化配饰（按等级显示） ========== */
+    .acc {
+      opacity: 0;
+      transform: scale(0.4);
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    /* 显示规则：data-evo 标识当前最大解锁阶段 */
+    .pet-wrap[data-evo="2"]  .acc-evo2,
+    .pet-wrap[data-evo="3"]  .acc-evo2,
+    .pet-wrap[data-evo="4"]  .acc-evo2,
+    .pet-wrap[data-evo="4"]  .acc-evo4,
+    .pet-wrap[data-evo="5"]  .acc-evo2,
+    .pet-wrap[data-evo="5"]  .acc-evo4,
+    .pet-wrap[data-evo="6"]  .acc-evo2,
+    .pet-wrap[data-evo="6"]  .acc-evo4,
+    .pet-wrap[data-evo="6"]  .acc-evo6,
+    .pet-wrap[data-evo="7"]  .acc-evo2,
+    .pet-wrap[data-evo="7"]  .acc-evo4,
+    .pet-wrap[data-evo="7"]  .acc-evo6,
+    .pet-wrap[data-evo="8"]  .acc-evo2,
+    .pet-wrap[data-evo="8"]  .acc-evo4,
+    .pet-wrap[data-evo="8"]  .acc-evo6,
+    .pet-wrap[data-evo="8"]  .acc-evo8,
+    .pet-wrap[data-evo="9"]  .acc-evo2,
+    .pet-wrap[data-evo="9"]  .acc-evo4,
+    .pet-wrap[data-evo="9"]  .acc-evo6,
+    .pet-wrap[data-evo="9"]  .acc-evo8,
+    .pet-wrap[data-evo="10"] .acc-evo2,
+    .pet-wrap[data-evo="10"] .acc-evo4,
+    .pet-wrap[data-evo="10"] .acc-evo6,
+    .pet-wrap[data-evo="10"] .acc-evo8,
+    .pet-wrap[data-evo="10"] .acc-evo10 {
+      opacity: 1;
+      transform: scale(1);
+    }
+    /* 解锁瞬间的弹跳 */
+    .acc.unlock { animation: accUnlock 0.9s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    @keyframes accUnlock {
+      0%   { transform: scale(0.4)  rotate(-20deg); opacity: 0; }
+      40%  { transform: scale(1.4)  rotate(8deg);   opacity: 1; }
+      70%  { transform: scale(0.9)  rotate(-3deg);  opacity: 1; }
+      100% { transform: scale(1)    rotate(0);      opacity: 1; }
+    }
+    /* 光环缓慢旋转 */
+    .acc-halo { animation: haloSpin 6s linear infinite; transform-origin: 150px 25px; transform-box: view-box; }
+    @keyframes haloSpin { to { transform: scale(1) rotate(360deg); } }
+    /* 王冠微闪 */
+    .acc-crown { animation: crownShine 2.4s ease-in-out infinite; }
+    @keyframes crownShine { 50% { filter: drop-shadow(0 0 8px #fbbf24); } }
+    /* 翅膀扇动 */
+    .acc-wings { animation: wingFlap 1.6s ease-in-out infinite; transform-origin: 150px 180px; transform-box: view-box; }
+    @keyframes wingFlap {
+      0%, 100% { transform: scale(1, 1)    rotate(0); }
+      50%      { transform: scale(1, 0.85) rotate(2deg); }
+    }
+    /* 蝴蝶结微弹 */
+    .acc-bow { animation: bowWiggle 3s ease-in-out infinite; }
+    @keyframes bowWiggle { 50% { transform: scale(1.05) rotate(2deg); } }
+    /* 围巾飘动 */
+    .acc-scarf-tail { animation: scarfSway 2.5s ease-in-out infinite; transform-origin: 150px 200px; transform-box: view-box; }
+    @keyframes scarfSway { 50% { transform: rotate(3deg); } }
+
+    /* 升级时全屏金光 */
+    .evo-burst {
+      position: absolute; left: 50%; bottom: 18vh;
+      transform: translateX(-50%);
+      width: 400px; height: 400px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(251, 191, 36, 0.7) 0%, rgba(251, 191, 36, 0) 60%);
+      animation: evoBurst 1s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes evoBurst {
+      0%   { transform: translateX(-50%) scale(0);   opacity: 1; }
+      100% { transform: translateX(-50%) scale(2.5); opacity: 0; }
+    }
 
     /* Z 字符 (睡觉) */
     .zzz {
@@ -361,6 +500,20 @@
       padding: 4px 12px; border-radius: 999px;
       box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
     }
+    .coin-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      color: #92400e; font-weight: 800; font-size: 13px;
+      padding: 4px 10px 4px 8px; border-radius: 999px;
+      border: 1.5px solid #fbbf24;
+      cursor: pointer;
+      transition: transform 0.15s;
+      box-shadow: 0 2px 6px rgba(251, 191, 36, 0.3);
+    }
+    .coin-pill:hover  { transform: scale(1.05); }
+    .coin-pill:active { transform: scale(0.95); }
+    .stage.night .coin-pill { background: linear-gradient(135deg, #4a3a1a, #3a2e10); color: #fbbf24; border-color: #b8860b; }
+    .name-row { gap: 8px; }
 
     .state-badge {
       display: inline-flex; align-items: center; gap: 6px;
@@ -472,6 +625,195 @@
       -webkit-background-clip: text; background-clip: text;
       -webkit-text-fill-color: transparent;
     }
+
+    /* ========== 皮肤商店 ========== */
+    .shop-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 200;
+      animation: fadeIn 0.2s ease;
+    }
+    .shop-backdrop.open { display: flex; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .shop {
+      width: min(880px, 92vw);
+      max-height: 86vh;
+      background: linear-gradient(180deg, #fffbeb 0%, #fff7ed 100%);
+      border-radius: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      animation: shopPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes shopPop {
+      from { transform: scale(0.85); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+    .shop-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 24px;
+      background: linear-gradient(90deg, #f472b6, #fb923c);
+      color: white;
+    }
+    .shop-title { font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+    .shop-title .emoji { font-size: 28px; }
+    .shop-close {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.25);
+      color: white; font-size: 20px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .shop-close:hover { background: rgba(255, 255, 255, 0.4); }
+    .shop-body {
+      padding: 24px;
+      overflow-y: auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .skin-card {
+      background: white;
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      border: 2px solid transparent;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+      display: flex; flex-direction: column; align-items: center;
+      cursor: pointer;
+      position: relative;
+    }
+    .skin-card:hover { transform: translateY(-4px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12); }
+    .skin-card.owned  { border-color: #86efac; }
+    .skin-card.equipped { border-color: #fbbf24; box-shadow: 0 4px 20px rgba(251, 191, 36, 0.4); }
+    .skin-card.locked { opacity: 0.85; }
+
+    .skin-preview {
+      width: 140px; height: 140px;
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+    .skin-preview::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.4), transparent 60%);
+    }
+    .skin-preview .mini-pet {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      position: relative;
+    }
+    .skin-preview .mini-pet::before,
+    .skin-preview .mini-pet::after {
+      content: ''; position: absolute; border-radius: 50%;
+    }
+    .skin-preview .mini-pet::before {
+      width: 30px; height: 30px; top: -8px; left: 12px;
+      background: inherit; filter: brightness(0.95);
+    }
+    .skin-preview .mini-pet::after {
+      width: 30px; height: 30px; top: -8px; right: 12px;
+      background: inherit; filter: brightness(0.95);
+    }
+    .skin-preview .mini-face {
+      position: absolute; left: 50%; top: 60%;
+      transform: translate(-50%, -50%);
+      width: 16px; height: 16px;
+      display: flex; gap: 8px;
+    }
+    .skin-preview .mini-face::before,
+    .skin-preview .mini-face::after {
+      content: ''; width: 5px; height: 6px; background: #1f2937; border-radius: 50%;
+    }
+
+    .skin-name { font-size: 16px; font-weight: 800; color: #1f2937; margin-bottom: 4px; text-align: center; }
+    .skin-desc { font-size: 11px; color: #6b7280; margin-bottom: 12px; text-align: center; }
+
+    .skin-cta {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      transition: transform 0.15s, background 0.15s;
+    }
+    .skin-cta.buy {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: white;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+    .skin-cta.buy:hover { transform: translateY(-2px); }
+    .skin-cta.buy:active { transform: scale(0.97); }
+    .skin-cta.buy:disabled { background: #d1d5db; cursor: not-allowed; box-shadow: none; }
+    .skin-cta.equip {
+      background: linear-gradient(135deg, #34d399, #10b981);
+      color: white;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    .skin-cta.equipped {
+      background: linear-gradient(135deg, #c084fc, #a855f7);
+      color: white;
+      cursor: default;
+    }
+
+    .skin-badge {
+      position: absolute; top: 12px; right: 12px;
+      background: linear-gradient(135deg, #f43f5e, #ec4899);
+      color: white; font-size: 10px; font-weight: 800;
+      padding: 3px 8px; border-radius: 999px;
+      letter-spacing: 1px;
+    }
+    .skin-badge.owned  { background: linear-gradient(135deg, #10b981, #059669); }
+    .skin-badge.equipped { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+    .skin-badge.free   { background: linear-gradient(135deg, #6b7280, #4b5563); }
+
+    /* 购买确认弹窗 */
+    .confirm-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 300;
+    }
+    .confirm-backdrop.open { display: flex; }
+    .confirm {
+      background: white;
+      border-radius: 20px;
+      padding: 24px;
+      max-width: 360px; width: 90%;
+      text-align: center;
+      animation: shopPop 0.25s ease;
+    }
+    .confirm-emoji { font-size: 48px; margin-bottom: 12px; }
+    .confirm-title { font-size: 18px; font-weight: 800; color: #1f2937; margin-bottom: 8px; }
+    .confirm-msg { font-size: 14px; color: #6b7280; margin-bottom: 20px; line-height: 1.5; }
+    .confirm-btns { display: flex; gap: 10px; }
+    .confirm-btns button {
+      flex: 1; padding: 12px; border-radius: 12px;
+      font-size: 14px; font-weight: 700;
+      transition: transform 0.15s;
+    }
+    .confirm-btns button:active { transform: scale(0.96); }
+    .confirm-cancel { background: #f3f4f6; color: #4b5563; }
+    .confirm-ok     { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
+
+    /* 金币变化动画 */
+    .coin-bump { animation: coinBump 0.4s ease; }
+    @keyframes coinBump {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.25); color: #f43f5e; }
+      100% { transform: scale(1); }
+    }
+    .coin-deduct { color: #ef4444 !important; }
+    .coin-add    { color: #10b981 !important; }
   </style>
 </head>
 <body>
@@ -508,22 +850,41 @@
         <svg class="pet-svg" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <radialGradient id="bodyGrad" cx="50%" cy="40%" r="60%">
-              <stop offset="0%"  stop-color="#ffffff" />
-              <stop offset="70%" stop-color="#fafafa" />
-              <stop offset="100%" stop-color="#e5e7eb" />
+              <stop offset="0%"  stop-color="var(--body-light)" />
+              <stop offset="70%" stop-color="var(--body-mid)" />
+              <stop offset="100%" stop-color="var(--body-dark)" />
             </radialGradient>
             <radialGradient id="bellyGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stop-color="#fdf2f8" />
-              <stop offset="100%" stop-color="#fbcfe8" />
+              <stop offset="0%"  stop-color="var(--belly-light)" />
+              <stop offset="100%" stop-color="var(--belly-dark)" />
             </radialGradient>
             <radialGradient id="cheekGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stop-color="#fda4af" stop-opacity="0.9" />
-              <stop offset="100%" stop-color="#fda4af" stop-opacity="0" />
+              <stop offset="0%"  stop-color="var(--ear)" stop-opacity="0.9" />
+              <stop offset="100%" stop-color="var(--ear)" stop-opacity="0" />
             </radialGradient>
             <filter id="softShadow">
               <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.15"/>
             </filter>
+            <filter id="goldGlow">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feFlood flood-color="#fbbf24" flood-opacity="0.6"/>
+              <feComposite in2="blur" operator="in"/>
+              <feMerge>
+                <feMergeNode/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
           </defs>
+
+          <!-- 翅膀 (Lv.8) - 画在 body 后面 -->
+          <g class="acc acc-evo8 acc-wings">
+            <path d="M 95 190 Q 40 165 25 110 Q 35 105 55 120 Q 80 140 95 175 Z"
+                  fill="url(#bodyGrad)" filter="url(#softShadow)" />
+            <path d="M 50 130 Q 65 145 80 165" stroke="#fda4af" stroke-width="1.5" fill="none" opacity="0.6" />
+            <path d="M 205 190 Q 260 165 275 110 Q 265 105 245 120 Q 220 140 205 175 Z"
+                  fill="url(#bodyGrad)" filter="url(#softShadow)" />
+            <path d="M 250 130 Q 235 145 220 165" stroke="#fda4af" stroke-width="1.5" fill="none" opacity="0.6" />
+          </g>
 
           <!-- 尾巴 -->
           <g class="tail">
@@ -539,23 +900,36 @@
           </g>
 
           <!-- 后脚 -->
-          <ellipse cx="115" cy="258" rx="18" ry="10" fill="#e5e7eb" />
-          <ellipse cx="185" cy="258" rx="18" ry="10" fill="#e5e7eb" />
+          <ellipse cx="115" cy="258" rx="18" ry="10" fill="var(--body-dark)" />
+          <ellipse cx="185" cy="258" rx="18" ry="10" fill="var(--body-dark)" />
           <!-- 脚掌粉色 -->
-          <ellipse cx="115" cy="262" rx="10" ry="4" fill="#fda4af" opacity="0.6" />
-          <ellipse cx="185" cy="262" rx="10" ry="4" fill="#fda4af" opacity="0.6" />
+          <ellipse cx="115" cy="262" rx="10" ry="4" fill="var(--ear)" opacity="0.6" />
+          <ellipse cx="185" cy="262" rx="10" ry="4" fill="var(--ear)" opacity="0.6" />
 
           <!-- 头 -->
           <circle cx="150" cy="120" r="75" fill="url(#bodyGrad)" filter="url(#softShadow)" />
 
+          <!-- 围巾 (Lv.4) - 围在脖子上 -->
+          <g class="acc acc-evo4 acc-scarf">
+            <ellipse cx="150" cy="195" rx="55" ry="14" fill="#3b82f6" filter="url(#softShadow)" />
+            <ellipse cx="150" cy="192" rx="55" ry="14" fill="#60a5fa" opacity="0.5" />
+            <g class="acc-scarf-tail">
+              <path d="M 125 200 L 118 245 L 138 232 L 132 252 L 148 240 L 155 225 L 162 240 L 178 252 L 172 232 L 192 245 L 185 200"
+                    fill="#2563eb" filter="url(#softShadow)" />
+            </g>
+            <circle cx="125" cy="195" r="3" fill="#fbbf24" />
+            <circle cx="150" cy="195" r="3" fill="#fbbf24" />
+            <circle cx="175" cy="195" r="3" fill="#fbbf24" />
+          </g>
+
           <!-- 耳朵 -->
           <g class="ear-l">
             <ellipse cx="92"  cy="75" rx="22" ry="30" fill="url(#bodyGrad)" transform="rotate(-15 92 75)" />
-            <ellipse cx="92"  cy="80" rx="11" ry="18" fill="#fda4af" transform="rotate(-15 92 80)" />
+            <ellipse cx="92"  cy="80" rx="11" ry="18" fill="var(--ear)" transform="rotate(-15 92 80)" />
           </g>
           <g class="ear-r">
             <ellipse cx="208" cy="75" rx="22" ry="30" fill="url(#bodyGrad)" transform="rotate(15 208 75)" />
-            <ellipse cx="208" cy="80" rx="11" ry="18" fill="#fda4af" transform="rotate(15 208 80)" />
+            <ellipse cx="208" cy="80" rx="11" ry="18" fill="var(--ear)" transform="rotate(15 208 80)" />
           </g>
 
           <!-- 腮红 -->
@@ -592,6 +966,46 @@
           <line x1="105" y1="148" x2="80"  y2="150" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
           <line x1="195" y1="140" x2="220" y2="138" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
           <line x1="195" y1="148" x2="220" y2="150" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" />
+
+          <!-- 蝴蝶结 (Lv.2) - 戴在头顶 -->
+          <g class="acc acc-evo2 acc-bow">
+            <ellipse cx="130" cy="50" rx="18" ry="12" fill="#f43f5e" transform="rotate(-18 130 50)" filter="url(#softShadow)" />
+            <ellipse cx="170" cy="50" rx="18" ry="12" fill="#f43f5e" transform="rotate(18 170 50)" filter="url(#softShadow)" />
+            <ellipse cx="130" cy="50" rx="18" ry="12" fill="#fb7185" opacity="0.5" transform="rotate(-18 130 50)" />
+            <ellipse cx="170" cy="50" rx="18" ry="12" fill="#fb7185" opacity="0.5" transform="rotate(18 170 50)" />
+            <circle cx="150" cy="50" r="7" fill="#f43f5e" filter="url(#softShadow)" />
+            <circle cx="150" cy="50" r="3" fill="#fbbf24" />
+          </g>
+
+          <!-- 魔法帽 (Lv.6) - 戴在头顶 -->
+          <g class="acc acc-evo6 acc-hat">
+            <path d="M 100 75 L 145 -25 Q 155 -30 165 -25 L 200 75 Z"
+                  fill="#6366f1" filter="url(#softShadow)" />
+            <path d="M 100 75 L 200 75 L 195 88 L 105 88 Z" fill="#4f46e5" />
+            <ellipse cx="150" cy="78" rx="50" ry="6" fill="#fbbf24" />
+            <circle cx="145" cy="-22" r="7" fill="#fbbf24" filter="url(#softShadow)" />
+            <circle cx="145" cy="-22" r="3" fill="#fef3c7" />
+            <path d="M 130 78 L 125 60 L 135 70 M 170 78 L 175 60 L 165 70"
+                  stroke="#fbbf24" stroke-width="2" fill="none" opacity="0.7" />
+          </g>
+
+          <!-- 王冠 (Lv.10) - 戴在头顶 -->
+          <g class="acc acc-evo10 acc-crown">
+            <path d="M 110 65 L 122 28 L 135 55 L 150 22 L 165 55 L 178 28 L 190 65 Z"
+                  fill="#fbbf24" filter="url(#softShadow)" />
+            <rect x="110" y="62" width="80" height="11" fill="#f59e0b" rx="2" />
+            <rect x="110" y="65" width="80" height="3" fill="#fde68a" opacity="0.6" />
+            <circle cx="122" cy="28" r="5" fill="#f43f5e" filter="url(#softShadow)" />
+            <circle cx="150" cy="22" r="6" fill="#3b82f6" filter="url(#softShadow)" />
+            <circle cx="178" cy="28" r="5" fill="#10b981" filter="url(#softShadow)" />
+          </g>
+
+          <!-- 光环 (Lv.10) - 头顶悬浮 -->
+          <g class="acc acc-evo10 acc-halo">
+            <ellipse cx="150" cy="5" rx="55" ry="9" fill="none" stroke="#fbbf24" stroke-width="4" opacity="0.85" />
+            <ellipse cx="150" cy="5" rx="55" ry="9" fill="none" stroke="#fef3c7" stroke-width="1.5" opacity="0.7" />
+            <ellipse cx="150" cy="3" rx="48" ry="6" fill="rgba(254, 243, 199, 0.3)" />
+          </g>
         </svg>
       </div>
     </div>
@@ -607,6 +1021,10 @@
     <div class="hud">
       <div class="name-row">
         <div class="name" id="petName">麻薯 Mochi</div>
+        <div class="coin-pill" id="coinPill" title="点击打开商店">
+          <span>🪙</span>
+          <span id="coinVal">500</span>
+        </div>
         <div class="lvl-badge" id="lvlBadge">Lv.1</div>
       </div>
 
@@ -658,6 +1076,32 @@
     <div class="toast" id="toast">提示</div>
   </div>
 
+  <!-- 皮肤商店 -->
+  <div class="shop-backdrop" id="shopBackdrop">
+    <div class="shop">
+      <div class="shop-head">
+        <div class="shop-title"><span class="emoji">🛍️</span> 宠物皮肤商店</div>
+        <button class="shop-close" id="shopClose">✕</button>
+      </div>
+      <div class="shop-body" id="shopBody">
+        <!-- JS 动态渲染 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 购买确认 -->
+  <div class="confirm-backdrop" id="confirmBackdrop">
+    <div class="confirm">
+      <div class="confirm-emoji" id="confirmEmoji">🛒</div>
+      <div class="confirm-title" id="confirmTitle">确认购买</div>
+      <div class="confirm-msg"  id="confirmMsg">要花 100 金币购买「橘猫」皮肤吗？</div>
+      <div class="confirm-btns">
+        <button class="confirm-cancel" id="confirmCancel">再想想</button>
+        <button class="confirm-ok"     id="confirmOk">确认购买</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ========== 状态 ==========
     const state = {
@@ -666,9 +1110,58 @@
       energy: 80,    // 精力 0-100
       xp:     0,     // 经验
       level:  1,     // 等级
-      mode:   'idle', // idle / eating / sleeping / playing
-      mood:   'happy', // happy / hungry / sleepy / playful / eat / sleeping / energetic
+      coins:  500,   // 金币 (商店用)
+      mode:   'idle',
+      mood:   'happy',
+      evoStage: 0,   // 已解锁的进化阶段 0/2/4/6/8/10
+      activeSkin: 'white',  // 当前装备的皮肤 id
+      ownedSkins: ['white'],
     };
+
+    // ========== 皮肤目录 ==========
+    const SKINS = [
+      { id: 'white',    name: '经典白猫', desc: '软糯麻薯的原始造型',  price: 0,   bg: '#fef3c7', main: '#ffffff', ear: '#fda4af', tag: 'DEFAULT' },
+      { id: 'orange',   name: '橘座胖橘', desc: '能吃是福',             price: 100, bg: '#ffedd5', main: '#fb923c', ear: '#ea580c', tag: 'NEW' },
+      { id: 'panda',    name: '熊猫滚滚', desc: '黑白配 · 萌到犯规',   price: 300, bg: '#f3f4f6', main: '#ffffff', ear: '#1f2937', tag: null },
+      { id: 'amethyst', name: '紫晶灵猫', desc: '夜空中最闪亮的那颗',   price: 500, bg: '#faf5ff', main: '#c084fc', ear: '#7e22ce', tag: null },
+      { id: 'gold',     name: '黄金圣猫', desc: '散发着神圣光辉的传说', price: 800, bg: '#fefce8', main: '#fde047', ear: '#b45309', tag: 'LEGEND' },
+    ];
+
+    // 进化阶段阈值
+    const EVO_LEVELS = [2, 4, 6, 8, 10];
+    function evoForLevel(lv) {
+      let s = 0;
+      for (const t of EVO_LEVELS) if (lv >= t) s = t;
+      return s;
+    }
+
+    // 持久化
+    const SAVE_KEY = 'edustation_pet_demo_v1';
+    function saveState() {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify({
+          level: state.level, xp: state.xp, coins: state.coins,
+          evoStage: state.evoStage,
+          activeSkin: state.activeSkin,
+          ownedSkins: state.ownedSkins,
+        }));
+      } catch (e) { /* localStorage 可能被禁用 */ }
+    }
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return;
+        const d = JSON.parse(raw);
+        state.level      = d.level      ?? 1;
+        state.xp         = d.xp         ?? 0;
+        state.coins      = d.coins      ?? 500;
+        state.evoStage   = d.evoStage   ?? 0;
+        state.activeSkin = d.activeSkin ?? 'white';
+        state.ownedSkins = Array.isArray(d.ownedSkins) ? d.ownedSkins : ['white'];
+        if (!state.ownedSkins.includes('white')) state.ownedSkins.push('white');
+      } catch (e) { /* ignore */ }
+    }
+    loadState();
 
     // ========== 元素 ==========
     const $ = id => document.getElementById(id);
@@ -702,6 +1195,7 @@
       $('xpText').textContent = `${state.xp} / ${need}`;
       $('xpBar').style.width = (state.xp / need * 100) + '%';
       $('lvlBadge').textContent = `Lv.${state.level}`;
+      $('coinVal').textContent = state.coins;
 
       // 状态标签
       let label = '😊 心情大好', cls = 'state-happy';
@@ -717,6 +1211,20 @@
       stateBadge.textContent = label;
 
       pet.setAttribute('data-state', state.mode === 'sleeping' ? 'sleeping' : (state.mode === 'eating' ? 'eating' : 'happy'));
+      pet.setAttribute('data-evo', state.evoStage);
+      pet.setAttribute('data-skin', state.activeSkin);
+    }
+
+    // 金币变化（带动画）
+    function addCoins(n) {
+      state.coins = Math.max(0, state.coins + n);
+      const el = $('coinVal');
+      el.classList.remove('coin-bump', 'coin-deduct', 'coin-add');
+      void el.offsetWidth; // reflow
+      el.classList.add('coin-bump');
+      el.classList.add(n >= 0 ? 'coin-add' : 'coin-deduct');
+      saveState();
+      updateHUD();
     }
 
     function xpForLevel(lv) { return 80 + lv * 40; }
@@ -726,12 +1234,38 @@
       let need = xpForLevel(state.level);
       while (state.xp >= need) {
         state.xp -= need;
+        const oldStage = state.evoStage;
         state.level += 1;
+        const newStage = evoForLevel(state.level);
+        if (newStage > oldStage) {
+          state.evoStage = newStage;
+          evoUnlockFX(newStage);
+        }
         showToast(`✨ 升级啦！Lv.${state.level}`);
         levelUpFX();
         need = xpForLevel(state.level);
       }
+      saveState();
       updateHUD();
+    }
+
+    // 进化解锁特效：给新解锁的配饰加 .unlock 类, 触发动画
+    function evoUnlockFX(stage) {
+      pet.setAttribute('data-evo', stage);
+      pet.querySelectorAll(`.acc-evo${stage}`).forEach(el => {
+        el.classList.remove('unlock');
+        // 强制 reflow 重新触发动画
+        void el.getBoundingClientRect();
+        el.classList.add('unlock');
+      });
+      // 全屏金光
+      const burst = document.createElement('div');
+      burst.className = 'evo-burst';
+      document.querySelector('.pet-stage').appendChild(burst);
+      setTimeout(() => burst.remove(), 1100);
+      // 配饰名
+      const accNames = { 2: '蝴蝶结', 4: '围巾', 6: '魔法帽', 8: '天使翅膀', 10: '王冠 & 光环' };
+      setTimeout(() => showToast(`🎁 解锁配饰：${accNames[stage] || ''}`), 1200);
     }
 
     // ========== 升级特效 ==========
@@ -813,7 +1347,8 @@
         state.mode = 'eating';
         state.hunger = Math.min(100, state.hunger + 25);
         gainXP(5);
-        showToast('+25 饱腹 · +5 经验');
+        addCoins(5);
+        showToast('+25 饱腹 · +5 经验 · +5 🪙');
         updateHUD();
         setTimeout(() => { pet.classList.remove('eating'); state.mode = 'idle'; updateHUD(); }, 1600);
       }, 1100);
@@ -826,7 +1361,8 @@
       pet.classList.add('jumping');
       state.happy = Math.min(100, state.happy + 8);
       gainXP(2);
-      showToast('+8 心情 · +2 经验');
+      addCoins(1);
+      showToast('+8 心情 · +2 经验 · +1 🪙');
       setTimeout(() => pet.classList.remove('jumping'), 600);
       updateHUD();
     }
@@ -849,7 +1385,8 @@
       state.energy = Math.max(0,   state.energy - 15);
       state.hunger = Math.max(0,   state.hunger - 5);
       gainXP(8);
-      showToast('+15 心情 · -15 精力 · +8 经验');
+      addCoins(8);
+      showToast('+15 心情 · -15 精力 · +8 经验 · +8 🪙');
       setTimeout(() => pet.classList.remove('jumping'), 600);
       updateHUD();
     }
@@ -874,6 +1411,7 @@
 
     function actLevelUp() {
       gainXP(200); // 直接涨经验直到升级
+      addCoins(50); // 升级奖励金币
     }
 
     // 点击宠物
@@ -889,6 +1427,130 @@
         if (a === 'sleep')   actSleep();
         if (a === 'levelup') actLevelUp();
       });
+    });
+
+    // ========== 皮肤商店 ==========
+    const shopBackdrop = $('shopBackdrop');
+    const shopBody     = $('shopBody');
+    const shopClose    = $('shopClose');
+    const confirmBackdrop = $('confirmBackdrop');
+    const confirmEmoji = $('confirmEmoji');
+    const confirmTitle = $('confirmTitle');
+    const confirmMsg   = $('confirmMsg');
+    const confirmOk    = $('confirmOk');
+    const confirmCancel= $('confirmCancel');
+    let pendingSkinId = null;
+
+    function renderShop() {
+      shopBody.innerHTML = '';
+      SKINS.forEach(skin => {
+        const owned   = state.ownedSkins.includes(skin.id);
+        const equipped = state.activeSkin === skin.id;
+        const card = document.createElement('div');
+        card.className = 'skin-card ' + (equipped ? 'equipped' : (owned ? 'owned' : 'locked'));
+        // 角标
+        let badge = '';
+        if (equipped)            badge = `<div class="skin-badge equipped">装备中</div>`;
+        else if (skin.price === 0) badge = `<div class="skin-badge free">免费</div>`;
+        else if (skin.tag === 'NEW')    badge = `<div class="skin-badge">NEW</div>`;
+        else if (skin.tag === 'LEGEND') badge = `<div class="skin-badge">传说</div>`;
+        // CTA
+        let cta = '';
+        if (equipped) {
+          cta = `<button class="skin-cta equipped" data-skin="${skin.id}" disabled>✓ 已装备</button>`;
+        } else if (owned) {
+          cta = `<button class="skin-cta equip" data-skin="${skin.id}" data-action="equip">装备</button>`;
+        } else {
+          const affordable = state.coins >= skin.price;
+          cta = `<button class="skin-cta buy" data-skin="${skin.id}" data-action="buy" ${affordable ? '' : 'disabled'}>
+                  🪙 ${skin.price}
+                </button>`;
+        }
+        // 迷你宠物预览
+        const mini = `
+          <div class="skin-preview" style="background:${skin.bg}">
+            <div class="mini-pet" style="background:${skin.main}">
+              <div class="mini-face"></div>
+            </div>
+          </div>`;
+        card.innerHTML = badge + mini + `<div class="skin-name">${skin.name}</div><div class="skin-desc">${skin.desc}</div>${cta}`;
+        shopBody.appendChild(card);
+      });
+      // 绑定事件
+      shopBody.querySelectorAll('.skin-cta').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const id = btn.dataset.skin;
+          const action = btn.dataset.action;
+          if (action === 'buy')  tryBuy(id);
+          if (action === 'equip') equipSkin(id, true);
+        });
+      });
+      // 卡片点击 = 试穿预览
+      shopBody.querySelectorAll('.skin-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const id = card.querySelector('.skin-cta').dataset.skin;
+          if (state.ownedSkins.includes(id)) equipSkin(id, true);
+          else tryBuy(id);
+        });
+      });
+    }
+
+    function tryBuy(skinId) {
+      const skin = SKINS.find(s => s.id === skinId);
+      if (!skin || state.ownedSkins.includes(skinId)) return;
+      if (state.coins < skin.price) {
+        showToast('🪙 金币不足，多陪陪它吧~');
+        return;
+      }
+      pendingSkinId = skinId;
+      confirmEmoji.textContent = '🛒';
+      confirmTitle.textContent = `购买「${skin.name}」`;
+      confirmMsg.innerHTML = `需要花费 <b style="color:#f59e0b">${skin.price} 🪙</b><br>当前余额：<b>${state.coins} 🪙</b>`;
+      confirmOk.textContent = '确认购买';
+      confirmBackdrop.classList.add('open');
+    }
+    function equipSkin(skinId, closeShop = true) {
+      if (!state.ownedSkins.includes(skinId)) return;
+      state.activeSkin = skinId;
+      pet.setAttribute('data-skin', skinId);
+      saveState();
+      const skin = SKINS.find(s => s.id === skinId);
+      showToast(`✨ 已装备「${skin.name}」`);
+      renderShop();
+      if (closeShop) shopBackdrop.classList.remove('open');
+    }
+    confirmOk.addEventListener('click', () => {
+      if (!pendingSkinId) return;
+      const skin = SKINS.find(s => s.id === pendingSkinId);
+      if (!skin) return;
+      addCoins(-skin.price);
+      state.ownedSkins.push(skin.id);
+      saveState();
+      confirmBackdrop.classList.remove('open');
+      showToast(`🎉 获得「${skin.name}」皮肤！`);
+      // 直接装备
+      equipSkin(pendingSkinId, false);
+      renderShop();
+      pendingSkinId = null;
+    });
+    confirmCancel.addEventListener('click', () => {
+      confirmBackdrop.classList.remove('open');
+      pendingSkinId = null;
+    });
+    confirmBackdrop.addEventListener('click', e => {
+      if (e.target === confirmBackdrop) {
+        confirmBackdrop.classList.remove('open');
+        pendingSkinId = null;
+      }
+    });
+    shopClose.addEventListener('click', () => shopBackdrop.classList.remove('open'));
+    shopBackdrop.addEventListener('click', e => {
+      if (e.target === shopBackdrop) shopBackdrop.classList.remove('open');
+    });
+    $('coinPill').addEventListener('click', () => {
+      renderShop();
+      shopBackdrop.classList.add('open');
     });
 
     // ========== 鼠标/触摸：眼睛跟随 ==========
@@ -952,7 +1614,7 @@
 
     // ========== 启动 ==========
     updateHUD();
-    showToast('👋 戳一戳宠物试试看');
+    showToast('👋 戳宠物互动 · ⭐ 看升级外观 · 🪙 进皮肤商店');
   </script>
 </body>
 </html>
