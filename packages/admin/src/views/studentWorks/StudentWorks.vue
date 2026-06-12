@@ -96,17 +96,16 @@
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link type="primary" @click.stop="openEdit(row)">编辑</el-button>
-          <el-button
-            <DestructiveConfirm
-              v-if="canDelete"
-              :target="`作品 ${row.title}`"
-              warning="中风险"
-              :precheck-notes="['该作品未被其他业务引用']"
-              :precheck="() => studentWorkApi.removableCheck(row._id).then((r) => r.data)"
-              @confirm="(p) => onRemoveConfirm(row, p)"
-            >
-              <el-button size="small" link type="danger">删除</el-button>
-            </DestructiveConfirm>
+          <DestructiveConfirm
+            v-if="canDelete"
+            :target="`作品 ${row.title}`"
+            warning="中风险"
+            :precheck-notes="['该作品未被其他业务引用']"
+            :precheck="() => studentWorkApi.removableCheck(row._id).then((r) => r.data)"
+            @confirm="(p) => onRemoveConfirm(row, p)"
+          >
+            <el-button size="small" link type="danger">删除</el-button>
+          </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
