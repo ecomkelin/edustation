@@ -10,6 +10,8 @@ const routes = [
     children: [
       { path: '', redirect: '/dashboard' },
       { path: 'dashboard', component: () => import('@/views/Dashboard.vue') },
+      // 个人中心：查看 / 修改自己的资料、修改密码 —— 无需权限,登录即可访问
+      { path: 'profile', component: () => import('@/views/profile/Profile.vue') },
       { path: 'orgs', component: () => import('@/views/orgs/Orgs.vue') },
       { path: 'categories', component: () => import('@/views/categories/Categories.vue') },
       { path: 'regions', component: () => import('@/views/regions/Regions.vue') },

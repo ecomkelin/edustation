@@ -83,7 +83,10 @@
 | data.mobile | String | 手机号 |
 | data.realName | String | 真实姓名 |
 | data.avatar | String\|null | 头像 URL |
+| data.idCard | String\|null | 身份证号 |
+| data.region | Object\|null | `{ id, name, level, code }` 现居地 |
 | data.isPlatformAdmin | Boolean | 是否平台超管 |
+| data.createdAt | String | 注册时间 ISO |
 | data.orgs | Object[] | 用户的机构列表，元素结构见下表 |
 
 `data.orgs[]` 元素结构：
@@ -94,6 +97,45 @@
 | positions | Object[] | `{ id, name, isSystem }` |
 | permissions | String[] | 聚合后的所有职位权限码（去重） |
 | isMain | Boolean | 是否主机构 |
+
+---
+
+## 5. 自助修改资料（个人中心）
+
+- **Method / Path**：`PUT /api/v1/auth/me`
+- **权限**：authenticated
+- **说明**：登录用户修改自己的资料。只允许 `realName / avatar / idCard / region` 四个字段（白名单），其他字段（手机号、超管标记、启用状态、黑名单）一律由管理员走 `users` 模块修改。
+- **请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| realName | String | 否 | 真实姓名，最长 50 |
+| avatar | String | 否 | 头像 URL，最长 500 |
+| idCard | String | 否 | 身份证号 15/18 位；置空字符串可清空 |
+| region | String | 否 | 地区 id；置空字符串可清空 |
+
+- **成功响应** (`200 OK`)：与 `GET /auth/me` 完全一致（前端可直接覆盖 store）。
+- **失败**：
+  - `400` 校验失败 / 身份证号格式不对
+  - `409` 身份证号已被其他用户占用
+
+---
+
+## 6. 自助修改密码
+
+- **Method / Path**：`POST /api/v1/auth/change-password`
+- **权限**：authenticated
+- **说明**：登录用户修改自己的密码。校验原密码 → 写新密码 → 同步撤销该用户所有未撤销的 refresh token（强制其他设备重新登录）。本次请求的 access token 等其自然过期即可（短有效期）。
+- **请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| oldPassword | String | 是 | 原密码 |
+| newPassword | String | 是 | 新密码 6-64 位，且不能与原密码相同 |
+
+- **成功响应** (`200 OK`)：`{ success: true }`
+- **失败**：
+  - `400` 原密码错误 / 新密码与原密码相同 / 校验失败
 
 ---
 

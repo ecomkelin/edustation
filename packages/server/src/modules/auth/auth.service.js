@@ -7,6 +7,9 @@ const ApiError = require('@utils/ApiError')
 const password = require('@utils/password')
 const JwtUtil = require('@utils/JwtUtil')
 
+// 自助资料可改字段白名单：mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律不可由用户自助修改
+const SELF_UPDATE_WHITELIST = ['realName', 'avatar', 'idCard', 'region']
+
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
@@ -93,10 +96,14 @@ async function logout({ refreshToken }) {
 
 /**
  * 当前用户信息（含用户的所有 org + 职位聚合权限）
+ *
+ * 个人中心(Profile) 页同时复用这个出参 —— 因此把 idCard / region 一并附上,
+ * 现有调用方(auth store 的 fetchMe)只是多拿到几个字段,纯加性,不破兼容。
  */
 async function me(userId) {
   const user = await User.findById(userId)
-    .select('mobile realName avatar isPlatformAdmin isActive isBlocked blockedAt blockedReason createdAt')
+    .select('mobile realName avatar idCard region isPlatformAdmin isActive isBlocked blockedAt blockedReason createdAt')
+    .populate('region', 'name level code')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
 
@@ -131,13 +138,64 @@ async function me(userId) {
     mobile: user.mobile,
     realName: user.realName,
     avatar: user.avatar,
+    idCard: user.idCard || null,
+    region: user.region
+      ? { id: String(user.region._id), name: user.region.name, level: user.region.level, code: user.region.code }
+      : null,
     isPlatformAdmin: user.isPlatformAdmin,
     isActive: user.isActive,
     isBlocked: !!user.isBlocked,
     blockedAt: user.blockedAt,
     blockedReason: user.blockedReason,
+    createdAt: user.createdAt,
     orgs
   }
+}
+
+/**
+ * 自助修改资料：白名单字段(realName / avatar / idCard / region)。
+ * - mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律由管理员走 user 模块改。
+ * - idCard 唯一性手动校验(与 user.update 等价,避免 partial index 异常回包不友好)。
+ * - 完成后回包用 me(userId) 的全量结构,与 GET /auth/me 完全一致,前端可以直接覆盖。
+ */
+async function updateMe(userId, payload) {
+  const patch = {}
+  for (const key of SELF_UPDATE_WHITELIST) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      // 空串 / undefined 一律视为"清空",对应字段置 null(idCard / region / avatar 允许为空)
+      const v = payload[key]
+      patch[key] = v === '' || v === undefined ? null : v
+    }
+  }
+
+  if (patch.idCard) {
+    const dup = await User.findOne({ idCard: patch.idCard, _id: { $ne: userId } }).select('_id').lean()
+    if (dup) throw ApiError.conflict('身份证号已存在')
+  }
+
+  const user = await User.findByIdAndUpdate(userId, { $set: patch }, { new: true, runValidators: true })
+    .select('_id')
+    .lean()
+  if (!user) throw ApiError.notFound('用户不存在')
+  return me(userId)
+}
+
+/**
+ * 自助修改密码：原密码 + 新密码;同步把当前用户的所有 refresh token 撤销,
+ * 防止"已泄漏的旧密码 + 旧 refresh token"继续生效。
+ * 当次请求的 access token 等其自然过期即可(短有效期)。
+ */
+async function changePassword(userId, oldPassword, newPassword) {
+  if (oldPassword === newPassword) throw ApiError.badRequest('新密码不能与原密码相同')
+  const user = await User.findById(userId).select('+passwordHash')
+  if (!user) throw ApiError.notFound('用户不存在')
+  const ok = await password.verify(user.passwordHash, oldPassword)
+  if (!ok) throw ApiError.badRequest('原密码错误')
+  user.passwordHash = await password.hash(newPassword)
+  await user.save()
+  // 把所有未撤销的 refresh token 一律撤销 —— 强制其他设备重新登录
+  await RefreshToken.updateMany({ user: userId, isRevoked: false }, { $set: { isRevoked: true } })
+  return { success: true }
 }
 
 function publicUser(u) {
@@ -154,4 +212,4 @@ function publicUser(u) {
   }
 }
 
-module.exports = { login, refresh, logout, me, publicUser }
+module.exports = { login, refresh, logout, me, updateMe, changePassword, publicUser }

@@ -6,12 +6,23 @@
         <OrgSwitcher />
         <el-dropdown @command="onCommand">
           <span class="user-trigger">
-            {{ auth.user?.realName || auth.user?.mobile }}
+            <el-avatar :size="28" :src="auth.user?.avatar || ''" class="user-avatar">
+              {{ avatarInitial }}
+            </el-avatar>
+            <span class="user-name">{{ auth.user?.realName || auth.user?.mobile }}</span>
             <el-icon><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              <el-dropdown-item command="profile">
+                <el-icon><User /></el-icon>个人中心
+              </el-dropdown-item>
+              <el-dropdown-item command="changePassword">
+                <el-icon><Lock /></el-icon>修改密码
+              </el-dropdown-item>
+              <el-dropdown-item divided command="logout">
+                <el-icon><SwitchButton /></el-icon>退出登录
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -68,7 +79,8 @@ import {
   Key,
   Connection,
   Warning,
-  ChatLineRound
+  ChatLineRound,
+  SwitchButton
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -162,8 +174,19 @@ async function onCommand(cmd) {
   if (cmd === 'logout') {
     await auth.logout()
     router.replace('/login')
+  } else if (cmd === 'profile') {
+    router.push('/profile')
+  } else if (cmd === 'changePassword') {
+    // 改密统一走个人中心的对话框,避免维护两份"修改密码"表单逻辑
+    router.push({ path: '/profile', query: { changePassword: 1 } })
   }
 }
+
+// 头像兜底字符（无头像时显示姓名/手机号最后一个字）
+const avatarInitial = computed(() => {
+  const name = auth.user?.realName || auth.user?.mobile || ''
+  return name ? name.slice(-1) : '?'
+})
 </script>
 
 <style scoped>
@@ -191,8 +214,19 @@ async function onCommand(cmd) {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: #fff;
+}
+.user-avatar {
+  background: #409EFF;
+  color: #fff;
+  font-size: 12px;
+}
+.user-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .aside {
   background: #fff;

@@ -44,6 +44,18 @@ exports.me = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// 自助修改资料：只允许 realName / avatar / idCard / region
+exports.updateMe = async (req, res) => {
+  const data = await service.updateMe(req.user.id, req.body)
+  res.json(ApiResponse.ok(data))
+}
+
+// 自助修改密码：oldPassword + newPassword
+exports.changePassword = async (req, res) => {
+  await service.changePassword(req.user.id, req.body.oldPassword, req.body.newPassword)
+  res.json(ApiResponse.ok())
+}
+
 function setRefreshCookie(res, token) {
   res.cookie(config.cookie.name, token, {
     httpOnly: config.cookie.httpOnly,
