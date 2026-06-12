@@ -24,5 +24,7 @@ router.post(
 router.patch('/:id', mws.requirePermission('studentWork.write'), asyncHandler(c.update))
 // 物理删除（"误操"场景）：超管+密码二次确认（作品是孤儿数据，无关联检查）
 router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
+// 预检：作品无业务引用, 始终 canRemove=true
+router.get('/:id/removable-check', mws.requirePermission('studentWork.read'), asyncHandler(c.removableCheck))
 
 module.exports = router

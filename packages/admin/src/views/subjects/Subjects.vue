@@ -70,6 +70,7 @@
             :target="`学科 ${row.name}`"
             warning="中风险"
             :precheck-notes="['该学科不被任何课程产品引用', '该学科不被任何开班作为主学科']"
+            :precheck="() => subjectApi.removableCheck(row._id).then((r) => r.data)"
             @confirm="(p) => onRemoveConfirm(row, p)"
           >
             <el-button size="small" type="danger">误操删除</el-button>
@@ -263,6 +264,7 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { subjectApi } from '@/api/subject'
+import { handleRemoveError } from '@/utils/removable'
 import { categoryApi } from '@/api/category'
 import { useAuthStore } from '@/stores/auth'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
@@ -368,7 +370,7 @@ async function onRemoveConfirm(row, { password }) {
     ElMessage.success('已删除')
     load()
   } catch (e) {
-    // axios 拦截器已经 ElMessage.error 过了,这里只 catch 避免 unhandled rejection
+    await handleRemoveError(e, '无法删除 · 中风险')
   }
 }
 

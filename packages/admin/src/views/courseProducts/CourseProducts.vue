@@ -78,15 +78,28 @@
           <el-tag :type="row.isActive ? 'success' : 'info'">{{ row.isActive ? '是' : '否' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
-          <!-- 「误操删除」:仅超管;前置条件:无 StudentProduct 引用 + 无开班引用 -->
+          <!-- 仅超管可改上下架；物理删除走 DestructiveConfirm + 预检 -->
+          <el-button
+            v-if="isPlatformAdmin && row.isActive"
+            size="small"
+            type="warning"
+            @click="deactivate(row)"
+          >下架</el-button>
+          <el-button
+            v-else-if="isPlatformAdmin && !row.isActive"
+            size="small"
+            type="success"
+            @click="reactivate(row)"
+          >上架</el-button>
           <DestructiveConfirm
             v-if="isPlatformAdmin"
             :target="`课程产品 ${row.name}`"
             warning="高风险"
-            :precheck-notes="['无学生课包在用', '无开班引用']"
+            :precheck-notes="['无订单明细引用', '无学生课包引用']"
+            :precheck="() => courseProductApi.removableCheck(row._id).then((r) => r.data)"
             @confirm="(p) => onRemoveConfirm(row, p)"
           >
             <el-button size="small" type="danger">误操删除</el-button>
@@ -275,6 +288,7 @@
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { courseProductApi } from '@/api/courseProduct'
+import { handleRemoveError } from '@/utils/removable'
 import { subjectApi } from '@/api/subject'
 import { useAuthStore } from '@/stores/auth'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
@@ -397,13 +411,32 @@ async function submit() {
   }
 }
 
+async function deactivate(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确认下架课程产品「${row.name}」吗？下架后不可在家长端展示与售卖。`,
+      '请确认',
+      { type: 'warning', confirmButtonText: '下架', cancelButtonText: '取消' }
+    )
+  } catch (_) { return }
+  await courseProductApi.update(row._id, { isActive: false })
+  ElMessage.success('已下架')
+  load()
+}
+
+async function reactivate(row) {
+  await courseProductApi.update(row._id, { isActive: true })
+  ElMessage.success('已上架')
+  load()
+}
+
 async function onRemoveConfirm(row, { password }) {
   try {
     await courseProductApi.remove(row._id, { password })
     ElMessage.success('已删除')
     load()
-  } catch (_e) {
-    // 错误已由 axios 拦截器 ElMessage
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 高风险')
   }
 }
 

@@ -6,7 +6,9 @@ export const userApi = {
   detail: (id) => http.get(`/users/${id}`),
   create: (data) => http.post('/users', data),
   update: (id, data) => http.put(`/users/${id}`, data),
-  remove: (id) => http.delete(`/users/${id}`),
+  // 误操删除（超管 + 二次密码 + 互锁检查）
+  remove: (id, { password } = {}) => http.delete(`/users/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/users/${id}/removable-check`),
   changePassword: (id, data) => http.post(`/users/${id}/change-password`, data),
   resetPassword: (id, data) => http.post(`/users/${id}/reset-password`, data),
   setPositions: (id, positions) => http.put(`/users/${id}/positions`, { positions }),

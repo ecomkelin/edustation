@@ -7,6 +7,7 @@ export const positionApi = {
   create: (data) => http.post('/positions', data),
   update: (id, data) => http.put(`/positions/${id}`, data),
   remove: (id, { password } = {}) => http.delete(`/positions/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/positions/${id}/removable-check`),
   setPermissions: (id, permissions) => http.put(`/positions/${id}/permissions`, { permissions }),
 
   // 跨机构同步（仅平台超管）

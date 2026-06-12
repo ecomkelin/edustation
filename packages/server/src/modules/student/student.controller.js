@@ -28,6 +28,11 @@ exports.remove = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+exports.removableCheck = async (req, res) => {
+  const data = await service.removableCheck(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(data))
+}
+
 exports.setGuardians = async (req, res) => {
   const data = await service.setGuardians(req.params.id, req.orgId, req.body.guardians)
   res.json(ApiResponse.ok(data))

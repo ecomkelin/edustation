@@ -116,14 +116,20 @@
           >
             {{ row.isBlocked ? '解禁' : '禁用' }}
           </el-button>
-          <el-button
-            size="small"
-            type="danger"
-            :disabled="row.id === auth.user?.id"
-            @click="removeFromOrg(row)"
+          <!-- 「误操移出」:超管+密码+互锁预检 -->
+          <DestructiveConfirm
+            :target="`用户 ${row.realName || row.mobile}`"
+            warning="中风险"
+            :precheck-notes="['无开班/排课引用', '无学员监护人关联', '无赠课/作品痕迹']"
+            :precheck="() => userApi.removableCheck(row.id).then((r) => r.data)"
+            @confirm="(p) => onRemoveFromOrgConfirm(row, p)"
           >
-            移出
-          </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              :disabled="row.id === auth.user?.id"
+            >移出</el-button>
+          </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -264,7 +270,9 @@
 <script setup>
 import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { userApi } from '@/api/user'
+import { handleRemoveError } from '@/utils/removable'
 import { positionApi } from '@/api/position'
 import { regionApi } from '@/api/region'
 import { useAuthStore } from '@/stores/auth'
@@ -471,19 +479,14 @@ async function doReset() {
   resetDialog.value = false
 }
 
-async function removeFromOrg(row) {
+async function onRemoveFromOrgConfirm(row, { password }) {
   try {
-    await ElMessageBox.confirm(
-      `确认将用户「${row.realName || row.mobile}」从当前机构移出吗？\n用户账号本身不会被删除。`,
-      '请确认',
-      { type: 'warning', confirmButtonText: '确认移出', cancelButtonText: '取消' }
-    )
-  } catch {
-    return
+    await userApi.remove(row.id, { password })
+    ElMessage.success('已移出')
+    load()
+  } catch (e) {
+    await handleRemoveError(e, '无法解绑 · 高风险')
   }
-  await userApi.remove(row.id)
-  ElMessage.success('已移出')
-  load()
 }
 
 // 黑名单切换: 仅超管可操作

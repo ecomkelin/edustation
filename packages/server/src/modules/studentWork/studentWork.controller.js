@@ -60,3 +60,6 @@ exports.update = async (req, res) => {
 
 exports.remove = async (req, res) =>
   res.json(ApiResponse.ok(await s.remove({ id: req.params.id, orgId: req.orgId })))
+
+exports.removableCheck = async (req, res) =>
+  res.json(ApiResponse.ok(await s.removableCheck({ id: req.params.id, orgId: req.orgId })))

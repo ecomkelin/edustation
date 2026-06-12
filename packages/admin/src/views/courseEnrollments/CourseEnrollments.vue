@@ -97,12 +97,16 @@
           <el-button v-if="row.status === 'enrolled'" size="small" type="warning" @click="setStatus(row, 'dropped')">退班</el-button>
           <!-- 「误操删除」:仅 enrolled 状态,且仅平台超管可见。
                点击会走二次确认 + 输入登录密码,任何一步不通过都不执行。 -->
-          <el-button
+          <DestructiveConfirm
             v-if="row.status === 'enrolled' && isPlatformAdmin"
-            size="small"
-            type="danger"
-            @click="remove(row)"
-          >误操删除</el-button>
+            :target="`报名记录 ${row.student?.name || ''}`"
+            warning="高风险"
+            :precheck-notes="['报名状态为 enrolled', '已结业/退班的记录请走状态变更']"
+            :precheck="() => courseEnrollmentApi.removableCheck(row._id).then((r) => r.data)"
+            @confirm="(p) => onRemoveConfirm(row, p)"
+          >
+            <el-button size="small" type="danger">误操删除</el-button>
+          </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -208,7 +212,9 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
+import { handleRemoveError } from '@/utils/removable'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { studentProductApi } from '@/api/studentProduct'
 import { useAuthStore } from '@/stores/auth'
@@ -353,32 +359,14 @@ async function setStatus(row, toStatus) {
   load()
 }
 
-async function remove(row) {
-  // 「误操」物理删除:仅超管可见,需输入自己的登录密码二次确认。
-  // 用 ElMessageBox.prompt 拿密码输入框;ElMessageBox 本身确认按钮单独再走一次。
-  // 双确认流程:先点「我已知晓风险」→ 弹密码框 → 提交。
-  await ElMessageBox.confirm(
-    '此操作不可恢复,且仅限「误操」场景(已归档/退班的记录请走状态变更)。\n点击「继续」后需输入您的登录密码。',
-    '误操删除',
-    { type: 'error', confirmButtonText: '继续', cancelButtonText: '取消' }
-  )
-  const { value: pwd } = await ElMessageBox.prompt(
-    `请输入「${currentUserRealName.value}」的登录密码以确认:`,
-    '操作密码',
-    {
-      type: 'warning',
-      inputType: 'password',
-      inputPlaceholder: '登录密码(6-64位)',
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-      inputValidator: (v) => (v && v.length >= 6 && v.length <= 64) || '请输入 6-64 位密码',
-      inputErrorMessage: '请输入 6-64 位密码'
-    }
-  )
-  if (!pwd) return
-  await courseEnrollmentApi.remove(row._id, { password: pwd })
-  ElMessage.success('已删除')
-  load()
+async function onRemoveConfirm(row, { password }) {
+  try {
+    await courseEnrollmentApi.remove(row._id, { password })
+    ElMessage.success('已删除')
+    load()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 中风险')
+  }
 }
 
 const transferSourceLabel = computed(() => {

@@ -98,20 +98,36 @@ async function update(id, payload) {
   return doc.toObject()
 }
 
+function categoryUsageChecks(categoryId) {
+  return [
+    {
+      model: Category, filter: { parentCategory: categoryId },
+      label: '子级类别', hint: '请先删除子级类别后再删'
+    },
+    {
+      model: Org, filter: { type: categoryId },
+      label: '机构引用', hint: '该类别正在被机构引用,请先调整机构类别后再删'
+    }
+  ]
+}
+
 async function remove(id) {
   const c = await Category.findById(id)
   if (!c) throw ApiError.notFound('类别不存在')
 
-  // 有子级
-  const childCount = await Category.countDocuments({ parentCategory: id })
-  if (childCount > 0) throw ApiError.badRequest('存在子级，请先删除子级')
-
-  // 被 Org.type 引用
-  const usedByOrg = await Org.countDocuments({ type: id })
-  if (usedByOrg > 0) throw ApiError.badRequest('该类别正在被机构引用，无法删除')
+  // 互锁:用统一工具
+  const { assertUnused } = require('@utils/removable')
+  await assertUnused(null, categoryUsageChecks(id))
 
   await c.deleteOne()
   return { success: true }
 }
 
-module.exports = { list, tree, detail, create, update, remove }
+async function removableCheck(id) {
+  const c = await Category.findById(id).select('_id').lean()
+  if (!c) return { canRemove: false, blockers: [{ entity: 'Category', label: '类别', count: 0, hint: '该类别不存在' }] }
+  const { check } = require('@utils/removable')
+  return check(null, categoryUsageChecks(id))
+}
+
+module.exports = { list, tree, detail, create, update, remove, removableCheck }

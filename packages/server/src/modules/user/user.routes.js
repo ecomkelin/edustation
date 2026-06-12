@@ -13,7 +13,8 @@ router.get('/lookup', mws.requirePermission('user.read'), asyncHandler(c.lookupB
 router.get('/:id', mws.requirePermission('user.read'), asyncHandler(c.detail))
 router.post('/', mws.requirePermission('user.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', mws.requirePermission('user.write'), v.update, mws.validateRequest, asyncHandler(c.update))
-router.delete('/:id', mws.requirePermission('user.write'), asyncHandler(c.remove))
+router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
+router.get('/:id/removable-check', mws.requirePermission('user.read'), asyncHandler(c.removableCheck))
 router.post('/:id/change-password', v.changePassword, mws.validateRequest, asyncHandler(c.changePassword))
 router.post('/:id/reset-password', mws.requirePermission('user.resetPassword'), v.resetPassword, mws.validateRequest, asyncHandler(c.resetPassword))
 // 黑名单: 仅超管可操作（不叠加 user.write,避免教务误触）

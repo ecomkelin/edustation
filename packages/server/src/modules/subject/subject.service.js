@@ -82,28 +82,36 @@ async function update(id, orgId, payload) {
  * 学科是「建议性」字段(courseProduct.subjects 是数组可空),但 CourseInstance.subject
  * 是「单一主学科」,改/删都会让历史报表对不齐 —— 强校验。
  */
+function subjectUsageChecks(orgId, subjectId) {
+  return [
+    {
+      model: CourseProduct, filter: { org: orgId, subjects: subjectId },
+      label: '课程产品引用', hint: '请先调整产品(移除该学科)后再删'
+    },
+    {
+      model: CourseInstance, filter: { org: orgId, subject: subjectId, deletedAt: null },
+      label: '开班主学科', hint: '请先修改开班主学科后再删'
+    }
+  ]
+}
+
 async function remove({ id, orgId }) {
   const doc = await Subject.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('学科不存在')
 
-  // 引用检查:CourseProduct.subjects 是数组,用 $in
-  const [cpCount, ciCount] = await Promise.all([
-    CourseProduct.countDocuments({ org: orgId, subjects: id }),
-    CourseInstance.countDocuments({ org: orgId, subject: id, deletedAt: null })
-  ])
-  if (cpCount > 0) {
-    throw ApiError.unprocessable(
-      `该学科被 ${cpCount} 个课程产品引用,请先调整产品(移除该学科)后再删`
-    )
-  }
-  if (ciCount > 0) {
-    throw ApiError.unprocessable(
-      `该学科被 ${ciCount} 个开班作为主学科,无法删除(请改主学科)`
-    )
-  }
+  // 互锁:用统一工具替换内联 countDocuments
+  const { assertUnused } = require('@utils/removable')
+  await assertUnused(orgId, subjectUsageChecks(orgId, id))
 
   await doc.deleteOne()
   return { success: true }
+}
+
+async function removableCheck({ id, orgId }) {
+  const doc = await Subject.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) return { canRemove: false, blockers: [{ entity: 'Subject', label: '学科', count: 0, hint: '该学科不存在或不属于本机构' }] }
+  const { check } = require('@utils/removable')
+  return check(orgId, subjectUsageChecks(orgId, id))
 }
 
 /* ------------------------------------------------------------------
@@ -277,4 +285,4 @@ async function syncSubjects({ targetOrgId, sourceOrgId, subjectIds, operatorId }
   }
 }
 
-module.exports = { list, detail, create, update, remove, listSourceOrgs, listByOrg, syncSubjects }
+module.exports = { list, detail, create, update, remove, removableCheck, listSourceOrgs, listByOrg, syncSubjects }

@@ -14,8 +14,10 @@ router.post('/', mws.requirePermission('courseEnrollment.write'), v.create, mws.
 // 调整班级（分班）
 router.put('/:id', mws.requirePermission('courseEnrollment.write'), v.update, mws.validateRequest, asyncHandler(c.update))
 router.put('/:id/status', mws.requirePermission('courseEnrollment.write'), v.setStatus, mws.validateRequest, asyncHandler(c.setStatus))
-// 「误操」物理删除:仅平台超管;密码二次确认由 service 层做。
-// 误操之外的所有报名状态变更一律走 PUT /:id/status。
-router.delete('/:id', mws.requirePlatformAdmin, v.remove, mws.validateRequest, asyncHandler(c.remove))
+// 「误操」物理删除:超管 + 二次密码统一由 requirePlatformPassword 中间件把守。
+// 业务校验(仅 enrolled 状态可删)在 service 层做。
+router.delete('/:id', mws.requirePlatformPassword, v.remove, mws.validateRequest, asyncHandler(c.remove))
+// 预检:只读,业务岗(.read 权限)可看阻挡原因。
+router.get('/:id/removable-check', mws.requirePermission('courseEnrollment.read'), asyncHandler(c.removableCheck))
 
 module.exports = router

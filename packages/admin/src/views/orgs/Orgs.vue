@@ -89,7 +89,6 @@
             type="success"
             @click="askToggle(row, true)"
           >启用</el-button>
-          <el-button size="small" type="danger" @click="remove(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -439,20 +438,7 @@ async function onPwdConfirm(password) {
   }
 }
 
-async function remove(row) {
-  try {
-    await ElMessageBox.confirm(
-      `确认删除机构「${row.name}」吗？\n该机构将被停用，业务数据保留。`,
-      '请确认',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
-    )
-  } catch (_) {
-    return
-  }
-  await orgApi.remove(row.id)
-  ElMessage.success('已删除（停用）')
-  load()
-}
+// 机构不允许物理删除——已移除 remove()，业务方请走 askToggle() 做启用/停用。
 
 function fmtTime(t) {
   if (!t) return '-'

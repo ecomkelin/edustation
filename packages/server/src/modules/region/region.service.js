@@ -77,18 +77,36 @@ async function update(id, payload) {
   return doc.toObject()
 }
 
+function regionUsageChecks(regionId) {
+  return [
+    {
+      model: Region, filter: { parent: regionId },
+      label: '子级地区', hint: '请先删除子级地区后再删'
+    },
+    {
+      model: Org, filter: { region: regionId },
+      label: '机构引用', hint: '该地区正在被机构引用,请先调整机构地区后再删'
+    }
+  ]
+}
+
 async function remove(id) {
   const r = await Region.findById(id)
   if (!r) throw ApiError.notFound('地区不存在')
 
-  const childCount = await Region.countDocuments({ parent: id })
-  if (childCount > 0) throw ApiError.badRequest('存在子级，请先删除子级')
-
-  const usedByOrg = await Org.countDocuments({ region: id })
-  if (usedByOrg > 0) throw ApiError.badRequest('该地区正在被机构引用，无法删除')
+  // 互锁:用统一工具
+  const { assertUnused } = require('@utils/removable')
+  await assertUnused(null, regionUsageChecks(id))
 
   await r.deleteOne()
   return { success: true }
 }
 
-module.exports = { list, tree, detail, create, update, remove }
+async function removableCheck(id) {
+  const r = await Region.findById(id).select('_id').lean()
+  if (!r) return { canRemove: false, blockers: [{ entity: 'Region', label: '地区', count: 0, hint: '该地区不存在' }] }
+  const { check } = require('@utils/removable')
+  return check(null, regionUsageChecks(id))
+}
+
+module.exports = { list, tree, detail, create, update, remove, removableCheck }

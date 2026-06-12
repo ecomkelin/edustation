@@ -101,15 +101,8 @@ async function update(id, payload) {
   return org
 }
 
-async function remove(id) {
-  const org = await Org.findByIdAndUpdate(id, { isActive: false }, { new: true })
-    .populate(POPULATE_TYPE)
-    .populate(POPULATE_REGION)
-    .populate(POPULATE_PRINCIPAL)
-    .lean()
-  if (!org) throw ApiError.notFound('机构不存在')
-  return org
-}
+// 机构不允许物理删除（由 routes 层去掉 DELETE 路由体现）。
+// 启用/停用机构请走 toggleActive()。
 
 /**
  * 敏感操作：启用/停用机构。需校验当前登录用户自己的密码。
@@ -157,4 +150,4 @@ async function candidatePrincipals(id) {
     }))
 }
 
-module.exports = { list, detail, create, update, remove, toggleActive, candidatePrincipals }
+module.exports = { list, detail, create, update, toggleActive, candidatePrincipals }

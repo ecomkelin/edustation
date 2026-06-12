@@ -12,6 +12,7 @@ export const lessonScheduleApi = {
   create: (data) => http.post('/lesson-schedules', data),
   update: (id, data) => http.put(`/lesson-schedules/${id}`, data),
   remove: (id, { password } = {}) => http.delete(`/lesson-schedules/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/lesson-schedules/${id}/removable-check`),
   // 批量：preview (不入库) / generate (入库)
   preview: (data) => http.post('/lesson-schedules/preview', data),
   generate: (data) => http.post('/lesson-schedules/generate', data),

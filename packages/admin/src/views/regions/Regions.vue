@@ -34,6 +34,7 @@
                     :target="`地区 ${data.name}`"
                     warning="中风险"
                     :precheck-notes="['无子级地区', '无任何机构引用该地区']"
+                    :precheck="() => regionApi.removableCheck(data._id).then((r) => r.data)"
                     @click.stop
                     @confirm="(p) => onRemoveConfirm(data, p)"
                   >
@@ -77,6 +78,7 @@
                   :target="`地区 ${row.name}`"
                   warning="中风险"
                   :precheck-notes="['无子级地区', '无任何机构引用该地区']"
+                  :precheck="() => regionApi.removableCheck(row._id).then((r) => r.data)"
                   @confirm="(p) => onRemoveConfirm(row, p)"
                 >
                   <el-button size="small" type="danger">误操删除</el-button>
@@ -126,6 +128,7 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { regionApi } from '@/api/region'
+import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 
 const tree = ref([])
@@ -264,8 +267,8 @@ async function onRemoveConfirm(node, { password }) {
       selected.value = null
     }
     if (selected.value) await loadChildren()
-  } catch (_e) {
-    // 错误已 ElMessage
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 中风险')
   }
 }
 

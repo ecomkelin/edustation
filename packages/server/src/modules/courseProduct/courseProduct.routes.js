@@ -18,8 +18,9 @@ router.get('/', mws.requirePermission('courseProduct.read'), asyncHandler(c.list
 router.get('/:id', mws.requirePermission('courseProduct.read'), asyncHandler(c.detail))
 router.post('/', mws.requirePermission('courseProduct.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', mws.requirePermission('courseProduct.write'), v.update, mws.validateRequest, asyncHandler(c.update))
-// 物理删除(「误操」场景):仅超管可执行,且需输入自己的登录密码二次确认;
-// 业务上要求"无 StudentProduct / CourseInstance 引用"才允许(由 service 检查)。
+// 物理删除：超管+密码二次确认；互锁由 service.remove 内检查 Order/StudentProduct 引用。
 router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
+// 预检：业务岗即可查询，删除按钮触发前先弹挡板说明
+router.get('/:id/removable-check', mws.requirePermission('courseProduct.read'), asyncHandler(c.removableCheck))
 
 module.exports = router

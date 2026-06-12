@@ -6,6 +6,7 @@ export const subjectApi = {
   create: (data) => http.post('/subjects', data),
   update: (id, data) => http.put(`/subjects/${id}`, data),
   remove: (id, { password } = {}) => http.delete(`/subjects/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/subjects/${id}/removable-check`),
 
   // 跨机构同步（仅平台超管）
   listSourceOrgs: (params) => http.get('/subjects/source-orgs', { params }),

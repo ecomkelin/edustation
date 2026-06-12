@@ -6,6 +6,7 @@ export const courseEnrollmentApi = {
   create: (data) => http.post('/course-enrollments', data),
   update: (id, data) => http.put(`/course-enrollments/${id}`, data),
   setStatus: (id, data) => http.put(`/course-enrollments/${id}/status`, data),
-  // 误操删除(仅超管):需要在 body 里带 password 二次确认
-  remove: (id, { password } = {}) => http.delete(`/course-enrollments/${id}`, { data: { password } })
+  // 误操删除(超管 + 二次密码 + 仅 enrolled 状态)
+  remove: (id, { password } = {}) => http.delete(`/course-enrollments/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/course-enrollments/${id}/removable-check`)
 }

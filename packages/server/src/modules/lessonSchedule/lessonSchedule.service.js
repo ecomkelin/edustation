@@ -819,34 +819,39 @@ async function archive({ id, orgId }) {
  *    见产物,删除会丢历史
  *  - 同步清掉本排课的「未开始」考勤(scheduled),避免悬挂引用
  */
+function lessonScheduleUsageChecks(orgId, scheduleId) {
+  return [
+    {
+      // 已消课 + 已补 都算"已扣课时"，删除会破坏账目
+      model: LessonAttendance, filter: { lessonSchedule: scheduleId, status: { $in: [AttendanceStatus.COMPLETED, AttendanceStatus.MADEUP] } },
+      label: '已消课/已补考勤', hint: '本排课已有扣课时记录,请改用「作废」操作'
+    },
+    {
+      model: StudentWork, filter: { lessonSchedule: scheduleId, org: orgId },
+      label: '学员作品', hint: '本排课下已有作品上传,请先清理作品后再删'
+    }
+  ]
+}
+
 async function remove({ id, orgId }) {
   const doc = await LessonSchedule.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('排课不存在')
 
-  const StudentWork = require('@models/StudentWork.model')
-  const [consumedCount, workCount] = await Promise.all([
-    // 已消课 + 已补 都算"已扣课时"，删除会破坏账目
-    LessonAttendance.countDocuments({
-      lessonSchedule: id,
-      status: { $in: [AttendanceStatus.COMPLETED, AttendanceStatus.MADEUP] }
-    }),
-    StudentWork.countDocuments({ lessonSchedule: id, org: orgId })
-  ])
-  if (consumedCount > 0) {
-    throw ApiError.unprocessable(
-      `本排课已有 ${consumedCount} 条「已消课/已补」考勤,删除会破坏账目,请改用「作废」操作`
-    )
-  }
-  if (workCount > 0) {
-    throw ApiError.unprocessable(
-      `本排课下有 ${workCount} 个作品,删除会丢失历史,请先清理作品`
-    )
-  }
+  // 互锁:用统一工具
+  const { assertUnused } = require('@utils/removable')
+  await assertUnused(orgId, lessonScheduleUsageChecks(orgId, id))
 
   // 同步清掉未开始的考勤(避免悬挂引用)
   await LessonAttendance.deleteMany({ lessonSchedule: id, status: AttendanceStatus.SCHEDULED })
   await doc.deleteOne()
   return { success: true }
+}
+
+async function removableCheck({ id, orgId }) {
+  const doc = await LessonSchedule.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) return { canRemove: false, blockers: [{ entity: 'LessonSchedule', label: '排课', count: 0, hint: '该排课不存在或不属于本机构' }] }
+  const { check } = require('@utils/removable')
+  return check(orgId, lessonScheduleUsageChecks(orgId, id))
 }
 
 /**
@@ -962,7 +967,7 @@ async function previewSyncAttendances({ id, orgId }) {
 }
 
 module.exports = {
-  list, detail, create, update, remove, calendar,
+  list, detail, create, update, remove, removableCheck, calendar,
   preview, generate, prepare, start, finish, archive, checkConflicts,
   detectConflict,
   generateAttendancesForSchedule,

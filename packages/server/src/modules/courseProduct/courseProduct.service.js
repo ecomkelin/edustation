@@ -4,9 +4,10 @@ const mongoose = require('mongoose')
 const CourseProduct = require('@models/CourseProduct.model')
 const Subject = require('@models/Subject.model')
 const Org = require('@models/Org.model')
+const Order = require('@models/Order.model')
 const StudentProduct = require('@models/StudentProduct.model')
-const CourseInstance = require('@models/CourseInstance.model')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 
 /**
  * 把入参里的 subjects 字段规整成 ObjectId 数组。
@@ -161,33 +162,46 @@ async function update(id, orgId, payload) {
   return detail(doc._id, orgId)
 }
 
-/**
- * 物理删除课程产品。
- * 入口权限在路由层用 requirePlatformPassword 拦过(超管+密码);
- * 业务上还要求「无任何 StudentProduct / CourseInstance 引用」,
- * 防止误删历史已售课包 / 已开班的产品 —— 那种情况应走"停用"isActive=false。
- */
-async function remove({ id, orgId }) {
-  const doc = await CourseProduct.findOne({ _id: id, org: orgId })
+// 课程产品允许物理删除——业务上经常要清理"已下架的、不再售卖"的产品。
+// 但要挡住"被订单/课包引用的产品"以免悬空：历史 Order.items[].courseProduct 与
+// StudentProduct.courseProduct 都会被原样保留以便对账/家长期权记录，
+// 因此这两种引用存在时一律不允许物理删除，请先处理（退费/转课/手动归档课包）后再删。
+function courseProductUsageChecks(orgId, courseProductId) {
+  return [
+    {
+      model: Order,
+      filter: { org: orgId, 'items.courseProduct': courseProductId },
+      label: '订单明细',
+      hint: '存在已下单/已支付订单引用该产品，请先退费或调整订单后再删'
+    },
+    {
+      model: StudentProduct,
+      filter: { org: orgId, courseProduct: courseProductId },
+      label: '学生课包',
+      hint: '存在学生持有该产品的课包，请先退课/转课/归档后再删'
+    }
+  ]
+}
+
+async function remove(id, orgId) {
+  const doc = await CourseProduct.findOne({ _id: id, org: orgId }).select('_id').lean()
   if (!doc) throw ApiError.notFound('课程产品不存在')
 
-  const [spCount, ciCount] = await Promise.all([
-    StudentProduct.countDocuments({ courseProduct: id, org: orgId }),
-    CourseInstance.countDocuments({ courseProduct: id, org: orgId, deletedAt: null })
-  ])
-  if (spCount > 0) {
-    throw ApiError.unprocessable(
-      `该课程产品下有 ${spCount} 个学生课包在用,请先处理课包(转课/退费)后再删`
-    )
-  }
-  if (ciCount > 0) {
-    throw ApiError.unprocessable(
-      `该课程产品被 ${ciCount} 个开班引用,请先归档相关开班(软删)后再删`
-    )
-  }
+  await removable.assertUnused(orgId, courseProductUsageChecks(orgId, id))
 
-  await doc.deleteOne()
-  return { success: true }
+  await CourseProduct.deleteOne({ _id: id, org: orgId })
+  return { success: true, id }
+}
+
+async function removableCheck(id, orgId) {
+  const doc = await CourseProduct.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'CourseProduct', label: '课程产品', count: 0, hint: '该课程产品不存在或不属于本机构' }]
+    }
+  }
+  return removable.check(orgId, courseProductUsageChecks(orgId, id))
 }
 
 /* ------------------------------------------------------------------
@@ -359,6 +373,7 @@ module.exports = {
   create,
   update,
   remove,
+  removableCheck,
   listSourceOrgs,
   listByOrg,
   syncProducts

@@ -4,9 +4,16 @@ const mongoose = require('mongoose')
 const User = require('@models/User.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
 const Position = require('@models/Position.model')
+const CourseInstance = require('@models/CourseInstance.model')
+const LessonSchedule = require('@models/LessonSchedule.model')
+const LessonAttendance = require('@models/LessonAttendance.model')
+const Student = require('@models/Student.model')
+const StudentProduct = require('@models/StudentProduct.model')
+const StudentWork = require('@models/StudentWork.model')
 const ApiError = require('@utils/ApiError')
 const password = require('@utils/password')
 const { normalizePagination } = require('@utils/pagination')
+const removable = require('@utils/removable')
 const config = require('@config/index')
 
 /**
@@ -180,11 +187,56 @@ async function update(userId, payload) {
   }
 }
 
+/**
+ * 互锁检查声明（被 remove 与 removableCheck 共用）。
+ * 阻挡"用户与本机构的解绑"的所有引用，全部 org 范围内。
+ */
+function userUsageChecks(orgId, userId) {
+  return [
+    {
+      model: CourseInstance, filter: { org: orgId, teacher: userId },
+      label: '开班(任课老师)', hint: '请先把该员工从开班中移除(改派其他老师)后再解绑'
+    },
+    {
+      model: LessonSchedule, filter: { org: orgId, teacher: userId },
+      label: '排课(任课老师)', hint: '请先把该员工从排课中移除后再解绑'
+    },
+    {
+      model: LessonAttendance, filter: { org: orgId, evaluatedBy: userId },
+      label: '考勤(课评人)', hint: '历史课评留有该员工痕迹, 请保留其与机构的归属'
+    },
+    {
+      model: Student, filter: { org: orgId, $or: [{ guardianUser: userId }, { guardians: userId }] },
+      label: '学员(监护人)', hint: '请先把该员工从所有学员的监护人列表中移除后再解绑'
+    },
+    {
+      model: StudentProduct, filter: { org: orgId, giftedBy: userId },
+      label: '赠课记录', hint: '历史赠课留有该员工痕迹, 请保留其与机构的归属'
+    },
+    {
+      model: StudentWork, filter: { org: orgId, uploadedBy: userId },
+      label: '作品(上传人)', hint: '历史作品留有该员工上传痕迹, 请保留其与机构的归属'
+    }
+  ]
+}
+
 async function remove(userId, orgId) {
-  // 解绑 org 关系 (不删 user)
-  const rel = await UserOrgRel.findOneAndDelete({ user: userId, org: orgId })
+  // 先校验存在
+  const rel = await UserOrgRel.findOne({ user: userId, org: orgId }).select('_id').lean()
   if (!rel) throw ApiError.notFound('用户不属于该机构')
+
+  // 互锁:该 user 在本机构仍有上述 6 类引用,则挡
+  await removable.assertUnused(orgId, userUsageChecks(orgId, userId))
+
+  // 解绑 org 关系 (不删 user 本体——用户可能还属于其他机构)
+  await UserOrgRel.deleteOne({ _id: rel._id })
   return { success: true }
+}
+
+async function removableCheck(userId, orgId) {
+  const rel = await UserOrgRel.findOne({ user: userId, org: orgId }).select('_id').lean()
+  if (!rel) return { canRemove: false, blockers: [{ entity: 'UserOrgRel', label: '员工归属', count: 0, hint: '该用户不属于本机构,无需解绑' }] }
+  return removable.check(orgId, userUsageChecks(orgId, userId))
 }
 
 async function changePassword(userId, oldPassword, newPassword) {
@@ -297,4 +349,4 @@ async function setBlocked(userId, isBlocked, reason) {
   return u
 }
 
-module.exports = { list, detail, create, update, remove, changePassword, resetPassword, setPositions, lookupByMobile, attachToOrg, setBlocked }
+module.exports = { list, detail, create, update, remove, removableCheck, changePassword, resetPassword, setPositions, lookupByMobile, attachToOrg, setBlocked }

@@ -248,4 +248,13 @@ async function remove({ id, orgId }) {
   return { success: true }
 }
 
-module.exports = { upload, list, detail, create, update, remove }
+/**
+ * 预检:作品是孤儿数据,只要作品存在即可删。给前端"可删除"提示,UX 一致。
+ */
+async function removableCheck({ id, orgId }) {
+  const doc = await StudentWork.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) return { canRemove: false, blockers: [{ entity: 'StudentWork', label: '作品', count: 0, hint: '该作品不存在或不属于本机构' }] }
+  return { canRemove: true, blockers: [] }
+}
+
+module.exports = { upload, list, detail, create, update, remove, removableCheck }

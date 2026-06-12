@@ -150,9 +150,58 @@ server/src/
 │             ├──auth.service.js
 │             ├──auth.validator.js
 │     └── org/
-│             ├── *** 
+│             ├── ***
 │     └── ***
 └── utils/
+```
+
+### 8.1 破坏性操作门控（删除保护）
+
+所有 `DELETE` 路由必须满足**三重防护**：
+
+1. **身份门槛**：`requirePlatformPassword` 中间件
+   - 必须 `req.user.isPlatformAdmin`（平台超管）。
+   - 必须从 `body.password` 二次确认自身登录密码（`argon2.verify` 与 `User.passwordHash` 对照）。
+   - 由 [packages/server/src/middlewares/requirePlatformPassword.js](packages/server/src/middlewares/requirePlatformPassword.js) 统一实现；**所有新接入模块直接套用**。
+
+2. **业务互锁**：service.remove 内用 [`@utils/removable.assertUnused`](packages/server/src/utils/removable.js) 校验下游引用
+   - 互锁检查声明（`Array<{ model, filter, label, hint }>`）抽成**命名函数**（`xxxUsageChecks(orgId, id)`），与 `removableCheck` 共用同一组声明，单点维护。
+   - 任意一项 `countDocuments > 0` → 抛 `ApiError.unprocessable`（422），错误 `data.blockers` 携带全部阻挡详情。
+
+3. **预检端点**：`GET /:id/removable-check`
+   - 普通业务岗（`<module>.read` 权限）即可调用，**不**需超管+密码。
+   - 返回 `{ canRemove: boolean, blockers: [{entity,label,count,hint}] }`，供前端在删除按钮触发前先弹挡板说明。
+   - 必须用同一组 `xxxUsageChecks`，与 `service.remove` 互锁语义保持完全一致。
+
+**禁止物理删除的实体**（业务上只走"停用"/"下架"/"归档"）：
+
+- **Org（机构）**：SaaS 根，整条业务链挂上面。**禁用 DELETE 路由**；用 `PUT /orgs/:id/active`（toggleActive）切换启用。
+
+**允许物理删除但需互锁的实体**：
+
+- **CourseProduct（课程产品）**：被 `Order.items[].courseProduct` / `StudentProduct.courseProduct` 强引用。
+  - DELETE 路由**存在**，但 `service.remove` 内 `assertUnused` 校验两项 count=0 才放行；
+  - 有引用时返回 422 + `data.blockers`（含具体订单数/课包数 + 中文操作建议）；
+  - 前端用 `<DestructiveConfirm>` + `:precheck` 让用户在弹密码前先看到挡板；
+  - 业务上仍推荐用 `PUT /:id {isActive:false}` "下架"——只有"彻底不要这门课"才走物理删除。
+- **Room（教室）**：被 `CourseInstance.room` / `LessonSchedule.room` 强引用。
+  - DELETE 路由**存在**，但 `service.remove` 内 `assertUnused` 校验：
+    - `CourseInstance` 未软删 (`deletedAt: null`)
+    - `LessonSchedule` 未归档 (`status ≠ 'archived'`)
+  - 已归档的开班/排课**不**挡（历史不再展示在排课视图）；
+  - 前端用 `<DestructiveConfirm>` + `:precheck`，`handleRemoveError` 兜底；
+  - 业务上仍推荐用 `PUT /:id {isActive:false}` "停用"——只有"该教室彻底不再使用"才走物理删除。
+
+**前端配套**：
+
+- 所有破坏性确认走 [`<DestructiveConfirm>`](packages/admin/src/components/DestructiveConfirm.vue)（统一"高风险说明 + 输密码"两段式）。
+- 通过 `:precheck` prop 接入 `removable-check` 预检；`canRemove=false` 时自动弹挡板，不进入密码输入。
+- **兜底**：每个 `onRemoveConfirm` 的 catch 必须调 `handleRemoveError(err, '无法删除 · 高/中风险')`——
+  - 若后端在预检通过后又被新数据挡住（竞态），仍能从 `err.response.data.data.blockers` 还原出完整挡板说明；
+  - 无结构化 blockers 时（如密码错/403）原样 rethrow，由 axios 拦截器 ElMessage。
+- API 范式：`remove: (id, { password } = {}) => http.delete(url, { data: { password } })`。
+- 工具函数：[`packages/admin/src/utils/removable.js`](packages/admin/src/utils/removable.js) 提供 `formatBlockers` / `showBlockedAlert` / `handleRemoveError` / `removableCheckThen`。
+
 
 ## 9. API 规范
 - 基础路径：`/api/v1`

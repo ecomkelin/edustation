@@ -10,6 +10,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { showBlockedAlert } from '@/utils/removable'
 
 /**
  * 「破坏性操作」二次确认组件。
@@ -18,9 +19,10 @@ import { useAuthStore } from '@/stores/auth'
  *
  * 流程:
  *   1) 用户点触发按钮(slot)
- *   2) ElMessageBox.confirm 显示"高风险"提示 + 阻断说明
- *   3) 用户点继续 → ElMessageBox.prompt 输入自己的登录密码
- *   4) 密码长度合法 → emit('confirm', { password })
+ *   2) **可选 precheck**: 若传 :precheck,先异步调一次,失败则弹挡板并终止
+ *   3) ElMessageBox.confirm 显示"高风险"提示 + 阻断说明
+ *   4) 用户点继续 → ElMessageBox.prompt 输入自己的登录密码
+ *   5) 密码长度合法 → emit('confirm', { password })
  *
  * 适用范围:
  *   - 所有走 requirePlatformPassword(后端) 的接口
@@ -32,6 +34,8 @@ import { useAuthStore } from '@/stores/auth'
  *   - reason:   string   阻断原因说明(默认:"该操作不可恢复,且仅限「误操」场景")
  *   - confirm:  string   第一次确认弹窗的按钮文案
  *   - precheckNotes: string[]   无关联数据才能执行的细则(显示在第二次弹窗中)
+ *   - precheck:    () => Promise<{canRemove:boolean, blockers?:Array}>  异步预检;
+ *                 返回 canRemove=false 时弹挡板说明并不继续;不传则跳过预检
  *   - disabled: boolean  业务上不可执行时(如服务端校验失败预判),禁止点击
  */
 const props = defineProps({
@@ -40,10 +44,11 @@ const props = defineProps({
   reason: { type: String, default: '此操作不可恢复。已结业/已启用的记录请优先走「停用」或「退班/退课」操作。' },
   confirm: { type: String, default: '继续' },
   precheckNotes: { type: Array, default: () => [] },
+  precheck: { type: Function, default: null },
   disabled: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['confirm', 'cancel'])
+const emit = defineEmits(['confirm', 'cancel', 'blocked'])
 
 const auth = useAuthStore()
 const currentUserRealName = (auth.user && (auth.user.realName || auth.user.mobile)) || '当前账号'
@@ -53,7 +58,23 @@ async function onClick() {
     ElMessage.warning('当前对象不可执行该操作')
     return
   }
-  // 第一次确认:风险说明
+  // 0) 预检(若传了 precheck)
+  if (typeof props.precheck === 'function') {
+    let result
+    try {
+      result = await props.precheck()
+    } catch (e) {
+      ElMessage.error(e?.response?.data?.message || e?.message || '预检失败')
+      return
+    }
+    if (!result || result.canRemove !== true) {
+      const blockers = (result && result.blockers) || []
+      emit('blocked', blockers)
+      await showBlockedAlert(blockers, `无法删除 · ${props.warning}`)
+      return
+    }
+  }
+  // 1) 第一次确认:风险说明
   try {
     await ElMessageBox.confirm(
       buildFirstMessage(),
@@ -69,7 +90,7 @@ async function onClick() {
     emit('cancel')
     return
   }
-  // 第二次确认:输密码
+  // 2) 第二次确认:输密码
   try {
     const { value: pwd } = await ElMessageBox.prompt(
       `请输入「${currentUserRealName}」的登录密码以确认:`,

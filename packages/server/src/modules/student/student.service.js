@@ -4,9 +4,12 @@ const Student = require('@models/Student.model')
 const User = require('@models/User.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
 const Position = require('@models/Position.model')
+const CourseEnrollment = require('@models/CourseEnrollment.model')
+const StudentProduct = require('@models/StudentProduct.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const password = require('@utils/password')
+const removable = require('@utils/removable')
 const config = require('@config/index')
 const { CLIENT_LEVEL } = require('@shared/enums')
 
@@ -110,10 +113,40 @@ async function update(id, orgId, payload) {
   return detail(s._id, orgId)
 }
 
+/**
+ * 互锁检查声明（被 remove 与 removableCheck 共用）。
+ * 学员的"软删"（isActive=false）会保留所有历史考勤/作品/积分/宠物，只挡
+ * "在册"和"还有未用完课包"——这两类不解脱会让"已停用学员"仍然消耗课包资源。
+ */
+function studentUsageChecks(orgId, studentId) {
+  return [
+    {
+      model: CourseEnrollment, filter: { org: orgId, student: studentId, status: 'enrolled' },
+      label: '在册报名', hint: '请先办理该学员的退班/结业后再停用'
+    },
+    {
+      model: StudentProduct, filter: { org: orgId, student: studentId, isActive: true, remainingLessons: { $gt: 0 } },
+      label: '未用完课包', hint: '请先处理该学员的未用完课包(转课/退费)后再停用'
+    }
+  ]
+}
+
 async function remove(id, orgId) {
-  const s = await Student.findOneAndUpdate({ _id: id, org: orgId }, { isActive: false }, { new: true })
+  // 存在性 + 软删
+  const s = await Student.findOne({ _id: id, org: orgId }).select('_id').lean()
   if (!s) throw ApiError.notFound('学生不存在')
-  return s.toObject()
+
+  // 互锁:在册 / 仍有未用完课包则挡
+  await removable.assertUnused(orgId, studentUsageChecks(orgId, id))
+
+  await Student.updateOne({ _id: id, org: orgId }, { $set: { isActive: false } })
+  return { success: true, id }
+}
+
+async function removableCheck(id, orgId) {
+  const s = await Student.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!s) return { canRemove: false, blockers: [{ entity: 'Student', label: '学员', count: 0, hint: '该学员不存在或不属于本机构' }] }
+  return removable.check(orgId, studentUsageChecks(orgId, id))
 }
 
 async function setGuardians(id, orgId, guardians) {
@@ -154,4 +187,4 @@ async function listForGuardian({ orgId, userId }) {
     .lean()
 }
 
-module.exports = { list, detail, create, update, remove, setGuardians, setBlocked, listForGuardian }
+module.exports = { list, detail, create, update, remove, removableCheck, setGuardians, setBlocked, listForGuardian }

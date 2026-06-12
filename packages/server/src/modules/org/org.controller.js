@@ -23,10 +23,7 @@ exports.update = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
-exports.remove = async (req, res) => {
-  await service.remove(req.params.id)
-  res.json(ApiResponse.ok())
-}
+// 机构不允许物理删除——见 org.routes.js 注释。请使用 toggle-active。
 
 exports.toggleActive = async (req, res) => {
   const data = await service.toggleActive(req.params.id, req.user.id, req.body.password)

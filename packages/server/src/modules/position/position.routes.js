@@ -35,6 +35,7 @@ router.use(mws.authenticate, mws.requireOrg)
 router.get('/permissions-catalog', mws.requirePermission('position.write'), asyncHandler(c.permissionsCatalog))
 router.get('/', mws.requirePermission('position.read'), asyncHandler(c.list))
 router.get('/:id', mws.requirePermission('position.read'), asyncHandler(c.detail))
+router.get('/:id/removable-check', mws.requirePermission('position.read'), asyncHandler(c.removableCheck))
 router.post('/', mws.requirePermission('position.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', mws.requirePermission('position.write'), v.update, mws.validateRequest, asyncHandler(c.update))
 // 物理删除(「误操」场景):超管+密码二次确认;系统职位不可删(service 校验);

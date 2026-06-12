@@ -38,7 +38,7 @@
           <span v-else style="color: #999">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button
@@ -49,6 +49,17 @@
           >
             {{ row.isBlocked ? '解禁' : '禁用' }}
           </el-button>
+          <!-- 「误操停用」:超管+密码+互锁(在册报名/未用完课包)预检 -->
+          <DestructiveConfirm
+            v-if="auth.isPlatformAdmin && row.isActive"
+            :target="`学生 ${row.name}`"
+            warning="中风险"
+            :precheck-notes="['无在册报名', '无未用完课包']"
+            :precheck="() => studentApi.removableCheck(row._id).then((r) => r.data)"
+            @confirm="(p) => onRemoveConfirm(row, p)"
+          >
+            <el-button size="small" type="danger">停用</el-button>
+          </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -111,7 +122,9 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { studentApi } from '@/api/student'
+import { handleRemoveError } from '@/utils/removable'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/format'
@@ -249,6 +262,16 @@ async function toggleBlock(row) {
     // 用户点击取消
     if (e === 'cancel') return
     ElMessage.error(e?.response?.data?.message || `${action}失败`)
+  }
+}
+
+async function onRemoveConfirm(row, { password }) {
+  try {
+    await studentApi.remove(row._id, { password })
+    ElMessage.success('已停用')
+    load()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 高风险')
   }
 }
 

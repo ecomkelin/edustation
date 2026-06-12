@@ -43,6 +43,7 @@
                     :target="`类别 ${data.name}`"
                     warning="中风险"
                     :precheck-notes="['无子级类别', '无任何机构引用该类别']"
+                    :precheck="() => categoryApi.removableCheck(data._id).then((r) => r.data)"
                     @click.stop
                     @confirm="(p) => onRemoveConfirm(data, p)"
                   >
@@ -86,6 +87,7 @@
                   :target="`类别 ${row.name}`"
                   warning="中风险"
                   :precheck-notes="['无子级类别', '无任何机构引用该类别']"
+                  :precheck="() => categoryApi.removableCheck(row._id).then((r) => r.data)"
                   @confirm="(p) => onRemoveConfirm(row, p)"
                 >
                   <el-button size="small" type="danger">误操删除</el-button>
@@ -141,6 +143,7 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoryApi } from '@/api/category'
+import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 
 const MODELS = ['Org', 'Student', 'Subject']
@@ -298,8 +301,8 @@ async function onRemoveConfirm(node, { password }) {
       selected.value = null
     }
     if (selected.value) await loadChildren()
-  } catch (_e) {
-    // 错误已 ElMessage
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 中风险')
   }
 }
 

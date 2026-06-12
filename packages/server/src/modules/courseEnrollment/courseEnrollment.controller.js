@@ -10,8 +10,6 @@ exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update(req.
 exports.setStatus = async (req, res) => res.json(ApiResponse.ok(await s.setStatus({ id: req.params.id, orgId: req.orgId, ...req.body })))
 exports.remove = async (req, res) => res.json(ApiResponse.ok(await s.remove({
   id: req.params.id,
-  orgId: req.orgId,
-  isPlatformAdmin: !!req.user.isPlatformAdmin,
-  userId: req.user.id,
-  password: req.body && req.body.password
+  orgId: req.orgId
 })))
+exports.removableCheck = async (req, res) => res.json(ApiResponse.ok(await s.removableCheck(req.params.id, req.orgId)))

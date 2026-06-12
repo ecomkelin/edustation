@@ -13,6 +13,7 @@ router.get('/calendar', mws.requirePermission('lessonSchedule.read'), asyncHandl
 router.get('/conflicts', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.checkConflicts))
 router.get('/', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.list))
 router.get('/:id', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.detail))
+router.get('/:id/removable-check', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.removableCheck))
 // 单条创建
 router.post('/', mws.requirePermission('lessonSchedule.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 // 批量：preview（不入库） / generate（入库）

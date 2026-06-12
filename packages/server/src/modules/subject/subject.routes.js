@@ -31,6 +31,7 @@ router.use(mws.authenticate, mws.requireOrg)
 
 router.get('/', mws.requirePermission('subject.read'), asyncHandler(c.list))
 router.get('/:id', mws.requirePermission('subject.read'), asyncHandler(c.detail))
+router.get('/:id/removable-check', mws.requirePermission('subject.read'), asyncHandler(c.removableCheck))
 router.post('/', mws.requirePermission('subject.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', mws.requirePermission('subject.write'), v.update, mws.validateRequest, asyncHandler(c.update))
 // 物理删除(「误操」场景):超管+密码二次确认 + 业务上无 CourseProduct/CourseInstance 引用

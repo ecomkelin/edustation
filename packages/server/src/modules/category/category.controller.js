@@ -9,3 +9,4 @@ exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(req.
 exports.create = async (req, res) => res.status(201).json(ApiResponse.created(await s.create(req.body)))
 exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update(req.params.id, req.body)))
 exports.remove = async (req, res) => res.json(ApiResponse.ok(await s.remove(req.params.id)))
+exports.removableCheck = async (req, res) => res.json(ApiResponse.ok(await s.removableCheck(req.params.id)))

@@ -170,6 +170,7 @@
             :target="`职位 ${row.name}`"
             warning="高风险"
             :precheck-notes="['无员工持有该职位']"
+            :precheck="() => positionApi.removableCheck(row._id).then((r) => r.data)"
             @confirm="(p) => onRemoveConfirm(row, p)"
           >
             <el-button size="small" type="danger">误操删除</el-button>
@@ -392,6 +393,7 @@
 import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { positionApi } from '@/api/position'
+import { handleRemoveError } from '@/utils/removable'
 import { useAuthStore } from '@/stores/auth'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 // 直接读 JSON：Vite 原生支持 JSON import；CJS 包装的 permissions.js 在 Rollup 静态分析下拿不到具名导出。
@@ -574,8 +576,8 @@ async function onRemoveConfirm(row, { password }) {
     await positionApi.remove(row._id, { password })
     ElMessage.success('已删除')
     load()
-  } catch (_e) {
-    // 错误已 ElMessage
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 中风险')
   }
 }
 

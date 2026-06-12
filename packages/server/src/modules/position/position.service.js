@@ -200,15 +200,36 @@ async function remove({ id, orgId }) {
   if (!pos) throw ApiError.notFound('职位不存在')
   if (pos.isSystem) throw ApiError.badRequest('系统职位不可删除')
 
-  const holderCount = await UserOrgRel.countDocuments({ org: orgId, positions: id })
-  if (holderCount > 0) {
-    throw ApiError.unprocessable(
-      `仍有 ${holderCount} 名员工持有该职位,请先把员工从该职位解除后再删`
-    )
-  }
+  // 互锁:有员工持有则挡
+  const { assertUnused } = require('@utils/removable')
+  await assertUnused(orgId, [
+    {
+      model: UserOrgRel, filter: { org: orgId, positions: id },
+      label: '员工持有', hint: '请先把员工从该职位解除后再删'
+    }
+  ])
 
   await pos.deleteOne()
   return { success: true }
+}
+
+/**
+ * 预检:返回该职位当前是否可删除。
+ * 系统职位 / 仍有员工持有 → 阻挡。
+ */
+async function removableCheck({ id, orgId }) {
+  const pos = await Position.findOne({ _id: id, org: orgId }).select('_id isSystem name').lean()
+  if (!pos) return { canRemove: false, blockers: [{ entity: 'Position', label: '职位', count: 0, hint: '该职位不存在或不属于本机构' }] }
+  if (pos.isSystem) {
+    return { canRemove: false, blockers: [{ entity: 'Position', label: '系统职位', count: 1, hint: '系统职位不可删除' }] }
+  }
+  const { check } = require('@utils/removable')
+  return check(orgId, [
+    {
+      model: UserOrgRel, filter: { org: orgId, positions: id },
+      label: '员工持有', hint: '请先把员工从该职位解除后再删'
+    }
+  ])
 }
 
 async function setPermissions(id, orgId, permissions) {
@@ -365,6 +386,7 @@ module.exports = {
   create,
   update,
   remove,
+  removableCheck,
   setPermissions,
   permissionsCatalog,
   listSourceOrgs,

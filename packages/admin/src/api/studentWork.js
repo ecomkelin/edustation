@@ -9,5 +9,6 @@ export const studentWorkApi = {
     }),
   // 员工编辑：title / description / fileUrls / level
   update: (id, payload) => http.patch(`/student-works/${id}`, payload),
-  remove: (id, { password } = {}) => http.delete(`/student-works/${id}`, { data: { password } })
+  remove: (id, { password } = {}) => http.delete(`/student-works/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/student-works/${id}/removable-check`)
 }

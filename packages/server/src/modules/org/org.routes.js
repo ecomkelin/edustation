@@ -21,7 +21,8 @@ router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
 router.get('/:id/candidate-principals', v.idParam, mws.validateRequest, asyncHandler(c.candidatePrincipals))
 router.post('/', v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', v.idParam, v.update, mws.validateRequest, asyncHandler(c.update))
-router.delete('/:id', v.idParam, asyncHandler(c.remove))
+// 注意：机构不允许物理删除（机构下业务数据太多，物理删除会留下大量悬空引用）。
+// 业务上请用 toggle-active 接口做"启用/停用"。
 router.post('/:id/toggle-active', v.idParam, v.toggleActive, mws.validateRequest, asyncHandler(c.toggleActive))
 
 module.exports = router

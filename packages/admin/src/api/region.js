@@ -6,5 +6,6 @@ export const regionApi = {
   detail: (id) => http.get(`/regions/${id}`),
   create: (data) => http.post('/regions', data),
   update: (id, data) => http.put(`/regions/${id}`, data),
-  remove: (id, { password } = {}) => http.delete(`/regions/${id}`, { data: { password } })
+  remove: (id, { password } = {}) => http.delete(`/regions/${id}`, { data: { password } }),
+  removableCheck: (id) => http.get(`/regions/${id}/removable-check`)
 }

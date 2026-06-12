@@ -168,7 +168,17 @@
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button v-if="canChangeStatus(row)" size="small" @click="openStatusDialog(row)">改状态</el-button>
           <el-button v-if="canCancel(row)" size="small" type="warning" @click="openCancelDialog(row)">取消</el-button>
-          <el-button v-if="canDelete(row)" size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
+          <!-- 「误操删除」:仅超管;前置条件:planning/cancelled 状态 + 无业务引用 -->
+          <DestructiveConfirm
+            v-if="canDelete(row)"
+            :target="`开班 ${row.name || row.courseProduct?.name || '?'}`"
+            warning="高风险"
+            :precheck-notes="['开班状态为 planning/cancelled', '无报名/未归档排课/作品引用']"
+            :precheck="() => courseInstanceApi.removableCheck(row._id).then((r) => r.data)"
+            @confirm="(p) => onDeleteConfirm(row, p)"
+          >
+            <el-button size="small" type="danger">误操删除</el-button>
+          </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -596,7 +606,9 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { courseInstanceApi } from '@/api/courseInstance'
+import { handleRemoveError } from '@/utils/removable'
 import { courseProductApi } from '@/api/courseProduct'
 import { subjectApi } from '@/api/subject'
 import { roomApi } from '@/api/room'
@@ -1311,18 +1323,13 @@ async function submitCancel() {
   }
 }
 
-async function confirmDelete(row) {
-  await ElMessageBox.confirm(
-    `确定删除开班「${row.name || row.courseProduct?.name || '?'}」？\n删除后不可恢复（软删）。`,
-    '确认删除',
-    { type: 'warning' }
-  )
+async function onDeleteConfirm(row, { password }) {
   try {
-    await courseInstanceApi.remove(row._id)
+    await courseInstanceApi.remove(row._id, { password })
     ElMessage.success('已删除')
     load()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '删除失败')
+    await handleRemoveError(e, '无法删除 · 高风险')
   }
 }
 

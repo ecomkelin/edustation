@@ -7,8 +7,10 @@ const UserOrgRel = require('@models/UserOrgRel.model')
 const Room = require('@models/Room.model')
 const LessonSchedule = require('@models/LessonSchedule.model')
 const CourseEnrollment = require('@models/CourseEnrollment.model')
+const StudentWork = require('@models/StudentWork.model')
 const courseEnrollmentService = require('../courseEnrollment/courseEnrollment.service')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 const { CourseEnrollmentStatus, CourseInstanceStatus } = require('@shared/enums')
 
 // ─── 锁字段规则（planning 之外不可改；totalPlannedLessons 例外） ───
@@ -515,11 +517,37 @@ async function setStatus(id, orgId, toStatus, by, reason, isPlatformAdmin) {
 }
 
 /**
+ * 互锁检查声明(被 softDelete 与 removableCheck 共用)。
+ * 开班的"软删"(deletedAt=now)会保留所有业务痕迹,只挡"还有真实业务引用"——
+ * 报名 / 未归档排课 / 作品(开班是 StudentWork 的冗余快照,强引用)。
+ */
+function courseInstanceUsageChecks(orgId, courseInstanceId) {
+  return [
+    {
+      model: CourseEnrollment, filter: { org: orgId, courseInstance: courseInstanceId },
+      label: '课程报名', hint: '请先清空该开班下的所有报名(退班)后再删除'
+    },
+    {
+      model: LessonSchedule, filter: { org: orgId, courseInstance: courseInstanceId, status: { $ne: 'archived' } },
+      label: '未归档排课', hint: '请先归档该开班下的所有排课后再删除'
+    },
+    {
+      model: StudentWork, filter: { org: orgId, courseInstance: courseInstanceId },
+      label: '学员作品', hint: '该开班已有学员作品上传, 强引用不允许删除'
+    }
+  ]
+}
+
+/**
  * 软删：仅在 planning / cancelled 状态可删；仅超管可执行。
  * 理由：active / enrolling / closed 状态的开班已有业务痕迹（报名 / 排课 / 考勤），
  * 不能硬抹掉。cancelled 是死胡同，删了不会影响现有数据。
+ *
+ * 互锁补充：即使状态是 planning/cancelled，若该开班已有报名 / 排课 / 作品，
+ * 也需先清空业务引用才能软删——避免"软删后报名记录仍指向已软删开班"的悬挂引用。
  */
 async function softDelete(id, orgId, by, isPlatformAdmin) {
+  // 防御性双检：路由层 requirePlatformPassword 已经挡过；这里再挡一道
   if (!isPlatformAdmin) {
     throw ApiError.forbidden('仅平台超管可删除开班')
   }
@@ -528,15 +556,31 @@ async function softDelete(id, orgId, by, isPlatformAdmin) {
   if (!['planning', 'cancelled'].includes(cur.status)) {
     throw ApiError.badRequest(`状态为 ${cur.status} 的开班不可删除（仅筹备/取消状态可删）`)
   }
+
+  // 互锁:业务引用清空才允许软删
+  await removable.assertUnused(orgId, courseInstanceUsageChecks(orgId, id))
+
   cur.deletedAt = new Date()
   cur.statusLog.push({ from: cur.status, to: cur.status, by, at: new Date(), reason: '软删' })
   await cur.save()
   return { success: true, id, deletedAt: cur.deletedAt }
 }
 
+async function removableCheck(id, orgId) {
+  const cur = await CourseInstance.findOne({ _id: id, org: orgId, deletedAt: null }).select('_id status').lean()
+  if (!cur) return { canRemove: false, blockers: [{ entity: 'CourseInstance', label: '开班', count: 0, hint: '该开班不存在或已被软删' }] }
+  if (!['planning', 'cancelled'].includes(cur.status)) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'CourseInstance', label: '开班', count: 1, hint: `状态为 ${cur.status} 的开班不可删除（仅筹备/取消状态可删）` }]
+    }
+  }
+  return removable.check(orgId, courseInstanceUsageChecks(orgId, id))
+}
+
 module.exports = {
   list, detail, create, update,
-  setStatus, softDelete,
+  setStatus, softDelete, removableCheck,
   computeEstimatedEndDate,
   assertSchedulePlanValid
 }

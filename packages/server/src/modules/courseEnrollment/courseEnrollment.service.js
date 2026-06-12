@@ -7,11 +7,9 @@ const LessonSchedule = require('@models/LessonSchedule.model')
 const LessonAttendance = require('@models/LessonAttendance.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const Student = require('@models/Student.model')
-const User = require('@models/User.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { CourseEnrollmentStatus, CourseInstanceStatus, AttendanceStatus } = require('@shared/enums')
-const password = require('@utils/password')
 
 function toObjectId(v) {
   if (v instanceof mongoose.Types.ObjectId) return v
@@ -501,34 +499,16 @@ async function setStatus({ id, orgId, toStatus, reason }) {
 
 /**
  * 物理删除报名记录(「误操」场景)。
- * 入口权限已在 router 层用 requirePlatformAdmin 拦过;此处再做一次
- * 业务校验 + 密码二次确认,确保:
- *   1) 仅平台超管可执行(防御性双检,即便路由配错也不会误删)
- *   2) 操作人必须再次输入自己的登录密码 —— 防"账号被人借用"或
- *      "锁定屏被绕过"的破坏性操作场景
- *   3) 仅 status='enrolled' 状态可删:已结业/退班的记录是审计/统计
+ * 入口权限由 router 层 requirePlatformPassword 中间件把守(超管+密码);
+ * service 层只剩业务校验:
+ *   1) 必须有 orgId(超管需在 header 指定目标机构)
+ *   2) 仅 status='enrolled' 状态可删:已结业/退班的记录是审计/统计
  *      依据,不允许物理抹掉
- *
- * 注意:平台超管在 requireOrg 中间件里如果不传 x-org-id,req.orgId 会
- * 是 null。所以超管做删除前必须先在 header 里指定目标机构 —— 防止
- * 误删其他机构的报名。
  */
-async function remove({ id, orgId, isPlatformAdmin, userId, password: plainPwd }) {
-  if (!isPlatformAdmin) {
-    throw ApiError.forbidden('仅平台超管可删除报名记录')
-  }
-  if (!plainPwd || !String(plainPwd).trim()) {
-    throw ApiError.badRequest('请输入操作密码以确认')
-  }
+async function remove({ id, orgId }) {
   if (!orgId) {
     throw ApiError.badRequest('缺少 x-org-id,请先切换到目标机构')
   }
-  // 密码二次校验(用 auth 同款 argon2 工具,统一算法)
-  const user = await User.findOne({ _id: userId, isActive: true }).select('+passwordHash')
-  if (!user) throw ApiError.unauthorized('用户不存在')
-  const ok = await password.verify(user.passwordHash, String(plainPwd))
-  if (!ok) throw ApiError.unauthorized('操作密码错误')
-
   // 业务校验:仅 enrolled 状态可物理删除
   const e = await CourseEnrollment.findOne({ _id: id, org: orgId })
   if (!e) throw ApiError.notFound('报名记录不存在')
@@ -537,6 +517,25 @@ async function remove({ id, orgId, isPlatformAdmin, userId, password: plainPwd }
   }
   await e.deleteOne()
   return { success: true }
+}
+
+/**
+ * 预检:返回该报名记录当前是否可物理删除。
+ * 仅 enrolled 状态可删;其他状态返回 blocker 描述。
+ */
+async function removableCheck(id, orgId) {
+  if (!orgId) {
+    return { canRemove: false, blockers: [{ entity: 'CourseEnrollment', label: '报名记录', count: 0, hint: '缺少 x-org-id' }] }
+  }
+  const e = await CourseEnrollment.findOne({ _id: id, org: orgId }).select('_id status').lean()
+  if (!e) return { canRemove: false, blockers: [{ entity: 'CourseEnrollment', label: '报名记录', count: 0, hint: '该报名记录不存在或不属于本机构' }] }
+  if (e.status !== CourseEnrollmentStatus.ENROLLED) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'CourseEnrollment', label: '报名记录', count: 1, hint: `状态为 ${e.status},仅 enrolled 状态可删除(请走状态变更)` }]
+    }
+  }
+  return { canRemove: true, blockers: [] }
 }
 
 /**
@@ -744,7 +743,7 @@ async function backfillEnrollmentsMainProduct({ orgId }) {
 }
 
 module.exports = {
-  list, detail, create, update, setStatus, remove,
+  list, detail, create, update, setStatus, remove, removableCheck,
   countEnrolled, countEnrolledByInstances, assertCanEnroll,
   bindStudentProductToEnrollments, backfillEnrollmentsMainProduct
 }

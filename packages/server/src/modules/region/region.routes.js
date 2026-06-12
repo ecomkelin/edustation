@@ -19,6 +19,7 @@ router.use((req, res, next) => {
 router.get('/', asyncHandler(c.list))
 router.get('/tree', asyncHandler(c.tree))
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
+router.get('/:id/removable-check', v.idParam, mws.validateRequest, asyncHandler(c.removableCheck))
 router.post('/', v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', v.idParam, v.update, mws.validateRequest, asyncHandler(c.update))
 // 物理删除(「误操」场景):此模块整个 router 已是 requirePlatformAdmin 包裹,

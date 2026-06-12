@@ -32,6 +32,11 @@ exports.remove = async (req, res) => {
   res.json(ApiResponse.ok())
 }
 
+exports.removableCheck = async (req, res) => {
+  const data = await service.removableCheck({ id: req.params.id, orgId: req.orgId })
+  res.json(ApiResponse.ok(data))
+}
+
 exports.setPermissions = async (req, res) => {
   const data = await service.setPermissions(req.params.id, req.orgId, req.body.permissions)
   res.json(ApiResponse.ok(data))

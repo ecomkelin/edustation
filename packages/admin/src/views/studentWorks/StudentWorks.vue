@@ -97,12 +97,16 @@
         <template #default="{ row }">
           <el-button size="small" link type="primary" @click.stop="openEdit(row)">编辑</el-button>
           <el-button
-            v-if="canDelete"
-            size="small"
-            link
-            type="danger"
-            @click.stop="confirmRemove(row)"
-          >删除</el-button>
+            <DestructiveConfirm
+              v-if="canDelete"
+              :target="`作品 ${row.title}`"
+              warning="中风险"
+              :precheck-notes="['该作品未被其他业务引用']"
+              :precheck="() => studentWorkApi.removableCheck(row._id).then((r) => r.data)"
+              @confirm="(p) => onRemoveConfirm(row, p)"
+            >
+              <el-button size="small" link type="danger">删除</el-button>
+            </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -297,7 +301,9 @@
 import { onMounted, reactive, ref, computed } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { studentWorkApi } from '@/api/studentWork'
+import { handleRemoveError } from '@/utils/removable'
 import { lessonAttendanceApi } from '@/api/lessonAttendance'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
 import { courseInstanceApi } from '@/api/courseInstance'
@@ -422,18 +428,8 @@ async function submitEdit() {
   }
 }
 
-async function confirmRemove(row) {
+async function onRemoveConfirm(row, { password }) {
   try {
-    const { value: password } = await ElMessageBox.prompt(
-      `确认删除作品「${row.title}」？此操作不可撤销。\n请输入平台超管密码以确认身份。`,
-      '删除作品（需要超管密码）',
-      {
-        confirmButtonText: '确认删除',
-        cancelButtonText: '取消',
-        inputType: 'password',
-        inputValidator: (v) => (v && v.trim() ? true : '请输入密码')
-      }
-    )
     await studentWorkApi.remove(row._id, { password })
     ElMessage.success('已删除')
     if (detail.value && detail.value._id === row._id) {
@@ -441,9 +437,7 @@ async function confirmRemove(row) {
     }
     load()
   } catch (e) {
-    // 用户取消 (cancel) 或失败统一在此兜底
-    if (e === 'cancel' || (e && e === 'close')) return
-    // 业务失败 http.js 已弹 ElMessage；这里静默
+    await handleRemoveError(e, '无法删除 · 中风险')
   }
 }
 

@@ -28,6 +28,11 @@ exports.remove = async (req, res) => {
   res.json(ApiResponse.ok())
 }
 
+exports.removableCheck = async (req, res) => {
+  const data = await service.removableCheck(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(data))
+}
+
 exports.changePassword = async (req, res) => {
   await service.changePassword(req.user.id, req.body.oldPassword, req.body.newPassword)
   res.json(ApiResponse.ok())
