@@ -63,7 +63,10 @@
       <el-table-column label="课次" width="70" prop="lessonNo" />
       <el-table-column label="开班" min-width="200">
         <template #default="{ row }">
-          <div class="cell-strong">{{ row.courseInstance && row.courseInstance.name || '—' }}</div>
+          <div class="cell-strong">
+            {{ row.courseInstance && row.courseInstance.name || '—' }}
+            <el-tag v-if="row.isTrialLesson" type="warning" size="small" style="margin-left: 6px">试听</el-tag>
+          </div>
         </template>
       </el-table-column>
       <el-table-column label="老师" width="110">

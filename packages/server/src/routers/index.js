@@ -28,6 +28,9 @@ const schoolRoutes = require('@modules/school/school.routes')
 const agentRoutes = require('@modules/agent/agent.routes')
 const reportRoutes = require('@modules/report/report.routes')
 const storageRoutes = require('@modules/storage/storage.routes')
+// 招生试听 (2026-06)
+const leadRoutes = require('@modules/lead/lead.routes')
+const trialBookingRoutes = require('@modules/trialBooking/trialBooking.routes')
 
 router.use('/auth', authRoutes)
 router.use('/orgs', orgRoutes)
@@ -53,5 +56,8 @@ router.use('/schools', schoolRoutes)
 router.use('/agent', agentRoutes)
 router.use('/reports', reportRoutes)
 router.use('/storage', storageRoutes)
+// 招生试听 (2026-06)
+router.use('/leads', leadRoutes)
+router.use('/trial-bookings', trialBookingRoutes)
 
 module.exports = router

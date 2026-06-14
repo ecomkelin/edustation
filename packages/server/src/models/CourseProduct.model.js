@@ -20,7 +20,10 @@ const { Schema, model } = require('mongoose')
  *   - validDays:    自购买日起，多少天内有效（用于推算 StudentProduct.expireDate）
  *   - 三档价格：   originalPrice / discountPrice / promotionPrice
  *                   （见下方"三档价格"章节）
- *   - syllabus:     教学大纲文本（也可放到子表存储细到每节的内容）
+ *   - attachments:  产品介绍附件（如课程介绍 PDF、宣传手册等；与教学课件无关）
+ *
+ * 注意：**教学大纲/课件** 2026-06 起拆到 Subject 上；CourseProduct 只承载"售卖规格"。
+ * CourseInstance 创建时从 Subject 快照教学大纲/课件进自己的 snapshot 字段。
  *
  * 后续若需要把"教学大纲"和"售卖规格"再拆开（例如同一大纲有 48节/96节 两种规格），
  * 可引入 CoursePackage 指向 CourseProduct。当前 MVP 用单层结构即可。
@@ -61,11 +64,10 @@ const CourseProductSchema = new Schema(
     promotionActive: { type: Boolean, default: false },
     // 有效天数（自 StudentProduct 生效日起，过期即不可用于消课）
     validDays: { type: Number, required: true, min: 1 },
-    // 教学大纲（最多 2000 字；如需更细可后续拆成 LessonSyllabus 子表）
-    syllabus: { type: String, maxlength: 2000 },
-    // 课程附件：课件 PDF / 大纲文档 / 参考资料图片等
+    // 课程产品介绍附件：宣传 PDF / 招生手册 / 课程介绍图等
     //   引用 File 文档 ID（与 StudentWork.fileUrls 区分：本字段存 id 而非 url）
     //   前端拿到 id 后拼 `${baseUrl}/storage/files/${id}` 拿 url，或列表里直接 include url
+    //   教学相关课件已剥离到 Subject / CourseInstance 上
     attachments: { type: [Schema.Types.ObjectId], ref: 'File', default: [] },
     // 是否上架；false 时家长端/招生页不再展示，历史数据仍保留
     isActive: { type: Boolean, default: true },

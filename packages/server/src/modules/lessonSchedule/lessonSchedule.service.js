@@ -7,6 +7,8 @@ const CourseEnrollment = require('@models/CourseEnrollment.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const Room = require('@models/Room.model')
 const User = require('@models/User.model')
+// 招生试听 (2026-06): 试听预约表; 排课处 usage check + detail 字段需要
+const TrialBooking = require('@models/TrialBooking.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { CourseEnrollmentStatus, AttendanceStatus, LessonScheduleStatus, CourseInstanceStatus } = require('@shared/enums')
@@ -71,12 +73,15 @@ function conflictResponsePayload(conflict) {
   return Array.from(map.values())
 }
 
-async function list({ orgId, from, to, courseInstance, teacher, room, status, statuses, page, pageSize }) {
+async function list({ orgId, from, to, courseInstance, teacher, room, status, statuses, page, pageSize, isTrialLesson }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (courseInstance) filter.courseInstance = courseInstance
   if (teacher) filter.teacher = teacher
   if (room) filter.room = room
+  // 招生试听 (2026-06): 按是否试听课过滤; 'true'/'false'/'undefined'(不传=全部)
+  if (isTrialLesson === 'true' || isTrialLesson === true) filter.isTrialLesson = true
+  else if (isTrialLesson === 'false' || isTrialLesson === false) filter.isTrialLesson = { $ne: true }
   // 状态筛选：兼容单值 status（逗号分隔）和数组 statuses；多值用 $in
   const rawStatuses = Array.isArray(statuses)
     ? statuses
@@ -161,6 +166,55 @@ async function detail(id, orgId) {
     .populate('courseInstance teacher room')
     .lean()
   if (!s) throw ApiError.notFound('排课不存在')
+  // 解析"本节课内容"(主题/描述/目标/课件) — 三层 fallback
+  // 仅在 detail 路径上做, list 路径 N+1 风险大, 让前端 schedule 列表调 detail 拿
+  try {
+    const { resolveLessonContent } = require('@shared/lessonContent')
+    // 把 CI 的 snapshot/override 摊平到 detail 文档(lean populate 后的 courseInstance 是对象)
+    const ci = s.courseInstance && typeof s.courseInstance === 'object' ? s.courseInstance : null
+    const subjectId = ci && ci.subject
+    const Subject = require('@models/Subject.model')
+    const subject = subjectId
+      ? await Subject.findOne({ _id: subjectId, org: orgId })
+          .select('syllabus lessonMaterials')
+          .lean()
+      : null
+    const resolved = resolveLessonContent({
+      lessonNo: s.lessonNo,
+      subject,
+      courseInstance: ci,
+      lessonSchedule: s
+    })
+    // 把课件 fileId 一次性查 File 拿 originalName + url, 塞到 resolvedContent.materialFiles
+    //   - 限制最大 50 个, 防恶意课拖慢 detail
+    //   - 跨 org 的 file 过滤掉(File.org 必填)
+    if (resolved.materialFileIds && resolved.materialFileIds.length) {
+      const ids = resolved.materialFileIds.slice(0, 50)
+      const File = require('@models/File.model').File
+      const files = await File.find({ _id: { $in: ids }, org: orgId, deletedAt: null })
+        .select('_id url originalName mime size')
+        .lean()
+      const byId = new Map(files.map((f) => [String(f._id), f]))
+      resolved.materialFiles = resolved.materialFileIds.map((fid) => {
+        const f = byId.get(String(fid))
+        return f ? { id: String(f._id), url: f.url, originalName: f.originalName, mime: f.mime, size: f.size } : { id: String(fid), missing: true }
+      })
+    } else {
+      resolved.materialFiles = []
+    }
+    s.resolvedContent = resolved
+  } catch (e) {
+    // 解析失败不影响主返回
+    s.resolvedContent = null
+  }
+  // 招生试听 (2026-06): 统计本排课下的试听预约数
+  //   - 给前端"试听名单"按钮的徽标用
+  //   - isTrialLesson=true 时这就是 TrialBooking.lessonSchedule=this 数量
+  //   - isTrialLesson=false 时 (跟班试听 attached 模式) 也有, 让 UI 一致显示
+  s.attachedTrialBookingCount = await TrialBooking.countDocuments({
+    org: orgId,
+    lessonSchedule: s._id
+  })
   return s
 }
 
@@ -452,9 +506,15 @@ async function buildPlanAndDetectConflicts({ orgId, courseInstance, startDate, s
 }
 
 // ─── 单条创建（原有 create，附带冲突 data） ─────────────
-async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plannedEndTime, teacher, room, status, title, notes }) {
-  if (!await CourseInstance.exists({ _id: courseInstance, org: orgId })) {
+async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plannedEndTime, teacher, room, status, title, notes, isTrialLesson }) {
+  const ci = await CourseInstance.findOne({ _id: courseInstance, org: orgId }).select('_id status name isTrial')
+  if (!ci) {
     throw ApiError.badRequest('courseInstance 不属于本机构')
+  }
+  // 招生试听 (2026-06): isTrialLesson=true 的课必须挂在 [试听专用] 开班下
+  // (CourseInstance.isTrial=true), 防误用正常开班当试听课
+  if (isTrialLesson && !ci.isTrial) {
+    throw ApiError.badRequest('试听课必须挂在 [试听专用] 开班下, 请在批量排课中创建')
   }
   if (!await User.exists({ _id: teacher })) throw ApiError.badRequest('teacher 不存在')
   if (!await Room.exists({ _id: room, org: orgId })) throw ApiError.badRequest('room 不属于本机构')
@@ -475,7 +535,8 @@ async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plann
 
   const doc = await LessonSchedule.create({
     org: orgId, courseInstance, lessonNo, plannedStartTime: start, plannedEndTime: end,
-    teacher, room, status, title, notes
+    teacher, room, status, title, notes,
+    isTrialLesson: !!isTrialLesson
   })
 
   // ★ 不在创建 LessonSchedule 时创建 LessonAttendance。
@@ -856,6 +917,18 @@ function lessonScheduleUsageChecks(orgId, scheduleId) {
     {
       model: StudentWork, filter: { lessonSchedule: scheduleId, org: orgId },
       label: '学员作品', hint: '本排课下已有作品上传,请先清理作品后再删'
+    },
+    {
+      // 招生试听 (2026-06): 该排课被排为试听课 (solo 模式: isTrialLesson=true;
+      // attached 跟班模式: 其他 TrialBooking 也指向这个 schedule); 任何还有效的
+      // 预约都阻挡删除, 让销售先把 TrialBooking 转 cancelled / no_show
+      model: TrialBooking,
+      filter: {
+        org: orgId,
+        lessonSchedule: scheduleId,
+        status: { $in: ['awaiting_schedule', 'scheduled', 'arrived', 'completed'] }
+      },
+      label: '试听课关联', hint: '本排课已被排为试听课, 请先处理该潜客的试听记录'
     }
   ]
 }
@@ -870,7 +943,25 @@ async function remove({ id, orgId }) {
 
   // 同步清掉未开始的考勤(避免悬挂引用)
   await LessonAttendance.deleteMany({ lessonSchedule: id, status: AttendanceStatus.SCHEDULED })
+  // 解绑本排课的 materials file 引用, 让 file 自身可被清理
+  const materialIds = (doc.materials || []).map((x) => String(x))
   await doc.deleteOne()
+  if (materialIds.length) {
+    try {
+      const { REF_ENTITY } = require('@models/File.model')
+      const fileBind = require('@modules/storage/fileBind')
+      await fileBind.unbindByIds({
+        orgId,
+        ids: materialIds,
+        entity: REF_ENTITY.LESSON_SCHEDULE,
+        entityId: id,
+        field: 'materials'
+      })
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[lessonSchedule.remove] unbind materials failed for', id, e && e.message)
+    }
+  }
   invalidateReportCache(orgId)
   return { success: true }
 }
@@ -886,11 +977,14 @@ async function removableCheck({ id, orgId }) {
  * FullCalendar 友好格式：[{ id, title, start, end, status, ... }]
  * 支持筛选：开班 / 老师 / 教室 / 日期范围 / 状态
  */
-async function calendar({ orgId, from, to, teacher, room, courseInstance, status }) {
+async function calendar({ orgId, from, to, teacher, room, courseInstance, status, isTrialLesson }) {
   const filter = { org: orgId }
   if (courseInstance) filter.courseInstance = courseInstance
   if (teacher) filter.teacher = teacher
   if (room) filter.room = room
+  // 招生试听 (2026-06): 按是否试听课过滤
+  if (isTrialLesson === 'true' || isTrialLesson === true) filter.isTrialLesson = true
+  else if (isTrialLesson === 'false' || isTrialLesson === false) filter.isTrialLesson = { $ne: true }
   if (status) {
     // 状态支持逗号分隔多值
     const arr = String(status).split(',').map((s) => s.trim()).filter(Boolean)

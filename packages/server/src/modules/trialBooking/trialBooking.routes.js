@@ -1,0 +1,46 @@
+'use strict'
+
+const router = require('express').Router()
+const c = require('./trialBooking.controller')
+const v = require('./trialBooking.validator')
+const mws = require('@middlewares')
+const asyncHandler = require('@utils/asyncHandler')
+
+/* ------------------------------------------------------------------
+ * 招生试听 - 试听预约 (TrialBooking) 路由
+ *
+ * 权限码 (recruit.*):
+ *   - recruit.read:   列表/详情/removable-check
+ *   - recruit.write:  批量排课/打卡/完成/再约
+ *   - recruit.convert: 转化预览/转化执行
+ * ------------------------------------------------------------------ */
+router.use(mws.authenticate, mws.requireOrg)
+
+// 列表
+router.get('/', mws.requirePermission('recruit.read'), v.list, mws.validateRequest, asyncHandler(c.list))
+// 详情
+router.get('/:id', mws.requirePermission('recruit.read'), v.idParam, mws.validateRequest, asyncHandler(c.detail))
+// 预检 (删除)
+router.get('/:id/removable-check', mws.requirePermission('recruit.read'), v.idParam, mws.validateRequest, asyncHandler(c.removableCheck))
+
+// 单笔跟班 (attached)
+router.post('/', mws.requirePermission('recruit.write'), v.create, mws.validateRequest, asyncHandler(c.create))
+// 批量排课 (核心)
+router.post('/batch-schedule', mws.requirePermission('recruit.write'), v.batchSchedule, mws.validateRequest, asyncHandler(c.batchSchedule))
+// 编辑 (cancelled/remark)
+router.put('/:id', mws.requirePermission('recruit.write'), v.idParam, v.update, mws.validateRequest, asyncHandler(c.update))
+// 到店打卡
+router.post('/:id/check-in', mws.requirePermission('recruit.write'), v.idParam, v.checkIn, mws.validateRequest, asyncHandler(c.checkIn))
+// 完成
+router.post('/:id/complete', mws.requirePermission('recruit.write'), v.idParam, v.complete, mws.validateRequest, asyncHandler(c.complete))
+// 再约一次 (no_show)
+router.post('/:id/reschedule', mws.requirePermission('recruit.write'), v.idParam, v.reschedule, mws.validateRequest, asyncHandler(c.reschedule))
+// 转化预览
+router.post('/:id/convert-preview', mws.requirePermission('recruit.convert'), v.idParam, mws.validateRequest, asyncHandler(c.convertPreview))
+// 转化执行
+router.post('/:id/convert', mws.requirePermission('recruit.convert'), v.idParam, mws.validateRequest, asyncHandler(c.convert))
+
+// 物理删除 (高风险)
+router.delete('/:id', mws.requirePlatformPassword, v.idParam, mws.validateRequest, asyncHandler(c.remove))
+
+module.exports = router

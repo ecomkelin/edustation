@@ -41,7 +41,12 @@ const routes = [
       { path: 'reports/points-activity', component: () => import('@/views/reports/PointsActivityReport.vue') },
       { path: 'files', component: () => import('@/views/files/Files.vue') },
       { path: 'platform/info', component: () => import('@/views/platformInfo/PlatformInfo.vue') },
-      { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') }
+      { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') },
+      // 招生试听 (2026-06): 潜客管理 + 试听看板
+      { path: 'recruit/leads', component: () => import('@/views/recruit/Leads.vue') },
+      { path: 'recruit/trial-bookings', component: () => import('@/views/recruit/TrialBookings.vue') },
+      // 首登强改密 (2026-06): 路由守卫拦截, 改密成功后清标志
+      { path: 'reset-password', component: () => import('@/views/ResetPassword.vue'), meta: { auth: true } }
     ]
   },
   { path: '/:pathMatch(.*)*', component: () => import('@/views/NotFound.vue') }
@@ -59,6 +64,10 @@ router.beforeEach((to, from, next) => {
   }
   if (to.meta.auth && !auth.isAuthenticated) {
     return next({ path: '/login', query: { redirect: to.fullPath } })
+  }
+  // 招生试听 (2026-06): 首登强改密守卫 — 任何非改密页的访问都拦到 /reset-password
+  if (auth.needPasswordChange && to.path !== '/reset-password') {
+    return next({ path: '/reset-password', query: { initial: '1', redirect: to.fullPath } })
   }
   next()
 })

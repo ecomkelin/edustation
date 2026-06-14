@@ -1,5 +1,6 @@
 'use strict'
 
+const mongoose = require('mongoose')
 const CourseInstance = require('@models/CourseInstance.model')
 const CourseProduct = require('@models/CourseProduct.model')
 const Subject = require('@models/Subject.model')
@@ -18,6 +19,66 @@ const { CourseEnrollmentStatus, CourseInstanceStatus } = require('@shared/enums'
 // 因为改了会让已报名的家长/已排的课混乱。totalPlannedLessons 允许下调但不能上调，
 // 且新值必须 >= 该开班下已创建的 LessonSchedule 数量（避免溢出）。
 const STRICT_LOCKED_FIELDS = ['subject', 'name', 'minutesPerLesson']
+
+/**
+ * 从 Subject 抓取 syllabus + lessonMaterials, 返回符合 CourseInstance 快照字段的 shape。
+ * service.create() 在写入开班前调用一次,把内容快照进来。
+ *
+ * 输入: subject (lean 文档; 必须含 syllabus / lessonMaterials / updatedAt)
+ * 输出: { syllabusSnapshot, lessonMaterialsSnapshot }
+ */
+function captureSyllabusFromSubject(subject) {
+  if (!subject) {
+    return {
+      syllabusSnapshot: { totalLessons: 0, lessons: [] },
+      lessonMaterialsSnapshot: { items: [] }
+    }
+  }
+  const now = new Date()
+  const version = subject.updatedAt || null
+  const syl = subject.syllabus || { totalLessons: 0, lessons: [] }
+  const lm = subject.lessonMaterials || { items: [] }
+  return {
+    syllabusSnapshot: {
+      capturedAt: now,
+      subjectVersion: version,
+      totalLessons: Number(syl.totalLessons) || (Array.isArray(syl.lessons) ? syl.lessons.length : 0),
+      lessons: Array.isArray(syl.lessons)
+        ? syl.lessons.map((l) => ({
+            lessonNo: Number(l.lessonNo),
+            topic: l.topic || '',
+            description: l.description || '',
+            objectives: Array.isArray(l.objectives) ? [...l.objectives] : [],
+            durationMinutes: l.durationMinutes != null ? Number(l.durationMinutes) : null
+          }))
+        : []
+    },
+    lessonMaterialsSnapshot: {
+      capturedAt: now,
+      subjectVersion: version,
+      items: Array.isArray(lm.items)
+        ? lm.items.map((it) => ({
+            lessonNo: Number(it.lessonNo),
+            fileIds: (it.fileIds || []).map((x) => String(x))
+          }))
+        : []
+    }
+  }
+}
+
+/**
+ * 把嵌套的 lessonMaterials (按 lessonNo 分组的 fileId[]) 扁平化为一维 fileId 数组。
+ * 用于 fileBind.diffArrayById 调用。field 名固定 'lessonMaterials'。
+ */
+function flattenLessonMaterials(items) {
+  const out = []
+  for (const it of items || []) {
+    for (const fid of it.fileIds || []) {
+      if (fid) out.push(String(fid))
+    }
+  }
+  return out
+}
 
 /**
  * 预计结束日期（粗估，UI 展示用；真实排课由 LessonSchedule 决定）：
@@ -81,7 +142,7 @@ function assertSchedulePlanValid(schedulePlan) {
   }
 }
 
-async function list({ orgId, status, statuses, subject, teacher, room, keyword }) {
+async function list({ orgId, status, statuses, subject, teacher, room, keyword, includeTrial }) {
   const filter = { org: orgId, deletedAt: null }
   // statuses: 逗号分隔的多值（如 "enrolling,active"）→ 用 $in
   if (statuses) {
@@ -93,6 +154,11 @@ async function list({ orgId, status, statuses, subject, teacher, room, keyword }
   if (subject) filter.subject = subject
   if (teacher) filter.teacher = teacher
   if (room) filter.room = room
+  // 招生试听 (2026-06): 默认隐藏 [试听专用] 开班 (isTrial=true);
+  // 前端传 ?includeTrial=true 才显示 (排课时下拉要选)
+  if (!includeTrial) {
+    filter.isTrial = { $ne: true }
+  }
   let items = await CourseInstance.find(filter)
     .populate('courseProduct', 'name subjects totalLessons originalPrice discountPrice promotionPrice promotionActive validDays')
     .populate('subject', 'name')
@@ -227,8 +293,16 @@ async function create({
   if (!await CourseProduct.exists({ _id: courseProduct, org: orgId })) {
     throw ApiError.badRequest('courseProduct 不属于本机构')
   }
-  if (subject && !await Subject.exists({ _id: subject, org: orgId })) {
-    throw ApiError.badRequest('subject 不属于本机构')
+  // 拉一次 Subject 的内容（同时校验 org 归属），用于快照 syllabus/lessonMaterials
+  // 2026-06: 教学大纲/课件 2026-06 起从 Subject 拆出;开班创建时一次性快照
+  let subjectDoc = null
+  if (subject) {
+    subjectDoc = await Subject.findOne({ _id: subject, org: orgId })
+      .select('syllabus lessonMaterials updatedAt')
+      .lean()
+    if (!subjectDoc) {
+      throw ApiError.badRequest('subject 不属于本机构')
+    }
   }
   // org-scope 校验：User 不带 org 字段，组织归属在 UserOrgRel 上
   if (teacher && !await UserOrgRel.exists({ user: teacher, org: orgId })) {
@@ -259,6 +333,8 @@ async function create({
   }
 
   const estimatedEndDate = computeEstimatedEndDate(startDate, schedulePlan)
+  // 从 Subject 快照教学大纲/课件
+  const { syllabusSnapshot, lessonMaterialsSnapshot } = captureSyllabusFromSubject(subjectDoc)
 
   const doc = await CourseInstance.create({
     org: orgId,
@@ -275,8 +351,24 @@ async function create({
     name: name || '',
     description: description || '',
     teacherIntro: teacherIntro || '',
-    statusLog: status && status !== 'planning' ? [{ to: status, at: new Date(), reason: '创建时指定' }] : []
+    statusLog: status && status !== 'planning' ? [{ to: status, at: new Date(), reason: '创建时指定' }] : [],
+    // 教学体系:创建时一次性快照
+    syllabusSnapshot,
+    lessonMaterialsSnapshot
   })
+  // 课件快照里的 fileId 走 fileBind.bindByIds 标记引用(refCount++),防止"被快照但无业务引用"被清扫
+  const snapshotFileIds = flattenLessonMaterials(lessonMaterialsSnapshot.items)
+  if (snapshotFileIds.length) {
+    const { REF_ENTITY } = require('@models/File.model')
+    const fileBind = require('@modules/storage/fileBind')
+    await fileBind.bindByIds({
+      orgId,
+      ids: snapshotFileIds,
+      entity: REF_ENTITY.COURSE_INSTANCE,
+      entityId: doc._id,
+      field: 'lessonMaterialsSnapshot'
+    })
+  }
   return detail(doc._id, orgId)
 }
 
@@ -362,12 +454,92 @@ async function update(id, orgId, payload) {
     : cur.schedulePlan
   const newEstimatedEndDate = computeEstimatedEndDate(newStartDate, newSchedulePlan)
 
+  // ─── 教学体系:override 字段校验 + 写库前准备 ───
+  // syllabusOverride: { lessons: [{ lessonNo, topic?, description?, objectives? }] }
+  //   字段都可空;只覆盖存在的;lessonNo 必填且 >= 1
+  if (payload.syllabusOverride !== undefined) {
+    const v = payload.syllabusOverride
+    if (v === null) {
+      payload.syllabusOverride = { totalLessons: 0, lessons: [] }
+    } else if (typeof v !== 'object' || Array.isArray(v)) {
+      throw ApiError.badRequest('syllabusOverride 必须是对象')
+    } else {
+      const lessons = Array.isArray(v.lessons) ? v.lessons : []
+      for (const l of lessons) {
+        if (!l || typeof l !== 'object') continue
+        if (!Number.isInteger(l.lessonNo) || l.lessonNo < 1) {
+          throw ApiError.badRequest('syllabusOverride.lessons[].lessonNo 必须是 >= 1 的整数')
+        }
+        if (l.topic !== undefined && typeof l.topic !== 'string') {
+          throw ApiError.badRequest('syllabusOverride.lessons[].topic 必须是字符串')
+        }
+        if (l.description !== undefined && typeof l.description !== 'string') {
+          throw ApiError.badRequest('syllabusOverride.lessons[].description 必须是字符串')
+        }
+        if (l.objectives !== undefined && !Array.isArray(l.objectives)) {
+          throw ApiError.badRequest('syllabusOverride.lessons[].objectives 必须是字符串数组')
+        }
+        if (l.durationMinutes !== undefined && l.durationMinutes !== null && (!Number.isInteger(l.durationMinutes) || l.durationMinutes < 1)) {
+          throw ApiError.badRequest('syllabusOverride.lessons[].durationMinutes 必须是 >= 1 整数或 null')
+        }
+      }
+      payload.syllabusOverride = { totalLessons: lessons.length, lessons }
+    }
+  }
+  // lessonMaterialsOverride: { items: [{ lessonNo, fileIds: [] }] }
+  if (payload.lessonMaterialsOverride !== undefined) {
+    const v = payload.lessonMaterialsOverride
+    if (v === null) {
+      payload.lessonMaterialsOverride = { items: [] }
+    } else if (typeof v !== 'object' || Array.isArray(v)) {
+      throw ApiError.badRequest('lessonMaterialsOverride 必须是对象')
+    } else {
+      const items = Array.isArray(v.items) ? v.items : []
+      for (const it of items) {
+        if (!it || typeof it !== 'object') continue
+        if (!Number.isInteger(it.lessonNo) || it.lessonNo < 1) {
+          throw ApiError.badRequest('lessonMaterialsOverride.items[].lessonNo 必须是 >= 1 的整数')
+        }
+        if (it.fileIds !== undefined && !Array.isArray(it.fileIds)) {
+          throw ApiError.badRequest('lessonMaterialsOverride.items[].fileIds 必须是数组')
+        }
+      }
+      payload.lessonMaterialsOverride = { items }
+    }
+  }
+  // syllabusSnapshot / lessonMaterialsSnapshot: 不允许外部覆盖（只能由 service.create 自动写）
+  delete payload.syllabusSnapshot
+  delete payload.lessonMaterialsSnapshot
+
   const doc = await CourseInstance.findOneAndUpdate(
     { _id: id, org: orgId, deletedAt: null },
     { ...payload, estimatedEndDate: newEstimatedEndDate },
     { new: true, runValidators: true }
   )
   if (!doc) throw ApiError.notFound('开班不存在')
+
+  // ─── 课件 override 的 fileBind 维护 ───
+  // 课件是按 lessonNo 分组的 fileId 数组,fileBind 不支持嵌套 key;
+  // service 层手动扁平化 + 走 diffArrayById(field='lessonMaterialsOverride')
+  if (Object.prototype.hasOwnProperty.call(payload, 'lessonMaterialsOverride')) {
+    const prevItems = (cur.lessonMaterialsOverride && cur.lessonMaterialsOverride.items) || []
+    const nextItems = (doc.lessonMaterialsOverride && doc.lessonMaterialsOverride.items) || []
+    const prevIds = flattenLessonMaterials(prevItems)
+    const nextIds = flattenLessonMaterials(nextItems)
+    if (prevIds.length || nextIds.length) {
+      const { REF_ENTITY } = require('@models/File.model')
+      const fileBind = require('@modules/storage/fileBind')
+      await fileBind.diffArrayById({
+        orgId,
+        oldIds: prevIds,
+        newIds: nextIds,
+        entity: REF_ENTITY.COURSE_INSTANCE,
+        entityId: doc._id,
+        field: 'lessonMaterialsOverride'
+      })
+    }
+  }
+
   return detail(doc._id, orgId)
 }
 
@@ -560,9 +732,50 @@ async function softDelete(id, orgId, by, isPlatformAdmin) {
   // 互锁:业务引用清空才允许软删
   await removable.assertUnused(orgId, courseInstanceUsageChecks(orgId, id))
 
+  // ★ 软删前快照课件 fileId, 用于删后 unbind(让 file 可以被物理删除)
+  //   - 软删后 list/detail 已过滤, 课件 file 不再被显示, 引用计数应该清零
+  const snapshotIds = flattenLessonMaterials(
+    (cur.lessonMaterialsSnapshot && cur.lessonMaterialsSnapshot.items) || []
+  )
+  const overrideIds = flattenLessonMaterials(
+    (cur.lessonMaterialsOverride && cur.lessonMaterialsOverride.items) || []
+  )
+  const allLmIds = [...new Set([...snapshotIds, ...overrideIds])]
+
   cur.deletedAt = new Date()
   cur.statusLog.push({ from: cur.status, to: cur.status, by, at: new Date(), reason: '软删' })
   await cur.save()
+
+  // 解除课件 file 引用
+  if (allLmIds.length) {
+    try {
+      const { REF_ENTITY } = require('@models/File.model')
+      const fileBind = require('@modules/storage/fileBind')
+      // 两个 field 维度分别解绑（fileBind 是按 (entity, entityId, field) 精确匹配的）
+      if (snapshotIds.length) {
+        await fileBind.unbindByIds({
+          orgId,
+          ids: snapshotIds,
+          entity: REF_ENTITY.COURSE_INSTANCE,
+          entityId: cur._id,
+          field: 'lessonMaterialsSnapshot'
+        })
+      }
+      if (overrideIds.length) {
+        await fileBind.unbindByIds({
+          orgId,
+          ids: overrideIds,
+          entity: REF_ENTITY.COURSE_INSTANCE,
+          entityId: cur._id,
+          field: 'lessonMaterialsOverride'
+        })
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[softDelete] unbind lesson materials failed for', id, e && e.message)
+    }
+  }
+
   return { success: true, id, deletedAt: cur.deletedAt }
 }
 
@@ -578,9 +791,52 @@ async function removableCheck(id, orgId) {
   return removable.check(orgId, courseInstanceUsageChecks(orgId, id))
 }
 
+/**
+ * 招生试听: 为机构创建/获取 [试听专用] CourseInstance.
+ *
+ * 业务背景: LessonSchedule.courseInstance 仍为 required (避免破坏既有索引和
+ * prepare/finish 状态机), 试听排课不创建"试用开班"而是在每个 org 下放 1 个
+ * 隐藏的 [试听专用] CourseInstance, 试听课 (isTrialLesson=true) 挂这个 instance.
+ * 这样既保留 courseInstance.required 约束, 又不污染正常开班列表.
+ *
+ * 行为:
+ *   - 命中 ({org, isTrial:true}) → 返回既有, 不创建新
+ *   - 未命中 → 创建一个 status=closed, isTrial=true 的兜底 instance, 返回
+ *   - 课程产品 (courseProduct) 暂不绑; 后续若业务上要关联可补
+ *
+ * 调用方: org.service.create (新机构初始化), 迁移脚本 (历史机构)
+ */
+async function ensureTrialCourseInstance(orgId) {
+  if (!orgId) throw new Error('ensureTrialCourseInstance: orgId is required')
+  const existing = await CourseInstance.findOne({ org: orgId, isTrial: true })
+  if (existing) return existing
+  // 兜底: courseProduct 用一个空 ObjectId 标记, 不参与真实消课逻辑 (isTrial=true 标记过滤)
+  // 实际该 instance 仅用于挂载 isTrialLesson=true 的 LessonSchedule, 不参与 LessonAttendance
+  // / StudentProduct 扣减 (lessonSchedule.service.prepare 检测 courseInstance.isTrial 时跳过
+  // attendance 生成, 见 lessonSchedule.service.generateAttendancesForSchedule)
+  const dummyProductId = new mongoose.Types.ObjectId()
+  const doc = await CourseInstance.create({
+    org: orgId,
+    courseProduct: dummyProductId,
+    name: '【试听专用】',
+    isTrial: true,
+    status: 'closed',
+    maxStudents: 999,
+    schedulePlan: {
+      mode: 'weekly',
+      lessonsPerWeek: 0,
+      restDays: [],
+      totalPlannedLessons: 1
+    },
+    startDate: new Date()
+  })
+  return doc
+}
+
 module.exports = {
   list, detail, create, update,
   setStatus, softDelete, removableCheck,
   computeEstimatedEndDate,
-  assertSchedulePlanValid
+  assertSchedulePlanValid,
+  ensureTrialCourseInstance
 }

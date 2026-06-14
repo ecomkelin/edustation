@@ -105,7 +105,8 @@
 
 > 用途：当用户为平台超管 (`User.isPlatformAdmin = true`) 时，可以把另一家机构的若干个学科复制到当前所选的目标机构。
 > 行为：源端和目标端都按 `name` 去重 —— 同名不覆盖也不报错，直接放进 `skipped` 列表。
-> 复制字段：`name` / `category` / `objectives` / `description` / `posterUrl` / `videoUrl`。
+> 复制字段：`name` / `category` / `objectives` / `description` / 教学大纲（文本）/ 课件骨架（fileIds 清空）。
+> `posterFileId` / `videoFileId` / 课件 `fileIds` 跨机构失效 → 不复制，目标端用户需重新上传。
 > `category` 引用的是平台级 Category 字典（`model === 'Subject'`），可跨机构共享 —— 同步时直接带过 ObjectId；若源端引用的 Category 已被删除或 `model` 变更，复制到目标端时 `category` 置 `null`（仅记录、不阻断）。
 
 ---
@@ -160,8 +161,8 @@
         "category": { "_id": "...", "name": "艺术", "code": "art", "level": 0 },
         "objectives": ["基础指法", "入门曲目"],
         "description": "...",
-        "posterUrl": "...",
-        "videoUrl": "..."
+        "posterFileId": { "_id": "...", "url": "...", "originalName": "..." },
+        "videoFileId": { "_id": "...", "url": "...", "originalName": "..." }
       }
     ]
   }
@@ -196,8 +197,8 @@
         "category": "...",
         "objectives": ["..."],
         "description": "...",
-        "posterUrl": "...",
-        "videoUrl": "..."
+        "posterFileId": { "_id": "...", "url": "...", "originalName": "..." },
+        "videoFileId": { "_id": "...", "url": "...", "originalName": "..." }
       }
     ],
     "skipped": [

@@ -12,7 +12,9 @@ const create = [
   body('room').isMongoId(),
   body('status').optional().isIn(LESSON_SCHEDULE_STATUSES),
   body('title').optional().isString().isLength({ max: 100 }),
-  body('notes').optional().isString().isLength({ max: 500 })
+  body('notes').optional().isString().isLength({ max: 500 }),
+  // 招生试听 (2026-06): 是否试听课 (true 时 courseInstance 必须是 [试听专用] 开班)
+  body('isTrialLesson').optional().isBoolean()
 ]
 
 const update = [
@@ -30,7 +32,11 @@ const update = [
   body('actualEndTime').optional({ nullable: true }).isISO8601(),
   // 5 分钟差异理由（≥5 分钟必填，由 service 强校验）
   body('actualStartReason').optional({ nullable: true }).isString().isLength({ max: 500 }),
-  body('actualEndReason').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('actualEndReason').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  // 教学体系(2026-06 拆): 本节特例覆盖
+  body('descriptionOverride').optional({ nullable: true }).isString().isLength({ max: 5000 }),
+  body('objectivesOverride').optional().isArray().isLength({ max: 50 }),
+  body('objectivesOverride.*').optional().isString().isLength({ max: 200 })
 ]
 
 // 结束上课：可选传 actualEndTime（教务补录）/ actualEndReason

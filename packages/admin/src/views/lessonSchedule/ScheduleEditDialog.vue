@@ -13,6 +13,7 @@
       <el-form :model="form" label-width="100px">
         <el-form-item label="开班">
           <span class="readonly-value">{{ instanceLabel }}</span>
+          <el-tag v-if="form.isTrialLesson" type="warning" size="small" style="margin-left: 8px">试听课</el-tag>
         </el-form-item>
         <el-form-item label="状态">
           <el-tag :type="statusType(form.status)" size="small">{{ statusLabel(form.status) }}</el-tag>
@@ -61,6 +62,49 @@
         </el-form-item>
         <el-form-item label="本节主题">
           <el-input v-model="form.title" maxlength="100" show-word-limit />
+        </el-form-item>
+
+        <!-- 2026-06: 教学大纲/课件 三层 fallback 解析结果(只读预览) -->
+        <el-divider content-position="left">本节课教学大纲</el-divider>
+        <el-form-item label="">
+          <div v-if="form.resolvedContent" class="resolved-block">
+            <div class="resolved-row">
+              <span class="resolved-label">主题</span>
+              <span class="resolved-value">{{ form.resolvedContent.topic || '—' }}</span>
+              <el-tag v-if="form.resolvedContent.sources && form.resolvedContent.sources.topic" :type="sourceTagType(form.resolvedContent.sources.topic)" size="small">
+                来源: {{ sourceLabel(form.resolvedContent.sources.topic) }}
+              </el-tag>
+            </div>
+            <div class="resolved-row" v-if="form.resolvedContent.description">
+              <span class="resolved-label">内容</span>
+              <span class="resolved-value" style="white-space: pre-wrap">{{ form.resolvedContent.description }}</span>
+              <el-tag v-if="form.resolvedContent.sources && form.resolvedContent.sources.description" :type="sourceTagType(form.resolvedContent.sources.description)" size="small">
+                来源: {{ sourceLabel(form.resolvedContent.sources.description) }}
+              </el-tag>
+            </div>
+            <div class="resolved-row" v-if="form.resolvedContent.objectives && form.resolvedContent.objectives.length">
+              <span class="resolved-label">目标</span>
+              <span class="resolved-value">
+                <el-tag v-for="(o, i) in form.resolvedContent.objectives" :key="i" size="small" style="margin-right: 4px">{{ o }}</el-tag>
+              </span>
+              <el-tag v-if="form.resolvedContent.sources && form.resolvedContent.sources.objectives" :type="sourceTagType(form.resolvedContent.sources.objectives)" size="small">
+                来源: {{ sourceLabel(form.resolvedContent.sources.objectives) }}
+              </el-tag>
+            </div>
+            <div class="resolved-row" v-if="form.resolvedContent.materialFileIds && form.resolvedContent.materialFileIds.length">
+              <span class="resolved-label">课件</span>
+              <span class="resolved-value">
+                <el-tag v-for="(fid, i) in form.resolvedContent.materialFileIds" :key="fid" size="small" style="margin-right: 4px; margin-bottom: 4px">
+                  {{ resolvedMaterialName(fid) }}
+                </el-tag>
+              </span>
+              <span class="form-hint">合并来源顺序: 本节补充 → 开班特例 → 开班快照 → 科目当前</span>
+            </div>
+            <div v-if="!form.resolvedContent.topic && !form.resolvedContent.description && (!form.resolvedContent.objectives || !form.resolvedContent.objectives.length) && (!form.resolvedContent.materialFileIds || !form.resolvedContent.materialFileIds.length)" class="muted">
+              本节课暂无教学大纲/课件来源(可在「学科」或「开班」管理页配置)
+            </div>
+          </div>
+          <div v-else class="muted">解析中...</div>
         </el-form-item>
 
         <el-divider content-position="left">实际上课时间</el-divider>
@@ -247,6 +291,7 @@ const form = reactive({
   room: '',
   title: '',
   status: 'scheduled',
+  isTrialLesson: false,  // 招生试听 (2026-06)
   actualStartTime: null,
   actualEndTime: null,
   // 5 分钟差异理由；>=5 分钟时由后端强校验必填
@@ -256,8 +301,37 @@ const form = reactive({
   courseInstanceName: '',
   courseInstanceId: '',
   lessonNo: null,
-  materials: []   // [ObjectId<Ref:File>]，后端 diffArrayById 自动绑/解
+  materials: [],  // [ObjectId<Ref:File>]，后端 diffArrayById 自动绑/解
+  // 2026-06: 解析后的"本节课教学大纲/课件"(只读预览)
+  resolvedContent: null
 })
+
+// resolvedContent sources 映射成 UI 标签
+const SOURCE_LABELS = {
+  schedule: '本节',
+  instanceOverride: '开班特例',
+  instanceSnapshot: '开班快照',
+  subject: '科目'
+}
+function sourceLabel(s) { return SOURCE_LABELS[s] || s || '' }
+function sourceTagType(s) {
+  if (s === 'schedule') return 'danger'   // 老师改了
+  if (s === 'instanceOverride') return 'warning'  // 开班改了
+  if (s === 'instanceSnapshot') return 'success'  // 开班快照(冻结)
+  if (s === 'subject') return 'info'      // 科目当前
+  return ''
+}
+
+// 课件 fileId → 名称(url 等信息从后端 resolvedContent.materialFiles 一次性带过来)
+function resolvedMaterialById(id) {
+  if (!form.resolvedContent || !Array.isArray(form.resolvedContent.materialFiles)) return null
+  return form.resolvedContent.materialFiles.find((f) => String(f.id) === String(id)) || null
+}
+function resolvedMaterialName(id) {
+  const f = resolvedMaterialById(id)
+  if (!f) return String(id).slice(-6)
+  return f.missing ? `(已删除) ${String(id).slice(-6)}` : (f.originalName || String(id).slice(-6))
+}
 
 const instanceLabel = computed(() => form.courseInstanceName || '—')
 const title = computed(() => {
@@ -295,6 +369,13 @@ async function onOpen() {
         || 90
     } catch (_) { /* ignore */ }
   }
+  // 2026-06: 拉本节课的"教学大纲/课件"解析结果(后端 detail 一次性带过来)
+  if (form._id) {
+    try {
+      const r = await lessonScheduleApi.detail(form._id)
+      form.resolvedContent = r.data && r.data.resolvedContent ? r.data.resolvedContent : null
+    } catch (_) { form.resolvedContent = null }
+  }
   // 实时拉一次冲突（初次打开时）
   await checkConflicts()
 }
@@ -324,6 +405,7 @@ function syncFromSchedule(s) {
   form.room = pickId(s.room)
   form.title = s.title || ''
   form.status = s.status || 'scheduled'
+  form.isTrialLesson = !!s.isTrialLesson  // 招生试听 (2026-06)
   form.actualStartTime = s.actualStartTime ? toLocalIso(s.actualStartTime) : null
   form.actualEndTime = s.actualEndTime ? toLocalIso(s.actualEndTime) : null
   form.actualStartReason = s.actualStartReason || ''

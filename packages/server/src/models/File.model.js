@@ -30,7 +30,9 @@ const REF_ENTITY = {
   PET: 'Pet',
   ORG: 'Org',
   COURSE_PRODUCT: 'CourseProduct',
-  LESSON_SCHEDULE: 'LessonSchedule'
+  LESSON_SCHEDULE: 'LessonSchedule',
+  SUBJECT: 'Subject',
+  COURSE_INSTANCE: 'CourseInstance'
 }
 
 const SCOPE = {
@@ -40,7 +42,14 @@ const SCOPE = {
   COURSE_ATTACHMENT: 'courseAttachment',
   PET: 'pet',
   ORG: 'org',
-  GENERAL: 'general'
+  GENERAL: 'general',
+  // 教学体系新增 scope：
+  // - subjectSyllabus:           Subject 上的"宣传海报 / 宣传视频"（替代旧 posterUrl/videoUrl）
+  // - subjectLessonMaterial:     Subject 上的"每堂课课件"
+  // - courseInstanceLessonMaterial: CourseInstance 上快照的 + 特例补充的课件
+  SUBJECT_SYLLABUS: 'subjectSyllabus',
+  SUBJECT_LESSON_MATERIAL: 'subjectLessonMaterial',
+  COURSE_INSTANCE_LESSON_MATERIAL: 'courseInstanceLessonMaterial'
 }
 
 const FileSchema = new Schema(

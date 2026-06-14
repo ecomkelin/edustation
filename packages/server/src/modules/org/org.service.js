@@ -67,6 +67,14 @@ async function create(payload, options = {}) {
     // eslint-disable-next-line no-console
     console.error(`[org.create] ensureDefaultPositions failed: org=${org._id}`, e.message)
   }
+  // 招生试听 (2026-06): 立刻建 [试听专用] CourseInstance, 让批量排课可即时使用
+  try {
+    const courseInstanceService = require('../courseInstance/courseInstance.service')
+    await courseInstanceService.ensureTrialCourseInstance(org._id)
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[org.create] ensureTrialCourseInstance failed: org=${org._id}`, e.message)
+  }
 
   // logo 字段在创建时也需要 fileBind 绑定。
   // 前端可能在新建时直接传 logo url（场景：上传完一张新 logo 后点"确定"创建机构）。

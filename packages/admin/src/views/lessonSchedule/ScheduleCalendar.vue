@@ -432,8 +432,8 @@ async function reload() {
         title: buildEventTitle(e),
         start: e.start,
         end: e.end,
-        backgroundColor: eventColor(e.status),
-        borderColor: eventColor(e.status),
+        backgroundColor: eventColor(e.status, e.isTrialLesson),
+        borderColor: eventColor(e.status, e.isTrialLesson),
         textColor: '#fff',
         extendedProps: e
       }
@@ -449,10 +449,13 @@ function buildEventTitle(e) {
   const course = e.courseInstance?.name || e.title || '排课'
   const no = e.lessonNo ? `#${e.lessonNo} ` : ''
   const who = `${e.teacher || '-'} / ${e.room || '-'}`
-  return `${no}${course}\n${who}`
+  // 招生试听 (2026-06): 试听课加 [试听] 前缀, 日历一眼可辨
+  return `${e.isTrialLesson ? '[试听] ' : ''}${no}${course}\n${who}`
 }
 
-function eventColor(status) {
+function eventColor(status, isTrialLesson) {
+  // 招生试听 (2026-06): 试听课统一用浅橙色, 跟"进行中"区分 (进行中是 #e6a23c 橙色)
+  if (isTrialLesson) return '#f0a020'   // 橙黄：试听课
   switch (status) {
     case 'completed': return '#67c23a'   // 绿：已完成
     case 'in_progress': return '#e6a23c' // 橙：进行中

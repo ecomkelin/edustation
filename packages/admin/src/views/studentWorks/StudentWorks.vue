@@ -634,7 +634,12 @@ onMounted(async () => {
     courseInstanceApi.list({ pageSize: 200 }, { silent: true }),
     studentApi.list({ pageSize: 200 }, { silent: true })
   ])
-  if (s.status === 'fulfilled') subjects.value = s.value.data?.items || []
+  if (s.status === 'fulfilled') {
+    // 响应统一被 ApiResponse.ok 包成 {success, data: ...}; http 拦截器 return body.
+    // subject 端点 data 是裸 array; courseInstance/student data 是 {items, total} 分页.
+    const v = s.value
+    subjects.value = Array.isArray(v?.data) ? v.data : []
+  }
   if (c.status === 'fulfilled') courseInstances.value = c.value.data?.items || []
   if (st.status === 'fulfilled') students.value = st.value.data?.items || []
   load()

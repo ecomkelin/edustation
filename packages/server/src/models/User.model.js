@@ -63,6 +63,10 @@ const UserSchema = new Schema(
     blockedAt: { type: Date, default: null },
     // 禁用原因(超管在操作时填写,便于事后查询)
     blockedReason: { type: String, default: null },
+    // 是否需要强制改密(招生试听转化时为 true; 首登后强改)
+    //   auth.service.login 会读取此标志, 响应里带 requirePasswordChange: true
+    //   前端拦截器据此跳转 /reset-password?initial=1 强制改密流程
+    requirePasswordChange: { type: Boolean, default: false },
     // 扩展字段
     meta: { type: Schema.Types.Mixed, default: {} }
   },

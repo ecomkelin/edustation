@@ -7,9 +7,9 @@ exports.create = [
   body('category').optional({ nullable: true }).isMongoId().withMessage('category 需为合法 id'),
   body('objectives').optional().isArray().withMessage('objectives 需为数组'),
   body('objectives.*').optional().isString().isLength({ max: 200 }),
-  body('posterUrl').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  body('posterFileId').optional({ nullable: true }).isMongoId().withMessage('posterFileId 需为合法 id'),
   body('description').optional({ nullable: true }).isString(),
-  body('videoUrl').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('videoFileId').optional({ nullable: true }).isMongoId().withMessage('videoFileId 需为合法 id')
 ]
 
 exports.update = [
@@ -17,9 +17,9 @@ exports.update = [
   body('category').optional({ nullable: true }).isMongoId().withMessage('category 需为合法 id'),
   body('objectives').optional().isArray(),
   body('objectives.*').optional().isString().isLength({ max: 200 }),
-  body('posterUrl').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  body('posterFileId').optional({ nullable: true }).isMongoId().withMessage('posterFileId 需为合法 id'),
   body('description').optional({ nullable: true }).isString(),
-  body('videoUrl').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('videoFileId').optional({ nullable: true }).isMongoId().withMessage('videoFileId 需为合法 id')
 ]
 
 const sync = [

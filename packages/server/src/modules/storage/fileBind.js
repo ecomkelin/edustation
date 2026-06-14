@@ -100,6 +100,61 @@ async function bindUrls({ orgId, urls, entity, entityId, field }) {
 }
 
 /**
+ * 绑定一组 fileId 到 (entity, entityId, field)。
+ * 与 bindUrls 的区别：入参是 ObjectId[]（不是 url[]）。
+ * 严格模式：任何 id 解析不到 file → 抛 400。
+ * 跨 org 防护：file.org 必须 === orgId（除非传 null）。
+ */
+async function bindByIds({ orgId, ids, entity, entityId, field }) {
+  const valid = (ids || []).filter((x) => x != null).map((x) => String(x))
+  if (!valid.length) return
+  if (!entity || !entityId || !field) {
+    throw new Error('fileBind.bindByIds: entity / entityId / field 必填')
+  }
+  const filter = { _id: { $in: valid }, deletedAt: null }
+  if (orgId) filter.org = orgId
+  const files = await File.find(filter)
+  if (files.length !== valid.length) {
+    const found = new Set(files.map((f) => String(f._id)))
+    const missing = valid.filter((id) => !found.has(id))
+    throw ApiError.badRequest(`${field} 中有 ${missing.length} 个 fileId 不存在或不属于本机构`)
+  }
+  for (const f of files) {
+    const has = (f.refs || []).some(
+      (r) => r.entity === entity && String(r.entityId) === String(entityId) && r.field === field
+    )
+    if (has) continue
+    f.refs.push({ entity, entityId, field, boundAt: new Date() })
+    f.refCount = f.refs.length
+    f.isOrphan = false
+    await f.save()
+  }
+}
+
+/**
+ * 解绑一组 fileId 上的 (entity, entityId, field)。
+ * 旧数据容错：找不到的 id 静默跳过。
+ */
+async function unbindByIds({ orgId, ids, entity, entityId, field }) {
+  const valid = (ids || []).filter((x) => x != null).map((x) => String(x))
+  if (!valid.length) return
+  if (!entity || !entityId || !field) {
+    throw new Error('fileBind.unbindByIds: entity / entityId / field 必填')
+  }
+  const filter = { _id: { $in: valid }, deletedAt: null }
+  if (orgId) filter.org = orgId
+  const files = await File.find(filter)
+  for (const f of files) {
+    f.refs = (f.refs || []).filter(
+      (r) => !(r.entity === entity && String(r.entityId) === String(entityId) && r.field === field)
+    )
+    f.refCount = f.refs.length
+    f.isOrphan = f.refCount === 0
+    await f.save()
+  }
+}
+
+/**
  * 解绑一组 url 的 (entity, entityId, field)。
  * 不存在的引用直接跳过。
  */
@@ -172,6 +227,40 @@ async function diffArray(args) {
 }
 
 /**
+ * 单值 ObjectId 字段 diff —— 用于 avatar/logo/poster 这种直接存 ObjectId<Ref:File> 的字段。
+ *
+ *  旧值是空、新值是空：no-op
+ *  旧值新值相同：no-op
+ *  旧值空、新值非空：bind 新
+ *  旧值非空、新值空：unbind 旧
+ *  旧值新值都非空且不同：unbind 旧 + bind 新
+ *
+ *  严格模式：newId 解析不到 url → 抛 400（防"瞎传 fileId"）
+ *  旧 id 解析不到 → 静默跳过（防"历史脏数据导致更新失败"）
+ */
+async function diffSingleById({ orgId, oldId, newId, entity, entityId, field }) {
+  const oldI = oldId ? String(oldId) : null
+  const newI = newId ? String(newId) : null
+  if (!oldI && !newI) return
+  if (oldI && newI && oldI === newI) return
+
+  let oldUrl = null
+  if (oldI) {
+    const m = await idsToUrlsMap(orgId, [oldI])
+    oldUrl = m.get(oldI) || null
+  }
+  let newUrl = null
+  if (newI) {
+    const m = await idsToUrlsMap(orgId, [newI])
+    if (!m.has(newI)) {
+      throw ApiError.badRequest(`${field} 引用了不存在或不属于本机构的 fileId`)
+    }
+    newUrl = m.get(newI)
+  }
+  return diffSingle({ orgId, oldUrl, newUrl, entity, entityId, field })
+}
+
+/**
  * ObjectId 数组字段 diff —— 用于 attachments / materials 这类直接存 [ObjectId] 的字段。
  *
  * 先把 oldIds/newIds 解析成对应 url 数组，再走 diffArray。
@@ -228,8 +317,11 @@ module.exports = {
   findFileByUrl,
   bindUrls,
   unbindUrls,
+  bindByIds,
+  unbindByIds,
   unbindEntity,
   diffSingle,
+  diffSingleById,
   diffArray,
   diffArrayById
 }

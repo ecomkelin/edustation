@@ -9,6 +9,65 @@ const CourseInstance = require('@models/CourseInstance.model')
 const ApiError = require('@utils/ApiError')
 
 /**
+ * 把 lessonMaterials.items (按 lessonNo 分组的 fileId[]) 扁平化为一维 fileId 数组。
+ * 与 CourseInstance.service.flattenLessonMaterials 同样语义, 复制过来避免跨模块循环依赖。
+ */
+function flattenLessonMaterials(items) {
+  const out = []
+  for (const it of items || []) {
+    for (const fid of it.fileIds || []) {
+      if (fid) out.push(String(fid))
+    }
+  }
+  return out
+}
+
+/**
+ * 规范化 syllabus 输入: lessons 数组里每项的 lessonNo/topic/description/objectives/durationMinutes
+ * 缺失/非法时静默丢弃非法项; 数字字段强转。
+ */
+function normalizeSyllabusLessons(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  for (const l of raw) {
+    if (!l || typeof l !== 'object') continue
+    if (!Number.isInteger(l.lessonNo) || l.lessonNo < 1) continue
+    out.push({
+      lessonNo: l.lessonNo,
+      topic: typeof l.topic === 'string' ? l.topic : '',
+      description: typeof l.description === 'string' ? l.description : '',
+      objectives: Array.isArray(l.objectives)
+        ? l.objectives.filter((x) => typeof x === 'string')
+        : [],
+      durationMinutes: l.durationMinutes != null && Number.isInteger(Number(l.durationMinutes)) && Number(l.durationMinutes) >= 1
+        ? Number(l.durationMinutes)
+        : null
+    })
+  }
+  // 按 lessonNo 升序
+  out.sort((a, b) => a.lessonNo - b.lessonNo)
+  return out
+}
+
+/**
+ * 规范化 lessonMaterials.items 输入: lessonNo + fileIds 数组
+ */
+function normalizeLessonMaterialsItems(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  for (const it of raw) {
+    if (!it || typeof it !== 'object') continue
+    if (!Number.isInteger(it.lessonNo) || it.lessonNo < 1) continue
+    const fileIds = Array.isArray(it.fileIds)
+      ? it.fileIds.filter((x) => x != null).map((x) => String(x))
+      : []
+    out.push({ lessonNo: it.lessonNo, fileIds })
+  }
+  out.sort((a, b) => a.lessonNo - b.lessonNo)
+  return out
+}
+
+/**
  * 清理 items 中的脏 category 字段（旧版 seed 把非 ObjectId 字符串写进了 category，
  * populate 失败走 fallback 时这些字段会保留原样；这里只对「字符串且非合法 ObjectId」
  * 的情况清成 null，对 populate 成功后的对象/null 不动）。
@@ -28,6 +87,8 @@ async function list({ orgId, keyword }) {
   try {
     return await Subject.find(filter)
       .populate('category', 'name code level')
+      .populate('posterFileId', 'url originalName mime')
+      .populate('videoFileId', 'url originalName mime')
       .sort({ createdAt: -1 })
       .lean()
   } catch (e) {
@@ -43,7 +104,11 @@ async function list({ orgId, keyword }) {
 }
 
 async function detail(id, orgId) {
-  const s = await Subject.findOne({ _id: id, org: orgId }).populate('category', 'name code level').lean()
+  const s = await Subject.findOne({ _id: id, org: orgId })
+    .populate('category', 'name code level')
+    .populate('posterFileId', 'url originalName mime')
+    .populate('videoFileId', 'url originalName mime')
+    .lean()
   if (!s) throw ApiError.notFound('学科不存在')
   return s
 }
@@ -57,7 +122,51 @@ async function assertSubjectCategory(categoryId) {
 
 async function create({ orgId, ...payload }) {
   await assertSubjectCategory(payload.category)
-  const doc = await Subject.create({ ...payload, org: orgId })
+  // 规范化 syllabus / lessonMaterials
+  const syllabus = payload.syllabus !== undefined
+    ? {
+        totalLessons: Array.isArray(payload.syllabus.lessons) ? payload.syllabus.lessons.length : 0,
+        lessons: normalizeSyllabusLessons(payload.syllabus.lessons)
+      }
+    : undefined
+  const lessonMaterials = payload.lessonMaterials !== undefined
+    ? { items: normalizeLessonMaterialsItems(payload.lessonMaterials.items) }
+    : undefined
+  // 海报 / 视频 fileId 留作 fileBind
+  const posterFileId = payload.posterFileId || null
+  const videoFileId = payload.videoFileId || null
+  const doc = await Subject.create({
+    ...payload,
+    org: orgId,
+    posterFileId,
+    videoFileId,
+    ...(syllabus !== undefined ? { syllabus } : {}),
+    ...(lessonMaterials !== undefined ? { lessonMaterials } : {})
+  })
+  const { REF_ENTITY } = require('@models/File.model')
+  const fileBind = require('@modules/storage/fileBind')
+  // 海报 / 视频: 走单值 fileBind
+  if (posterFileId) {
+    await fileBind.bindByIds({
+      orgId, ids: [posterFileId], entity: REF_ENTITY.SUBJECT, entityId: doc._id, field: 'posterFileId'
+    })
+  }
+  if (videoFileId) {
+    await fileBind.bindByIds({
+      orgId, ids: [videoFileId], entity: REF_ENTITY.SUBJECT, entityId: doc._id, field: 'videoFileId'
+    })
+  }
+  // 课件 fileBind 标记引用 (field='lessonMaterials',不区分 lessonNo)
+  const ids = flattenLessonMaterials(lessonMaterials && lessonMaterials.items)
+  if (ids.length) {
+    await fileBind.bindByIds({
+      orgId,
+      ids,
+      entity: REF_ENTITY.SUBJECT,
+      entityId: doc._id,
+      field: 'lessonMaterials'
+    })
+  }
   return doc.toObject({ depopulate: false })
 }
 
@@ -65,14 +174,89 @@ async function update(id, orgId, payload) {
   if (Object.prototype.hasOwnProperty.call(payload, 'category')) {
     await assertSubjectCategory(payload.category)
   }
+  // 规范化 syllabus / lessonMaterials 并准备 prev 信息(fileBind 维护引用)
+  let prevLessonMaterialIds = null
+  let prevPosterFileId = null
+  let prevVideoFileId = null
+  const updateDoc = { ...payload }
+  if (Object.prototype.hasOwnProperty.call(payload, 'syllabus')) {
+    const v = payload.syllabus
+    if (v === null) {
+      updateDoc.syllabus = { totalLessons: 0, lessons: [] }
+    } else {
+      const lessons = normalizeSyllabusLessons(v && v.lessons)
+      updateDoc.syllabus = { totalLessons: lessons.length, lessons }
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'lessonMaterials')) {
+    const v = payload.lessonMaterials
+    const prev = await Subject.findOne({ _id: id, org: orgId }).select('lessonMaterials posterFileId videoFileId').lean()
+    prevLessonMaterialIds = flattenLessonMaterials(prev && prev.lessonMaterials && prev.lessonMaterials.items)
+    if (v === null) {
+      updateDoc.lessonMaterials = { items: [] }
+    } else {
+      const items = normalizeLessonMaterialsItems(v && v.items)
+      updateDoc.lessonMaterials = { items }
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'posterFileId')) {
+    const prev = prevLessonMaterialIds === null
+      ? await Subject.findOne({ _id: id, org: orgId }).select('posterFileId videoFileId').lean()
+      : null
+    prevPosterFileId = (prev && prev.posterFileId) || null
+    updateDoc.posterFileId = payload.posterFileId || null
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'videoFileId')) {
+    const prev = prevLessonMaterialIds === null && prevPosterFileId === null
+      ? await Subject.findOne({ _id: id, org: orgId }).select('videoFileId').lean()
+      : null
+    prevVideoFileId = (prev && prev.videoFileId) || null
+    updateDoc.videoFileId = payload.videoFileId || null
+  }
   const doc = await Subject.findOneAndUpdate(
     { _id: id, org: orgId },
-    payload,
+    updateDoc,
     { new: true, runValidators: true }
   )
     .populate('category', 'name code level')
+    .populate('posterFileId', 'url originalName mime')
+    .populate('videoFileId', 'url originalName mime')
     .lean()
   if (!doc) throw ApiError.notFound('学科不存在')
+  // fileBind 维护引用
+  const { REF_ENTITY } = require('@models/File.model')
+  const fileBind = require('@modules/storage/fileBind')
+  if (prevLessonMaterialIds !== null) {
+    const nextIds = flattenLessonMaterials(doc.lessonMaterials && doc.lessonMaterials.items)
+    await fileBind.diffArrayById({
+      orgId,
+      oldIds: prevLessonMaterialIds,
+      newIds: nextIds,
+      entity: REF_ENTITY.SUBJECT,
+      entityId: doc._id,
+      field: 'lessonMaterials'
+    })
+  }
+  if (prevPosterFileId !== null) {
+    await fileBind.diffSingleById({
+      orgId,
+      oldId: prevPosterFileId,
+      newId: doc.posterFileId ? (doc.posterFileId._id || doc.posterFileId) : null,
+      entity: REF_ENTITY.SUBJECT,
+      entityId: doc._id,
+      field: 'posterFileId'
+    })
+  }
+  if (prevVideoFileId !== null) {
+    await fileBind.diffSingleById({
+      orgId,
+      oldId: prevVideoFileId,
+      newId: doc.videoFileId ? (doc.videoFileId._id || doc.videoFileId) : null,
+      entity: REF_ENTITY.SUBJECT,
+      entityId: doc._id,
+      field: 'videoFileId'
+    })
+  }
   return doc
 }
 
@@ -103,7 +287,35 @@ async function remove({ id, orgId }) {
   const { assertUnused } = require('@utils/removable')
   await assertUnused(orgId, subjectUsageChecks(orgId, id))
 
+  // 物理删除前 unbind 课件 / 海报 / 视频 file 引用, 让 file 自身可以被清理
+  const lmIds = flattenLessonMaterials(doc.lessonMaterials && doc.lessonMaterials.items)
+  const posterId = doc.posterFileId ? String(doc.posterFileId) : null
+  const videoId = doc.videoFileId ? String(doc.videoFileId) : null
   await doc.deleteOne()
+  if (lmIds.length || posterId || videoId) {
+    try {
+      const { REF_ENTITY } = require('@models/File.model')
+      const fileBind = require('@modules/storage/fileBind')
+      if (lmIds.length) {
+        await fileBind.unbindByIds({
+          orgId, ids: lmIds, entity: REF_ENTITY.SUBJECT, entityId: id, field: 'lessonMaterials'
+        })
+      }
+      if (posterId) {
+        await fileBind.unbindByIds({
+          orgId, ids: [posterId], entity: REF_ENTITY.SUBJECT, entityId: id, field: 'posterFileId'
+        })
+      }
+      if (videoId) {
+        await fileBind.unbindByIds({
+          orgId, ids: [videoId], entity: REF_ENTITY.SUBJECT, entityId: id, field: 'videoFileId'
+        })
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[subject.remove] unbind file refs failed for', id, e && e.message)
+    }
+  }
   return { success: true }
 }
 
@@ -117,7 +329,7 @@ async function removableCheck({ id, orgId }) {
 /* ------------------------------------------------------------------
  * 跨机构同步（仅平台超管使用）
  * 复制 shape 来自 position.service.syncPositions：同名校重、同名已存在跳过。
- * 复制字段：name / category / objectives / description / posterUrl / videoUrl。
+ * 复制字段：name / category / objectives / description / 教学大纲 / 课件骨架。
  * category 引用的是平台级 Category 字典，可跨机构共享 —— 复制时直接带过 ObjectId。
  * ------------------------------------------------------------------ */
 
@@ -174,6 +386,8 @@ async function listByOrg(orgId) {
  *  - 源端查不到的 id：skip 'source-subject-not-found'
  *  - 源端 category 引用了已被删除 / 改 model 的 Category：copy 时 category 置 null
  *    （仅记录，不阻断同步；前端可后续在「学科编辑」里重新选）
+ *  - posterFileId / videoFileId / lessonMaterials.fileIds 跨机构 fileId 失效 → 清空,
+ *    教学大纲纯文本结构可以复制
  */
 async function syncSubjects({ targetOrgId, sourceOrgId, subjectIds, operatorId }) {
   if (!targetOrgId) throw ApiError.badRequest('请先在顶部「机构切换」中选择目标机构')
@@ -206,7 +420,7 @@ async function syncSubjects({ targetOrgId, sourceOrgId, subjectIds, operatorId }
 
   const [sourceSubjects, existing] = await Promise.all([
     Subject.find({ _id: { $in: validIds }, org: sourceOrgId })
-      .select('name category objectives description posterUrl videoUrl')
+      .select('name category objectives description syllabus lessonMaterials')
       .lean(),
     Subject.find({ org: targetOrgId }).select('name category').lean()
   ])
@@ -247,14 +461,34 @@ async function syncSubjects({ targetOrgId, sourceOrgId, subjectIds, operatorId }
     }
     const category =
       s.category && validCategoryIds.has(String(s.category)) ? s.category : null
+    // 教学大纲: 直接复制 lessons 数组(纯文本结构,跨机构无意义损失)
+    const srcSyllabus = s.syllabus || { totalLessons: 0, lessons: [] }
+    // 课件: 复制骨架,但 fileIds 全部清空(跨机构 fileId 失效, 让用户后续在目标机构上传)
+    const srcLm = s.lessonMaterials || { items: [] }
+    const lmItems = Array.isArray(srcLm.items)
+      ? srcLm.items.map((it) => ({
+          lessonNo: Number(it.lessonNo),
+          fileIds: [] // 跨机构同步刻意清空 fileIds
+        }))
+      : []
+    // posterFileId / videoFileId 跨机构失效 → 不复制
     toCreate.push({
       org: targetOrgId,
       name: s.name,
       category,
       objectives: Array.isArray(s.objectives) ? s.objectives : [],
       description: s.description || '',
-      posterUrl: s.posterUrl || undefined,
-      videoUrl: s.videoUrl || undefined
+      syllabus: {
+        totalLessons: Number(srcSyllabus.totalLessons) || (Array.isArray(srcSyllabus.lessons) ? srcSyllabus.lessons.length : 0),
+        lessons: Array.isArray(srcSyllabus.lessons) ? srcSyllabus.lessons.map((l) => ({
+          lessonNo: Number(l.lessonNo),
+          topic: l.topic || '',
+          description: l.description || '',
+          objectives: Array.isArray(l.objectives) ? [...l.objectives] : [],
+          durationMinutes: l.durationMinutes != null ? Number(l.durationMinutes) : null
+        })) : []
+      },
+      lessonMaterials: { items: lmItems }
     })
   }
 

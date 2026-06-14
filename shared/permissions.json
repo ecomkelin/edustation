@@ -266,6 +266,21 @@
       "permissionLabels": {
         "pet.read": { "label": "查看宠物", "description": "查看学员的宠物等级与经验" }
       }
+    },
+    {
+      "key": "recruit",
+      "label": "招生试听",
+      "description": "招生地推链路: 潜客 (Lead) 录入与触点日志、试听预约 (TrialBooking) 排课与到店打卡、试听结果与转化 (转学员/建家长账号)。详见 plans/staged-roaming-honey.md。",
+      "permissions": [
+        "recruit.read",
+        "recruit.write",
+        "recruit.convert"
+      ],
+      "permissionLabels": {
+        "recruit.read": { "label": "查看招生数据", "description": "浏览潜客列表/试听记录/触点日志; 销售默认仅看自己录入 (scope=mine), 教务/管理员可看全部" },
+        "recruit.write": { "label": "编辑招生数据", "description": "新建/编辑潜客; 批量排试听课; 标记到店打卡; 记录触点" },
+        "recruit.convert": { "label": "试听转学员", "description": "试听完成后转化: 自动创建家长账号 (User) 和学员 (Student) 并完成关联; 5 分钟内可撤销" }
+      }
     }
   ]
 }

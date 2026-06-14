@@ -82,7 +82,10 @@ import {
   ChatLineRound,
   SwitchButton,
   DataAnalysis,
-  Picture
+  Picture,
+  // 招生试听 (2026-06)
+  Promotion,
+  UserFilled
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -124,6 +127,16 @@ const menuGroups = [
       { path: '/course-enrollments', label: '课程报名', icon: Notebook, perm: 'courseEnrollment.read' },
       { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
       { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' }
+    ]
+  },
+  {
+    // 招生试听 (2026-06): 招生漏斗入口, 地推/教务共用
+    key: 'recruit',
+    title: '招生试听',
+    icon: Promotion,
+    children: [
+      { path: '/recruit/leads', label: '潜客管理', icon: UserFilled, perm: 'recruit.read' },
+      { path: '/recruit/trial-bookings', label: '试听记录', icon: Calendar, perm: 'recruit.read' }
     ]
   },
   {

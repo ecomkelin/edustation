@@ -37,9 +37,9 @@
           :class="{ 'is-selected': isSelected(f._id) }"
           @click="onCardClick(f)"
         >
-          <!-- 多选时左上角 ✓ -->
-          <div v-if="multiple" class="picker-card-check">
-            <el-icon v-if="isSelected(f._id)" :size="14" color="#fff"><Check /></el-icon>
+          <!-- 选中标记：多选始终显示、单选仅在已选时显示 -->
+          <div v-if="isSelected(f._id)" class="picker-card-check">
+            <el-icon :size="14" color="#fff"><Check /></el-icon>
           </div>
 
           <!-- 缩略图 -->
@@ -97,8 +97,21 @@
         <span class="text-muted text-12">共 {{ total }} 个{{ multiple ? ` · 已选 ${selectedMap.size}` : '' }}</span>
         <div>
           <el-button @click="onCancel">取消</el-button>
-          <el-button v-if="multiple" type="primary" :disabled="!selectedMap.size" @click="onConfirmMulti">
+          <el-button
+            v-if="multiple"
+            type="primary"
+            :disabled="!selectedMap.size"
+            @click="onConfirmMulti"
+          >
             确认{{ selectedMap.size ? ` (${selectedMap.size})` : '' }}
+          </el-button>
+          <el-button
+            v-else
+            type="primary"
+            :disabled="!singlePicked"
+            @click="onConfirmSingle"
+          >
+            确认
           </el-button>
         </div>
       </div>
@@ -130,6 +143,11 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'select'])
 
+// 业务域下拉选项 —— 与后端 File.model SCOPE 保持一致
+// 教学体系新增的 3 个 scope:
+//   - subjectSyllabus:          学科上的「宣传海报 / 宣传视频」
+//   - subjectLessonMaterial:    学科上的「每堂课课件」
+//   - courseInstanceLessonMaterial: 开班上的「快照课件 / 特例课件」
 const scopeOptions = [
   { value: 'avatar', label: '头像' },
   { value: 'work', label: '学生作品' },
@@ -137,7 +155,10 @@ const scopeOptions = [
   { value: 'courseAttachment', label: '课程附件' },
   { value: 'pet', label: '宠物' },
   { value: 'org', label: '机构' },
-  { value: 'general', label: '通用' }
+  { value: 'general', label: '通用' },
+  { value: 'subjectSyllabus', label: '学科 · 海报/视频' },
+  { value: 'subjectLessonMaterial', label: '学科 · 每堂课课件' },
+  { value: 'courseInstanceLessonMaterial', label: '开班 · 课件' }
 ]
 
 function scopeLabel(s) {
@@ -153,7 +174,10 @@ function scopeTagType(s) {
     courseAttachment: 'info',
     pet: '',
     org: 'danger',
-    general: 'info'
+    general: 'info',
+    subjectSyllabus: 'success',
+    subjectLessonMaterial: 'warning',
+    courseInstanceLessonMaterial: 'warning'
   }[s] || ''
 }
 
@@ -174,6 +198,8 @@ const total = ref(0)
 
 // 多选跨页保留：Map<id, File>
 const selectedMap = reactive(new Map())
+// 单选暂存：选中的 file 对象（点击卡片暂存，按"确认"才 emit）
+const singlePicked = ref(null)
 
 const visibleItems = computed(() => {
   if (!props.mimePrefix) return items.value
@@ -181,7 +207,8 @@ const visibleItems = computed(() => {
 })
 
 function isSelected(id) {
-  return selectedMap.has(String(id))
+  if (props.multiple) return selectedMap.has(String(id))
+  return singlePicked.value && String(singlePicked.value._id) === String(id)
 }
 
 function onOpen() {
@@ -190,17 +217,20 @@ function onOpen() {
   filter.originalName = ''
   filter.page = 1
   selectedMap.clear()
+  singlePicked.value = null
   load()
 }
 
 function onClose() {
   // 弹窗关闭时清空选中（防止下次打开时还残留）
   selectedMap.clear()
+  singlePicked.value = null
 }
 
 function onFilterChange() {
   // 切换 scope 时清空已选（语义不连续）
   selectedMap.clear()
+  singlePicked.value = null
   filter.page = 1
   load()
 }
@@ -215,6 +245,7 @@ function onReset() {
   filter.originalName = ''
   filter.page = 1
   selectedMap.clear()
+  singlePicked.value = null
   load()
 }
 
@@ -248,15 +279,20 @@ function onCardClick(f) {
       selectedMap.set(id, f)
     }
   } else {
-    // 单选：点击即选
-    emit('select', f)
-    emit('update:modelValue', false)
+    // 单选：点击卡片只暂存，按"确认"才 emit
+    singlePicked.value = f
   }
 }
 
 function onConfirmMulti() {
   const picked = [...selectedMap.values()]
   emit('select', picked)
+  emit('update:modelValue', false)
+}
+
+function onConfirmSingle() {
+  if (!singlePicked.value) return
+  emit('select', singlePicked.value)
   emit('update:modelValue', false)
 }
 
@@ -268,7 +304,10 @@ function onCancel() {
 watch(
   () => props.modelValue,
   (v) => {
-    if (!v) selectedMap.clear()
+    if (!v) {
+      selectedMap.clear()
+      singlePicked.value = null
+    }
   }
 )
 </script>

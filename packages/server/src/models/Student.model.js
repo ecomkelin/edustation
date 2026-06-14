@@ -36,6 +36,10 @@ const StudentSchema = new Schema(
     guardians: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     // 所属学校（选填，关联 School 档案，用于市场发传单 / 按学校聚合学生）
     school: { type: Schema.Types.ObjectId, ref: 'School' },
+    // 年级（如"三年级"）。招生试听转化时从 Lead.grade 拷贝。
+    grade: { type: String, trim: true, default: '' },
+    // 班级（如"2班"）。招生试听转化时从 Lead.className 拷贝。用 className 避开 `class` 保留字。
+    className: { type: String, trim: true, default: '' },
     // 备注（过敏史/特殊需求/老师注意事项等）
     notes: { type: String },
     // 是否在读；false 时不再出现在新报名/排课的学生下拉中（历史数据保留）

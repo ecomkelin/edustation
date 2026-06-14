@@ -34,6 +34,7 @@ const DEFAULT_POSITIONS = [
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read',
+      'recruit.read', 'recruit.write', 'recruit.convert',
       'report.read'
     ]
   },
@@ -52,6 +53,7 @@ const DEFAULT_POSITIONS = [
       'lessonAttendance.read',
       'studentWork.read',
       'points.read', 'pet.read',
+      'recruit.read', 'recruit.write', 'recruit.convert',
       'report.read'
     ]
   },

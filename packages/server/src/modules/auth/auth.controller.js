@@ -16,7 +16,9 @@ exports.login = async (req, res) => {
   setRefreshCookie(res, result.refreshToken)
   res.json(ApiResponse.ok({
     accessToken: result.accessToken,
-    user: result.user
+    user: result.user,
+    // 招生试听 (2026-06): 试听转化建的家长账号首登强改; 前端拦截器据此跳改密页
+    requirePasswordChange: result.requirePasswordChange
   }))
 }
 

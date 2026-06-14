@@ -68,16 +68,29 @@ const LessonScheduleSchema = new Schema(
     // 实际结束时间与计划时间相差 5 分钟以上的理由
     actualEndReason: { type: String, trim: true, default: null },
     // 课节主题（可选；例如"国画入门 - 写意兰花"）
+    //   该字段是本节课"最具体的主题"，UI 解析时它优先于 CI.syllabusOverride/Snapshot/Subject
     title: { type: String, trim: true },
     // 老师备课笔记 / 课堂要点
     notes: { type: String },
+    // ─── 教学体系:本节特例覆盖(2026-06 拆) ───
+    // 这些字段是 LessonSchedule 层的"本节特例说明",
+    // 解析时优先于 CourseInstance.syllabusOverride/Snapshot/Subject.
+    //   descriptionOverride: 覆盖 syllabus 来的 description
+    //   objectivesOverride:  覆盖 syllabus 来的 objectives (string[])
+    descriptionOverride: { type: String, default: '' },
+    objectivesOverride: { type: [String], default: [] },
     // 备课资料：课件 PDF / 教案 / 参考视频等
     //   引用 File 文档 ID（与 StudentWork.fileUrls 区分：本字段存 id 而非 url）
+    //   语义：本节课的"特例补充"材料；不包含 CI 快照来的/override 来的课件（那些由 resolveLessonContent 合并读出）
     materials: { type: [Schema.Types.ObjectId], ref: 'File', default: [] },
     // 提醒状态：none=未提醒；sent=全部学生已提醒成功；partial=部分学生提醒成功
     remindStatus: { type: String, enum: ['none', 'sent', 'partial'], default: 'none' },
     // 本节课最后一次成功推送提醒的时间（用于 UI 展示）
-    remindedAt: { type: Date, default: null }
+    remindedAt: { type: Date, default: null },
+    // 是否试听课（招生试听功能）：true 时为试听预约 (TrialBooking) 排的课,
+    // 排课处 UI 显示"试听"角标; 业务逻辑 (考勤/StudentProduct 扣减) 不参与 —
+    // 试听课的"参加"通过 TrialBooking.status 追踪; 详见 plans/staged-roaming-honey.md
+    isTrialLesson: { type: Boolean, default: false, index: true }
   },
   { timestamps: true, collection: 'lesson_schedules' }
 )

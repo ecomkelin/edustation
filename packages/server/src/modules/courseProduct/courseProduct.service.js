@@ -78,7 +78,6 @@ async function create({
   promotionPrice,
   promotionActive,
   validDays,
-  syllabus,
   attachments,
   isActive
 }) {
@@ -110,7 +109,6 @@ async function create({
     promotionPrice: promotionPrice != null ? promotionPrice : 0,
     promotionActive: !!promotionActive,
     validDays,
-    syllabus,
     attachments: normalizedAttachments,
     isActive
   })
@@ -265,7 +263,8 @@ async function removableCheck(id, orgId) {
  *  - 不再因"源端完全没挂学科"而跳过——学科在产品上是建议性、可空字段。
  *
  * 复制字段：name / subjects / totalLessons / minutesPerLesson / price / validDays /
- *          syllabus / isActive
+ *          isActive
+ * 注意：教学大纲/课件是 Subject 上的事（不归 CourseProduct），跨机构同步不复制这些。
  * isActive 一律置为 true（默认在售）。
  * ------------------------------------------------------------------ */
 
@@ -326,7 +325,7 @@ async function syncProducts({ targetOrgId, sourceOrgId, productIds, operatorId }
 
   const [sourceProducts, existing] = await Promise.all([
     CourseProduct.find({ _id: { $in: validIds }, org: sourceOrgId })
-      .select('name subject subjects totalLessons minutesPerLesson originalPrice discountPrice promotionPrice promotionActive validDays syllabus isActive')
+      .select('name subject subjects totalLessons minutesPerLesson originalPrice discountPrice promotionPrice promotionActive validDays isActive')
       .lean(),
     CourseProduct.find({ org: targetOrgId }).select('name').lean()
   ])
@@ -382,7 +381,6 @@ async function syncProducts({ targetOrgId, sourceOrgId, productIds, operatorId }
       promotionPrice: Number(p.promotionPrice) || 0,
       promotionActive: !!p.promotionActive,
       validDays: Number(p.validDays) || 1,
-      syllabus: p.syllabus || undefined,
       isActive: true
     })
   }

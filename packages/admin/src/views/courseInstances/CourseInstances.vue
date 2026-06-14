@@ -273,7 +273,113 @@
           </el-select>
         </el-form-item>
 
-        <!-- 5. 课程介绍 -->
+        <!-- 5. 教学特例 (override) - 仅编辑模式可见; 教务可对某些课做"开班级"覆盖 -->
+        <template v-if="form._id">
+          <el-divider content-position="left">教学特例</el-divider>
+          <el-alert
+            v-if="!form._syllabusSnapshot || !form._syllabusSnapshot.lessons || form._syllabusSnapshot.lessons.length === 0"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 8px"
+          >
+            <template #title>本开班尚未从科目快照教学大纲</template>
+            <div>提示：开班时若教学科目未配置大纲/课件,这里没有可覆盖的源。可以到「学科」管理页先为该科目配置。</div>
+          </el-alert>
+          <el-alert
+            v-else
+            type="success"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 8px"
+          >
+            <template #title>
+              已从科目快照教学大纲 ({{ form._syllabusSnapshot.lessons.length }} 节)
+            </template>
+            <div>下方表格为本开班的"特例覆盖" — 留空字段表示沿用快照,填了的字段会替换快照的对应字段。</div>
+          </el-alert>
+
+          <!-- 教学大纲特例 -->
+          <el-form-item label="教学大纲特例">
+            <div style="width: 100%">
+              <div style="margin-bottom: 6px">
+                <el-button :icon="Plus" size="small" type="primary" @click="openCiSyllabusDialog()">添加特例课时</el-button>
+                <span class="form-hint">仅对要改的课次做特例,其它课次继续走快照</span>
+              </div>
+              <el-table :data="form.syllabusOverride.lessons" border size="small" max-height="240">
+                <el-table-column prop="lessonNo" label="课次" width="70" />
+                <el-table-column prop="topic" label="主题" min-width="140" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span v-if="row.topic" style="color: #409eff">{{ row.topic }}</span>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="内容" min-width="160" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <span v-if="row.description" style="color: #409eff; font-size: 12px">{{ row.description }}</span>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="目标" min-width="120" show-overflow-tooltip>
+                  <template #default="{ row }">
+                    <template v-if="row.objectives && row.objectives.length">
+                      <el-tag v-for="(o, i) in row.objectives.slice(0, 2)" :key="i" size="small" style="margin-right: 4px">{{ o }}</el-tag>
+                      <el-tag v-if="row.objectives.length > 2" type="info" size="small">+{{ row.objectives.length - 2 }}</el-tag>
+                    </template>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="durationMinutes" label="时长(分)" width="80">
+                  <template #default="{ row }">
+                    <span v-if="row.durationMinutes">{{ row.durationMinutes }}</span>
+                    <span v-else class="muted">—</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="100" fixed="right">
+                  <template #default="{ row, $index }">
+                    <el-button size="small" link type="primary" @click="openCiSyllabusDialog($index)">编辑</el-button>
+                    <el-button size="small" link type="danger" @click="form.syllabusOverride.lessons.splice($index, 1)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-form-item>
+
+          <!-- 课件特例 -->
+          <el-form-item label="课件特例">
+            <div style="width: 100%">
+              <div style="margin-bottom: 6px">
+                <el-button :icon="Plus" size="small" type="primary" @click="openCiMaterialsDialog()">添加课件特例</el-button>
+                <span class="form-hint">在快照基础上追加本开班专属的课件</span>
+              </div>
+              <el-table :data="form.lessonMaterialsOverride.items" border size="small" max-height="240">
+                <el-table-column prop="lessonNo" label="课次" width="70" />
+                <el-table-column label="文件数" width="80">
+                  <template #default="{ row }">
+                    <span style="color: #606266">{{ (row.fileIds || []).length }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="文件" min-width="240">
+                  <template #default="{ row }">
+                    <template v-if="row.fileIds && row.fileIds.length">
+                      <el-tag v-for="(fid, i) in row.fileIds.slice(0, 3)" :key="fid" size="small" style="margin-right: 4px">{{ materialName(fid) }}</el-tag>
+                      <el-tag v-if="row.fileIds.length > 3" type="info" size="small">+{{ row.fileIds.length - 3 }}</el-tag>
+                    </template>
+                    <span v-else class="muted">未选择</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="100" fixed="right">
+                  <template #default="{ row, $index }">
+                    <el-button size="small" link type="primary" @click="openCiMaterialsDialog($index)">编辑</el-button>
+                    <el-button size="small" link type="danger" @click="form.lessonMaterialsOverride.items.splice($index, 1)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-form-item>
+        </template>
+
+        <!-- 6. 课程介绍 -->
         <el-divider content-position="left">课程介绍</el-divider>
         <el-form-item label="课程简介">
           <el-input v-model="form.description" type="textarea" :rows="4" placeholder="可填写本班特色、课程亮点等" />
@@ -343,6 +449,92 @@
         <el-button type="primary" :loading="statusSaving" :disabled="!statusForm.toStatus || !statusForm.reason.trim()" @click="submitStatus">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 教学大纲特例 编辑弹窗 (2026-06) -->
+    <el-dialog
+      v-model="ciSyllabusDialog"
+      :title="ciSyllabusDraft.idx === null ? '新增教学大纲特例' : '编辑教学大纲特例'"
+      width="640px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <el-form :model="ciSyllabusDraft.data" label-width="100px">
+        <el-form-item label="课次" required>
+          <el-input-number v-model="ciSyllabusDraft.data.lessonNo" :min="1" :max="999" />
+        </el-form-item>
+        <el-form-item label="主题(覆盖)">
+          <el-input v-model="ciSyllabusDraft.data.topic" maxlength="100" placeholder="留空表示沿用快照" />
+        </el-form-item>
+        <el-form-item label="内容(覆盖)">
+          <el-input v-model="ciSyllabusDraft.data.description" type="textarea" :rows="4" placeholder="留空表示沿用快照" />
+        </el-form-item>
+        <el-form-item label="目标(覆盖)">
+          <div class="obj-list">
+            <div v-for="(o, i) in ciSyllabusDraft.data.objectives" :key="i" class="obj-row">
+              <el-input v-model="ciSyllabusDraft.data.objectives[i]" maxlength="200" />
+              <el-button link type="danger" :icon="Delete" @click="ciSyllabusDraft.data.objectives.splice(i, 1)" />
+            </div>
+            <el-button :icon="Plus" size="small" @click="ciSyllabusDraft.data.objectives.push('')">添加目标</el-button>
+          </div>
+          <div class="form-hint">留空数组 = 沿用快照；填了则替换</div>
+        </el-form-item>
+        <el-form-item label="时长(分)">
+          <el-input-number v-model="ciSyllabusDraft.data.durationMinutes" :min="1" :max="600" placeholder="不填则沿用快照" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ciSyllabusDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmCiSyllabus">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 课件特例 编辑弹窗 (2026-06) -->
+    <el-dialog
+      v-model="ciMaterialsDialog"
+      :title="ciMaterialsDraft.idx === null ? '新增课件特例' : '编辑课件特例'"
+      width="640px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <el-form :model="ciMaterialsDraft.data" label-width="100px">
+        <el-form-item label="课次" required>
+          <el-input-number v-model="ciMaterialsDraft.data.lessonNo" :min="1" :max="999" />
+        </el-form-item>
+        <el-form-item label="课件文件">
+          <div class="materials">
+            <div v-for="(fid, i) in ciMaterialsDraft.data.fileIds" :key="fid" class="material-chip">
+              <el-icon style="margin-right: 4px"><Document /></el-icon>
+              <span class="text-12">{{ materialName(fid) }}</span>
+              <el-button link size="small" type="danger" @click="ciMaterialsDraft.data.fileIds.splice(i, 1)">移除</el-button>
+            </div>
+            <el-upload
+              :show-file-list="false"
+              :auto-upload="true"
+              :http-request="uploadCiMaterial"
+              :before-upload="beforeCiMaterialUpload"
+              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+            >
+              <el-button :icon="Upload" size="small">上传新课件</el-button>
+            </el-upload>
+            <el-button :icon="Folder" size="small" link @click="ciMaterialPicker = true">从文件库选</el-button>
+          </div>
+          <div class="form-hint">支持图片 / 视频 / 音频 / PDF / Office 文件</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ciMaterialsDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmCiMaterials">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 课件文件选择器(从文件库选) -->
+    <FilePicker
+      v-model="ciMaterialPicker"
+      multiple
+      scope="courseInstanceLessonMaterial"
+      title="选择课件文件"
+      @select="onPickCiMaterials"
+    />
 
     <!-- 取消开班 弹窗(仅超管) -->
     <el-dialog v-model="cancelDialog" title="取消开班" width="480px" :close-on-click-modal="false">
@@ -605,8 +797,10 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, Plus, Document, Folder, Upload } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import FilePicker from '@/components/FilePicker.vue'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { handleRemoveError } from '@/utils/removable'
 import { courseProductApi } from '@/api/courseProduct'
@@ -615,6 +809,7 @@ import { roomApi } from '@/api/room'
 import { userApi } from '@/api/user'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
+import { storageApi } from '@/api/storage'
 import { formatDate } from '@/utils/format'
 import { useAuthStore } from '@/stores/auth'
 import EnrollStudentsDialog from '@/components/EnrollStudentsDialog.vue'
@@ -769,6 +964,135 @@ const formEstimatedEndDate = computed(() => {
 const statusDialog = ref(false)
 const statusSaving = ref(false)
 const statusForm = reactive({ from: '', toStatus: '', reason: '' })
+
+// ── 教学特例弹窗(2026-06) ──
+const ciSyllabusDialog = ref(false)
+const ciSyllabusDraft = reactive({ idx: null, data: { lessonNo: 1, topic: '', description: '', objectives: [], durationMinutes: null } })
+function emptyCiSyllabusDraft() {
+  return { lessonNo: 1, topic: '', description: '', objectives: [], durationMinutes: null }
+}
+function openCiSyllabusDialog(idx) {
+  if (idx == null) {
+    ciSyllabusDraft.idx = null
+    Object.assign(ciSyllabusDraft.data, emptyCiSyllabusDraft())
+  } else {
+    const src = form.syllabusOverride.lessons[idx]
+    ciSyllabusDraft.idx = idx
+    Object.assign(ciSyllabusDraft.data, {
+      lessonNo: src.lessonNo,
+      topic: src.topic || '',
+      description: src.description || '',
+      objectives: Array.isArray(src.objectives) ? [...src.objectives] : [],
+      durationMinutes: src.durationMinutes != null ? Number(src.durationMinutes) : null
+    })
+  }
+  ciSyllabusDialog.value = true
+}
+function confirmCiSyllabus() {
+  const d = ciSyllabusDraft.data
+  const cleaned = {
+    lessonNo: Number(d.lessonNo),
+    topic: (d.topic || '').trim(),
+    description: d.description || '',
+    objectives: (d.objectives || []).map((o) => (o || '').trim()).filter(Boolean),
+    durationMinutes: d.durationMinutes != null && d.durationMinutes > 0 ? Number(d.durationMinutes) : null
+  }
+  if (ciSyllabusDraft.idx == null) {
+    if (form.syllabusOverride.lessons.some((l) => l.lessonNo === cleaned.lessonNo)) {
+      return ElMessage.error(`第 ${cleaned.lessonNo} 课的特例已存在`)
+    }
+    form.syllabusOverride.lessons.push(cleaned)
+  } else {
+    const oldNo = form.syllabusOverride.lessons[ciSyllabusDraft.idx].lessonNo
+    if (oldNo !== cleaned.lessonNo && form.syllabusOverride.lessons.some((l) => l.lessonNo === cleaned.lessonNo)) {
+      return ElMessage.error(`第 ${cleaned.lessonNo} 课的特例已存在`)
+    }
+    form.syllabusOverride.lessons.splice(ciSyllabusDraft.idx, 1, cleaned)
+  }
+  form.syllabusOverride.lessons.sort((a, b) => a.lessonNo - b.lessonNo)
+  ciSyllabusDialog.value = false
+}
+
+const ciMaterialsDialog = ref(false)
+const ciMaterialsDraft = reactive({ idx: null, data: { lessonNo: 1, fileIds: [] } })
+const ciMaterialPicker = ref(false)
+function emptyCiMaterialsDraft() {
+  return { lessonNo: 1, fileIds: [] }
+}
+function openCiMaterialsDialog(idx) {
+  if (idx == null) {
+    ciMaterialsDraft.idx = null
+    Object.assign(ciMaterialsDraft.data, emptyCiMaterialsDraft())
+  } else {
+    const src = form.lessonMaterialsOverride.items[idx]
+    ciMaterialsDraft.idx = idx
+    Object.assign(ciMaterialsDraft.data, {
+      lessonNo: src.lessonNo,
+      fileIds: (src.fileIds || []).map(String)
+    })
+  }
+  ciMaterialsDialog.value = true
+}
+function confirmCiMaterials() {
+  const d = ciMaterialsDraft.data
+  const cleaned = {
+    lessonNo: Number(d.lessonNo),
+    fileIds: (d.fileIds || []).filter((x) => x != null).map((x) => String(x))
+  }
+  if (ciMaterialsDraft.idx == null) {
+    if (form.lessonMaterialsOverride.items.some((it) => it.lessonNo === cleaned.lessonNo)) {
+      return ElMessage.error(`第 ${cleaned.lessonNo} 课的课件特例已存在`)
+    }
+    form.lessonMaterialsOverride.items.push(cleaned)
+  } else {
+    const oldNo = form.lessonMaterialsOverride.items[ciMaterialsDraft.idx].lessonNo
+    if (oldNo !== cleaned.lessonNo && form.lessonMaterialsOverride.items.some((it) => it.lessonNo === cleaned.lessonNo)) {
+      return ElMessage.error(`第 ${cleaned.lessonNo} 课的课件特例已存在`)
+    }
+    form.lessonMaterialsOverride.items.splice(ciMaterialsDraft.idx, 1, cleaned)
+  }
+  form.lessonMaterialsOverride.items.sort((a, b) => a.lessonNo - b.lessonNo)
+  ciMaterialsDialog.value = false
+}
+
+// 课件名称缓存(fileId -> 显示名)
+const ciMaterialNames = reactive(new Map())
+function materialName(id) {
+  return ciMaterialNames.get(String(id)) || String(id).slice(-6)
+}
+
+function beforeCiMaterialUpload(file) {
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('课件超过 20MB 限制')
+    return false
+  }
+  return true
+}
+
+async function uploadCiMaterial(req) {
+  try {
+    const { data } = await storageApi.upload({ file: req.file, scope: 'courseInstanceLessonMaterial' })
+    if (!Array.isArray(ciMaterialsDraft.data.fileIds)) ciMaterialsDraft.data.fileIds = []
+    ciMaterialsDraft.data.fileIds.push(data.id)
+    ciMaterialNames.set(String(data.id), data.originalName || data.id)
+    ElMessage.success('课件已上传,点"确定"生效')
+  } catch (e) {
+    // axios 拦截器已 toast
+  }
+}
+
+function onPickCiMaterials(files) {
+  if (!Array.isArray(ciMaterialsDraft.data.fileIds)) ciMaterialsDraft.data.fileIds = []
+  const existing = new Set(ciMaterialsDraft.data.fileIds.map(String))
+  for (const f of files) {
+    const id = String(f._id)
+    if (!existing.has(id)) {
+      ciMaterialsDraft.data.fileIds.push(id)
+      ciMaterialNames.set(id, f.originalName || id)
+      existing.add(id)
+    }
+  }
+}
 
 // 取消弹窗
 const cancelDialog = ref(false)
@@ -1138,7 +1462,10 @@ function resetForm() {
     schedulePlan: defaultSchedulePlan(),
     startDate: '',
     maxStudents: 10,
-    status: 'planning'
+    status: 'planning',
+    // 2026-06: 教学体系特例(覆盖 Subject 快照来的 syllabus / lessonMaterials)
+    syllabusOverride: { totalLessons: 0, lessons: [] },
+    lessonMaterialsOverride: { items: [] }
   })
 }
 
@@ -1216,6 +1543,30 @@ function openEdit(row) {
   form.startDate = row.startDate ? String(row.startDate).slice(0, 10) : ''
   form.maxStudents = row.maxStudents || 10
   form.status = row.status || 'planning'
+  // 2026-06: 教学特例
+  form.syllabusOverride = (row.syllabusOverride && row.syllabusOverride.lessons)
+    ? {
+        totalLessons: row.syllabusOverride.totalLessons || row.syllabusOverride.lessons.length,
+        lessons: row.syllabusOverride.lessons.map((l) => ({
+          lessonNo: l.lessonNo,
+          topic: l.topic || '',
+          description: l.description || '',
+          objectives: Array.isArray(l.objectives) ? [...l.objectives] : [],
+          durationMinutes: l.durationMinutes != null ? Number(l.durationMinutes) : null
+        }))
+      }
+    : { totalLessons: 0, lessons: [] }
+  form.lessonMaterialsOverride = (row.lessonMaterialsOverride && row.lessonMaterialsOverride.items)
+    ? {
+        items: row.lessonMaterialsOverride.items.map((it) => ({
+          lessonNo: it.lessonNo,
+          fileIds: (it.fileIds || []).map(String)
+        }))
+      }
+    : { items: [] }
+  // 快照信息(只读, 用来在 UI 上提示"已被快照的源")
+  form._syllabusSnapshot = row.syllabusSnapshot || null
+  form._lessonMaterialsSnapshot = row.lessonMaterialsSnapshot || null
   dialog.value = true
 }
 

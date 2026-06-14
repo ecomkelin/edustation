@@ -26,18 +26,25 @@ export const useAuthStore = defineStore('auth', {
       user: saved.user || null,
       orgs: saved.orgs || [],
       currentOrgId: saved.currentOrgId || '',
-      activeStudentId: saved.activeStudentId || ''
+      activeStudentId: saved.activeStudentId || '',
+      // 招生试听 (2026-06): 首登强改密标志
+      //   login() / fetchMe() 检测到 requirePasswordChange=true 时设 true;
+      //   改密成功后清 false; 路由守卫据此跳 /reset-password?initial=1
+      requirePasswordChange: !!saved.requirePasswordChange
     }
   },
   getters: {
     isAuthenticated: (s) => !!s.accessToken && !!s.user,
-    isPlatformAdmin: (s) => !!s.user && s.user.isPlatformAdmin
+    isPlatformAdmin: (s) => !!s.user && s.user.isPlatformAdmin,
+    needPasswordChange: (s) => !!(s.user && s.user.requirePasswordChange) || s.requirePasswordChange
   },
   actions: {
     async login({ mobile, password }) {
       const res = await http.post('/auth/login', { mobile, password })
       this.accessToken = res.data.accessToken
       this.user = res.data.user
+      // 招生试听 (2026-06): 首登强改密标志
+      this.requirePasswordChange = !!res.data.requirePasswordChange
       // 拉取 /me 拿 orgs
       // 注:必须显式传 Authorization header —— 此处 store.accessToken 刚赋值,
       // axios 拦截器在下一次请求前才能看到(虽然 pinia 状态同步可见,
@@ -74,6 +81,8 @@ export const useAuthStore = defineStore('auth', {
       const me = await http.get('/auth/me')
       this.user = me.data
       this.orgs = me.data.orgs
+      // 招生试听 (2026-06): 从 /me 拉到的 user.requirePasswordChange 同步到 store
+      this.requirePasswordChange = !!this.user?.requirePasswordChange
       // 关键:refresh / restore 时如果 currentOrgId 不在新 orgs 列表(或为空),要重设。
       // 否则 Dashboard 第 149 行 `if (!currentOrgId.value) return` 会静默不请求,
       // 数字全显示 0(不是 loading,不是错误)。
@@ -125,7 +134,8 @@ export const useAuthStore = defineStore('auth', {
         user: this.user,
         orgs: this.orgs,
         currentOrgId: this.currentOrgId,
-        activeStudentId: this.activeStudentId
+        activeStudentId: this.activeStudentId,
+        requirePasswordChange: this.requirePasswordChange
       })
     },
 
@@ -135,7 +145,17 @@ export const useAuthStore = defineStore('auth', {
       this.orgs = []
       this.currentOrgId = ''
       this.activeStudentId = ''
+      this.requirePasswordChange = false
       writeLs(null)
+    },
+
+    /**
+     * 招生试听 (2026-06): 改密成功后调用, 清掉强改标志
+     */
+    clearRequirePasswordChange() {
+      this.requirePasswordChange = false
+      if (this.user) this.user.requirePasswordChange = false
+      this.persist()
     }
   }
 })

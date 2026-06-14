@@ -41,7 +41,7 @@ const create = [
   // 兼容旧字段 price（service 把它当作 discountPrice）
   body('price').optional().isFloat({ min: 0 }),
   body('validDays').isInt({ min: 1 }),
-  body('syllabus').optional().isString().isLength({ max: 2000 }),
+  // syllabus 已剥离到 Subject 上；CourseProduct 不再接收
   body('isActive').optional().isBoolean()
 ]
 
@@ -58,7 +58,7 @@ const update = [
   // 兼容旧字段 price
   body('price').optional().isFloat({ min: 0 }),
   body('validDays').optional().isInt({ min: 1 }),
-  body('syllabus').optional().isString().isLength({ max: 2000 }),
+  // syllabus 已剥离到 Subject 上；CourseProduct 不再接收
   body('isActive').optional().isBoolean()
 ]
 

@@ -129,6 +129,61 @@ eduStation/
 - **PointsTransaction**：student, amount, type, refId
 - **Pet**：student, petType, level, experience
 
+### 7.7 招生试听 (2026-06)
+地推/教务录入潜客、批量排试听课、到店打卡、试听结果、转化学员的全链路。完整业务规划见 [plans/staged-roaming-honey.md](../.claude/plans/staged-roaming-honey.md)。
+
+**核心实体 (4 个, 1+1+1+1):**
+- **Lead** (潜客/线索, collection `leads`): 地推录入的"还没成为学生"的人; 状态机 `pending → contacted → scheduled → tried → converted | lost`; 触点日志冗余 `lastContactedAt/By`; phone 同 org 内软唯一
+- **TrialBooking** (试听预约, collection `trial_bookings`): Lead 1:N 关系; `attemptNo` 1/2/3 标记第几次约; 状态机 `awaiting_schedule → scheduled → arrived → completed` (中间可转 `no_show`/`cancelled`); **关键: `lessonSchedule` 字段在 awaiting_schedule 状态为空, 排课后才填**
+- **LeadActivity** (触点日志, collection `lead_activities`): Lead 1:N; 触点类型 `call/wechat/visit/sms/note`; 创建时同步刷 `Lead.lastContactedAt/By`, 触发 `pending→contacted` 状态翻转
+- **LessonSchedule.isTrialLesson** (试听课标记, Boolean): 单独排课的试听预约对应的排课实例; UI 显示"试听"角标; **不参与 LessonAttendance / StudentProduct 消课业务** (业务逻辑都在 TrialBooking 上追踪)
+
+**courseInstance 复用 + isTrial 标志位:**
+- **不**改 `LessonSchedule.courseInstance` 的 `required: true` 约束 (改它会破坏唯一索引 `{courseInstance, lessonNo}` 和 `prepare/finish/assertCourseInstanceActive` 状态机)
+- 每机构 1 个 [试听专用] `CourseInstance` (`isTrial: true`, `status: 'closed'`, `name: '【试听专用】'`); 试听排课挂这个 instance
+- 排课时, `service.create` 校验 `isTrialLesson=true ⇒ courseInstance.isTrial=true` (防误用)
+- `courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班, 排课接口可显式 `?includeTrial=true`
+- 试听专用开班由 `courseInstance.service.ensureTrialCourseInstance(orgId)` 幂等创建; `org.service.create` 创建新机构时自动调; 历史机构通过 `migrate-add-recruit-perms.js` 补
+
+**批量排课模型 (1:N 共享):**
+- 1 个 `LessonSchedule` (isTrialLesson=true) 可对应 N 个 `TrialBooking`: 5 个孩子一起来上同一节试听课
+- `POST /api/v1/trial-bookings/batch-schedule` 端点: 选 N 个 `awaiting_schedule` booking, 选时间/老师/教室, **一次操作创建 1 个 LessonSchedule + 更新 N 个 booking (status awaiting_schedule → scheduled)**
+- N 个 booking 必须 subject 一致 (混合科目拒绝, 按科目分别排)
+- 排课冲突走 `lessonSchedule.service.detectConflict` 完整检测 (teacher/room/time 全检), 试听不绕过
+- 业务上"单独排课"和"跟班试听"都走这条路径: solo 模式 = 创建新 schedule (挂 [试听专用] CI); attached 模式 = 选已有正常 schedule
+
+**转化两步式 (claim token 模式):**
+- 试听完成后 (`status=completed`, `result.isEnrolled=true`) 触发转化
+- `POST /convert-preview` 返回 `initialPassword` + 即将创建 User/Student 预览 (无副作用, 1 个 API)
+- `POST /convert` 真提交:
+  1. **Claim token**: `TrialBooking.findOneAndUpdate({_id, 'result.isEnrolled': true, 'result.enrolledAt': null}, {$set: {'result.enrolledAt': now}})` — 原子翻转, 重试安全
+  2. **User upsert**: `findOneAndUpdate({mobile}, {$setOnInsert: {mobile, passwordHash: bcrypt(mobile.slice(-6)), realName: '家长-'+lead.name, requirePasswordChange: true}}, {upsert: true})`
+  3. **UserOrgRel upsert**: 查"家长" Position, `findOneAndUpdate({user, org}, {$setOnInsert: {...}}, {upsert: true})`
+  4. **Student create**: 拷贝 lead.name/gender/school/grade/className
+  5. **Lead update**: 写回 convertedStudent/User/At/Remark
+- **不用 mongoose 事务** (单节点 Mongo 不支持); 用 `findOneAndUpdate` upsert 链 + claim token 模式实现重试安全
+- **5 分钟撤销窗口**: `POST /api/v1/leads/:id/unconvert` 校验 `convertedAt` 在 5 分钟内; 物理删除 Student / User (requirePasswordChange=true) / UserOrgRel, TrialBooking.result 重置
+
+**初始密码策略:**
+- 新建家长 `User.passwordHash = bcrypt(mobile.slice(-6))` (手机号后 6 位)
+- `User.requirePasswordChange = true`
+- `auth.service.login` 在响应里返回 `requirePasswordChange: true`
+- 前端 auth store 存该标志, 路由守卫 (`router/index.js` beforeEach) 拦截任何非 `/reset-password` 访问, 强制跳改密页
+- `auth.service.changePassword` 改密成功后清掉 `requirePasswordChange` 标志
+
+**权限码 (新增 `recruit` 组):**
+- `recruit.read` - 列表/详情/触点时间线
+- `recruit.write` - 新建/编辑/批量排课/打卡/完成
+- `recruit.convert` - 转化预览/转化执行/撤销转化
+- 加到 `管理员` 和 `教务` 系统职位 (默认); 不加到 `老师`/`家长`/`财务`
+- 历史机构通过 `migrate-add-recruit-perms.js` 一次性补 ($addToSet + $nin 前置过滤, 幂等)
+- 销售/教务分级: 服务端在 `lead.service.list` 时, 若用户无"看全部"权限强制 `createdBy=me` (`scope=mine`); 教务可看全部
+
+**删除保护 (与现有 8.1 互锁):**
+- `lessonSchedule.lessonScheduleUsageChecks` **新增第三项**: `TrialBooking.lessonSchedule=scheduleId && status ∈ {awaiting_schedule, scheduled, arrived, completed}` → 阻挡物理删除
+- `Lead.removableCheck`: `TrialBooking` + `LeadActivity` 引用都阻挡
+- 物理删除走 `requirePlatformPassword` (高风险)
+
 ## 8. 后端分层与模块组织
 采用“领域分组 + 垂直切片”模式。当模块过多时，在 `modules/` 下用分组文件夹聚合。
 server/src/

@@ -66,6 +66,59 @@ const SchedulePlanSchema = new Schema(
   { _id: false }
 )
 
+/** ─── 教学体系子文档 ───
+ *
+ * 开班在创建时从 Subject 快照 syllabus + lessonMaterials 进来（snapshot 子文档）。
+ * 后续 Subject 改了不影响已开班的内容；教务可在本开班上做特例覆盖（override 子文档）。
+ *
+ * 三层解析顺序（读）：LessonSchedule.override → CourseInstance.override → CourseInstance.snapshot → Subject.current
+ * 课件维度仅按"实体+字段"追踪引用（不区分 lessonNo），由 fileBind 统一维护。
+ */
+
+/** 教学大纲中一节课（与 Subject.syllabus.lessons[].shape 完全一致） */
+const SyllabusLessonSchema = new Schema(
+  {
+    lessonNo: { type: Number, required: true, min: 1 },
+    topic: { type: String, trim: true, default: '' },
+    description: { type: String, default: '' },
+    objectives: { type: [String], default: [] },
+    durationMinutes: { type: Number, min: 1, default: null }
+  },
+  { _id: false }
+)
+
+/** 教学大纲子文档（snapshot / override 同 shape） */
+const SyllabusDocSchema = new Schema(
+  {
+    // snapshot 用：快照捕获时间 + Subject 当时的 version（updatedAt）
+    capturedAt: { type: Date, default: null },
+    subjectVersion: { type: Date, default: null },
+    totalLessons: { type: Number, min: 0, default: 0 },
+    lessons: { type: [SyllabusLessonSchema], default: [] }
+  },
+  { _id: false }
+)
+
+/** 课件分组（按 lessonNo） */
+const LessonMaterialItemSchema = new Schema(
+  {
+    lessonNo: { type: Number, required: true, min: 1 },
+    // 课件 fileId 列表；走 fileBind（field='lessonMaterials'）维护引用追踪
+    fileIds: { type: [Schema.Types.ObjectId], ref: 'File', default: [] }
+  },
+  { _id: false }
+)
+
+/** 每堂课课件子文档（snapshot / override 同 shape） */
+const LessonMaterialsDocSchema = new Schema(
+  {
+    capturedAt: { type: Date, default: null },
+    subjectVersion: { type: Date, default: null },
+    items: { type: [LessonMaterialItemSchema], default: [] }
+  },
+  { _id: false }
+)
+
 const CourseInstanceSchema = new Schema(
   {
     // 所属机构（多租户隔离）
@@ -116,7 +169,20 @@ const CourseInstanceSchema = new Schema(
       _id: false
     }],
     // 软删时间戳：非 null 表示已删除；list / detail 查询统一过滤掉
-    deletedAt: { type: Date, default: null }
+    deletedAt: { type: Date, default: null },
+    // 是否试听专用开班（招生/试听功能）：true 时为机构 [试听专用] 兜底开班,
+    // 排课处允许排试听课 (isTrialLesson=true 的 LessonSchedule 挂此 instance),
+    // list 默认过滤 (除非 ?includeTrial=true); 详见 plans/staged-roaming-honey.md
+    isTrial: { type: Boolean, default: false, index: true },
+    // ─── 教学体系：snapshot + override ───
+    // 教学大纲快照（创建时从 Subject 拷贝进来；后续 Subject 改了不影响已开班）
+    syllabusSnapshot: { type: SyllabusDocSchema, default: () => ({ totalLessons: 0, lessons: [] }) },
+    // 课件快照（同上）
+    lessonMaterialsSnapshot: { type: LessonMaterialsDocSchema, default: () => ({ items: [] }) },
+    // 教学大纲特例覆盖（教务可针对本开班调整某些课的主题/内容/目标）
+    syllabusOverride: { type: SyllabusDocSchema, default: () => ({ totalLessons: 0, lessons: [] }) },
+    // 课件特例覆盖（同上，按 lessonNo 追加 fileId）
+    lessonMaterialsOverride: { type: LessonMaterialsDocSchema, default: () => ({ items: [] }) }
   },
   { timestamps: true, collection: 'course_instances' }
 )

@@ -38,7 +38,11 @@ async function login({ mobile, password: plain, ip, userAgent }) {
   return {
     accessToken,
     refreshToken,
-    user: publicUser(user)
+    user: publicUser(user),
+    // 招生试听 (2026-06): 试听转化时为新家长设的初始密码 = mobile.slice(-6),
+    // 首登后必须改密 (User.requirePasswordChange=true). 前端拦截器据此
+    // 跳到 /reset-password?initial=1 强制改密.
+    requirePasswordChange: !!user.requirePasswordChange
   }
 }
 
@@ -192,6 +196,10 @@ async function changePassword(userId, oldPassword, newPassword) {
   const ok = await password.verify(user.passwordHash, oldPassword)
   if (!ok) throw ApiError.badRequest('原密码错误')
   user.passwordHash = await password.hash(newPassword)
+  // 招生试听 (2026-06): 改密成功即清掉首登强改标志
+  if (user.requirePasswordChange) {
+    user.requirePasswordChange = false
+  }
   await user.save()
   // 把所有未撤销的 refresh token 一律撤销 —— 强制其他设备重新登录
   await RefreshToken.updateMany({ user: userId, isRevoked: false }, { $set: { isRevoked: true } })
@@ -208,7 +216,9 @@ function publicUser(u) {
     isActive: u.isActive,
     isBlocked: !!u.isBlocked,
     blockedAt: u.blockedAt,
-    blockedReason: u.blockedReason
+    blockedReason: u.blockedReason,
+    // 招生试听 (2026-06): 首登强改密标志; 前端拦截器据此跳 /reset-password?initial=1
+    requirePasswordChange: !!u.requirePasswordChange
   }
 }
 

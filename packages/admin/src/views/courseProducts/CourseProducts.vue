@@ -147,7 +147,7 @@
         </el-form-item>
 
         <el-form-item label="有效天数"><el-input-number v-model="form.validDays" :min="1" /></el-form-item>
-        <el-form-item label="教学大纲"><el-input v-model="form.syllabus" type="textarea" :rows="3" maxlength="2000" /></el-form-item>
+        <!-- 教学大纲 2026-06 拆到 Subject 上; CourseProduct 只承载"售卖规格" -->
         <el-form-item label="课程附件">
           <div class="attachments">
             <div v-for="(id, i) in form.attachments" :key="id" class="attachment-chip">
@@ -344,7 +344,6 @@ const form = reactive({
   promotionPrice: 1200,
   promotionActive: false,
   validDays: 360,
-  syllabus: '',
   isActive: true,
   attachments: []   // [ObjectId<Ref:File>]，后端 diffArrayById 自动绑/解
 })
@@ -384,7 +383,6 @@ function openCreate() {
     promotionPrice: 1200,
     promotionActive: false,
     validDays: 360,
-    syllabus: '',
     isActive: true
   })
   dialog.value = true
