@@ -81,7 +81,8 @@ import {
   Warning,
   ChatLineRound,
   SwitchButton,
-  DataAnalysis
+  DataAnalysis,
+  Picture
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -97,7 +98,8 @@ const menuGroups = [
     children: [
       { path: '/orgs', label: '机构管理', icon: Box, requirePlatform: true },
       { path: '/users', label: '用户管理', icon: User, perm: 'user.read' },
-      { path: '/positions', label: '职位权限', icon: Lock, perm: 'position.read' }
+      { path: '/positions', label: '职位权限', icon: Lock, perm: 'position.read' },
+      { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' }
     ]
   },
   {

@@ -276,11 +276,18 @@
             list-type="picture"
             accept="image/*,video/*,audio/*,.pdf"
           >
-            <el-button>选择文件</el-button>
+            <el-button>选择新文件</el-button>
             <template #tip>
               <div class="text-muted text-12">支持图片/视频/音频/PDF，至少 1 个</div>
             </template>
           </el-upload>
+          <el-button :icon="Folder" link style="margin-top: 6px" @click="workPicker = true">
+            从文件库选
+          </el-button>
+          <div v-if="createForm.pickedFileIds && createForm.pickedFileIds.length"
+               class="text-muted text-12" style="margin-top: 4px">
+            已从文件库选 {{ createForm.pickedFileIds.length }} 个，与上方新文件合并提交
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -293,15 +300,26 @@
         >提交</el-button>
       </template>
     </el-dialog>
+
+    <!-- 从文件库选学生作品文件（多选） -->
+    <FilePicker
+      v-model="workPicker"
+      multiple
+      scope="work"
+      title="选择学生作品文件"
+      @select="onPickWorks"
+    />
   </div>
 </template>
 
 <script setup>
 import { onMounted, reactive, ref, computed } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Folder } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { studentWorkApi } from '@/api/studentWork'
+import FilePicker from '@/components/FilePicker.vue'
+import { storageApi } from '@/api/storage'
 import { handleRemoveError } from '@/utils/removable'
 import { lessonAttendanceApi } from '@/api/lessonAttendance'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
@@ -449,7 +467,8 @@ async function openCreate() {
     title: '',
     description: '',
     level: 0,
-    fileList: []
+    fileList: [],
+    pickedFileIds: []
   }
   studentOptions.value = []
   attendanceOptions.value = []
@@ -547,11 +566,12 @@ async function loadAttendances() {
 
 const canSubmitCreate = computed(() => {
   if (!createForm.value) return false
+  const hasNew = createForm.value.fileList && createForm.value.fileList.length > 0
+  const hasPicked = createForm.value.pickedFileIds && createForm.value.pickedFileIds.length > 0
   return !!(
     createForm.value.lessonAttendance &&
     String(createForm.value.title).trim() &&
-    createForm.value.fileList &&
-    createForm.value.fileList.length > 0
+    (hasNew || hasPicked)
   )
 })
 
@@ -559,15 +579,27 @@ async function submitCreate() {
   if (!createForm.value || !canSubmitCreate.value) return
   createSaving.value = true
   try {
-    const fd = new FormData()
-    fd.append('lessonAttendance', createForm.value.lessonAttendance)
-    fd.append('title', String(createForm.value.title).trim())
-    if (createForm.value.description) fd.append('description', createForm.value.description)
-    if (createForm.value.level) fd.append('level', String(createForm.value.level))
-    for (const f of createForm.value.fileList) {
-      fd.append('files', f.raw || f)
+    // 1) 上传新文件
+    const files = (createForm.value.fileList || []).map((f) => f.raw || f).filter(Boolean)
+    let uploadedIds = []
+    if (files.length) {
+      const upRes = await storageApi.uploadMany({ files, scope: 'work' })
+      uploadedIds = (upRes.data?.items || []).map((i) => i.id)
     }
-    await studentWorkApi.upload(fd)
+    // 2) 合并：从文件库选 + 新上传
+    const fileIds = [...(createForm.value.pickedFileIds || []), ...uploadedIds]
+    if (!fileIds.length) {
+      ElMessage.error('请至少上传或选择一个文件')
+      return
+    }
+    const payload = {
+      lessonAttendance: createForm.value.lessonAttendance,
+      title: String(createForm.value.title).trim(),
+      fileIds
+    }
+    if (createForm.value.description) payload.description = createForm.value.description
+    if (createForm.value.level) payload.level = String(createForm.value.level)
+    await studentWorkApi.create(payload)
     ElMessage.success('作品已上传')
     createVisible.value = false
     load()
@@ -575,6 +607,23 @@ async function submitCreate() {
     // http.js 已弹 ElMessage
   } finally {
     createSaving.value = false
+  }
+}
+
+// 从文件库选作品文件（多选）。与 fileList 平行存储，submitCreate 时合并。
+// 已知 trade-off：用户上传后未点提交就关弹窗，新上传的文件会成孤儿 —— 与 Orgs 的 stagedLogoIds 同样限制，
+// 后续可镜像 stagedWorkIds 修复，本期不做。
+const workPicker = ref(false)
+function onPickWorks(files) {
+  if (!createForm.value) return
+  if (!createForm.value.pickedFileIds) createForm.value.pickedFileIds = []
+  const existing = new Set(createForm.value.pickedFileIds.map(String))
+  for (const f of files) {
+    const id = String(f._id)
+    if (!existing.has(id)) {
+      createForm.value.pickedFileIds.push(id)
+      existing.add(id)
+    }
   }
 }
 

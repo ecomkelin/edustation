@@ -79,6 +79,7 @@ async function create({
   promotionActive,
   validDays,
   syllabus,
+  attachments,
   isActive
 }) {
   // 兼容旧字段名 `subject`（单值）— 若前端仍以单值提交，service 自动归并
@@ -94,6 +95,10 @@ async function create({
     throw ApiError.badRequest('启用活动价时，promotionPrice 必须小于 discountPrice')
   }
 
+  const normalizedAttachments = Array.isArray(attachments)
+    ? attachments.filter((x) => x != null).map((x) => String(x))
+    : []
+
   const doc = await CourseProduct.create({
     org: orgId,
     subjects: normalized,
@@ -106,8 +111,23 @@ async function create({
     promotionActive: !!promotionActive,
     validDays,
     syllabus,
+    attachments: normalizedAttachments,
     isActive
   })
+
+  if (normalizedAttachments.length) {
+    const { REF_ENTITY } = require('@models/File.model')
+    const fileBind = require('@modules/storage/fileBind')
+    await fileBind.diffArrayById({
+      orgId,
+      oldIds: [],
+      newIds: normalizedAttachments,
+      entity: REF_ENTITY.COURSE_PRODUCT,
+      entityId: doc._id,
+      field: 'attachments'
+    })
+  }
+
   return detail(doc._id, orgId)
 }
 
@@ -153,12 +173,39 @@ async function update(id, orgId, payload) {
       throw ApiError.badRequest('启用活动价时，promotionPrice 必须小于 discountPrice')
     }
   }
+  // attachments 字段更新 → fileBind diff（ObjectId 数组 → url 数组 → diff）
+  let prevAttachments = null
+  if (Object.prototype.hasOwnProperty.call(payload, 'attachments')) {
+    const prev = await CourseProduct.findOne({ _id: id, org: orgId }).select('attachments').lean()
+    prevAttachments = prev ? (prev.attachments || []).map((x) => String(x)) : []
+    // 规范化：确保都是 string id
+    if (Array.isArray(payload.attachments)) {
+      payload.attachments = payload.attachments.filter((x) => x != null).map((x) => String(x))
+    } else {
+      payload.attachments = []
+    }
+  }
+
   const doc = await CourseProduct.findOneAndUpdate(
     { _id: id, org: orgId },
     payload,
     { new: true, runValidators: true }
   )
   if (!doc) throw ApiError.notFound('课程产品不存在')
+
+  if (prevAttachments !== null) {
+    const { REF_ENTITY } = require('@models/File.model')
+    const fileBind = require('@modules/storage/fileBind')
+    await fileBind.diffArrayById({
+      orgId,
+      oldIds: prevAttachments,
+      newIds: (doc.attachments || []).map((x) => String(x)),
+      entity: REF_ENTITY.COURSE_PRODUCT,
+      entityId: doc._id,
+      field: 'attachments'
+    })
+  }
+
   return detail(doc._id, orgId)
 }
 

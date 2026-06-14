@@ -148,6 +148,26 @@
 
         <el-form-item label="有效天数"><el-input-number v-model="form.validDays" :min="1" /></el-form-item>
         <el-form-item label="教学大纲"><el-input v-model="form.syllabus" type="textarea" :rows="3" maxlength="2000" /></el-form-item>
+        <el-form-item label="课程附件">
+          <div class="attachments">
+            <div v-for="(id, i) in form.attachments" :key="id" class="attachment-chip">
+              <el-icon style="margin-right: 4px"><Document /></el-icon>
+              <span class="text-12" :title="id">{{ attachmentName(id) }}</span>
+              <el-button link size="small" type="danger" @click="form.attachments.splice(i, 1)">移除</el-button>
+            </div>
+            <el-upload
+              :show-file-list="false"
+              :auto-upload="true"
+              :http-request="uploadAttachment"
+              :before-upload="beforeAttachmentUpload"
+              accept="image/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+            >
+              <el-button :icon="Upload" size="small">上传新附件</el-button>
+            </el-upload>
+            <el-button :icon="Folder" size="small" link @click="attachmentPicker = true">从文件库选</el-button>
+          </div>
+          <div class="form-hint">支持图片 / PDF / Office 文件</div>
+        </el-form-item>
         <el-form-item label="在售">
           <el-switch v-model="form.isActive" />
         </el-form-item>
@@ -157,6 +177,15 @@
         <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 从文件库选课程附件（多选） -->
+    <FilePicker
+      v-model="attachmentPicker"
+      multiple
+      scope="courseAttachment"
+      title="选择课程附件"
+      @select="onPickAttachments"
+    />
 
     <!-- 跨机构同步弹窗 -->
     <el-dialog
@@ -287,11 +316,14 @@
 <script setup>
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Document, Folder, Upload } from '@element-plus/icons-vue'
 import { courseProductApi } from '@/api/courseProduct'
+import { storageApi } from '@/api/storage'
 import { handleRemoveError } from '@/utils/removable'
 import { subjectApi } from '@/api/subject'
 import { useAuthStore } from '@/stores/auth'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import FilePicker from '@/components/FilePicker.vue'
 
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
@@ -313,7 +345,8 @@ const form = reactive({
   promotionActive: false,
   validDays: 360,
   syllabus: '',
-  isActive: true
+  isActive: true,
+  attachments: []   // [ObjectId<Ref:File>]，后端 diffArrayById 自动绑/解
 })
 
 // 当前目标机构名称（顶部「机构切换」里选中的）
@@ -408,6 +441,47 @@ async function submit() {
     load()
   } finally {
     saving.value = false
+  }
+}
+
+// ===== 课程附件：上传新 + 从库选 =====
+const attachmentPicker = ref(false)
+// id -> originalName 的回显 map。编辑模式下 form.attachments 是 ObjectId[]，
+// 旧数据没 name；新选/新传的同步记到这里。MVP 不批量 storageApi.detail 回查。
+const attachmentNames = reactive(new Map())
+function attachmentName(id) {
+  return attachmentNames.get(String(id)) || String(id).slice(-6)
+}
+
+function beforeAttachmentUpload(file) {
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('附件超过 20MB 限制')
+    return false
+  }
+  return true
+}
+
+async function uploadAttachment(req) {
+  try {
+    const { data } = await storageApi.upload({ file: req.file, scope: 'courseAttachment' })
+    form.attachments.push(data.id)
+    attachmentNames.set(String(data.id), data.originalName || data.id)
+    ElMessage.success('附件已上传，点"确定"生效')
+  } catch (e) {
+    // axios 拦截器已 toast
+  }
+}
+
+function onPickAttachments(files) {
+  if (!Array.isArray(form.attachments)) form.attachments = []
+  const existing = new Set(form.attachments.map(String))
+  for (const f of files) {
+    const id = String(f._id)
+    if (!existing.has(id)) {
+      form.attachments.push(id)
+      attachmentNames.set(id, f.originalName || id)
+      existing.add(id)
+    }
   }
 }
 
@@ -564,6 +638,21 @@ onMounted(() => {
 <style scoped>
 .course-products-page { display: flex; flex-direction: column; gap: 12px; }
 .header-card { border: none; }
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+}
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background: #fafbfc;
+}
 .header-row {
   display: flex;
   justify-content: space-between;

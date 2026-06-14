@@ -39,7 +39,12 @@ export const useAuthStore = defineStore('auth', {
       this.accessToken = res.data.accessToken
       this.user = res.data.user
       // 拉取 /me 拿 orgs
-      const me = await http.get('/auth/me')
+      // 注:必须显式传 Authorization header —— 此处 store.accessToken 刚赋值,
+      // axios 拦截器在下一次请求前才能看到(虽然 pinia 状态同步可见,
+      // 但避免任何 race condition,直接传 header 最稳)。
+      const me = await http.get('/auth/me', {
+        headers: { Authorization: `Bearer ${this.accessToken}` }
+      })
       this.orgs = me.data.orgs
       if (me.data.orgs.length && !this.currentOrgId) {
         const main = me.data.orgs.find((o) => o.isMain) || me.data.orgs[0]

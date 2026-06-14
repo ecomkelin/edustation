@@ -173,11 +173,37 @@ async function update(userId, payload) {
     if (dup) throw ApiError.conflict('身份证号已存在')
   }
 
+  // avatar 字段可能更新 —— 先抓旧值做 fileBind diff
+  // 业务上 avatar 走 URL 字符串；File 引用追踪由 fileBind 维护
+  // 注意：user 是跨机构实体（无 org 字段），fileBind 校验时传 orgId=null 跳过隔离
+  let prevAvatar = null
+  if (Object.prototype.hasOwnProperty.call(payload, 'avatar')) {
+    const prev = await User.findById(userId).select('avatar').lean()
+    prevAvatar = prev ? prev.avatar : null
+  }
+
   const user = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
     .populate('region', 'name level code')
     .select('mobile realName avatar idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
+
+  // avatar 引用追踪（unbind 旧 / bind 新）
+  if (Object.prototype.hasOwnProperty.call(payload, 'avatar')) {
+    const { REF_ENTITY } = require('@models/File.model')
+    const fileBind = require('@modules/storage/fileBind')
+    // 跨机构：user 不属于 org，用 null 让 fileBind 跳过 org 校验
+    // 但本 service 的 caller 一定是某个 req.orgId 上下文；用该 org 校验更稳
+    await fileBind.diffSingle({
+      orgId: null, // user 跨机构，File.org 可能是 null（avatar scope 允许）
+      oldUrl: prevAvatar,
+      newUrl: user.avatar,
+      entity: REF_ENTITY.USER,
+      entityId: user._id,
+      field: 'avatar'
+    })
+  }
+
   return {
     ...user,
     id: String(user._id),

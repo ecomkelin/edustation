@@ -63,6 +63,10 @@ const CourseProductSchema = new Schema(
     validDays: { type: Number, required: true, min: 1 },
     // 教学大纲（最多 2000 字；如需更细可后续拆成 LessonSyllabus 子表）
     syllabus: { type: String, maxlength: 2000 },
+    // 课程附件：课件 PDF / 大纲文档 / 参考资料图片等
+    //   引用 File 文档 ID（与 StudentWork.fileUrls 区分：本字段存 id 而非 url）
+    //   前端拿到 id 后拼 `${baseUrl}/storage/files/${id}` 拿 url，或列表里直接 include url
+    attachments: { type: [Schema.Types.ObjectId], ref: 'File', default: [] },
     // 是否上架；false 时家长端/招生页不再展示，历史数据仍保留
     isActive: { type: Boolean, default: true },
     // 扩展字段

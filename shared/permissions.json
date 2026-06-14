@@ -60,6 +60,19 @@
       }
     },
     {
+      "key": "storage",
+      "label": "文件管理",
+      "description": "统一管理本机构上传的所有文件（头像 / 作品 / 课程附件 / 备课资料 / 机构 logo / 宠物头像 / 通用附件）：查看、上传、绑定 / 解绑、删除。",
+      "permissions": [
+        "storage.read",
+        "storage.write"
+      ],
+      "permissionLabels": {
+        "storage.read": { "label": "查看文件", "description": "浏览本机构所有已上传文件、查看引用、下载" },
+        "storage.write": { "label": "管理文件", "description": "上传新文件、绑定 / 解绑到业务实体、删除孤儿文件" }
+      }
+    },
+    {
       "key": "student",
       "label": "学生",
       "description": "管理部门内学员档案：基本信息、报班、考勤、作品等。C 端家长不在此范围。",

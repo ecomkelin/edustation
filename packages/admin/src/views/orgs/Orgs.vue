@@ -51,6 +51,13 @@
     </el-card>
 
     <el-table :data="list" v-loading="loading" border style="margin-top: 12px">
+      <el-table-column label="Logo" width="64">
+        <template #default="{ row }">
+          <el-avatar :size="32" :src="row.logo || ''" shape="square">
+            <el-icon :size="16"><Picture /></el-icon>
+          </el-avatar>
+        </template>
+      </el-table-column>
       <el-table-column prop="name" label="全称" min-width="200" show-overflow-tooltip />
       <el-table-column prop="nameAbbreviation" label="简称" min-width="140" show-overflow-tooltip />
       <el-table-column prop="unicode" label="信用代码" min-width="160" show-overflow-tooltip />
@@ -105,8 +112,37 @@
     />
 
     <!-- 编辑 / 新建 -->
-    <el-dialog v-model="dialog" :title="form.id ? '编辑机构' : '新建机构'" width="640px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="dialog"
+      :title="form.id ? '编辑机构' : '新建机构'"
+      width="640px"
+      :close-on-click-modal="false"
+      @close="onDialogClose"
+    >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="机构 Logo">
+          <div class="logo-uploader">
+            <el-avatar :size="64" :src="form.logo || ''" shape="square">
+              <el-icon :size="28"><Picture /></el-icon>
+            </el-avatar>
+            <div class="logo-uploader-actions">
+              <el-upload
+                :show-file-list="false"
+                :auto-upload="true"
+                :http-request="uploadLogo"
+                :before-upload="beforeLogoUpload"
+                accept="image/*"
+              >
+                <el-button size="small" :icon="Upload">上传新 Logo</el-button>
+              </el-upload>
+              <el-button v-if="form.logo" size="small" link type="danger" @click="clearLogo">
+                清除
+              </el-button>
+              <el-button size="small" link @click="logoPicker = true">从文件库选</el-button>
+            </div>
+            <span class="form-tip">支持 jpg/png/webp/gif/svg，≤ 20MB。建议正方形</span>
+          </div>
+        </el-form-item>
         <el-form-item label="社会信用代码" prop="unicode">
           <el-input v-model="form.unicode" :disabled="!!form.id" maxlength="64" placeholder="18 位统一社会信用代码" />
           <span v-if="form.id" class="form-tip">信用代码创建后不可修改</span>
@@ -180,6 +216,11 @@
 
     <!-- 详情 -->
     <el-dialog v-model="detailDialog" title="机构详情" width="560px">
+      <div v-if="detail" class="detail-logo">
+        <el-avatar :size="56" :src="detail.logo || ''" shape="square">
+          <el-icon :size="24"><Picture /></el-icon>
+        </el-avatar>
+      </div>
       <el-descriptions v-if="detail" :column="2" border>
         <el-descriptions-item label="社会信用代码">{{ detail.unicode }}</el-descriptions-item>
         <el-descriptions-item label="简称">{{ detail.nameAbbreviation }}</el-descriptions-item>
@@ -207,17 +248,29 @@
       :message="pwdMessage"
       @confirm="onPwdConfirm"
     />
+
+    <!-- 从文件库选 logo -->
+    <FilePicker
+      v-model="logoPicker"
+      scope="org"
+      mime-prefix="image/"
+      title="选择机构 Logo"
+      @select="onPickLogo"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Picture, Upload, Folder } from '@element-plus/icons-vue'
 import { orgApi } from '@/api/org'
 import { categoryApi } from '@/api/category'
 import { regionApi } from '@/api/region'
+import { storageApi } from '@/api/storage'
 import { useAuthStore } from '@/stores/auth'
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog.vue'
+import FilePicker from '@/components/FilePicker.vue'
 
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.isPlatformAdmin)
@@ -239,8 +292,10 @@ const formRef = ref()
 const form = reactive(emptyForm())
 const formRegion = ref(null)
 
-const principalOptions = ref([])
-const principalsLoading = ref(false)
+// 本次编辑会话内"已上传但 form 最终没采用"的 Logo 文件 id 列表。
+// 弹窗关闭时清理这些"未绑定的孤儿"，避免磁盘残留 + Files.vue 列表里冒出 refCount=0 的项。
+// 注意：保存成功的那张走 org.service 的 diffSingle 处理，**不**进此栈。
+const stagedLogoIds = ref([])
 
 const detailDialog = ref(false)
 const detail = ref(null)
@@ -262,7 +317,8 @@ function emptyForm() {
     contactPerson: '',
     contactPhone: '',
     address: '',
-    establishedDate: ''
+    establishedDate: '',
+    logo: ''
   }
 }
 
@@ -330,6 +386,8 @@ function resetFilters() {
 }
 
 function openCreate() {
+  // 打开前先清掉上次的暂存孤儿
+  cleanupStagedLogos()
   Object.assign(form, emptyForm())
   formRegion.value = null
   principalOptions.value = []
@@ -337,6 +395,8 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  // 打开前先清掉上次的暂存孤儿
+  cleanupStagedLogos()
   Object.assign(form, {
     id: row.id,
     unicode: row.unicode || '',
@@ -348,7 +408,8 @@ function openEdit(row) {
     contactPerson: row.contactPerson || '',
     contactPhone: row.contactPhone || '',
     address: row.address || '',
-    establishedDate: row.establishedDate ? String(row.establishedDate).slice(0, 10) : ''
+    establishedDate: row.establishedDate ? String(row.establishedDate).slice(0, 10) : '',
+    logo: row.logo || ''
   })
   formRegion.value = form.region
   loadPrincipals(row.id)
@@ -393,7 +454,8 @@ async function submit() {
       principal: form.principal || null,
       contactPerson: form.contactPerson,
       contactPhone: form.contactPhone,
-      address: form.address
+      address: form.address,
+      logo: form.logo || ''
     }
     if (form.establishedDate) {
       payload.establishedDate = new Date(form.establishedDate).toISOString()
@@ -405,11 +467,22 @@ async function submit() {
       await orgApi.create(payload)
       ElMessage.success('已创建')
     }
+    // 提交成功：保存的那张 logo 走 org.service 的 diffSingle 绑定，**不**进暂存栈。
+    // dialog 关闭时清理掉栈中其余被替换/被丢弃的孤儿。
     dialog.value = false
+    formLogoFileId.value = null
     load()
   } finally {
     saving.value = false
   }
+}
+
+function onDialogClose() {
+  // 关闭时清掉所有"未保存"logo 的孤儿文件。
+  //  - 取消 / 点 X：栈里有几张清几张
+  //  - 保存成功：栈里只有"被替换掉的"上一张（不是最终那一张），也会被清
+  cleanupStagedLogos()
+  formLogoFileId.value = null
 }
 
 function askToggle(row, next) {
@@ -440,6 +513,74 @@ async function onPwdConfirm(password) {
 
 // 机构不允许物理删除——已移除 remove()，业务方请走 askToggle() 做启用/停用。
 
+// ===== Logo 上传 =====
+// 当前 form.logo 对应的 fileId。null 表示 form.logo 来自"历史数据"（数据库里原有的 logo，
+// 不是本会话内上传），不要把它加进暂存栈。
+// 注意：打开弹窗后用户首次上传前 form.logo 可能已经有值（编辑场景 row.logo），
+// 此时旧 logo 的 fileId 是 null —— 弹窗关闭清理时不会去动它，留给后端 diffSingle 处理。
+const formLogoFileId = ref(null)
+
+function beforeLogoUpload(file) {
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('Logo 文件超过 20MB 限制')
+    return false
+  }
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('仅支持图片格式')
+    return false
+  }
+  return true
+}
+
+async function uploadLogo(req) {
+  try {
+    const { data } = await storageApi.upload({ file: req.file, scope: 'org' })
+    // 把"被替换掉的上一张"压栈，等弹窗关闭时清理（孤儿）
+    if (formLogoFileId.value) {
+      stagedLogoIds.value.push(formLogoFileId.value)
+    }
+    form.logo = data.url
+    formLogoFileId.value = data.id
+    ElMessage.success('Logo 已上传，点击"确定"生效')
+  } catch (e) {
+    // axios 拦截器已 toast
+  }
+}
+
+function clearLogo() {
+  if (formLogoFileId.value) {
+    stagedLogoIds.value.push(formLogoFileId.value)
+  }
+  form.logo = ''
+  formLogoFileId.value = null
+}
+
+async function cleanupStagedLogos() {
+  const ids = stagedLogoIds.value
+  if (!ids.length) return
+  stagedLogoIds.value = []
+  for (const id of ids) {
+    try {
+      await storageApi.remove(id)
+    } catch (_) {
+      // 清理失败不阻塞主流程（可能已被业务引用；可后续在文件管理页手动处理）
+    }
+  }
+}
+
+// 从文件库选 logo —— 与 uploadLogo 同样的"暂存栈"语义。
+// 选出来的 file 来自其他会话，可能已绑定别的 entity —— 但后端 diffSingle 走
+// "老 url 绑过的 entity 全部 unbind + 新 url 绑当前 entity"，跨引用无副作用。
+const logoPicker = ref(false)
+function onPickLogo(file) {
+  if (formLogoFileId.value) {
+    stagedLogoIds.value.push(formLogoFileId.value)
+  }
+  form.logo = file.url
+  formLogoFileId.value = file._id
+  ElMessage.success('已选择 Logo，点"确定"生效')
+}
+
 function fmtTime(t) {
   if (!t) return '-'
   const d = new Date(t)
@@ -467,5 +608,21 @@ onMounted(async () => {
 }
 .muted {
   color: #c0c4cc;
+}
+.logo-uploader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.logo-uploader-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detail-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
 }
 </style>

@@ -20,7 +20,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 8000,
       proxy: {
+        // 业务 API
         '/api': {
+          target: proxyTarget,
+          changeOrigin: true
+        },
+        // 上传文件（后端 express.static 暴露的 /uploads）
+        // 否则 Vite 的 SPA fallback 会把 /uploads/xxx.png 当成前端路由，
+        // 返回 index.html，导致管理后台的图片预览、头像、作品缩略图全部 200 + text/html。
+        '/uploads': {
           target: proxyTarget,
           changeOrigin: true
         }

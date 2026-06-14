@@ -259,17 +259,30 @@ server/src/
 - 模块组织：领域分组 + 垂直切片
 
 ## 14. 文件存储方案
-- **默认自托管**：使用 **MinIO** 作为对象存储，Docker 部署。
-- **兼容云存储**：通过 `FileStorage` 抽象层支持切换 AWS S3、阿里云 OSS 等。
-- **多租户隔离**：单 bucket (`edustation`)，前缀为 `{orgId}/`，通过 `x-org-id` 自动限制访问。
-- **上传策略**：
-  - 客户端（管理后台/小程序）通过后端获取预签名 URL 后直传 MinIO。
-  - 后端提供 `POST /api/v1/storage/upload-url` 接口。
-- **模块位置**：`server/src/modules/storage/`，为其他模块提供文件上传服务。
+
+> **已落地（2026-06）**：见 `server/src/modules/storage/`、`server/src/models/File.model.js`、`shared/permissions.json`（storage 组）。阶段 1 走 local 驱动，MinIO 切入口预留。
+
+- **目标**：所有上传场景（头像 / 作品 / 课程附件 / 备课资料 / 机构 logo / 宠物头像 / 通用附件）走统一的 `/api/v1/storage/*` 端点，引用追踪、删除预检、文件管理 UI 一并提供。
+- **驱动抽象**：`StorageDriver` 接口 (`putObject` / `removeObject` / `getPublicUrl`)。阶段 1 = `local`（本地磁盘 + express.static）；阶段 2 加 `s3` 驱动（MinIO / AWS S3 / 阿里云 OSS 都走 AWS SDK），业务代码零改动。
+- **多租户隔离**：local 驱动共用一个 `uploads/` 根，每个文件 key 含 `scope/YYYY-MM/YYYYMMDD/uuid.ext`；阶段 2 MinIO 单 bucket (`edustation`)，按业务域 scope 划前缀；权限上 `File.org` 必填，跨 org 操作 403。
+- **引用追踪**：`File.refs: [{entity, entityId, field}]` + `refCount` + `isOrphan`。业务模块（user / org / studentWork / courseProduct / lessonSchedule）通过 `modules/storage/fileBind.js` 的 `diffSingle` / `diffArray` / `diffArrayById` 维护引用；删除预检直接看 `refCount`，refCount>0 → 422 + 详细 blockers。
+- **上传策略（阶段 1）**：multipart `POST /storage/upload?scope=...`（单）或 `/storage/upload-many`（多）→ server 用 multer.memoryStorage() 收 buffer → driver.putObject 落盘 → 写 File 文档。20MB 上限、MIME 白名单（image/*, video/*, audio/*, application/pdf）。
+- **上传策略（阶段 2）**：后端发预签名 PUT URL → 客户端直传 MinIO → `POST /storage/files/:id/confirm` 落 File 文档。逻辑与阶段 1 业务侧一致。
+- **模块位置**：`server/src/modules/storage/`（routes / controller / service / drivers / fileBind），API 文档见 `api.desc.md`。
+- **管理后台**：左侧菜单"系统管理 > 文件管理" → `/files`，列表 + 过滤 + 预览 + 删除（DestructiveConfirm + removable-check 预检）。
+- **业务字段扩展**（新增以保后向兼容）：
+  - `User.avatar: String`（跨租户，diffSingle）
+  - `Org.logo: String`（按 org，diffSingle）
+  - `Pet.avatar: String`（按 org，diffSingle）
+  - `StudentWork.fileUrls: [String]`（url 数组，diffArray；保留 schema 兼容）
+  - `CourseProduct.attachments: [ObjectId<Ref:File>]`（ObjectId 数组，diffArrayById）
+  - `LessonSchedule.materials: [ObjectId<Ref:File>]`（同上）
+- **权限码**：`storage.read` / `storage.write`（在 `shared/permissions.json` 的 `storage` 组）。
 - **环境变量**：
-  - `STORAGE_DRIVER=minio`  (可选 minio, s3, oss)
-  - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET=edustation`
-- **安全**：预签名 URL 有效期限制（如 10 分钟），上传后文件公开读或通过签名 URL 访问（可配置）。
+  - `STORAGE_DRIVER=local`  (阶段 1；阶段 2 切 `s3`)
+  - `UPLOAD_DIR` / `UPLOAD_BASE_URL`（local 驱动专用；默认 `uploads/` 和 `/uploads`）
+  - `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`（s3 驱动专用；阶段 2）
+- **安全**：20MB 体积限制 + MIME 白名单强制；删除走"removable-check 预检 + 前端 DestructiveConfirm"（文件不涉及隐私，不叠加超管密码门控，与 `studentWork.delete` 区别）；refs 引用唯一索引 + 同 driver 内 key 唯一索引防重。
 
 ## 15. AI 智能客服
 - **目标**：基于机构私有知识（科目、老师、学校）的智能问答。

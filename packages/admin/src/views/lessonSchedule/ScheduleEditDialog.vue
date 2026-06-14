@@ -128,6 +128,28 @@
           <el-input v-model="form.notes" type="textarea" :rows="3" maxlength="500" show-word-limit />
         </el-form-item>
 
+        <el-divider content-position="left">备课资料</el-divider>
+        <el-form-item label="">
+          <div class="materials">
+            <div v-for="(id, i) in form.materials" :key="id" class="material-chip">
+              <el-icon style="margin-right: 4px"><Document /></el-icon>
+              <span class="text-12" :title="id">{{ materialName(id) }}</span>
+              <el-button link size="small" type="danger" @click="form.materials.splice(i, 1)">移除</el-button>
+            </div>
+            <el-upload
+              :show-file-list="false"
+              :auto-upload="true"
+              :http-request="uploadMaterial"
+              :before-upload="beforeMaterialUpload"
+              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+            >
+              <el-button :icon="Upload" size="small">上传新资料</el-button>
+            </el-upload>
+            <el-button :icon="Folder" size="small" link @click="materialPicker = true">从文件库选</el-button>
+          </div>
+          <div class="form-hint">支持图片 / 视频 / 音频 / PDF / Office 文件</div>
+        </el-form-item>
+
         <!-- 冲突提示 -->
         <el-alert
           v-if="conflicts && conflicts.length"
@@ -160,17 +182,29 @@
       :schedule="rosterSchedule"
       @done="onRosterDone"
     />
+
+    <!-- 从文件库选备课资料（多选） -->
+    <FilePicker
+      v-model="materialPicker"
+      multiple
+      scope="lessonMaterial"
+      title="选择备课资料"
+      @select="onPickMaterials"
+    />
   </el-drawer>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Document, Folder, Upload } from '@element-plus/icons-vue'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { userApi } from '@/api/user'
 import { roomApi } from '@/api/room'
+import { storageApi } from '@/api/storage'
 import { formatDate } from '@/utils/format'
+import FilePicker from '@/components/FilePicker.vue'
 import AttendanceRosterDialog from './AttendanceRosterDialog.vue'
 
 const props = defineProps({
@@ -221,7 +255,8 @@ const form = reactive({
   notes: '',
   courseInstanceName: '',
   courseInstanceId: '',
-  lessonNo: null
+  lessonNo: null,
+  materials: []   // [ObjectId<Ref:File>]，后端 diffArrayById 自动绑/解
 })
 
 const instanceLabel = computed(() => form.courseInstanceName || '—')
@@ -296,6 +331,7 @@ function syncFromSchedule(s) {
   form.notes = s.notes || ''
   form.courseInstanceName = s.courseInstance && (s.courseInstance.name || (s.courseInstance.courseProduct && s.courseInstance.courseProduct.name)) || ''
   form.courseInstanceId = pickId(s.courseInstance)
+  form.materials = Array.isArray(s.materials) ? s.materials.map(String) : []
 }
 
 // 后端给的是 ISO（UTC），el-date-picker 的 YYYY-MM-DD HH:mm:ss 期望是"本地时区"格式
@@ -368,7 +404,9 @@ async function onSave() {
       actualStartTime: form.actualStartTime ? new Date(form.actualStartTime).toISOString() : null,
       actualEndTime: form.actualEndTime ? new Date(form.actualEndTime).toISOString() : null,
       actualStartReason: form.actualStartReason || null,
-      actualEndReason: form.actualEndReason || null
+      actualEndReason: form.actualEndReason || null,
+      // 备课资料：ObjectId 数组，后端 diffArrayById 自动绑/解
+      materials: Array.isArray(form.materials) ? form.materials : []
     }
     await lessonScheduleApi.update(form._id, payload)
     ElMessage.success('已保存')
@@ -440,6 +478,47 @@ const actualEndDiffMinutes = computed(() => {
   if (!form.actualEndTime || !form.plannedEndTime) return null
   return Math.round((new Date(form.actualEndTime) - new Date(form.plannedEndTime)) / 60000)
 })
+
+// ===== 备课资料：上传新 + 从库选 =====
+const materialPicker = ref(false)
+// id -> originalName 回显 map。编辑模式下 form.materials 是 ObjectId[]，旧数据没 name。
+const materialNames = reactive(new Map())
+function materialName(id) {
+  return materialNames.get(String(id)) || String(id).slice(-6)
+}
+
+function beforeMaterialUpload(file) {
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('备课资料超过 20MB 限制')
+    return false
+  }
+  return true
+}
+
+async function uploadMaterial(req) {
+  try {
+    const { data } = await storageApi.upload({ file: req.file, scope: 'lessonMaterial' })
+    if (!Array.isArray(form.materials)) form.materials = []
+    form.materials.push(data.id)
+    materialNames.set(String(data.id), data.originalName || data.id)
+    ElMessage.success('备课资料已上传，点"保存"生效')
+  } catch (e) {
+    // axios 拦截器已 toast
+  }
+}
+
+function onPickMaterials(files) {
+  if (!Array.isArray(form.materials)) form.materials = []
+  const existing = new Set(form.materials.map(String))
+  for (const f of files) {
+    const id = String(f._id)
+    if (!existing.has(id)) {
+      form.materials.push(id)
+      materialNames.set(id, f.originalName || id)
+      existing.add(id)
+    }
+  }
+}
 </script>
 
 <style scoped>
@@ -452,4 +531,20 @@ const actualEndDiffMinutes = computed(() => {
 .diff-early { color: #409eff; font-weight: 600; }
 .diff-late-warn { color: #e6a23c; font-weight: 600; }
 .diff-late-danger { color: #f56c6c; font-weight: 600; }
+.materials {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.material-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background: #fafbfc;
+}
 </style>

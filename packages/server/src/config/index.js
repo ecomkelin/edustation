@@ -54,7 +54,40 @@ module.exports = {
   upload: {
     dir: path.resolve(process.cwd(), process.env.UPLOAD_DIR || 'uploads'),
     baseUrl: process.env.UPLOAD_BASE_URL || '/uploads',
-    maxFileSize: 20 * 1024 * 1024 // 20MB
+    maxFileSize: 20 * 1024 * 1024 // 20MB（保留：阶段 1 仍由 studentWork 旧路径使用）
+  },
+
+  /**
+   * 统一文件存储（阶段 1：本地磁盘；阶段 2 切 MinIO/S3）。
+   * 详见 packages/server/src/modules/storage/。
+   *
+   * 关键约定：
+   *  - `local.dir` / `local.baseUrl` 是 `local` 驱动专用。MinIO 切进来后会被忽略。
+   *  - `maxFileSize` 是统一入站上限（multer 限制），业务模块不可绕过。
+   *  - `allowedMime` 是白名单（防上传可执行文件等），所有 driver 共享。
+   */
+  storage: {
+    driver: process.env.STORAGE_DRIVER || 'local', // 'local' | 's3'
+    maxFileSize: 20 * 1024 * 1024, // 20MB
+    maxFilesPerUpload: 20,
+    local: {
+      dir: path.resolve(process.cwd(), process.env.UPLOAD_DIR || 'uploads'),
+      baseUrl: process.env.UPLOAD_BASE_URL || '/uploads'
+    },
+    s3: {
+      endpoint: process.env.S3_ENDPOINT || '',
+      region: process.env.S3_REGION || 'us-east-1',
+      bucket: process.env.S3_BUCKET || 'edustation',
+      accessKeyId: process.env.S3_ACCESS_KEY || '',
+      secretAccessKey: process.env.S3_SECRET_KEY || '',
+      forcePathStyle: true // MinIO 需要
+    },
+    allowedMime: [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      'video/mp4', 'video/quicktime', 'video/webm',
+      'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/aac',
+      'application/pdf'
+    ]
   },
 
   seed: {

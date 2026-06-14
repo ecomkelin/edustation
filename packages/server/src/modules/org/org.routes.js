@@ -10,6 +10,11 @@ const ApiError = require('@utils/ApiError')
 // 平台超管专属
 router.use(mws.authenticate)
 
+// 平台超管也可能没切到具体机构（看全机构列表时）。
+// requireOrg 对超管是"可选"语义：有 x-org-id 就用，没有就 req.orgId = null。
+// 加上 requireOrg 主要是让 controller 能拿到 req.orgId（fileBind 跨租户校验要用）。
+router.use(mws.requireOrg)
+
 router.use((req, res, next) => {
   if (!req.user) return next(ApiError.unauthorized())
   if (!req.user.isPlatformAdmin) return next(ApiError.forbidden('仅平台超管可管理机构'))

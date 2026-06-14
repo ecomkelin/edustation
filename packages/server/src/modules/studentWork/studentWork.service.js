@@ -1,38 +1,19 @@
 'use strict'
 
-const fs = require('fs')
-const path = require('path')
-const multer = require('multer')
 const StudentWork = require('@models/StudentWork.model')
 const LessonAttendance = require('@models/LessonAttendance.model')
 const LessonSchedule = require('@models/LessonSchedule.model')
 const CourseInstance = require('@models/CourseInstance.model')
+const { File, REF_ENTITY } = require('@models/File.model')
+const fileBind = require('@modules/storage/fileBind')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
-const config = require('@config/index')
+const mongoose = require('mongoose')
 
-// ─── 文件落盘（multer） ─────────────────────────────────────────────────────
-// 与原 lessonWork 保持一致；后续阶段切到 MinIO 时只改这里。
-if (!fs.existsSync(config.upload.dir)) {
-  fs.mkdirSync(config.upload.dir, { recursive: true })
-}
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    const sub = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-    const dir = path.join(config.upload.dir, sub)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    cb(null, dir)
-  },
-  filename(req, file, cb) {
-    const ext = path.extname(file.originalname)
-    const base = path.basename(file.originalname, ext).replace(/[^\w-]/g, '_')
-    cb(null, `${Date.now()}_${base}${ext}`)
-  }
-})
-const upload = multer({
-  storage,
-  limits: { fileSize: config.upload.maxFileSize }
-})
+// ─── multer 已彻底移除 ────────────────────────────────────────────────────
+// 阶段 2 改造：所有文件先经 POST /api/v1/storage/upload-many?scope=work 落 driver + 写 File 文档，
+// 拿到 fileIds 后再走本 service.create / service.update。fileUrls 字段保留是为了
+// schema 向后兼容（旧 C 端 / 旧作品仍按 url 渲染），但实际写入的 url 都来自 File.url。
 
 /**
  * 从 lessonAttendance 推导 4 个 snapshot 字段：
@@ -64,6 +45,20 @@ async function resolveSnapshots(lessonAttendanceId, orgId) {
     subject: ci.subject || null,
     student: att.student
   }
+}
+
+/**
+ * 把 fileIds 解析成 url 数组（用于写 StudentWork.fileUrls 字段以保持 schema 兼容）。
+ * 同时校验所有 file 都属于 orgId（防越权）。
+ */
+async function resolveFileUrls(orgId, fileIds) {
+  const ids = fileIds.filter((x) => mongoose.isValidObjectId(x))
+  if (ids.length === 0) throw ApiError.badRequest('fileIds 非法')
+  const files = await File.find({ _id: { $in: ids }, deletedAt: null, org: orgId }).select('url')
+  if (files.length !== ids.length) {
+    throw ApiError.badRequest('部分 fileIds 不属于本机构或不存在')
+  }
+  return files.map((f) => f.url)
 }
 
 /**
@@ -136,27 +131,27 @@ async function detail({ id, orgId }) {
  *   - lessonAttendance：考勤 ID（必填，**唯一锚点**）
  *   - title：作品标题（必填）
  *   - description：可选
- *   - fileUrls：已上传文件 URL 数组（必填，≥1）
+ *   - fileIds：[String] File._id 列表（必填，≥1）
+ *   - level：1~5，可选
  *
  * 行为：
- *   1. resolveSnapshots(lessonAttendance, orgId) 推导 4 个 snapshot 字段
- *   2. 写入 StudentWork（snapshot 字段由 Mongoose 写入后即 immutable）
- *   3. 返回详情（含 populate）
- *
- * 错误：
- *   - 考勤/排课/开班不存在 → 404/422
- *   - (lessonAttendance, title) 重复 → Mongoose 唯一索引冲突（E11000）→ 409
+ *   1. resolveFileIds(orgId, fileIds) 校验归属 + 拿到 url
+ *   2. resolveSnapshots(lessonAttendance, orgId) 推导 4 个 snapshot 字段
+ *   3. 写入 StudentWork（fileUrls 字段保留以兼容旧渲染；File 文档 refs 由 fileBind.bindUrls 维护）
+ *   4. fileBind.bindUrls({urls, entity:'StudentWork', entityId, field:'fileUrls'}) 自动加 ref
+ *   5. 返回详情
  */
-async function create({ orgId, operatorId, lessonAttendance, title, description, fileUrls, level }) {
+async function create({ orgId, operatorId, lessonAttendance, title, description, fileIds, level }) {
   if (!lessonAttendance) throw ApiError.badRequest('lessonAttendance 必填')
   if (!title || !title.trim()) throw ApiError.badRequest('title 必填')
-  if (!fileUrls || fileUrls.length === 0) throw ApiError.badRequest('至少上传一个文件')
+  if (!Array.isArray(fileIds) || fileIds.length === 0) throw ApiError.badRequest('至少 1 个 fileId')
   if (level !== undefined && level !== null) {
     if (!Number.isInteger(level) || level < 1 || level > 5) {
       throw ApiError.badRequest('level 必须是 1~5 的整数')
     }
   }
 
+  const fileUrls = await resolveFileUrls(orgId, fileIds)
   const snapshots = await resolveSnapshots(lessonAttendance, orgId)
 
   let doc
@@ -171,12 +166,21 @@ async function create({ orgId, operatorId, lessonAttendance, title, description,
       uploadedBy: operatorId
     })
   } catch (e) {
-    // (lessonAttendance, title) 唯一索引冲突
     if (e && e.code === 11000) {
       throw ApiError.conflict('同一考勤下已存在同名作品')
     }
     throw e
   }
+
+  // 维护 File.refs：把这些 url 反向绑到本作品
+  await fileBind.bindUrls({
+    orgId,
+    urls: fileUrls,
+    entity: REF_ENTITY.STUDENT_WORK,
+    entityId: doc._id,
+    field: 'fileUrls'
+  })
+
   return detail({ id: doc._id, orgId })
 }
 
@@ -185,19 +189,17 @@ async function create({ orgId, operatorId, lessonAttendance, title, description,
  *
  * 允许改的字段：
  *   - title、description、fileUrls、level
+ *   - fileUrls?: 当传入时按"新 url 列表"整体替换；同时 fileBind.diffArray 维护 refs
  *
  * 不可改（强制从 payload 抹掉）：
  *   - 4 个 snapshot 字段（lessonAttendance/lessonSchedule/courseInstance/subject）
  *   - org / student / uploadedBy / createdAt / updatedAt
- *
- * 注意：service 层不强制校验"业务上改 title 是否合理"——title 唯一索引
- *   (lessonAttendance, title) 仍会兜底，重复直接 409。
  */
 async function update({ id, orgId, payload }) {
   const doc = await StudentWork.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('作品不存在')
 
-  // 白名单 strip：只允许以下字段透传
+  // 白名单 strip
   const ALLOWED = ['title', 'description', 'fileUrls', 'level']
   const next = {}
   for (const k of ALLOWED) {
@@ -213,14 +215,19 @@ async function update({ id, orgId, payload }) {
       throw ApiError.badRequest('level 必须是 1~5 的整数')
     }
   }
-  // 显式允许把 level 置为 null（"清空评定"）
-  if (next.level === null) {
-    // OK
+  if (next.fileUrls !== undefined && next.fileUrls !== null) {
+    if (!Array.isArray(next.fileUrls)) throw ApiError.badRequest('fileUrls 必须是数组')
+    // 校验 url 都属于本 org
+    const allFiles = await File.find({ url: { $in: next.fileUrls }, deletedAt: null, org: orgId }).select('url')
+    const valid = new Set(allFiles.map((f) => f.url))
+    next.fileUrls = next.fileUrls.filter((u) => valid.has(u))
   }
 
   if (Object.keys(next).length === 0) {
     throw ApiError.badRequest('没有可更新的字段')
   }
+
+  const oldFileUrls = doc.fileUrls || []
 
   try {
     Object.assign(doc, next)
@@ -231,6 +238,19 @@ async function update({ id, orgId, payload }) {
     }
     throw e
   }
+
+  // fileUrls 改了就 diff 一下
+  if (next.fileUrls !== undefined) {
+    await fileBind.diffArray({
+      orgId,
+      oldUrls: oldFileUrls,
+      newUrls: doc.fileUrls,
+      entity: REF_ENTITY.STUDENT_WORK,
+      entityId: doc._id,
+      field: 'fileUrls'
+    })
+  }
+
   return detail({ id: doc._id, orgId })
 }
 
@@ -243,8 +263,14 @@ async function update({ id, orgId, payload }) {
 async function remove({ id, orgId }) {
   const doc = await StudentWork.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('作品不存在')
+  // 解除 File 引用
+  await fileBind.unbindEntity({
+    orgId,
+    urls: doc.fileUrls || [],
+    entity: REF_ENTITY.STUDENT_WORK,
+    entityId: doc._id
+  })
   await doc.deleteOne()
-  // 可选：清理本地文件（阶段 2 接 MinIO 后再补）
   return { success: true }
 }
 
@@ -257,4 +283,4 @@ async function removableCheck({ id, orgId }) {
   return { canRemove: true, blockers: [] }
 }
 
-module.exports = { upload, list, detail, create, update, remove, removableCheck }
+module.exports = { list, detail, create, update, remove, removableCheck }

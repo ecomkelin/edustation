@@ -30,7 +30,9 @@ const PetSchema = new Schema(
     // 当前经验值（>= 0；满则升级、溢出由 service 处理）
     experience: { type: Number, default: 0, min: 0 },
     // 宠物昵称（家长/学员可自定义；若为空则默认按 petType 显示）
-    nickname: { type: String, trim: true }
+    nickname: { type: String, trim: true },
+    // 宠物头像 URL（走统一 storage：上传到 /storage/upload?scope=pet，拿到 url 后写入）
+    avatar: { type: String, default: null }
   },
   { timestamps: true, collection: 'pets' }
 )

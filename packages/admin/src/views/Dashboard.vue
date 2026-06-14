@@ -25,16 +25,19 @@
       </template>
       <div v-if="perm.orderRead">
         <el-row :gutter="16" v-loading="loading">
-          <el-col :xs="12" :sm="8" :md="5">
+          <el-col :xs="12" :sm="8" :md="4">
             <KpiCard label="今日营收" :value="fmtMoney(d.revenue?.today)" accent="green" />
           </el-col>
-          <el-col :xs="12" :sm="8" :md="5">
+          <el-col :xs="12" :sm="8" :md="4">
             <KpiCard label="本月营收" :value="fmtMoney(d.revenue?.month)" :extra="`${d.orders?.monthPaid || 0} 笔`" accent="green" />
           </el-col>
-          <el-col :xs="12" :sm="8" :md="5">
+          <el-col :xs="12" :sm="8" :md="4">
+            <KpiCard label="待支付" :value="d.orders?.pendingCount || 0" unit="笔" :extra="fmtMoney(d.orders?.pendingAmount)" accent="orange" />
+          </el-col>
+          <el-col :xs="12" :sm="8" :md="4">
             <KpiCard label="在读学员" :value="d.students?.active || 0" unit="人" :extra="`本月新增 ${d.students?.newMonth || 0}`" />
           </el-col>
-          <el-col :xs="12" :sm="8" :md="5">
+          <el-col :xs="12" :sm="8" :md="4">
             <KpiCard label="7 日出勤率" :value="fmtPct(d.attendance?.rate)" :extra="`${d.attendance?.attended || 0} / ${d.attendance?.total || 0}`" accent="blue" />
           </el-col>
           <el-col :xs="24" :sm="8" :md="4">

@@ -620,7 +620,17 @@ async function update(id, orgId, payload) {
     }
   }
 
-  // 7) 写回（注意：actualStartReason/actualEndReason 是新增字段，需显式赋值；planTime/teacher/room 已通过 Object.assign 写）
+  // 7) materials 字段更新 → fileBind diff（ObjectId 数组）
+  const prevMaterials = (exist.materials || []).map((x) => String(x))
+  if (Object.prototype.hasOwnProperty.call(payload, 'materials')) {
+    if (Array.isArray(payload.materials)) {
+      payload.materials = payload.materials.filter((x) => x != null).map((x) => String(x))
+    } else {
+      payload.materials = []
+    }
+  }
+
+  // 8) 写回（注意：actualStartReason/actualEndReason 是新增字段，需显式赋值；planTime/teacher/room 已通过 Object.assign 写）
   Object.assign(exist, payload, {
     plannedStartTime: start,
     plannedEndTime: end,
@@ -630,6 +640,20 @@ async function update(id, orgId, payload) {
     actualEndReason: finalEndReason
   })
   await exist.save()
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'materials')) {
+    const { REF_ENTITY } = require('@models/File.model')
+    const fileBind = require('@modules/storage/fileBind')
+    await fileBind.diffArrayById({
+      orgId,
+      oldIds: prevMaterials,
+      newIds: (exist.materials || []).map((x) => String(x)),
+      entity: REF_ENTITY.LESSON_SCHEDULE,
+      entityId: exist._id,
+      field: 'materials'
+    })
+  }
+
   return detail(exist._id, orgId)
 }
 

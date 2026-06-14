@@ -43,6 +43,8 @@ const OrgSchema = new Schema(
     establishedDate: { type: Date, immutable: true },
     // 是否启用；false 时该机构下用户无法登录/操作（"停用"而非"删除"以保留历史数据）
     isActive: { type: Boolean, default: true },
+    // 机构 logo URL（走统一 storage：上传到 /storage/upload?scope=org，拿到 url 后写入）
+    logo: { type: String, default: null },
     // 扩展字段
     meta: { type: Schema.Types.Mixed, default: {} }
   },

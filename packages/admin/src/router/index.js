@@ -39,6 +39,7 @@ const routes = [
       { path: 'reports/room-utilization', component: () => import('@/views/reports/RoomUtilizationReport.vue') },
       { path: 'reports/teacher-productivity', component: () => import('@/views/reports/TeacherProductivityReport.vue') },
       { path: 'reports/points-activity', component: () => import('@/views/reports/PointsActivityReport.vue') },
+      { path: 'files', component: () => import('@/views/files/Files.vue') },
       { path: 'platform/info', component: () => import('@/views/platformInfo/PlatformInfo.vue') },
       { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') }
     ]

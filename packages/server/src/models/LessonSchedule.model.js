@@ -71,6 +71,9 @@ const LessonScheduleSchema = new Schema(
     title: { type: String, trim: true },
     // 老师备课笔记 / 课堂要点
     notes: { type: String },
+    // 备课资料：课件 PDF / 教案 / 参考视频等
+    //   引用 File 文档 ID（与 StudentWork.fileUrls 区分：本字段存 id 而非 url）
+    materials: { type: [Schema.Types.ObjectId], ref: 'File', default: [] },
     // 提醒状态：none=未提醒；sent=全部学生已提醒成功；partial=部分学生提醒成功
     remindStatus: { type: String, enum: ['none', 'sent', 'partial'], default: 'none' },
     // 本节课最后一次成功推送提醒的时间（用于 UI 展示）

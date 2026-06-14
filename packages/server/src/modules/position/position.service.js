@@ -33,7 +33,8 @@ const DEFAULT_POSITIONS = [
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -50,7 +51,8 @@ const DEFAULT_POSITIONS = [
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read',
       'studentWork.read',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -63,7 +65,8 @@ const DEFAULT_POSITIONS = [
       'room.read',
       'lessonSchedule.read',
       'lessonAttendance.read', 'lessonAttendance.write',
-      'studentWork.read', 'studentWork.write'
+      'studentWork.read', 'studentWork.write',
+      'report.read'
     ]
   },
   {
@@ -74,7 +77,8 @@ const DEFAULT_POSITIONS = [
       'lessonSchedule.read',
       'lessonAttendance.read',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -82,7 +86,8 @@ const DEFAULT_POSITIONS = [
     clientLevel: CLIENT_LEVEL.NONE,
     permissions: [
       'order.read', 'order.write', 'order.pay',
-      'student.read', 'studentProduct.read'
+      'student.read', 'studentProduct.read',
+      'report.read'
     ]
   }
 ]

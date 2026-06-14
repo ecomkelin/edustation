@@ -1,9 +1,7 @@
 'use strict'
 
-const path = require('path')
 const s = require('./studentWork.service')
 const ApiResponse = require('@utils/ApiResponse')
-const config = require('@config/index')
 
 exports.list = async (req, res) =>
   res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, ...req.query })))
@@ -12,32 +10,37 @@ exports.detail = async (req, res) =>
   res.json(ApiResponse.ok(await s.detail({ id: req.params.id, orgId: req.orgId })))
 
 /**
- * 上传：接收 multipart files + 业务字段
- *   必填：lessonAttendance, title
- *   可选：description, level (1~5)
- *   files: ≥1
+ * 创建作品（JSON 入参，不再接 multipart）。
  *
- * fileUrls 落盘后写入 StudentWork。4 个 snapshot 字段由 service 从
- * lessonAttendance → lessonSchedule → courseInstance → subject 推导。
+ * 入参：
+ *   - lessonAttendance: 必填
+ *   - title: 必填
+ *   - description / level: 可选
+ *   - fileIds: 必填，数组，每项是 File._id
+ *     （前端先调 POST /api/v1/storage/upload-many?scope=work 拿到 fileIds 后再调本端点）
+ *
+ * 行为：
+ *   1. 校验 fileIds 全部属于 req.orgId
+ *   2. resolveSnapshots 推 4 个 snapshot 字段
+ *   3. 把 fileIds 对应的 url 拍平写到 fileUrls（保持 schema 兼容）
+ *   4. fileBind.bindUrls(..., entity='StudentWork', field='fileUrls') 自动维护 refCount
+ *   5. 写入 StudentWork 文档
  */
 exports.upload = async (req, res) => {
-  const { lessonAttendance, title, description, level } = req.body
-  if (!lessonAttendance || !title) {
-    return res.status(400).json(ApiResponse.fail('lessonAttendance / title 必填', 400))
+  const { lessonAttendance, title, description, level, fileIds } = req.body || {}
+  if (!lessonAttendance) return res.status(400).json(ApiResponse.fail('lessonAttendance 必填', 400))
+  if (!title) return res.status(400).json(ApiResponse.fail('title 必填', 400))
+  if (!Array.isArray(fileIds) || fileIds.length === 0) {
+    return res.status(400).json(ApiResponse.fail('fileIds 必填且至少 1 个', 400))
   }
-  const fileUrls = (req.files || []).map((f) => {
-    // /uploads/YYYY-MM-DD/xxx.png
-    const rel = path.relative(config.upload.dir, f.path).replace(/\\/g, '/')
-    return config.upload.baseUrl + '/' + rel
-  })
   const doc = await s.create({
     orgId: req.orgId,
     operatorId: req.user.id,
     lessonAttendance,
     title,
     description,
-    fileUrls,
-    level: level === undefined || level === '' ? undefined : Number(level)
+    level: level === undefined || level === '' || level === null ? undefined : Number(level),
+    fileIds
   })
   res.status(201).json(ApiResponse.created(doc))
 }

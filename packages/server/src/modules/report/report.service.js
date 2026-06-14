@@ -78,7 +78,8 @@ function resolveRange(range, from, to) {
 }
 
 // 把"元"保留两位小数。聚合管道里直接对 amount 做 $divide: [.., 100] 即可。
-const YUAN = { $divide: ['$amount', 100] }
+// 订单表金额字段:paidAmount / actualPrice —— 数据库里直接存「元」,不需要 /100
+const YUAN = '$paidAmount'
 
 // 业务上"已上过的课"集合：prepared / in_progress / completed / archived
 const INSTRUCTED_LESSON_STATUSES = [
@@ -144,16 +145,10 @@ async function overviewRaw({ orgId }) {
           { $match: { status: OrderStatus.PAID, paidAt: { $gte: monthStart, $lt: nextMonthStart } } },
           { $group: { _id: null, revenue: { $sum: YUAN }, count: { $sum: 1 } } }
         ],
-        // 待支付
+        // 待支付（pending 订单:金额直接读 actualPrice 元,不需要 /100）
         pending: [
           { $match: { status: OrderStatus.PENDING } },
-          {
-            $group: {
-              _id: null,
-              count: { $sum: 1 },
-              amount: { $sum: { $divide: [{ $subtract: ['$actualPrice', '$paidAmount'] }, 100] } }
-            }
-          }
+          { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$actualPrice' } } }
         ],
         // 本月已退费（status=refunded 视为已退；退款金额近似 paidAmount）
         monthRefunded: [

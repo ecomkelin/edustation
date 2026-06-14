@@ -76,8 +76,30 @@
               <el-input :model-value="form.mobile" disabled />
               <div class="form-hint">如需更换登录手机号，请联系机构管理员。</div>
             </el-form-item>
-            <el-form-item label="头像 URL" prop="avatar">
-              <el-input v-model="form.avatar" placeholder="https://..." maxlength="500" clearable />
+            <el-form-item label="头像" prop="avatar">
+              <div class="avatar-uploader">
+                <el-avatar :size="64" :src="form.avatar || ''">
+                  {{ initial }}
+                </el-avatar>
+                <div class="avatar-uploader-actions">
+                  <el-upload
+                    :show-file-list="false"
+                    :auto-upload="true"
+                    :http-request="uploadAvatar"
+                    :before-upload="beforeAvatarUpload"
+                    accept="image/*"
+                  >
+                    <el-button size="small" :icon="Upload">上传新头像</el-button>
+                  </el-upload>
+                  <el-button v-if="form.avatar" size="small" link type="danger" @click="form.avatar = ''">
+                    清除
+                  </el-button>
+                  <el-button size="small" link @click="avatarPicker = true">从文件库选</el-button>
+                </div>
+                <div class="form-hint" style="margin-left: 12px">支持 jpg/png/webp/gif，≤ 20MB</div>
+              </div>
+              <!-- 隐藏字段：保存时拿到 url -->
+              <input type="hidden" :value="form.avatar" />
             </el-form-item>
             <el-form-item label="身份证号" prop="idCard">
               <el-input v-model="form.idCard" placeholder="选填，15 或 18 位" maxlength="18" clearable />
@@ -139,6 +161,15 @@
         <el-button type="primary" :loading="pwdSaving" @click="submitPwd">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 从文件库选头像 -->
+    <FilePicker
+      v-model="avatarPicker"
+      scope="avatar"
+      mime-prefix="image/"
+      title="选择头像"
+      @select="onPickAvatar"
+    />
   </div>
 </template>
 
@@ -146,9 +177,12 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Upload, Folder } from '@element-plus/icons-vue'
 import { authApi } from '@/api/auth'
 import { regionApi } from '@/api/region'
+import { storageApi } from '@/api/storage'
 import { useAuthStore } from '@/stores/auth'
+import FilePicker from '@/components/FilePicker.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -222,6 +256,36 @@ async function loadRegionTree() {
     id: n.id || n._id,
     children: n.children || []
   }))
+}
+
+// ===== 头像上传 =====
+function beforeAvatarUpload(file) {
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('头像文件超过 20MB 限制')
+    return false
+  }
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('仅支持图片格式')
+    return false
+  }
+  return true
+}
+
+async function uploadAvatar(req) {
+  try {
+    const { data } = await storageApi.upload({ file: req.file, scope: 'avatar' })
+    form.avatar = data.url
+    ElMessage.success('头像已上传，点击"保存资料"生效')
+  } catch (e) {
+    // axios 拦截器已 toast
+  }
+}
+
+// 从文件库选头像。自我头像没 staged 栈（user.service.update 的 diffSingle 自然替换）。
+const avatarPicker = ref(false)
+function onPickAvatar(file) {
+  form.avatar = file.url
+  ElMessage.success('已选择头像，点"保存资料"生效')
 }
 
 async function submit() {
@@ -369,5 +433,16 @@ onMounted(() => {
   color: #909399;
   font-size: 12px;
   line-height: 1.4;
+}
+.avatar-uploader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.avatar-uploader-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 </style>
