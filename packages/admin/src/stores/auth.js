@@ -74,6 +74,18 @@ export const useAuthStore = defineStore('auth', {
       const me = await http.get('/auth/me')
       this.user = me.data
       this.orgs = me.data.orgs
+      // 关键:refresh / restore 时如果 currentOrgId 不在新 orgs 列表(或为空),要重设。
+      // 否则 Dashboard 第 149 行 `if (!currentOrgId.value) return` 会静默不请求,
+      // 数字全显示 0(不是 loading,不是错误)。
+      const inList = (this.orgs || []).some((o) => o.id === this.currentOrgId)
+      if (!this.currentOrgId || !inList) {
+        if (this.orgs && this.orgs.length) {
+          const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
+          this.currentOrgId = main.id
+        } else {
+          this.currentOrgId = ''
+        }
+      }
       this.persist()
       return me.data
     },

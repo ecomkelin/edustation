@@ -2,12 +2,6 @@
   <div class="page dashboard">
     <div class="dash-header">
       <h2>欢迎回来，{{ auth.user?.realName || auth.user?.mobile || '同事' }}</h2>
-      <div class="dash-header-right">
-        <span class="generated-at" v-if="generatedAt">更新于 {{ generatedAt }}</span>
-        <el-button :loading="loading" @click="load" type="primary" plain>
-          <el-icon><Refresh /></el-icon><span>刷新</span>
-        </el-button>
-      </div>
     </div>
 
     <p class="hint">
@@ -15,45 +9,49 @@
       <b>「经营分析」</b> 一级菜单（含营收/课消/教室/老师/积分）。
     </p>
 
-    <!-- ───── 核心 1 块：经营总览（最关键的 5 个数字） ───── -->
-    <el-card class="board" shadow="hover">
-      <template #header>
-        <div class="board-title">
-          📊 今日要闻
-          <span class="board-title-hint">数据来自「经营总览」看板；后端 60s 缓存，写订单/考勤后自动失效</span>
-        </div>
-      </template>
-      <div v-if="perm.orderRead">
-        <el-row :gutter="16" v-loading="loading">
-          <el-col :xs="12" :sm="8" :md="4">
-            <KpiCard label="今日营收" :value="fmtMoney(d.revenue?.today)" accent="green" />
-          </el-col>
-          <el-col :xs="12" :sm="8" :md="4">
-            <KpiCard label="本月营收" :value="fmtMoney(d.revenue?.month)" :extra="`${d.orders?.monthPaid || 0} 笔`" accent="green" />
-          </el-col>
-          <el-col :xs="12" :sm="8" :md="4">
-            <KpiCard label="待支付" :value="d.orders?.pendingCount || 0" unit="笔" :extra="fmtMoney(d.orders?.pendingAmount)" accent="orange" />
-          </el-col>
-          <el-col :xs="12" :sm="8" :md="4">
-            <KpiCard label="在读学员" :value="d.students?.active || 0" unit="人" :extra="`本月新增 ${d.students?.newMonth || 0}`" />
-          </el-col>
-          <el-col :xs="12" :sm="8" :md="4">
-            <KpiCard label="7 日出勤率" :value="fmtPct(d.attendance?.rate)" :extra="`${d.attendance?.attended || 0} / ${d.attendance?.total || 0}`" accent="blue" />
-          </el-col>
-          <el-col :xs="24" :sm="8" :md="4">
-            <KpiCard label="待续费提醒" :value="d.pendingRenewal || 0" unit="人" accent="orange" />
-          </el-col>
-        </el-row>
-        <el-row style="margin-top: 12px">
-          <el-col :span="24">
-            <el-button type="primary" plain @click="$router.push('/reports/overview')">
-              查看完整经营总览 →
-            </el-button>
-          </el-col>
-        </el-row>
-      </div>
-      <NoPermission v-else module="order.read" />
-    </el-card>
+    <!-- ───── 核心 1 块：经营总览的"今日要闻"6 Kpi（走 ReportBoard + 权限兜底） ───── -->
+    <div v-if="perm.orderRead">
+      <ReportBoard
+        v-model="currentRange"
+        title="今日要闻"
+        icon="📊"
+        hint="数据来自「经营总览」看板；后端 60s 缓存，写订单/考勤后自动失效"
+        :loading="loading"
+        :generated-at="generatedAt"
+        @range-change="reloadByRange"
+      >
+        <template #kpis>
+          <el-row :gutter="16">
+            <el-col :xs="12" :sm="8" :md="4">
+              <KpiCard label="今日营收" :value="fmtMoney(d.revenue?.today)" accent="green" />
+            </el-col>
+            <el-col :xs="12" :sm="8" :md="4">
+              <KpiCard label="本期营收" :value="fmtMoney(d.revenue?.month)" :extra="`${d.orders?.monthPaid || 0} 笔`" accent="green" />
+            </el-col>
+            <el-col :xs="12" :sm="8" :md="4">
+              <KpiCard label="待支付" :value="d.orders?.pendingCount || 0" unit="笔" :extra="fmtMoney(d.orders?.pendingAmount)" accent="orange" />
+            </el-col>
+            <el-col :xs="12" :sm="8" :md="4">
+              <KpiCard label="在读学员" :value="d.students?.active || 0" unit="人" :extra="`本期新增 ${d.students?.newMonth || 0}`" />
+            </el-col>
+            <el-col :xs="12" :sm="8" :md="4">
+              <KpiCard label="7 日出勤率" :value="fmtPct(d.attendance?.rate)" :extra="`${d.attendance?.attended || 0} / ${d.attendance?.total || 0}`" accent="blue" />
+            </el-col>
+            <el-col :xs="24" :sm="8" :md="4">
+              <KpiCard label="待续费提醒" :value="d.pendingRenewal || 0" unit="人" accent="orange" />
+            </el-col>
+          </el-row>
+          <el-row style="margin-top: 12px">
+            <el-col :span="24">
+              <el-button type="primary" plain @click="$router.push('/reports/overview')">
+                查看完整经营总览 →
+              </el-button>
+            </el-col>
+          </el-row>
+        </template>
+      </ReportBoard>
+    </div>
+    <NoPermission v-else module="order.read" />
 
     <!-- ───── 系统说明（复用 platform/info 的内容） ───── -->
     <el-card class="board" shadow="never">
@@ -100,21 +98,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
-import { Refresh } from '@element-plus/icons-vue'
-import { reportApi } from '@/api/report'
+import { useReportApi } from '@/composables/useReportApi'
+import { fmtMoney, fmtPct } from '@/utils/report'
 import KpiCard from '@/components/KpiCard.vue'
 import NoPermission from '@/components/NoPermission.vue'
+import ReportBoard from '@/components/report/ReportBoard.vue'
 
 const auth = useAuthStore()
 const { user, currentOrgId } = storeToRefs(auth)
 const orgName = computed(() => auth.currentOrg?.name || currentOrgId.value || '—')
 
-const d = ref({})
-const loading = ref(false)
-const generatedAt = ref('')
+const currentRange = ref({ range: 'month', from: '', to: '' })
+const { data: d, loading, generatedAt, load } = useReportApi('overview')
 
 const perm = computed(() => ({
   // 首页 1 块看板用 report.read（更准确），无权限时给 NoPermission 兜底
@@ -126,16 +124,7 @@ function hasPerm(code) {
   return perms.includes(code)
 }
 
-function fmtMoney(v) {
-  if (v == null) return '¥ 0'
-  return '¥ ' + Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-function fmtPct(v) {
-  if (v == null) return '—'
-  return v.toFixed(1) + '%'
-}
-
-// 5 块模块卡片：与左侧菜单项对齐，但不显示左侧已显而易见的项
+// 6 个模块卡片：与左侧菜单项对齐，但不显示左侧已显而易见的项
 const moduleMap = [
   { path: '/students',         icon: '👤', title: '学生管理',     desc: '学员档案、家长关联、备注' },
   { path: '/course-products',  icon: '📦', title: '课程产品',     desc: '上架课程 / 课包 / 定价' },
@@ -145,21 +134,12 @@ const moduleMap = [
   { path: '/student-works',    icon: '🖼️', title: '学员作品',     desc: '家长可见的作品墙' }
 ]
 
-async function load() {
-  if (!currentOrgId.value) return
-  loading.value = true
-  try {
-    const res = await reportApi.overview({ range: 'month' })
-    d.value = res.data?.data || {}
-    generatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-  } catch (e) {
-    // 失败时让数字都显示 — 已在 template 兜底
-  } finally {
-    loading.value = false
-  }
+async function reloadByRange(next) {
+  currentRange.value = { ...next }
+  await load(next)
 }
 
-onMounted(load)
+onMounted(() => reloadByRange(currentRange.value))
 </script>
 
 <style lang="scss" scoped>
@@ -191,39 +171,33 @@ onMounted(load)
     color: #909399;
   }
   .system-intro {
-    line-height: 1.7;
-    color: #303133;
-    h3 {
-      margin: 12px 0 6px;
-      font-size: 14px;
-      color: #303133;
-    }
-    h3:first-child { margin-top: 0; }
-    p { margin: 0 0 8px; color: #606266; font-size: 13px; }
+    h3 { font-size: 15px; margin: 16px 0 8px; }
+    p { color: #303133; line-height: 1.6; }
     .module-card {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
+      gap: 12px;
+      padding: 12px;
       margin-bottom: 8px;
-      background: #f5f7fa;
+      border: 1px solid #ebeef5;
       border-radius: 6px;
       cursor: pointer;
-      transition: background 0.15s;
-      &:hover { background: #ecf5ff; }
-      .module-icon { font-size: 22px; line-height: 1; }
-      .module-title { font-weight: 600; font-size: 13px; }
-      .module-desc { font-size: 12px; color: #909399; }
-      .module-body { flex: 1; min-width: 0; }
+      transition: all 0.2s;
+      &:hover {
+        border-color: #409eff;
+        background: #f0f9ff;
+      }
+      .module-icon { font-size: 24px; }
+      .module-body { flex: 1; }
+      .module-title { font-weight: 600; font-size: 14px; }
+      .module-desc { color: #909399; font-size: 12px; margin-top: 2px; }
     }
     .role-list {
-      margin: 0 0 8px;
-      padding-left: 20px;
-      color: #606266;
-      font-size: 13px;
+      color: #303133;
+      line-height: 1.8;
       li { margin-bottom: 4px; }
     }
-    .more { margin-top: 8px; }
+    .more { margin-top: 12px; }
   }
 }
 </style>

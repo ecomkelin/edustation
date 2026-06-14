@@ -280,7 +280,8 @@ const POSITION_DEFINITIONS = [
       'studentProduct.read', 'studentProduct.gift',
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -298,7 +299,8 @@ const POSITION_DEFINITIONS = [
       'studentProduct.read',
       'lessonAttendance.read',
       'studentWork.read',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -311,7 +313,8 @@ const POSITION_DEFINITIONS = [
       'lessonSchedule.read',
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -322,7 +325,8 @@ const POSITION_DEFINITIONS = [
       'lessonSchedule.read',
       'lessonAttendance.read',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read'
+      'points.read', 'pet.read',
+      'report.read'
     ]
   },
   {
@@ -330,7 +334,8 @@ const POSITION_DEFINITIONS = [
     clientLevel: CLIENT_LEVEL.NONE,
     permissions: [
       'order.read', 'order.write', 'order.pay',
-      'student.read', 'studentProduct.read'
+      'student.read', 'studentProduct.read',
+      'report.read'
     ]
   }
 ]
