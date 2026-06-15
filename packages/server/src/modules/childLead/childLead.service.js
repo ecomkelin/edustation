@@ -234,8 +234,14 @@ async function update(id, orgId, body) {
   delete safe.convertedRemark
   delete safe.lastContactedAt
   delete safe.lastContactedBy
-  // status 白名单
-  if (safe.status && !['contacted', 'lost'].includes(safe.status)) delete safe.status
+  // status 白名单在 validator 已卡 (pending/contacted/lost 可手动改);
+  // scheduled/tried/converted 是系统自动翻的, 手动改会破坏数据一致性
+  // 改 lost 时必填 lostReason (前端 rules 已卡, 后端再补一次)
+  if (safe.status === 'lost' && !safe.lostReason) {
+    throw ApiError.unprocessable('改 lost 时必填 lostReason')
+  }
+  // 改回 pending/contacted 时清空 lostReason (避免历史原因残留)
+  if (safe.status && safe.status !== 'lost') delete safe.lostReason
 
   const doc = await ChildLead.findOneAndUpdate(
     { _id: id, org: orgId },

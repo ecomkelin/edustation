@@ -73,7 +73,12 @@ exports.update = [
   body('promoteBy').optional({ nullable: true }).isMongoId(),
   body('consultant').optional({ nullable: true }).isMongoId(),
   body('referrer').optional({ nullable: true }).isMongoId(),
-  body('remark').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('remark').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  // 2026-06-15: 允许手动改 lifecycle (5 态)
+  // 业务取舍: 手动改的 lifecycle 跟系统 recompute 推算的 lifecycle 可能不一致;
+  // 'lost' 标签仍会强制翻 lost (优先级最高); 其他标签/转化不会反向覆盖手动值
+  body('lifecycle').optional().isIn(['new', 'partial', 'full', 'lost', 'dormant'])
+    .withMessage('lifecycle 必须是 new/partial/full/lost/dormant')
 ]
 
 exports.list = [

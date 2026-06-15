@@ -40,6 +40,18 @@
 
 **手动重算**: `POST /parents/:id/recompute-lifecycle`
 
+**手动改 lifecycle** (2026-06-15 加): `PUT /parents/:id` 允许直接传 `lifecycle` 字段
+- 5 态可选: `new` / `partial` / `full` / `lost` / `dormant`
+- **与系统推导的优先级**:
+  - 加 '已流失' 标签 → 仍会强制翻 `lost` (最高优先级)
+  - `recompute-lifecycle` (手动同步状态) → 会**覆盖**手动值
+  - 其他自动触发 (unconvert/convert/addChild) → 不会覆盖手动值 (但业务上罕见)
+- **业务取舍**: 手动改后 lifecycle 跟孩子状态可能不一致; 适合临时纠正 (如"客户实际已经流失了但还没打标签"或"已联系但没排课, 手动标 contacted 便于过滤"); 不想手动时点"重算"拉回系统推导值
+- **入口** (2 处):
+  1. `ChildLeadEditDialog` 底部"家长状态" select + 旁边"重算"小按钮 → 改了会同时调 `childLeadApi.update` + `parentApi.update`; 点"重算"只调 `parentApi.recomputeLifecycle` 拉最新值覆盖 form.lifecycle
+  2. `ParentDetailDialog` 顶部"同步状态(重算 lifecycle)" 按钮 → 直接调 `parentApi.recomputeLifecycle` 走服务层
+- **"重算"按钮行为**: 调用后端 `recompute-lifecycle` 端点, 拿回系统推导值, 同步更新 `form.lifecycle` (但不保存, 等用户点"保存修改"才统一落库), 同时 ElMessage 提示新 lifecycle 中文名
+
 ### 3. 标签 → lifecycle 互锁
 - 加 '已流失' 标签 → 强制 `lifecycle='lost'`
 - 删 '已流失' 标签 → 触发 recompute (可能恢复到 new/partial/full)

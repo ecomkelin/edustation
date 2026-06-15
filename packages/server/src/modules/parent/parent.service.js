@@ -407,11 +407,13 @@ async function addChild({ orgId, currentUser, id, body }) {
 /* ─── 更新 (基础信息) ─────────────────────────── */
 
 async function update(id, orgId, body) {
-  // phone 不允许改 (业务唯一键); user/lifecycle/tags 走专门端点
+  // phone 不允许改 (业务唯一键); user/tags/firstContactedAt 等走专门端点
+  // lifecycle 2026-06-15 放开: 允许手动改, 但跟 '已流失' 标签 (addTag 强制 lost) 优先级不同
+  //   - 手动改 lifecycle 后, '已流失' 标签会再次翻 lost
+  //   - recompute-lifecycle (手动同步状态) 会覆盖手动值
   const safe = { ...body }
   delete safe.phone
   delete safe.user
-  delete safe.lifecycle
   delete safe.tags
   delete safe.createdBy
   delete safe.firstContactedAt

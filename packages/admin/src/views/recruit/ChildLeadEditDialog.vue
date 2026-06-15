@@ -161,24 +161,73 @@
         <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
       </el-form-item>
 
-      <!-- 状态 (仅编辑模式可见, 且仅允许 contacted/lost) -->
+      <!-- 状态 (仅编辑模式可见; 手动可改 pending/contacted/lost, 系统态只读展示) -->
       <template v-if="isEdit">
         <el-form-item label="状态" prop="status">
-          <el-select
-            v-model="form.status"
-            placeholder="保持当前状态, 仅允许主动改 contacted/lost"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="s in editableStatuses"
-              :key="s.value"
-              :label="s.label"
-              :value="s.value"
-            />
-          </el-select>
+          <div class="status-row">
+            <el-select
+              v-model="form.status"
+              placeholder="选择手动管理后的状态"
+              style="flex: 1"
+            >
+              <el-option
+                v-for="s in editableStatuses"
+                :key="s.value"
+                :label="s.label"
+                :value="s.value"
+              />
+            </el-select>
+            <el-tag
+              v-if="isSystemStatus(currentStatus)"
+              :type="statusTagType(currentStatus)"
+              size="small"
+              class="ml"
+            >
+              当前 {{ statusLabel(currentStatus) }} (系统维护)
+            </el-tag>
+          </div>
+          <div class="hint">仅 pending/contacted/lost 可手动调整; scheduled/tried/converted 由系统自动维护</div>
         </el-form-item>
         <el-form-item v-if="form.status === 'lost'" label="流失原因" prop="lostReason">
           <el-input v-model="form.lostReason" maxlength="500" placeholder="选 lost 时必填" />
+        </el-form-item>
+      </template>
+
+      <!-- 家长状态 (仅编辑模式 + 有 parent 时; 5 态可手动改, 但跟 '已流失' 标签 / recompute 联动) -->
+      <template v-if="isEdit && parent">
+        <el-form-item label="家长状态" prop="lifecycle">
+          <div class="status-row">
+            <el-select
+              v-model="form.lifecycle"
+              placeholder="手动管理家长 lifecycle"
+              style="flex: 1"
+            >
+              <el-option
+                v-for="s in lifecycleOptions"
+                :key="s.value"
+                :label="s.label"
+                :value="s.value"
+              />
+            </el-select>
+            <el-tag
+              :type="lifecycleTagType(currentLifecycle)"
+              size="small"
+              class="ml"
+            >
+              当前 {{ lifecycleLabel(currentLifecycle) }}
+            </el-tag>
+            <el-button
+              size="small"
+              link
+              type="primary"
+              :loading="recomputing"
+              class="ml"
+              @click="onRecomputeLifecycle"
+            >重算</el-button>
+          </div>
+          <div class="hint">
+            手动改后跟系统推导可能不一致; 加 '已流失' 标签 / 点 '重算' 会覆盖手动值
+          </div>
         </el-form-item>
       </template>
     </el-form>
@@ -201,7 +250,7 @@ import { subjectApi } from '@/api/subject'
 import { schoolApi } from '@/api/school'
 import { userApi } from '@/api/user'
 import { categoryApi } from '@/api/category'
-import { PARENT_LIFECYCLE_LABEL } from '@/utils/constants'
+import { PARENT_LIFECYCLE_LABEL, CHILD_LEAD_STATUS_LABEL, CHILD_LEAD_STATUS_TAG_TYPE } from '@/utils/constants'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -216,6 +265,7 @@ const emit = defineEmits(['update:visible', 'saved', 'open-existing'])
 
 const formRef = ref(null)
 const submitting = ref(false)
+const recomputing = ref(false)
 const duplicates = ref([])
 const subjectOptions = ref([])
 const schoolOptions = ref([])
@@ -255,13 +305,36 @@ const form = reactive({
   remark: '',
   force: false,
   status: '',
-  lostReason: ''
+  lostReason: '',
+  // 家长状态 (5 态, 仅编辑模式有 parent 时用)
+  lifecycle: ''
 })
 
 const editableStatuses = [
+  { value: 'pending', label: '待联系 (回退)' },
   { value: 'contacted', label: '已联系' },
   { value: 'lost', label: '已流失' }
 ]
+
+// 系统自动维护的状态 (由 TrialBooking / 转化驱动, 不让销售/教务手动改)
+const SYSTEM_STATUSES = ['scheduled', 'tried', 'converted']
+const isSystemStatus = (s) => SYSTEM_STATUSES.includes(s)
+const currentStatus = computed(() => props.childLead?.status || '')
+
+function statusLabel(s) { return CHILD_LEAD_STATUS_LABEL[s] || s || '-' }
+function statusTagType(s) { return CHILD_LEAD_STATUS_TAG_TYPE[s] || '' }
+
+// 家长 lifecycle (5 态)
+const lifecycleOptions = [
+  { value: 'new', label: '新登记' },
+  { value: 'partial', label: '部分报名' },
+  { value: 'full', label: '已成单' },
+  { value: 'lost', label: '已流失' },
+  { value: 'dormant', label: '沉睡客户' }
+]
+const currentLifecycle = computed(() => props.parent?.lifecycle || '')
+function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s || '-' }
+function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || '' }
 
 const phonePattern = /^1[3-9]\d{9}$/
 const rules = computed(() => {
@@ -300,8 +373,12 @@ watch(() => props.visible, async (v) => {
     form.expectedTime = c.expectedTime || ''
     form.specificDate = c.specificDate || null
     form.remark = c.remark || ''
-    form.status = ''
+    // status 默认 = 当前值 (若是系统态 scheduled/tried/converted, 不会被 select 选项匹配,
+    // 但我们用单独 tag 展示; 改不改都通过 form.status 跟踪)
+    form.status = c.status || ''
     form.lostReason = c.lostReason || ''
+    // 家长 lifecycle 默认 = parent 当前值 (编辑模式 + 有 parent 时)
+    form.lifecycle = props.parent?.lifecycle || ''
     duplicates.value = []
     await loadOptions()
     return
@@ -368,7 +445,6 @@ function formatTime(d) {
   if (!d) return '-'
   return new Date(d).toLocaleString('zh-CN')
 }
-function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s || '-' }
 
 async function submit() {
   if (!formRef.value) return
@@ -396,11 +472,17 @@ async function submit() {
         specificDate: form.specificDate,
         remark: form.remark
       }
-      if (form.status) {
+      if (form.status && form.status !== currentStatus.value) {
+        // 用户真的改了 status (而不是保持原值)
         payload.status = form.status
         if (form.status === 'lost') payload.lostReason = form.lostReason
       }
       const r = await childLeadApi.update(props.childLead._id, payload)
+      // 家长 lifecycle 改了 → 同步调 parentApi.update
+      // 业务上 lifecycle 是 Parent 字段, 不属于 ChildLead, 必须单独提交
+      if (props.parent && form.lifecycle && form.lifecycle !== currentLifecycle.value) {
+        await parentApi.update(props.parent._id, { lifecycle: form.lifecycle })
+      }
       ElMessage.success(`已保存 ${r.data?.name || ''}`)
       emit('saved', { mode: 'update', childLead: r.data })
       emit('update:visible', false)
@@ -479,6 +561,30 @@ async function submit() {
 function onClose() {
   formRef.value?.resetFields()
 }
+
+// 重新计算家长 lifecycle: 调 recompute-lifecycle, 拿到系统推导值后
+//   - 同步 form.lifecycle (覆盖手动改的值)
+//   - 同步 currentLifecycle 显示 (getter 是基于 props.parent, 不需要)
+//   - ElMessage 提示新值
+async function onRecomputeLifecycle() {
+  if (!props.parent?._id) return
+  recomputing.value = true
+  try {
+    const r = await parentApi.recomputeLifecycle(props.parent._id)
+    const newLc = r.data?.lifecycle
+    if (newLc) {
+      form.lifecycle = newLc
+      ElMessage.success(`已重算: ${lifecycleLabel(newLc)}`)
+    } else {
+      ElMessage.warning('重算成功, 但未返回 lifecycle')
+    }
+  } catch (e) {
+    const msg = e.response?.data?.message || e.message || '重算失败'
+    ElMessage.error(`重算失败: ${msg}`)
+  } finally {
+    recomputing.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -486,9 +592,11 @@ function onClose() {
 .dup-line { padding: 2px 0; font-size: 13px; }
 .row-2 { display: flex; gap: 8px; }
 .row-2 .el-input { flex: 1; }
+.ml { margin-left: 8px; }
 .hint {
   margin-left: 8px;
   color: #909399;
   font-size: 12px;
 }
+.status-row { display: flex; align-items: center; width: 100%; }
 </style>

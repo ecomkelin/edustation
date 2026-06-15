@@ -56,7 +56,7 @@ exports.update = [
   // source 改为 Channel 字典的 ObjectId (编辑时允许改, 跟家长对齐)
   body('source').optional({ nullable: true }).isMongoId().withMessage('source 需为 Channel 字典 id'),
   body('remark').optional({ nullable: true }).isString().isLength({ max: 500 }),
-  body('status').optional().isIn(['contacted', 'lost']).withMessage('status 仅允许主动改 contacted/lost'),
+  body('status').optional().isIn(['pending', 'contacted', 'lost']).withMessage('status 仅允许主动改 pending/contacted/lost (scheduled/tried/converted 由系统自动维护)'),
   body('lostReason').optional({ nullable: true }).isString().isLength({ max: 500 })
 ]
 

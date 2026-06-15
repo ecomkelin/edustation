@@ -21,11 +21,19 @@
 ## 业务规则
 
 ### 1. 状态机
+
+**自动翻转** (业务逻辑驱动):
 - pending → contacted (createActivity 自动翻, 仅当还是 pending)
 - pending/contacted → scheduled (TrialBooking.batchSchedule 自动翻)
 - pending/contacted/scheduled → tried (TrialBooking.complete 自动翻)
 - 任何 → converted (TrialBooking.convert 翻 + 同步翻同 parent 下其他)
-- 任何 → lost (销售手动 PUT, 不带级联)
+- converted → tried (5 分钟内 unconvert 撤销, 见 §3)
+
+**手动管理** (2026-06-15 加): 编辑孩子时 `status` 白名单
+- 销售/教务可手动改: `pending` / `contacted` / `lost` (3 个)
+- 系统自动维护, 不允许手动改: `scheduled` / `tried` / `converted`
+- 改 `lost` 时必填 `lostReason`; 改回 pending/contacted 时清空历史 `lostReason`
+- 后端 validator 卡: `isIn(['pending', 'contacted', 'lost'])`; 传其他值直接 422
 
 ### 2. 触点同步 (跨孩)
 - `createActivity` 同步:
