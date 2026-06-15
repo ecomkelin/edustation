@@ -160,7 +160,9 @@ const menuGroups = [
       { path: '/reports/lesson-consumption', label: '课消与课表', icon: Reading, perm: 'report.read' },
       { path: '/reports/room-utilization', label: '教室利用率', icon: School, perm: 'report.read' },
       { path: '/reports/teacher-productivity', label: '老师产能', icon: User, perm: 'report.read' },
-      { path: '/reports/points-activity', label: '积分与活跃', icon: Present, perm: 'report.read' }
+      { path: '/reports/points-activity', label: '积分与活跃', icon: Present, perm: 'report.read' },
+      // 招生看板 (2026-06)
+      { path: '/reports/recruit', label: '招生看板', icon: Promotion, perm: 'recruit.read' }
     ]
   },
   {

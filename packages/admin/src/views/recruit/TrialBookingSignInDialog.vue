@@ -301,7 +301,9 @@ async function onConvert() {
     if (r.data?.idempotent) {
       ElMessage.info('已转化, 幂等返回')
     } else {
-      ElMessage.success(`已转化, 初始密码: ${r.data.initialPassword}`)
+      const sib = r.data.autoConvertedSiblingCount || 0
+      const sibMsg = sib > 0 ? ` · 同家长下 ${sib} 个其他孩子已同步建账号` : ''
+      ElMessage.success(`已转化, 初始密码: ${r.data.initialPassword}${sibMsg}`)
     }
     emit('updated', r.data)
   } finally {

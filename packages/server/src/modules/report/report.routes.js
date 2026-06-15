@@ -28,4 +28,8 @@ router.get('/room-utilization', mws.requirePermission('report.read'), asyncHandl
 router.get('/teacher-productivity', mws.requirePermission('report.read'), asyncHandler(c.teacherProductivity))
 router.get('/points-activity', mws.requirePermission('report.read'), asyncHandler(c.pointsActivity))
 
+// 招生看板 (2026-06 新增)
+router.get('/recruit-promoter', mws.requirePermission('recruit.read'), asyncHandler(c.recruitPromoter))
+router.get('/recruit-teacher-conversion', mws.requirePermission('recruit.read'), asyncHandler(c.recruitTeacherConversion))
+
 module.exports = router

@@ -12,6 +12,9 @@
  */
 
 const initialSeed = require('./seeds/initial.seed')
+const leadTagSeed = require('./seeds/leadTag.seed')
+const channelSeed = require('./seeds/channel.seed')
+const schoolSeed = require('./seeds/school.seed')
 
 async function initSeeds() {
   // eslint-disable-next-line no-console
@@ -19,6 +22,16 @@ async function initSeeds() {
   const summary = await initialSeed.run()
   // eslint-disable-next-line no-console
   console.log('[seed] summary:', summary)
+
+  // 招生家长标签 (2026-06): 独立幂等 seed, 不依赖 initial 的 dropDatabase 流程
+  // 单独跑也不会破坏已有数据, 已存在则跳过并修正 sort/isActive
+  await leadTagSeed.run()
+
+  // 招生渠道 (2026-06-15): 同 LeadTag, 独立幂等 seed; 默认渠道 = 地推
+  await channelSeed.run()
+
+  // 学校档案: 给所有启用 org 写入周边学校名单, 幂等
+  await schoolSeed.run()
 }
 
 module.exports = { initSeeds }

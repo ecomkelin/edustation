@@ -129,66 +129,108 @@ eduStation/
 - **PointsTransaction**：student, amount, type, refId
 - **Pet**：student, petType, level, experience
 
-### 7.7 招生试听 (2026-06)
+### 7.7 招生试听 (Parent + ChildLead, 2026-06 重构)
 地推/教务录入潜客、批量排试听日程、到店打卡、试听结果、转化学员的全链路。完整业务规划见 [plans/staged-roaming-honey.md](../.claude/plans/staged-roaming-honey.md)。
 
-> **核心定位 (2026-06 重大调整)**: 试听 = **数据跟踪**, **不**走排课系统 (`LessonSchedule`).
-> - 排课系统专注于正式教学交付 (开班/排课/考勤/消课)
-> - 试听自管 time/teacher/room, 业务上不再创建 LessonSchedule, 不参与日历/冲突检测/教室利用率
-> - 历史 isTrialLesson=true 的 LessonSchedule 保留 (兼容老数据展示), 新流程不再生成
-> - 原因: 试听是招生行为 (潜客 → 转学员), 与"教学交付"是两套关注; 试听塞进排课系统污染日历, 业务上也没意义
+> **2026-06 重大调整**: 引入 **Parent + ChildLead 二分模型** 替代原单 `Lead` 模型
+> - 触点/家长沟通/二次预约都是**家长维度**; 原 Lead = 孩子维度, 1 家长带多孩时多孩散落, 销售无法批量跟进, 跨年重试无法识别
+> - Parent = 业务档案, 1:N ChildLead; User (登录账号) 与 Parent 解耦, 首个 ChildLead 转化时才 upsert
+> - 试听仍 = 数据跟踪, **不**走排课系统 (`LessonSchedule`); 详见下文
 
-**核心实体 (3 个 + 1 兼容字段, 2026-06 简化):**
-- **Lead** (潜客/线索, collection `leads`): 地推录入的"还没成为学生"的人; 状态机 `pending → contacted → scheduled → tried → converted | lost`; 触点日志冗余 `lastContactedAt/By`; **2026-06 起 phone 取消 unique 索引**, 软唯一仅由 service 层检查, 用户显式 `force=true` 跳过 (1 家长带多孩)
-  - **`trialSubject: ObjectId<Subject>`** (主意向快照, 兼容老数据)
-  - **`trialSubjects: [ObjectId<Subject>]`** (意向全集, 2026-06 新增; 1 孩可试多门课; 录入时按数组长度自动建 N 笔 TrialBooking, `attemptNo=1..N`; 兼容老 payload `trialSubject` 单值)
-- **TrialBooking** (试听预约, collection `trial_bookings`): Lead 1:N 关系; `attemptNo` 1/2/3 标记第几次约; 状态机 `awaiting_schedule → scheduled → arrived → completed` (中间可转 `no_show`/`cancelled`); 2026-06 起, **自管** scheduledAt/teacher/room/scheduledDuration 字段, 不再挂 LessonSchedule
-  - **`subject: ObjectId<Subject>`** 是 booking 维度 (即"这节试听日程的科目"), 1 个 Lead 多个 booking 可分别挂不同 subject
-  - **`room: ObjectId<Room>`** 2026-06 新增, solo 模式必填 (试听可空), attached 模式从 schedule 拷贝
-  - **`lessonSchedule`** 字段保留, **仅 attached 模式** (跟班试听) 填; solo 模式不再写
-- **LeadActivity** (触点日志, collection `lead_activities`): Lead 1:N; 触点类型 `call/wechat/visit/sms/note`; 创建时同步刷 `Lead.lastContactedAt/By`, 触发 `pending→contacted` 状态翻转
+**核心实体 (4 个 + 1 兼容字段, 2026-06):**
+- **Parent** (家长业务档案, collection `parents`): 业务唯一键 `(org, phone)`, 业务上 1 家长 1 手机号; 与 User (登录账号) 解耦, `user` 字段首孩转化时回填
+  - 状态: `lifecycle` enum = `new` / `partial` / `full` / `lost` / `dormant` (替代"还有资源"模糊语义)
+    - `new` 刚登记, 所有孩子未报名
+    - `partial` 部分孩子报名 (1 家长多孩, 1 个已签)
+    - `full` 所有孩子都报名
+    - `lost` 打了 '已流失' LeadTag
+    - `dormant` 超 6 个月未联系 (阶段 2 定时任务翻)
+  - 业务归因: `promoteBy` (推广人), `consultant` (咨询师), `source` (渠道), `referrer` (老带新指向另一 Parent)
+  - 触点快照: `firstContactedAt` / `lastContactedAt/By` (冗余, 由 createActivity 同步刷, 真值在所有 ChildLead 触点)
+  - 标签: `tags: [ObjectId<Category>]` 套 Category 字典 (`model='LeadTag'`)
+  - 跨年记忆: `lastTrialAt`, `lastTrialYear` (阶段 2 dormant 判定)
+- **ChildLead** (孩子潜客, collection `child_leads`): 替代原 Lead, 1 Parent : N ChildLead
+  - 状态机: `pending → contacted → scheduled → tried → converted | lost` (与原 Lead 一致)
+  - 转化结果: `convertedStudent/At/Remark` (回填 Student, 后续逻辑不依赖 Parent 关系)
+  - **跨年重试**: `sameAs: [ObjectId<ChildLead>]` 链式追溯, 2027 年新建 childLead.sameAs 指向 2026 childLead
+  - 1 孩多课: `trialSubjects: [ObjectId<Subject>]` (数组, 录入时按长度建 N 笔 TrialBooking, attemptNo=1..N); `trialSubject` 字段是 trialSubjects[0] 快照
+- **TrialBooking** (试听预约, collection `trial_bookings`): ChildLead 1:N (替代原 Lead 1:N)
+  - `preStudent: ObjectId<ChildLead>` (替代原 Lead)
+  - `parent: ObjectId<Parent>` (冗余, 加速"该家长所有试听"查询)
+  - `consultant: ObjectId<User>` (谈单老师, 与 teacher 上课老师分离)
+  - `result.negotiateTeacher` 是 consultant 的 alias (兼容老数据)
+  - 其余字段与原 Lead 模型一致 (joinMode / lessonSchedule / room / scheduledAt / status / result 等)
+- **LeadActivity** (触点日志, collection `lead_activities`): ChildLead 1:N
+  - `lead: ObjectId<ChildLead>` (替代原 Lead 引用)
+  - 触点类型 `call/wechat/visit/sms/note`; 创建时同步刷 ChildLead + Parent 触点快照
 - **LessonSchedule.isTrialLesson** (2026-06 deprecated): 保留字段 (兼容历史数据), 排课 UI 默认过滤 `isTrialLesson=false`; 新流程不再创建 isTrialLesson=true 的排课
 
-**批量排试听日程 (取代原"批量排课"概念, 2026-06):**
-- 端点仍是 `POST /api/v1/trial-bookings/batch-schedule`, 但语义从"创建 1 个 LessonSchedule + 挂 N 个 booking"改为"批量更新 N 个 TrialBooking 自身字段"
-- **入参**: `bookingIds: [...], plannedStartTime, plannedEndTime, teacher, room?` (room 可空)
-- **服务端流程** (简化版):
-  1. 校验入参 + 拉所有 booking, 全部 `status='awaiting_schedule'`
-  2. 校验 teacher/room 存在 (room 可空, 不强制)
-  3. **不**拉 [试听专用] CI, **不**创建 LessonSchedule, **不**走 `detectConflict`
-  4. 算 `durationMinutes` (end - start)
-  5. `updateMany` 写入 `scheduledAt / scheduledDuration / teacher / room / joinMode='solo' / status='scheduled'`
-  6. 翻对应 `Lead.status` 为 `'scheduled'`
-  7. 返回 `{ bookingCount, scheduledAt, teacher, room, durationMinutes }`
-- **混合多课 (2026-06)**: N 个 booking 允许 subject 不同 (例: 1 老师带 5 个 Python + 3 个围棋 孩子试同一节体验课); 后端不校验 subject 一致, 排课不覆盖 booking 自身的 subject
-- **跟班试听 (attached 模式, 单笔)**: 仍走 `POST /api/v1/trial-bookings` 创 booking, 关联已有正常 LessonSchedule (校验 `isTrialLesson=false`); 字段从 schedule 拷贝 (time / teacher / room / subject), `lessonSchedule` 字段写
+**Category 字典 (2026-06 扩展):**
+- `model` enum 加 `'LeadTag'` (家长标签字典, 被 `Parent.tags` 引用)
+- 预设标签: 高意向 / 非目标客户 / 倾向他课 / 价格敏感 / 距离太远 / 年龄不合适 / 家庭条件 / 已流失
+- 加 '已流失' 标签自动 `lifecycle='lost'`; 删 '已流失' 标签触发 lifecycle 重算
+
+**录入家长账户 + 第一个孩子 (1 API 核心):**
+- `POST /api/v1/parents/with-child` 1 API 创建 Parent + 1 ChildLead + N TrialBooking
+- 软唯一: 同 org 下 phone 命中 → 返回 `{duplicate: true, parent}` (200); `body.force=true` 跳过
+- `withChild` 内部自动建 N 笔 TrialBooking (attemptNo=1..N, status=awaiting_schedule)
+- 同家长加孩: `POST /api/v1/parents/:id/children` (parentId 已存在, 只建 ChildLead + N TrialBooking)
+
+**批量排试听日程 (2026-06 简化):**
+- 端点 `POST /api/v1/trial-bookings/batch-schedule` 语义: "批量更新 N 个 TrialBooking 自身字段", 不创建 LessonSchedule
+- 入参: `bookingIds: [...], plannedStartTime, plannedEndTime, teacher, room?` (room 可空)
+- 流程: 校验入参 → 拉所有 booking, 全部 `status='awaiting_schedule'` → 校验 teacher/room 存在 → 算 `durationMinutes` → `updateMany` 写入 `scheduledAt/scheduledDuration/teacher/room/joinMode='solo'/status='scheduled'` → 翻对应 `ChildLead.status='scheduled'`
+- 混合多课: N 个 booking 允许 subject 不同, 排课不覆盖 booking 自身 subject
+- 跟班试听 (attached 模式, 单笔): `POST /api/v1/trial-bookings` 关联已有正常 LessonSchedule, 字段从 schedule 拷贝
+
+**再约一次 (2026-06 调整):**
+- `POST /api/v1/trial-bookings/:id/reschedule` 现在允许 `no_show` **和** `cancelled` 状态触发 (1 行修复)
+- 写 LeadActivity 记录 `第 X 次未到/取消, 重新约第 Y 次` + 新 TrialBooking (attemptNo=max+1) + 内部调 batchSchedule
 
 **[试听专用] CourseInstance (2026-06 deprecated):**
-- `ensureTrialCourseInstance(orgId)` 保留 (历史数据兼容), 但新流程不调; 试听专用 CI 上的 isTrialLesson=true 的 LessonSchedule 仅供历史展示
-- `courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班, 排课接口可显式 `?includeTrial=true` (历史前端兼容)
-- `LessonSchedule.isTrialLesson=true` 创建校验 (`isTrialLesson=true ⇒ courseInstance.isTrial=true`) 保留 (老数据用)
+- `ensureTrialCourseInstance(orgId)` 保留 (历史数据兼容), 新流程不调; 试听专用 CI 上的 isTrialLesson=true 的 LessonSchedule 仅供历史展示
+- `courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班, 排课接口可显式 `?includeTrial=true`
 
 **老师"试听日程"视图 (未来):**
 - 老师"我的日程"原本只看 LessonSchedule; 2026-06 起, 还要 union 查 `TrialBooking.teacher=me, status ∈ {scheduled, arrived}`
 - 当前排课日历只显示 LessonSchedule, 老师若要查"今天我有几节试听", 需进 `/recruit/trial-bookings` 看板按 `试听老师=me` 过滤 (TODO: 阶段 2 加统一日程聚合)
 
-**1 孩多课 + 1 家长多孩 业务模型 (2026-06):**
-- **1 孩可试多门课**: Lead 录入时"试听科目"前端多选 (`el-select multiple`), 后端按 `trialSubjects` 数组长度自动建 N 笔 `TrialBooking`, `attemptNo=1..N`, 各 booking 挂对应 subject; Lead 文档冗余 `trialSubject = trialSubjects[0]` (主意向快照)
-- **1 家长带多孩**: 同 phone 下允许多个 Lead (2026-06 改造: Lead 取消 phone unique 索引); UI 提示"为这个手机号加一个孩子" 按钮; 后端 `create` 接受 `body.force=true` 跳过软唯一检查, 用户在 confirm 已显式确认; 业务上多孩各自独立 Lead 记录, 各自可转学员
-- **二次试听** (同孩 / 同家长 隔期再试): `attemptNo` 递增, 旧 booking 保留作审计; 新 booking 由 no_show 后"再约一次"创建, 字段语义不变
-- 转化仍**一对一**: 1 个 Lead → 1 个家长 + 1 个学生; 1 家长多孩场景下, 其它 Lead 转化会复用/共建家长账号 (阶段 2 再统一 `Student.guardianUser` 共享)
+**1 孩多课 + 1 家长多孩 业务模型 (2026-06 强化):**
+- **1 孩可试多门课**: ChildLead.trialSubjects 数组, 录入时按长度建 N 笔 TrialBooking, attemptNo=1..N
+- **1 家长带多孩**: 1 Parent : N ChildLead; 软唯一在 Parent.phone (同 org); 销售 / 教务在 Parent 详情点 "+ 加一个孩子" 弹 ChildLeadEditDialog (parentId 预填)
+- **跨年重试**: ChildLead.sameAs 链式追溯, 2027 年新建 childLead.sameAs 指向 2026 childLead; Parent.lifecycle 从 dormant 激活
+- **二次试听** (同孩 / 同家长 隔期再试): `attemptNo` 递增, 旧 booking 保留作审计
 
-**转化两步式 (claim token 模式):**
+**Parent.lifecycle 状态机 (2026-06 核心):**
+- 触发自动重算:
+  - `childLead.service.unconvert` 撤销转化后
+  - `trialBooking.service.convert` 转化后 (还会自动 mark 同 parent 下其他 ChildLead → 翻 'converted' + remark='同家长其他孩子已报名')
+  - `parent.service.addChild` 加孩后
+  - `parent.service.addTag/removeTag` 涉及 '已流失' 时强制
+- 手动重算: `POST /api/v1/parents/:id/recompute-lifecycle`
+- 推导逻辑: `total === 0 || converted === 0` → 'new'; `converted < total` → 'partial'; `converted === total` → 'full'; 打了 '已流失' 标签或全 lost → 'lost'
+
+**转化两步式 (claim token 模式, 2026-06 改造):**
 - 试听完成后 (`status=completed`, `result.isEnrolled=true`) 触发转化
-- `POST /convert-preview` 返回 `initialPassword` + 即将创建 User/Student 预览 (无副作用, 1 个 API)
-- `POST /convert` 真提交:
-  1. **Claim token**: `TrialBooking.findOneAndUpdate({_id, 'result.isEnrolled': true, 'result.enrolledAt': null}, {$set: {'result.enrolledAt': now}})` — 原子翻转, 重试安全
-  2. **User upsert**: `findOneAndUpdate({mobile}, {$setOnInsert: {mobile, passwordHash: bcrypt(mobile.slice(-6)), realName: '家长-'+lead.name, requirePasswordChange: true}}, {upsert: true})`
-  3. **UserOrgRel upsert**: 查"家长" Position, `findOneAndUpdate({user, org}, {$setOnInsert: {...}}, {upsert: true})`
-  4. **Student create**: 拷贝 lead.name/gender/school/grade/className
-  5. **Lead update**: 写回 convertedStudent/User/At/Remark
-- **不用 mongoose 事务** (单节点 Mongo 不支持); 用 `findOneAndUpdate` upsert 链 + claim token 模式实现重试安全
-- **5 分钟撤销窗口**: `POST /api/v1/leads/:id/unconvert` 校验 `convertedAt` 在 5 分钟内; 物理删除 Student / User (requirePasswordChange=true) / UserOrgRel, TrialBooking.result 重置
+- `POST /api/v1/trial-bookings/:id/convert-preview` 返回 `initialPassword` + 即将创建 User/Student 预览; 若 parent.user 已存在, 标注 `alreadyExists: true`, 复用现有 User
+- `POST /api/v1/trial-bookings/:id/convert` 真提交:
+  1. **Claim token**: `findOneAndUpdate({_id, status='completed', 'result.isEnrolled':true, 'result.enrolledAt':null}, {$set: {'result.enrolledAt': now}})` — 原子翻转, 重试安全
+  2. **User upsert** (仅首次): `findOneAndUpdate({mobile: parent.phone}, {$setOnInsert: {mobile, passwordHash: bcrypt(parent.phone.slice(-6)), realName: '家长-'+parent.phone.slice(-4), requirePasswordChange: true}}, {upsert: true, new: true})` — 同 phone 下首孩建, 次孩复用
+  3. **UserOrgRel upsert**: 查"家长" Position
+  4. **Parent.user 回填** (仅首次): `Parent.findOneAndUpdate({_id: parent._id, user: null}, {$set: {user: user._id}})`
+  5. **Student create**: 从 ChildLead 拷 name/gender/school/grade/className
+  6. **ChildLead 写回**: status='converted', convertedStudent/At/Remark
+  7. **同 Parent 下其他 ChildLead 自动 mark**: `ChildLead.updateMany({parent, _id: {$ne: childLeadId}, status: {$nin: ['converted','lost']}}, {status: 'converted', convertedAt: null, remark: '同家长其他孩子已报名'})` — 业务上 1 家长带多孩自动级联
+  8. **Parent.lifecycle 重算**: `parent.service.recomputeLifecycle`
+  9. 返回 `{idempotent, initialPassword, user, student, childLead, parent: {lifecycle}, undoWindowMs, autoConvertedSiblingCount}`
+- **不用 mongoose 事务** (单节点 Mongo 不支持); 用 upsert 链 + claim token 模式实现重试安全
+- **5 分钟撤销窗口**: `POST /api/v1/child-leads/:id/unconvert` (改路径, 旧 `/leads/:id/unconvert` 已下线)
+  - 校验 `convertedAt` 在 5 分钟内
+  - 校验 Parent.user 没用作其他 ChildLead.convertedStudent 主监护人
+  - **不级联**回退同 parent 下其他"自动转化的" ChildLead (业务决策: 自动 mark 是"被带过去"语义, 撤销当前不连带); 但 lifecycle 重算反映真实状态
+  - User 仅在"无其他 converted 兄弟"时删; 否则保留 User 但从 Parent.user 解绑
+  - 物理删 Student (校验无下游引用)
+  - 重算 Parent.lifecycle
 
 **初始密码策略:**
 - 新建家长 `User.passwordHash = bcrypt(mobile.slice(-6))` (手机号后 6 位)
@@ -197,18 +239,31 @@ eduStation/
 - 前端 auth store 存该标志, 路由守卫 (`router/index.js` beforeEach) 拦截任何非 `/reset-password` 访问, 强制跳改密页
 - `auth.service.changePassword` 改密成功后清掉 `requirePasswordChange` 标志
 
-**权限码 (新增 `recruit` 组):**
-- `recruit.read` - 列表/详情/触点时间线
-- `recruit.write` - 新建/编辑/批量排日程/打卡/完成
+**权限码 (复用 `recruit` 组, 不新增):**
+- `recruit.read` - 列表/详情/触点时间线/标签
+- `recruit.write` - 新建/编辑/加孩/批量排日程/打卡/完成
 - `recruit.convert` - 转化预览/转化执行/撤销转化
+- 共享给 Parent + ChildLead + TrialBooking 三个模块, 减少权限码数
 - 加到 `管理员` 和 `教务` 系统职位 (默认); 不加到 `老师`/`家长`/`财务`
 - 历史机构通过 `migrate-add-recruit-perms.js` 一次性补 ($addToSet + $nin 前置过滤, 幂等)
-- 销售/教务分级: 服务端在 `lead.service.list` 时, 若用户无"看全部"权限强制 `createdBy=me` (`scope=mine`); 教务可看全部
+- 销售/教务分级: 服务端在 `parent.service.list` 时, 若用户无"看全部"权限强制 `promoteBy=me` (`scope=mine`); 教务可看全部
 
-**删除保护 (与现有 8.1 互锁):**
+**删除保护 (与 8.1 互锁):**
 - `lessonSchedule.lessonScheduleUsageChecks` **第三项**保留: `TrialBooking.lessonSchedule=scheduleId` (仅 attached 模式命中) → 阻挡物理删除
-- `Lead.removableCheck`: `TrialBooking` + `LeadActivity` 引用都阻挡
+- `parentUsageChecks` (Parent 删): `ChildLead` + `TrialBooking` + `LeadActivity` (via childLead 派生) 引用都阻挡
+- `childLeadUsageChecks` (ChildLead 删): `TrialBooking` + `LeadActivity` 引用都阻挡
 - 物理删除走 `requirePlatformPassword` (高风险)
+
+**招生看板 (2026-06 新增, §16.3 解锁):**
+- `GET /api/v1/reports/recruit-promoter` - 推广人员 ROI (按 Parent.promoteBy 聚合: 家长数/孩子数/转化数/转化率)
+- `GET /api/v1/reports/recruit-teacher-conversion` - 试听老师转化率 (按 TrialBooking.teacher 聚合: 试听过/到店/完成/已报名/转化率)
+- 看板权限码 `recruit.read` (挂在 `recruit` 组, 不复用 `report.read`)
+- 阶段 2 再做: `recruit-parent-lifecycle` (家长生命周期分布) + `recruit-source-roi` (渠道 ROI)
+
+**迁移 & 启动清理:**
+- 旧 Lead 模型 (collection `leads`) / LeadActivity (collection `lead_activities`) **完全下线** (2026-06 重构)
+- `packages/server/src/utils/startupMigrations.js#dropLegacyLeadCollections` 在 server 启动时主动 drop 这两个 collection (开发期兜底)
+- 业务上是假数据, 不需要数据迁移脚本
 
 ## 8. 后端分层与模块组织
 采用“领域分组 + 垂直切片”模式。当模块过多时，在 `modules/` 下用分组文件夹聚合。

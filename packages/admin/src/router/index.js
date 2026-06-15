@@ -42,9 +42,11 @@ const routes = [
       { path: 'files', component: () => import('@/views/files/Files.vue') },
       { path: 'platform/info', component: () => import('@/views/platformInfo/PlatformInfo.vue') },
       { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') },
-      // 招生试听 (2026-06): 潜客管理 + 试听看板
-      { path: 'recruit/leads', component: () => import('@/views/recruit/Leads.vue') },
+      // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)
+      { path: 'recruit/leads', component: () => import('@/views/recruit/Parents.vue') },
       { path: 'recruit/trial-bookings', component: () => import('@/views/recruit/TrialBookings.vue') },
+      // 招生看板 (2026-06)
+      { path: 'reports/recruit', component: () => import('@/views/reports/RecruitReport.vue') },
       // 首登强改密 (2026-06): 路由守卫拦截, 改密成功后清标志
       { path: 'reset-password', component: () => import('@/views/ResetPassword.vue'), meta: { auth: true } }
     ]

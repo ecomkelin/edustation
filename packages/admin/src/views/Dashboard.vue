@@ -53,6 +53,60 @@
     </div>
     <NoPermission v-else module="order.read" />
 
+    <!-- ───── 招生 KPI (2026-06 新增) ───── -->
+    <el-card v-if="perm.recruitRead" class="board" shadow="never">
+      <template #header>
+        <div class="board-title">
+          📣 招生活跃 (本月)
+          <span class="board-title-hint">推广人 / 试听老师 / 家长生命周期</span>
+        </div>
+      </template>
+      <el-row :gutter="16">
+        <el-col :xs="12" :sm="6">
+          <KpiCard
+            label="推广录入"
+            :value="recruitStats.promoterCount"
+            unit="人"
+            :extra="`共录入 ${recruitStats.parentCount} 个家长`"
+            accent="blue"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="6">
+          <KpiCard
+            label="本月已转化"
+            :value="recruitStats.convertedCount"
+            unit="孩"
+            :extra="`转化率 ${recruitStats.conversionRate}%`"
+            accent="green"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="6">
+          <KpiCard
+            label="试听老师 Top 1"
+            :value="recruitStats.topTeacher?.realName || '-'"
+            :extra="recruitStats.topTeacher ? `转化率 ${recruitStats.topTeacher.conversionRate}%` : ''"
+            accent="purple"
+          />
+        </el-col>
+        <el-col :xs="12" :sm="6">
+          <KpiCard
+            label="沉睡客户"
+            :value="recruitStats.dormantCount"
+            unit="家长"
+            :extra="`需销售主动跟进`"
+            accent="orange"
+          />
+        </el-col>
+      </el-row>
+      <el-row style="margin-top: 12px">
+        <el-col :span="24">
+          <el-button type="primary" plain @click="$router.push('/reports/recruit')">
+            查看完整招生看板 →
+          </el-button>
+        </el-col>
+      </el-row>
+    </el-card>
+
     <!-- ───── 系统说明（复用 platform/info 的内容） ───── -->
     <el-card class="board" shadow="never">
       <template #header>
@@ -103,6 +157,7 @@ import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { useReportApi } from '@/composables/useReportApi'
 import { fmtMoney, fmtPct } from '@/utils/report'
+import http from '@/api/http'
 import KpiCard from '@/components/KpiCard.vue'
 import NoPermission from '@/components/NoPermission.vue'
 import ReportBoard from '@/components/report/ReportBoard.vue'
@@ -114,14 +169,51 @@ const orgName = computed(() => auth.currentOrg?.name || currentOrgId.value || '�
 const currentRange = ref({ range: 'month', from: '', to: '' })
 const { data: d, loading, generatedAt, load } = useReportApi('overview')
 
+// 招生活跃 KPI (2026-06)
+const recruitStats = ref({
+  promoterCount: 0,
+  parentCount: 0,
+  convertedCount: 0,
+  conversionRate: 0,
+  topTeacher: null,
+  dormantCount: 0
+})
+
 const perm = computed(() => ({
-  // 首页 1 块看板用 report.read（更准确），无权限时给 NoPermission 兜底
-  orderRead: hasPerm('report.read') || hasPerm('order.read')
+  orderRead: hasPerm('report.read') || hasPerm('order.read'),
+  recruitRead: hasPerm('recruit.read')
 }))
 function hasPerm(code) {
   const perms = user.value?.permissions || []
   if (perms.length === 0) return true
   return perms.includes(code)
+}
+
+async function loadRecruitKpi() {
+  if (!perm.value.recruitRead) return
+  try {
+    const [promoterRes, teacherRes, parentListRes] = await Promise.all([
+      http.get('/reports/recruit-promoter', { params: { range: 'month' } }),
+      http.get('/reports/recruit-teacher-conversion', { params: { range: 'month' } }),
+      http.get('/parents', { params: { lifecycle: 'dormant', pageSize: 1 } })
+    ])
+    const promoters = promoterRes.data?.items || []
+    const teachers = teacherRes.data?.items || []
+    const totalParents = promoters.reduce((sum, p) => sum + (p.parentCount || 0), 0)
+    const totalConverted = promoters.reduce((sum, p) => sum + (p.convertedCount || 0), 0)
+    recruitStats.value = {
+      promoterCount: promoters.length,
+      parentCount: totalParents,
+      convertedCount: totalConverted,
+      conversionRate: totalParents > 0
+        ? Math.round((totalConverted / totalParents) * 1000) / 10
+        : 0,
+      topTeacher: teachers[0] || null,
+      dormantCount: parentListRes.data?.total || 0
+    }
+  } catch (e) {
+    // 静默失败, 不阻塞 Dashboard
+  }
 }
 
 // 6 个模块卡片：与左侧菜单项对齐，但不显示左侧已显而易见的项
@@ -139,7 +231,10 @@ async function reloadByRange(next) {
   await load(next)
 }
 
-onMounted(() => reloadByRange(currentRange.value))
+onMounted(() => {
+  reloadByRange(currentRange.value)
+  loadRecruitKpi()
+})
 </script>
 
 <style lang="scss" scoped>

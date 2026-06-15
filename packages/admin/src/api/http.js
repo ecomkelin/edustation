@@ -6,7 +6,25 @@ import router from '@/router'
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   withCredentials: true,
-  timeout: 15000
+  timeout: 15000,
+  // axios 默认把数组 params 序列化为 ?k[]=v, 加上自定义 serializer 强制数组 join(',')
+  // 双保险: 即使上面的 request interceptor 因为某些原因没跑, 序列化阶段也会兜底
+  paramsSerializer: {
+    serialize: (params) => {
+      if (!params || typeof params !== 'object') return ''
+      const parts = []
+      for (const [k, v] of Object.entries(params)) {
+        if (v == null || v === '') continue
+        if (Array.isArray(v)) {
+          const joined = v.filter((x) => x !== '' && x != null).join(',')
+          if (joined) parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(joined)}`)
+        } else {
+          parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        }
+      }
+      return parts.join('&')
+    }
+  }
 })
 
 // 请求拦截：自动注入 Authorization + x-org-id
@@ -20,6 +38,19 @@ apiClient.interceptors.request.use((config) => {
   }
   if (auth.activeStudentId) {
     config.headers['x-active-student-id'] = auth.activeStudentId
+  }
+  // 防止 axios 把数组参数序列化成 ?k[]=v (Express 会解析成 array, 后端 .isString() 校验失败)
+  // 统一把 params 里的数组 join(',') 转成字符串; URLSearchParams / 后端逗号分隔都兼容
+  if (config.params && typeof config.params === 'object') {
+    const normalized = {}
+    for (const [k, v] of Object.entries(config.params)) {
+      if (Array.isArray(v)) {
+        normalized[k] = v.filter((x) => x !== '' && x != null).join(',')
+      } else {
+        normalized[k] = v
+      }
+    }
+    config.params = normalized
   }
   return config
 })
@@ -56,7 +87,14 @@ apiClient.interceptors.response.use(
       if (!response.config || !response.config.silent) {
         ElMessage.error(body.message || '请求失败')
       }
-      return Promise.reject(body)
+      // 关键:必须 reject 一个 axios 形态的 error,这样 catch 端的
+      // err.response.data.data.blockers 才能取到;否则 422 互锁挡板无法弹出。
+      const fakeErr = new Error(body.message || '请求失败')
+      fakeErr.name = 'ApiError'
+      fakeErr.response = response
+      fakeErr.config = response.config
+      fakeErr.isAxiosError = true
+      return Promise.reject(fakeErr)
     }
     return body
   },

@@ -22,7 +22,12 @@ const { Schema, model } = require('mongoose')
 const CategorySchema = new Schema(
   {
     // 字典所属业务域，决定本条记录是给哪个实体用的
-    model: { type: String, enum: ['Org', 'Student', 'Subject'], required: true, index: true },
+    //   'Org'     → 机构类型字典
+    //   'Student' → 学员分类字典
+    //   'Subject' → 学科分类字典
+    //   'LeadTag' → 家长标签字典 (2026-06, 被 Parent.tags 引用)
+    //   'Channel' → 招生渠道字典 (2026-06, 被 Parent.source / ChildLead.source 引用)
+    model: { type: String, enum: ['Org', 'Student', 'Subject', 'LeadTag', 'Channel'], required: true, index: true },
     // 字典项名称，前端直接展示给用户看
     name: { type: String, required: true, trim: true },
     // 层级深度：0 = 顶级，1 = 二级，以此类推；上限 5 层

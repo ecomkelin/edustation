@@ -17,7 +17,8 @@ const services = {
   lessonConsumption:   require('./lessonConsumption.service'),
   roomUtilization:     require('./roomUtilization.service'),
   teacherProductivity: require('./teacherProductivity.service'),
-  pointsActivity:      require('./pointsActivity.service')
+  pointsActivity:      require('./pointsActivity.service'),
+  recruit:             require('./recruit.service')   // 2026-06 招生看板
 }
 
 exports.overview = async (req, res) => {
@@ -42,5 +43,16 @@ exports.teacherProductivity = async (req, res) => {
 
 exports.pointsActivity = async (req, res) => {
   const data = await services.pointsActivity({ orgId: req.orgId, ...req.query })
+  res.json(ApiResponse.ok(data))
+}
+
+// ─── 招生看板 (2026-06 新增) ─────────────────────
+exports.recruitPromoter = async (req, res) => {
+  const data = await services.recruit.recruitPromoter({ orgId: req.orgId, ...req.query })
+  res.json(ApiResponse.ok(data))
+}
+
+exports.recruitTeacherConversion = async (req, res) => {
+  const data = await services.recruit.recruitTeacherConversion({ orgId: req.orgId, ...req.query })
   res.json(ApiResponse.ok(data))
 }

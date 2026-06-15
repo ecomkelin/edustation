@@ -148,6 +148,17 @@
                   link
                   @click="onCancel(row)"
                 >取消</el-button>
+                <!-- 误操删除: 仅「已取消」状态可删; 仅超管可见; 走 requirePlatformPassword (超管+密码) -->
+                <DestructiveConfirm
+                  v-if="row.status === 'cancelled' && isPlatformAdmin"
+                  :target="`试听预约 (${row.preStudent?.name} - 第 ${row.attemptNo} 次)`"
+                  warning="中风险"
+                  :precheck-notes="['当前状态 = 「已取消」']"
+                  :precheck="() => trialBookingApi.removableCheck(row._id).then((r) => r.data)"
+                  @confirm="(p) => onRemove(row, p)"
+                >
+                  <el-button size="small" type="danger" link>删除</el-button>
+                </DestructiveConfirm>
               </template>
             </el-table-column>
           </el-table>
@@ -193,8 +204,11 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
 import { trialBookingApi } from '@/api/trialBooking'
 import { TRIAL_BOOKING_STATUS_LABEL, TRIAL_BOOKING_STATUS_TAG_TYPE } from '@/utils/constants'
+import { handleRemoveError } from '@/utils/removable'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import BatchScheduleDialog from './BatchScheduleDialog.vue'
 import TrialBookingSignInDialog from './TrialBookingSignInDialog.vue'
 import TrialAttachedDialog from './TrialAttachedDialog.vue'
@@ -222,6 +236,9 @@ const pagination = reactive({ page: 1, pageSize: 20 })
 const batchDialog = reactive({ visible: false })
 const signInDialog = reactive({ visible: false, booking: null })
 const attachedDialog = reactive({ visible: false, booking: null })
+
+const authStore = useAuthStore()
+const isPlatformAdmin = computed(() => !!authStore.user?.isPlatformAdmin)
 
 onMounted(async () => {
   await loadAllCounts()
@@ -307,6 +324,24 @@ async function onCancel(row) {
     loadAllCounts()
   } catch (e) {
     // 错误已被拦截器弹
+  }
+}
+
+/**
+ * 误操删除试听预约 (仅「已取消」状态可删)
+ *   - 按钮 v-if: row.status === 'cancelled' && isPlatformAdmin (双重门控)
+ *   - DestructiveConfirm: 预检 → 风险说明 → 输密码
+ *   - 后端 requirePlatformPassword: 非超管 403 / 密码错 401 / 缺密码 400
+ *   - 后端 assertUnused: 非 cancelled 状态挡板 422 + data.blockers
+ */
+async function onRemove(row, { password }) {
+  try {
+    await trialBookingApi.remove(row._id, { password })
+    ElMessage.success(`已删除预约 (${row.preStudent?.name} - 第 ${row.attemptNo} 次)`)
+    load()
+    loadAllCounts()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除试听预约', `预约 ${row.preStudent?.name} 第 ${row.attemptNo} 次`)
   }
 }
 

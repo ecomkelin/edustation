@@ -146,8 +146,8 @@ import { categoryApi } from '@/api/category'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 
-const MODELS = ['Org', 'Student', 'Subject']
-const MODEL_LABELS = { Org: '机构', Student: '学生', Subject: '学科' }
+const MODELS = ['Org', 'Student', 'Subject', 'LeadTag']
+const MODEL_LABELS = { Org: '机构', Student: '学生', Subject: '学科', LeadTag: '家长标签' }
 
 const model = ref('Org')
 const tree = ref([])

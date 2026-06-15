@@ -17,49 +17,39 @@
 
 const mongoose = require('mongoose')
 
-/* ─── 迁移 1: Lead.phone 取消 unique ────────────────────
- * 背景 (2026-06):
- *   业务上允许 1 家长带多孩, 同 phone 下可创建多个 Lead.
- *   Lead.model.js 源码已把 `{org, phone}` 改为普通 index, 但 mongoose 启动
- *   autoIndex 不会 drop 老 unique, DB 层残留的唯一约束仍会触发 E11000.
- *   用户在前端点"为这个手机号加一个孩子" (force=true) 仍会被 DB 挡掉.
+/* ─── 迁移 1: 清理旧 Lead collection (2026-06 大重构) ────────────
+ * 背景:
+ *   2026-06 招生模块从 Lead (孩子维度) 重构为 Parent + ChildLead (家长 + 孩子维度).
+ *   旧 leads / lead_activities collection 与新 model 不兼容, 需在 server 启动时主动 drop.
+ *   开发期 (无真实数据) 阶段直接清空; 阶段 2 上线前需要先备份再删.
  *
- * 修法:
- *   启动时主动 drop 老 `{org:1, phone:1}` unique, 再 syncIndexes 重建非唯一版本.
- *   幂等: 已 drop 过或不存在时 no-op.
+ * 幂等: 库无该 collection → no-op-empty; 库有 → drop 一次.
  */
-async function dropLeadPhoneUniqueIndex() {
-  const coll = mongoose.connection.db.collection('leads')
-  let indexes
-  try {
-    indexes = await coll.indexes()
-  } catch (e) {
-    // collection 还不存在 (空库 / 全新环境) — 跳过
-    if (e && (e.codeName === 'NamespaceNotFound' || e.code === 26)) return 'no-op-empty'
-    throw e
+async function dropLegacyLeadCollections() {
+  const names = ['leads', 'lead_activities']
+  const dropped = []
+  for (const name of names) {
+    try {
+      const collections = await mongoose.connection.db
+        .listCollections({ name })
+        .toArray()
+      if (collections.length === 0) continue
+      // eslint-disable-next-line no-console
+      console.log(`[startup-migrations] dropping legacy collection: ${name}`)
+      await mongoose.connection.db.collection(name).drop()
+      dropped.push(name)
+    } catch (e) {
+      // 兼容: NamespaceNotFound / collection 已被人手动 drop 掉
+      if (e && (e.codeName === 'NamespaceNotFound' || e.code === 26)) continue
+      throw e
+    }
   }
-  const target = indexes.find((i) =>
-    i.unique === true
-    && i.key
-    && i.key.org === 1
-    && i.key.phone === 1
-  )
-  if (!target) return 'no-op'
-
-  // eslint-disable-next-line no-console
-  console.log(`[startup-migrations] dropping leads unique index: ${target.name}`)
-  await coll.dropIndex(target.name)
-
-  // 触发 mongoose 重建 Lead schema 上声明的非唯一 index
-  // 延迟 require, 避免循环依赖 (connect 阶段 model 还未 require)
-  const Lead = require('@models/Lead.model')
-  await Lead.syncIndexes()
-  return `dropped:${target.name}`
+  return dropped.length ? `dropped:${dropped.join(',')}` : 'no-op'
 }
 
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
-  { name: 'drop-lead-phone-unique', run: dropLeadPhoneUniqueIndex }
+  { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections }
 ]
 
 /**

@@ -39,9 +39,26 @@ export const SCHOOL_TYPE_LABEL = {
   high: '高中'
 }
 
-// ─── 招生试听 (2026-06) ───
-// Lead 状态机标签
-export const LEAD_STATUS_LABEL = {
+// ─── 招生试听 (2026-06 重构) ───
+// 家长 lifecycle 状态 (Parent.lifecycle) - 替代"还有资源"模糊语义
+export const PARENT_LIFECYCLE_LABEL = {
+  new: '新登记',
+  partial: '部分报名',
+  full: '已成单',
+  lost: '已流失',
+  dormant: '沉睡客户'
+}
+export const PARENT_LIFECYCLE_TAG_TYPE = {
+  new: 'info',
+  partial: 'warning',
+  full: 'success',
+  lost: 'danger',
+  dormant: ''
+}
+
+// ChildLead 状态机标签 (原 LEAD_STATUS_LABEL 改名为 CHILD_LEAD_STATUS_LABEL, 字段相同)
+// 保留旧 LEAD_STATUS_* 别名以兼容 3-6 月内可能未改完的代码
+export const CHILD_LEAD_STATUS_LABEL = {
   pending: '已登记',
   contacted: '已联系',
   scheduled: '已约试听',
@@ -49,8 +66,7 @@ export const LEAD_STATUS_LABEL = {
   converted: '已报名',
   lost: '已流失'
 }
-// Lead 状态 tag 类型 (UI 颜色)
-export const LEAD_STATUS_TAG_TYPE = {
+export const CHILD_LEAD_STATUS_TAG_TYPE = {
   pending: 'info',
   contacted: '',
   scheduled: 'warning',
@@ -58,6 +74,9 @@ export const LEAD_STATUS_TAG_TYPE = {
   converted: 'success',
   lost: 'danger'
 }
+// 旧名 (deprecated)
+export const LEAD_STATUS_LABEL = CHILD_LEAD_STATUS_LABEL
+export const LEAD_STATUS_TAG_TYPE = CHILD_LEAD_STATUS_TAG_TYPE
 
 // TrialBooking 状态机标签
 export const TRIAL_BOOKING_STATUS_LABEL = {

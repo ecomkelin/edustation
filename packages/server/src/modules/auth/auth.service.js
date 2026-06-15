@@ -123,7 +123,9 @@ async function me(userId) {
     })
     .lean()
 
-  const orgs = rels.map((r) => ({
+  // 平台超管无 UserOrgRel, 但业务上要看所有机构; 给他"虚拟"机构列表 = 全系统机构
+  // 列表项不带 positions (平台超管天然拥有所有权限, 走 requirePermission 的 isPlatformAdmin 短路)
+  let orgs = rels.map((r) => ({
     id: String(r.org._id),
     name: r.org.name,
     type: r.org.type,
@@ -136,6 +138,19 @@ async function me(userId) {
       isSystem: p.isSystem
     }))
   }))
+
+  if (user.isPlatformAdmin && orgs.length === 0) {
+    const Org = require('@models/Org.model')
+    const allOrgs = await Org.find({ isActive: true }).select('name type isActive').sort({ createdAt: 1 }).lean()
+    orgs = allOrgs.map((o, i) => ({
+      id: String(o._id),
+      name: o.name,
+      type: o.type,
+      isActive: o.isActive,
+      isMain: i === 0, // 第一个默认选中
+      positions: []
+    }))
+  }
 
   return {
     id: String(user._id),

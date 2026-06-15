@@ -402,6 +402,29 @@ async function run() {
     { model: 'Student', name: '试学', level: 0, sort: 1 }
   ])
 
+  // 招生家长标签 (2026-06): 套 Category 字典, model='LeadTag', 被 Parent.tags 引用
+  await Category.insertMany([
+    { model: 'LeadTag', name: '高意向',     level: 0, sort: 1, isActive: true },
+    { model: 'LeadTag', name: '非目标客户', level: 0, sort: 2, isActive: true },
+    { model: 'LeadTag', name: '倾向他课',   level: 0, sort: 3, isActive: true },
+    { model: 'LeadTag', name: '价格敏感',   level: 0, sort: 4, isActive: true },
+    { model: 'LeadTag', name: '距离太远',   level: 0, sort: 5, isActive: true },
+    { model: 'LeadTag', name: '年龄不合适', level: 0, sort: 6, isActive: true },
+    { model: 'LeadTag', name: '家庭条件',   level: 0, sort: 7, isActive: true },
+    { model: 'LeadTag', name: '已流失',     level: 0, sort: 8, isActive: true }
+  ])
+
+  // 招生渠道 (2026-06-15): 套 Category 字典, model='Channel', 被 Parent.source / ChildLead.source 引用
+  // 默认 = 地推 (sort 1)
+  await Category.insertMany([
+    { model: 'Channel', name: '地推',     level: 0, sort: 1, isActive: true },
+    { model: 'Channel', name: '客户介绍', level: 0, sort: 2, isActive: true },
+    { model: 'Channel', name: '朋友介绍', level: 0, sort: 3, isActive: true },
+    { model: 'Channel', name: '电话邀约', level: 0, sort: 4, isActive: true },
+    { model: 'Channel', name: '进校园',   level: 0, sort: 5, isActive: true },
+    { model: 'Channel', name: '其他合作', level: 0, sort: 6, isActive: true }
+  ])
+
   // 4. 机构（principal 占位为 null，下面用张宇佳补上）
   const principalUser = await User.findOne({ mobile: '13800000001' }).select('_id').lean()
   const orgDocs = await Org.insertMany(

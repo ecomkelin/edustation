@@ -5,12 +5,15 @@ const { Schema, model } = require('mongoose')
 /**
  * 试听预约 (TrialBooking) / 试听记录
  *
- * 业务上代表"一个 lead 的一次试听参与记录"。Lead 1:N TrialBooking:
- *   - 同 lead 第一次约: attemptNo=1
- *   - no_show 后再约: 创建新一笔 TrialBooking, attemptNo=max+1
+ * 业务上代表"一个孩子的一次试听参与记录"。ChildLead 1:N TrialBooking:
+ *   - 同 ChildLead 第一次约: attemptNo=1
+ *   - no_show / cancelled 后再约: 创建新一笔 TrialBooking, attemptNo=max+1
  *   - 试听完成后 (status=completed) 填 result.isEnrolled 决定是否触发转化
  *
- * 关键设计 (与 plans/staged-roaming-honey.md §2.2 一致):
+ * 关键设计 (与 plans/staged-roaming-honey.md §1.4 一致):
+ *   - preStudent 引用 ChildLead (2026-06 改造, 替代 Lead)
+ *   - parent 冗余, 加速"该家长的所有试听"查询
+ *   - consultant 谈单老师 (与 teacher 上课老师分离)
  *   - lessonSchedule **可选**: 创建时 (status='awaiting_schedule') 必为空;
  *     排课后才填 (status ∈ {scheduled, arrived, no_show, completed})。
  *   - 1:N 共享模型: 1 个 LessonSchedule (isTrialLesson=true) 可对应 N 个 TrialBooking
@@ -25,18 +28,25 @@ const { Schema, model } = require('mongoose')
  * 转化流程 (claim token 模式, 不依赖 mongoose 事务):
  *   1. TrialBooking.result.isEnrolled: null → true  (原子翻转作为重试安全 token)
  *   2. User/Student/UserOrgRel upsert 链 (每个独立幂等)
- *   3. Lead 写回 convertedStudent/User/At
- *   5 分钟内可撤销, 见 lead.service.unconvert
+ *      - User upsert 用 parent.phone, 同 parent 下首孩转化时建账号, 次孩复用
+ *   3. Parent.user 回填 (仅首次)
+ *   4. ChildLead 写回 convertedStudent/At
+ *   5. updateMany 同步翻同 parent 下其他 ChildLead (业务上 1 家长带多孩)
+ *   6. Parent.lifecycle 重算
+ *   5 分钟内可撤销, 见 childLead.service.unconvert
  */
 const TrialBookingSchema = new Schema(
   {
     // 所属机构
     org: { type: Schema.Types.ObjectId, ref: 'Org', required: true, index: true },
 
-    // 关联潜客
-    preStudent: { type: Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
+    // 关联 ChildLead (2026-06 改造)
+    preStudent: { type: Schema.Types.ObjectId, ref: 'ChildLead', required: true, index: true },
 
-    // 第几次预约 (per lead; 与 preStudent 联合唯一)
+    // 冗余, 加速"该家长的所有试听"查询 (业务上不需要再 join Parent)
+    parent: { type: Schema.Types.ObjectId, ref: 'Parent', default: null, index: true },
+
+    // 第几次预约 (per childLead; 与 preStudent 联合唯一)
     attemptNo: { type: Number, required: true, min: 1, default: 1 },
 
     // ─── 排课关联 ───
@@ -60,6 +70,10 @@ const TrialBookingSchema = new Schema(
     teacher: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // 试听科目 (冗余, 方便按科目筛; 来自 preStudent.lead.trialSubject)
     subject: { type: Schema.Types.ObjectId, ref: 'Subject', default: null },
+    // 谈单老师 (到店后填, 默认 = Parent.consultant)
+    //   业务上 teacher (上课) 与 consultant (谈单) 常是不同人
+    //   result.negotiateTeacher 保留作为 alias (向后兼容老数据)
+    consultant: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
 
     // ─── 状态机 ───
     status: {
@@ -77,7 +91,7 @@ const TrialBookingSchema = new Schema(
     // isEnrolled: null=未填; true=已报名 (触发转化流程); false=不报名
     result: {
       isEnrolled: { type: Boolean, default: null },
-      // 谈单老师 (谁促成了这单; 通常 = inviteTeacher, 也可改)
+      // 谈单老师 (alias = consultant, 兼容老数据; 写入时同时填两个字段)
       negotiateTeacher: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       // 吸引报名的点
       attractionPoint: { type: String, default: '' },
@@ -90,7 +104,7 @@ const TrialBookingSchema = new Schema(
 
     // 备注
     remark: { type: String, default: '' },
-    // 创建人 (录入 lead 时自动建的 first booking 用的 createdBy = lead.createdBy)
+    // 创建人 (录入 childLead 时自动建的 first booking 用的 createdBy = childLead.createdBy)
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // 扩展字段
     meta: { type: Schema.Types.Mixed, default: {} }
@@ -98,7 +112,7 @@ const TrialBookingSchema = new Schema(
   { timestamps: true, collection: 'trial_bookings' }
 )
 
-// 同一 lead 下 attemptNo 唯一
+// 同一 childLead 下 attemptNo 唯一
 TrialBookingSchema.index({ preStudent: 1, attemptNo: 1 }, { unique: true })
 // 看板主查询: 机构 + 状态 + 时间
 TrialBookingSchema.index({ org: 1, status: 1, scheduledAt: 1 })
@@ -108,5 +122,7 @@ TrialBookingSchema.index({ lessonSchedule: 1 }, { sparse: true })
 TrialBookingSchema.index({ teacher: 1, scheduledAt: 1 })
 // 看板按科目筛
 TrialBookingSchema.index({ org: 1, status: 1, subject: 1 })
+// 家长维度
+TrialBookingSchema.index({ parent: 1, status: 1, createdAt: -1 })
 
 module.exports = model('TrialBooking', TrialBookingSchema)
