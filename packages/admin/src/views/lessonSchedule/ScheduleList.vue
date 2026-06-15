@@ -507,7 +507,9 @@ async function load() {
   try {
     const params = {
       page: filters.page,
-      pageSize: filters.pageSize
+      pageSize: filters.pageSize,
+      // 2026-06 试听不再走排课系统, 排课列表默认不显示试听
+      isTrialLesson: false
     }
     if (filters.courseInstance) params.courseInstance = filters.courseInstance
     if (filters.teacher) params.teacher = filters.teacher

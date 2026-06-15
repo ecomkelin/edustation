@@ -102,6 +102,31 @@ async function list({ orgId, currentUser, scope, status, keyword, phone, from, t
     }
   }
 
+  // 派生: 同 phone 下"是第几个 / 共几个" (1 家长带多孩场景, 2026-06)
+  // 不存物理字段 — phone 一旦补录/删除, 序号会变, 实时算最准
+  if (items.length > 0) {
+    const phones = [...new Set(items.map((l) => l.phone).filter(Boolean))]
+    if (phones.length > 0) {
+      const samePhone = await Lead.aggregate([
+        { $match: { org: new (require('mongoose').Types.ObjectId)(String(orgId)), phone: { $in: phones } } },
+        { $sort: { createdAt: 1 } },
+        { $group: { _id: '$phone', leadIds: { $push: '$_id' } } }
+      ])
+      // phone -> [leadId...] (按 createdAt 升序, 1 家长带多孩下"第 1/2/3 个娃"自然排出来)
+      const phoneMap = new Map(samePhone.map((r) => [r._id, r.leadIds.map(String)]))
+      for (const l of items) {
+        const arr = phoneMap.get(l.phone)
+        if (arr && arr.length > 1) {
+          const idx = arr.indexOf(String(l._id))
+          if (idx >= 0) {
+            l.samePhoneCount = arr.length
+            l.samePhoneRank = idx + 1
+          }
+        }
+      }
+    }
+  }
+
   return { items, total, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
 }
 
@@ -132,6 +157,25 @@ async function detail(id, orgId) {
   ])
   lead.activities = activities
   lead.bookings = bookings
+
+  // 派生: 同 phone 下的位次 (1 家长带多孩场景, 2026-06)
+  if (lead.phone) {
+    const samePhoneLeads = await Lead.find({ org: orgId, phone: lead.phone })
+      .select('_id createdAt')
+      .sort({ createdAt: 1 })
+      .lean()
+    if (samePhoneLeads.length > 1) {
+      const arr = samePhoneLeads.map((l) => String(l._id))
+      const idx = arr.indexOf(String(lead._id))
+      if (idx >= 0) {
+        lead.samePhoneCount = samePhoneLeads.length
+        lead.samePhoneRank = idx + 1
+        // 兄弟 lead id 列表 (详情页"这家还有 N 个孩子"展示用)
+        lead.samePhoneSiblingIds = arr.filter((id) => id !== String(lead._id))
+      }
+    }
+  }
+
   return lead
 }
 
@@ -140,36 +184,75 @@ async function detail(id, orgId) {
  *
  * 流程:
  *   1. 软唯一: 同 org 下 phone 命中 → 返回 { duplicate: true, lead } (不报错)
- *   2. 未命中 → Lead.create
- *   3. 自动建首笔 TrialBooking (status=awaiting_schedule, attemptNo=1)
+ *      - 但 body.force=true 时跳过软唯一 (1 家长带多孩, 同 phone 合法, 用户显式确认)
+ *   2. 未命中 (或被 force 跳过) → Lead.create
+ *   3. 解析 trialSubjects 数组 (2026-06: 1 孩可试多门课):
+ *      - 优先读 body.trialSubjects ([ObjectId])
+ *      - 兼容老 payload body.trialSubject (单值) → 包成 [trialSubject]
+ *      - 校验所有 id 合法且属于本 org
+ *      - 数组去重, 长度 = 建几笔 TrialBooking
+ *   4. 自动建 N 笔 TrialBooking (status=awaiting_schedule, attemptNo=1..N)
  */
 async function create({ orgId, currentUser, body }) {
   if (!currentUser) throw ApiError.unauthorized()
-  // 软唯一: phone 命中检查
-  const existing = await Lead.findOne({ org: orgId, phone: body.phone }).lean()
-  if (existing) {
-    return { duplicate: true, lead: existing }
+  // 软唯一: phone 命中检查; force=true 时跳过 (用户显式确认"再加一个孩子")
+  if (!body.force) {
+    const existing = await Lead.findOne({ org: orgId, phone: body.phone }).lean()
+    if (existing) {
+      return { duplicate: true, lead: existing }
+    }
   }
   // inviteTeacher 默认 = createdBy
   const inviteTeacher = body.inviteTeacher || currentUser.id
+
+  // 解析试听科目数组 (2026-06 多选)
+  // 优先 trialSubjects (数组); 兼容老 trialSubject (单值)
+  const rawSubjects = Array.isArray(body.trialSubjects) && body.trialSubjects.length > 0
+    ? body.trialSubjects
+    : (body.trialSubject ? [body.trialSubject] : [])
+  // 去重 + 过滤空值
+  const subjectIds = [...new Set(rawSubjects.filter(Boolean).map((s) => String(s)))]
+  // 校验 id 合法 + 属于本 org
+  if (subjectIds.length > 0) {
+    const Subject = require('@models/Subject.model')
+    const validCount = await Subject.countDocuments({ _id: { $in: subjectIds }, org: orgId })
+    if (validCount !== subjectIds.length) {
+      throw ApiError.badRequest('试听科目包含不存在或不属于本机构的项')
+    }
+  }
+
+  // 写入 lead: 主意向 = 第一个, 全集 = subjectIds
+  const leadPayload = { ...body }
+  delete leadPayload.trialSubjects // 不直接进 Lead.create, 我们显式控制
+  delete leadPayload.trialSubject
+  delete leadPayload.force         // 不落库
   const lead = await Lead.create({
-    ...body,
+    ...leadPayload,
     org: orgId,
     inviteTeacher,
     createdBy: currentUser.id,
-    // lastContacted 留空; 首次"记录电话"时才写
+    trialSubject: subjectIds[0] || null,    // 主意向快照
+    trialSubjects: subjectIds,              // 意向全集
     status: 'pending'
   })
-  // 自动建首笔 TrialBooking (尚未排课, 等批量排课流程)
-  await TrialBooking.create({
-    org: orgId,
-    preStudent: lead._id,
-    attemptNo: 1,
-    joinMode: 'solo',
-    status: 'awaiting_schedule',
-    subject: lead.trialSubject || null,
-    createdBy: currentUser.id
-  })
+
+  // 按 subjectIds 长度自动建 N 笔 TrialBooking (attemptNo=1..N)
+  // 若一个都没选, 也建 1 笔 (subject=null, 等后续排课时再补)
+  const bookingCount = Math.max(subjectIds.length, 1)
+  const bookings = []
+  for (let i = 0; i < bookingCount; i++) {
+    bookings.push({
+      org: orgId,
+      preStudent: lead._id,
+      attemptNo: i + 1,
+      joinMode: 'solo',
+      status: 'awaiting_schedule',
+      subject: subjectIds[i] || null,
+      createdBy: currentUser.id
+    })
+  }
+  await TrialBooking.insertMany(bookings)
+
   return { duplicate: false, lead: lead.toObject() }
 }
 

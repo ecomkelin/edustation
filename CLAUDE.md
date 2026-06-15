@@ -130,27 +130,53 @@ eduStation/
 - **Pet**：student, petType, level, experience
 
 ### 7.7 招生试听 (2026-06)
-地推/教务录入潜客、批量排试听课、到店打卡、试听结果、转化学员的全链路。完整业务规划见 [plans/staged-roaming-honey.md](../.claude/plans/staged-roaming-honey.md)。
+地推/教务录入潜客、批量排试听日程、到店打卡、试听结果、转化学员的全链路。完整业务规划见 [plans/staged-roaming-honey.md](../.claude/plans/staged-roaming-honey.md)。
 
-**核心实体 (4 个, 1+1+1+1):**
-- **Lead** (潜客/线索, collection `leads`): 地推录入的"还没成为学生"的人; 状态机 `pending → contacted → scheduled → tried → converted | lost`; 触点日志冗余 `lastContactedAt/By`; phone 同 org 内软唯一
-- **TrialBooking** (试听预约, collection `trial_bookings`): Lead 1:N 关系; `attemptNo` 1/2/3 标记第几次约; 状态机 `awaiting_schedule → scheduled → arrived → completed` (中间可转 `no_show`/`cancelled`); **关键: `lessonSchedule` 字段在 awaiting_schedule 状态为空, 排课后才填**
+> **核心定位 (2026-06 重大调整)**: 试听 = **数据跟踪**, **不**走排课系统 (`LessonSchedule`).
+> - 排课系统专注于正式教学交付 (开班/排课/考勤/消课)
+> - 试听自管 time/teacher/room, 业务上不再创建 LessonSchedule, 不参与日历/冲突检测/教室利用率
+> - 历史 isTrialLesson=true 的 LessonSchedule 保留 (兼容老数据展示), 新流程不再生成
+> - 原因: 试听是招生行为 (潜客 → 转学员), 与"教学交付"是两套关注; 试听塞进排课系统污染日历, 业务上也没意义
+
+**核心实体 (3 个 + 1 兼容字段, 2026-06 简化):**
+- **Lead** (潜客/线索, collection `leads`): 地推录入的"还没成为学生"的人; 状态机 `pending → contacted → scheduled → tried → converted | lost`; 触点日志冗余 `lastContactedAt/By`; **2026-06 起 phone 取消 unique 索引**, 软唯一仅由 service 层检查, 用户显式 `force=true` 跳过 (1 家长带多孩)
+  - **`trialSubject: ObjectId<Subject>`** (主意向快照, 兼容老数据)
+  - **`trialSubjects: [ObjectId<Subject>]`** (意向全集, 2026-06 新增; 1 孩可试多门课; 录入时按数组长度自动建 N 笔 TrialBooking, `attemptNo=1..N`; 兼容老 payload `trialSubject` 单值)
+- **TrialBooking** (试听预约, collection `trial_bookings`): Lead 1:N 关系; `attemptNo` 1/2/3 标记第几次约; 状态机 `awaiting_schedule → scheduled → arrived → completed` (中间可转 `no_show`/`cancelled`); 2026-06 起, **自管** scheduledAt/teacher/room/scheduledDuration 字段, 不再挂 LessonSchedule
+  - **`subject: ObjectId<Subject>`** 是 booking 维度 (即"这节试听日程的科目"), 1 个 Lead 多个 booking 可分别挂不同 subject
+  - **`room: ObjectId<Room>`** 2026-06 新增, solo 模式必填 (试听可空), attached 模式从 schedule 拷贝
+  - **`lessonSchedule`** 字段保留, **仅 attached 模式** (跟班试听) 填; solo 模式不再写
 - **LeadActivity** (触点日志, collection `lead_activities`): Lead 1:N; 触点类型 `call/wechat/visit/sms/note`; 创建时同步刷 `Lead.lastContactedAt/By`, 触发 `pending→contacted` 状态翻转
-- **LessonSchedule.isTrialLesson** (试听课标记, Boolean): 单独排课的试听预约对应的排课实例; UI 显示"试听"角标; **不参与 LessonAttendance / StudentProduct 消课业务** (业务逻辑都在 TrialBooking 上追踪)
+- **LessonSchedule.isTrialLesson** (2026-06 deprecated): 保留字段 (兼容历史数据), 排课 UI 默认过滤 `isTrialLesson=false`; 新流程不再创建 isTrialLesson=true 的排课
 
-**courseInstance 复用 + isTrial 标志位:**
-- **不**改 `LessonSchedule.courseInstance` 的 `required: true` 约束 (改它会破坏唯一索引 `{courseInstance, lessonNo}` 和 `prepare/finish/assertCourseInstanceActive` 状态机)
-- 每机构 1 个 [试听专用] `CourseInstance` (`isTrial: true`, `status: 'closed'`, `name: '【试听专用】'`); 试听排课挂这个 instance
-- 排课时, `service.create` 校验 `isTrialLesson=true ⇒ courseInstance.isTrial=true` (防误用)
-- `courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班, 排课接口可显式 `?includeTrial=true`
-- 试听专用开班由 `courseInstance.service.ensureTrialCourseInstance(orgId)` 幂等创建; `org.service.create` 创建新机构时自动调; 历史机构通过 `migrate-add-recruit-perms.js` 补
+**批量排试听日程 (取代原"批量排课"概念, 2026-06):**
+- 端点仍是 `POST /api/v1/trial-bookings/batch-schedule`, 但语义从"创建 1 个 LessonSchedule + 挂 N 个 booking"改为"批量更新 N 个 TrialBooking 自身字段"
+- **入参**: `bookingIds: [...], plannedStartTime, plannedEndTime, teacher, room?` (room 可空)
+- **服务端流程** (简化版):
+  1. 校验入参 + 拉所有 booking, 全部 `status='awaiting_schedule'`
+  2. 校验 teacher/room 存在 (room 可空, 不强制)
+  3. **不**拉 [试听专用] CI, **不**创建 LessonSchedule, **不**走 `detectConflict`
+  4. 算 `durationMinutes` (end - start)
+  5. `updateMany` 写入 `scheduledAt / scheduledDuration / teacher / room / joinMode='solo' / status='scheduled'`
+  6. 翻对应 `Lead.status` 为 `'scheduled'`
+  7. 返回 `{ bookingCount, scheduledAt, teacher, room, durationMinutes }`
+- **混合多课 (2026-06)**: N 个 booking 允许 subject 不同 (例: 1 老师带 5 个 Python + 3 个围棋 孩子试同一节体验课); 后端不校验 subject 一致, 排课不覆盖 booking 自身的 subject
+- **跟班试听 (attached 模式, 单笔)**: 仍走 `POST /api/v1/trial-bookings` 创 booking, 关联已有正常 LessonSchedule (校验 `isTrialLesson=false`); 字段从 schedule 拷贝 (time / teacher / room / subject), `lessonSchedule` 字段写
 
-**批量排课模型 (1:N 共享):**
-- 1 个 `LessonSchedule` (isTrialLesson=true) 可对应 N 个 `TrialBooking`: 5 个孩子一起来上同一节试听课
-- `POST /api/v1/trial-bookings/batch-schedule` 端点: 选 N 个 `awaiting_schedule` booking, 选时间/老师/教室, **一次操作创建 1 个 LessonSchedule + 更新 N 个 booking (status awaiting_schedule → scheduled)**
-- N 个 booking 必须 subject 一致 (混合科目拒绝, 按科目分别排)
-- 排课冲突走 `lessonSchedule.service.detectConflict` 完整检测 (teacher/room/time 全检), 试听不绕过
-- 业务上"单独排课"和"跟班试听"都走这条路径: solo 模式 = 创建新 schedule (挂 [试听专用] CI); attached 模式 = 选已有正常 schedule
+**[试听专用] CourseInstance (2026-06 deprecated):**
+- `ensureTrialCourseInstance(orgId)` 保留 (历史数据兼容), 但新流程不调; 试听专用 CI 上的 isTrialLesson=true 的 LessonSchedule 仅供历史展示
+- `courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班, 排课接口可显式 `?includeTrial=true` (历史前端兼容)
+- `LessonSchedule.isTrialLesson=true` 创建校验 (`isTrialLesson=true ⇒ courseInstance.isTrial=true`) 保留 (老数据用)
+
+**老师"试听日程"视图 (未来):**
+- 老师"我的日程"原本只看 LessonSchedule; 2026-06 起, 还要 union 查 `TrialBooking.teacher=me, status ∈ {scheduled, arrived}`
+- 当前排课日历只显示 LessonSchedule, 老师若要查"今天我有几节试听", 需进 `/recruit/trial-bookings` 看板按 `试听老师=me` 过滤 (TODO: 阶段 2 加统一日程聚合)
+
+**1 孩多课 + 1 家长多孩 业务模型 (2026-06):**
+- **1 孩可试多门课**: Lead 录入时"试听科目"前端多选 (`el-select multiple`), 后端按 `trialSubjects` 数组长度自动建 N 笔 `TrialBooking`, `attemptNo=1..N`, 各 booking 挂对应 subject; Lead 文档冗余 `trialSubject = trialSubjects[0]` (主意向快照)
+- **1 家长带多孩**: 同 phone 下允许多个 Lead (2026-06 改造: Lead 取消 phone unique 索引); UI 提示"为这个手机号加一个孩子" 按钮; 后端 `create` 接受 `body.force=true` 跳过软唯一检查, 用户在 confirm 已显式确认; 业务上多孩各自独立 Lead 记录, 各自可转学员
+- **二次试听** (同孩 / 同家长 隔期再试): `attemptNo` 递增, 旧 booking 保留作审计; 新 booking 由 no_show 后"再约一次"创建, 字段语义不变
+- 转化仍**一对一**: 1 个 Lead → 1 个家长 + 1 个学生; 1 家长多孩场景下, 其它 Lead 转化会复用/共建家长账号 (阶段 2 再统一 `Student.guardianUser` 共享)
 
 **转化两步式 (claim token 模式):**
 - 试听完成后 (`status=completed`, `result.isEnrolled=true`) 触发转化
@@ -173,14 +199,14 @@ eduStation/
 
 **权限码 (新增 `recruit` 组):**
 - `recruit.read` - 列表/详情/触点时间线
-- `recruit.write` - 新建/编辑/批量排课/打卡/完成
+- `recruit.write` - 新建/编辑/批量排日程/打卡/完成
 - `recruit.convert` - 转化预览/转化执行/撤销转化
 - 加到 `管理员` 和 `教务` 系统职位 (默认); 不加到 `老师`/`家长`/`财务`
 - 历史机构通过 `migrate-add-recruit-perms.js` 一次性补 ($addToSet + $nin 前置过滤, 幂等)
 - 销售/教务分级: 服务端在 `lead.service.list` 时, 若用户无"看全部"权限强制 `createdBy=me` (`scope=mine`); 教务可看全部
 
 **删除保护 (与现有 8.1 互锁):**
-- `lessonSchedule.lessonScheduleUsageChecks` **新增第三项**: `TrialBooking.lessonSchedule=scheduleId && status ∈ {awaiting_schedule, scheduled, arrived, completed}` → 阻挡物理删除
+- `lessonSchedule.lessonScheduleUsageChecks` **第三项**保留: `TrialBooking.lessonSchedule=scheduleId` (仅 attached 模式命中) → 阻挡物理删除
 - `Lead.removableCheck`: `TrialBooking` + `LeadActivity` 引用都阻挡
 - 物理删除走 `requirePlatformPassword` (高风险)
 

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="lead ? `潜客详情 - ${lead.name}` : '潜客详情'"
+    :title="dialogTitle"
     width="800px"
     :close-on-click-modal="false"
     @update:model-value="(v) => emit('update:visible', v)"
@@ -12,6 +12,15 @@
       <div class="header">
         <el-tag :type="statusTagType(lead.status)" size="large">
           {{ statusLabel(lead.status) }}
+        </el-tag>
+        <el-tag
+          v-if="lead.samePhoneCount > 1"
+          type="info"
+          effect="plain"
+          class="ml"
+          :title="`该手机号下共 ${lead.samePhoneCount} 个孩子, 这是第 ${lead.samePhoneRank} 个`"
+        >
+          {{ lead.name }} 是同手机号下第 {{ lead.samePhoneRank }} / {{ lead.samePhoneCount }} 个孩子
         </el-tag>
         <span class="meta" v-if="lead.convertedAt">
           转化于 {{ formatTime(lead.convertedAt) }}
@@ -186,6 +195,15 @@ const ACTIVITY_TYPES = [
   { value: 'sms', label: '短信' },
   { value: 'note', label: '备注' }
 ]
+
+// dialog title: 同手机号下第 N / M 个孩子时, title 上拼角标 (1 家长带多孩, 2026-06)
+const dialogTitle = computed(() => {
+  if (!lead.value) return '潜客详情'
+  if (lead.value.samePhoneCount > 1) {
+    return `潜客详情 - ${lead.value.name} (${lead.value.samePhoneRank}/${lead.value.samePhoneCount})`
+  }
+  return `潜客详情 - ${lead.value.name}`
+})
 
 // 撤销倒计时 (5 分钟)
 const unconvertCountdown = ref(0)

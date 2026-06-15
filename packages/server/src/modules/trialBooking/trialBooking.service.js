@@ -102,7 +102,11 @@ async function create({ orgId, currentUser, body }) {
     joinMode: 'attached',
     lessonSchedule: schedule._id,
     scheduledAt: schedule.plannedStartTime,
+    scheduledDuration: schedule.plannedEndTime && schedule.plannedStartTime
+      ? Math.round((new Date(schedule.plannedEndTime) - new Date(schedule.plannedStartTime)) / 60000)
+      : 60,
     teacher: schedule.teacher,
+    room: schedule.room || null,  // 2026-06 试听也存 room (与 batchSchedule 一致)
     subject: schedule.subject || lead.trialSubject || null,
     status: 'scheduled',
     remark: body.remark || '',
@@ -142,9 +146,13 @@ async function update(id, orgId, body) {
  *   4. detectConflict (teacher/room/time) — 试听排课也走完整冲突检测
  *   5. 算 lessonNo (该 [试听专用] CI 下 lessonNo max + 1)
  *   6. 创建 1 个 LessonSchedule (courseInstance=trialInstance, isTrialLesson=true, ...)
- *   7. 批量 updateMany TrialBooking (status awaiting_schedule → scheduled, 填 lessonSchedule 等)
+ *   7. 批量 updateMany TrialBooking (status awaiting_schedule → scheduled, 填 scheduledAt/teacher/room)
  *   8. 同步翻对应 Lead.status = 'scheduled'
- *   9. 返回 { schedule, bookings }
+ *   9. 返回 { bookingCount, scheduledAt, teacher, room }
+ *
+ * 2026-06 改造: 试听不再创建 LessonSchedule 中间层, 直接存 TrialBooking 自身的时间/老师/教室.
+ *   业务上试听 = 招生数据跟踪, 不占用排课系统 (日历/冲突检测/教室利用率 都不算它).
+ *   历史 isTrialLesson=true 的 LessonSchedule 保留 (兼容老数据展示), 新流程不再生成.
  */
 async function batchSchedule({ orgId, currentUser, body }) {
   if (!currentUser) throw ApiError.unauthorized()
@@ -166,76 +174,32 @@ async function batchSchedule({ orgId, currentUser, body }) {
       throw ApiError.badRequest(`预约 ${b._id} 状态非 awaiting_schedule (实际: ${b.status}), 无法批量排课`)
     }
   }
-  // 3) 校验 subject 一致
-  const subjects = new Set(bookings.map((b) => String(b.subject || '')))
-  if (subjects.size > 1) {
-    throw ApiError.badRequest('所选 booking 试听科目不一致, 请按科目分别排课')
-  }
-  const subjectId = bookings[0].subject || null
+  // 3) 试听混合多课 (2026-06): 不再校验 subject 一致; 同一试听日程可挂不同 subject 的 booking
+  //   例: 1 老师带 5 个 Python + 3 个围棋 孩子试同一节体验课
+  //   各 booking 自己的 subject 保留 (来自 lead 录入时按 trialSubjects 拆), 排课不覆盖
 
-  // 4) 拉 [试听专用] CI
-  const trialInstance = await CourseInstance.findOne({ org: orgId, isTrial: true })
-  if (!trialInstance) {
-    // 兜底: 自动建
-    const courseInstanceService = require('../courseInstance/courseInstance.service')
-    await courseInstanceService.ensureTrialCourseInstance(orgId)
-    const ci = await CourseInstance.findOne({ org: orgId, isTrial: true })
-    if (!ci) throw ApiError.unprocessable('找不到 [试听专用] 开班, 请联系超管')
-  }
-  const ciDoc = trialInstance || await CourseInstance.findOne({ org: orgId, isTrial: true })
-
-  // 5) teacher/room 校验
+  // 4) teacher/room 校验 (不检测冲突; 试听 = 招生流程, 临时换老师/换教室很常见)
   if (!await User.exists({ _id: body.teacher })) throw ApiError.badRequest('teacher 不存在')
-  if (!await Room.exists({ _id: body.room, org: orgId })) throw ApiError.badRequest('room 不属于本机构')
-
-  // 6) detectConflict
-  const lessonScheduleService = require('../lessonSchedule/lessonSchedule.service')
-  const conflict = await lessonScheduleService.detectConflict({
-    orgId,
-    teacher: body.teacher,
-    room: body.room,
-    start, end
-  })
-  if (conflict.teacher.length || conflict.room.length) {
-    throw ApiError.unprocessable(
-      conflict.teacher.length ? '该老师在此时间段已有排课' : '该教室在此时间段已被占用',
-      { conflicts: { teacher: conflict.teacher, room: conflict.room } }
-    )
+  if (body.room && !await Room.exists({ _id: body.room, org: orgId })) {
+    throw ApiError.badRequest('room 不属于本机构')
   }
 
-  // 7) 算 lessonNo (max + 1, [试听专用] CI 维度)
-  const last = await LessonSchedule.findOne({ courseInstance: ciDoc._id })
-    .sort({ lessonNo: -1 })
-    .select('lessonNo')
-    .lean()
-  const lessonNo = (last?.lessonNo || 0) + 1
+  // 5) 算 duration (分钟)
+  const durationMinutes = Math.max(1, Math.round((end - start) / 60000))
 
-  // 8) 创建 LessonSchedule
-  const schedule = await LessonSchedule.create({
-    org: orgId,
-    courseInstance: ciDoc._id,
-    lessonNo,
-    plannedStartTime: start,
-    plannedEndTime: end,
-    teacher: body.teacher,
-    room: body.room,
-    isTrialLesson: true,
-    status: 'scheduled',
-    title: body.title || `试听 (${bookings.length}人)`,
-    notes: body.notes || ''
-  })
-
-  // 9) 批量更新 bookings
+  // 6) 批量更新 bookings — 2026-06: 直接写 TrialBooking 自身, 不创建 LessonSchedule
   const updateResult = await TrialBooking.updateMany(
     { _id: { $in: body.bookingIds }, status: 'awaiting_schedule' },
     {
       $set: {
-        lessonSchedule: schedule._id,
         scheduledAt: start,
+        scheduledDuration: durationMinutes,
         teacher: body.teacher,
-        subject: subjectId,
+        room: body.room || null,
         joinMode: 'solo',
         status: 'scheduled'
+        // lessonSchedule 留空 — 试听不再挂 LessonSchedule
+        // subject 不覆盖 — 保留各 booking 自己的 subject (来自 lead 录入)
       }
     }
   )
@@ -244,7 +208,7 @@ async function batchSchedule({ orgId, currentUser, body }) {
     throw ApiError.unprocessable(`部分 booking 状态被其他流程改, 实际更新 ${updateResult.modifiedCount}/${bookings.length}, 请重试`)
   }
 
-  // 10) 翻 Lead.status = 'scheduled'
+  // 7) 翻 Lead.status = 'scheduled'
   const leadIds = bookings.map((b) => b.preStudent)
   await Lead.updateMany(
     { _id: { $in: leadIds }, org: orgId, status: { $in: ['pending', 'contacted'] } },
@@ -252,11 +216,11 @@ async function batchSchedule({ orgId, currentUser, body }) {
   )
 
   return {
-    scheduleId: String(schedule._id),
     bookingCount: bookings.length,
     scheduledAt: start,
     teacher: body.teacher,
-    room: body.room
+    room: body.room || null,
+    durationMinutes
   }
 }
 

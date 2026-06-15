@@ -45,7 +45,21 @@
         stripe
         :empty-text="loading ? '加载中' : '暂无数据'"
       >
-        <el-table-column label="孩子姓名" prop="name" min-width="100" />
+        <el-table-column label="孩子姓名" min-width="120">
+          <template #default="{ row }">
+            <span>{{ row.name }}</span>
+            <el-tag
+              v-if="row.samePhoneCount > 1"
+              size="small"
+              type="info"
+              effect="plain"
+              class="rank-tag"
+              :title="`该手机号下共 ${row.samePhoneCount} 个孩子, 这是第 ${row.samePhoneRank} 个`"
+            >
+              {{ row.samePhoneRank }}/{{ row.samePhoneCount }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="联系电话" prop="phone" width="130" />
         <el-table-column label="性别/年龄" width="90">
           <template #default="{ row }">
@@ -269,5 +283,13 @@ function formatTime(d) {
 }
 .ml {
   margin-left: 8px;
+}
+.rank-tag {
+  margin-left: 6px;
+  vertical-align: middle;
+  font-size: 11px;
+  height: 18px;
+  line-height: 16px;
+  padding: 0 4px;
 }
 </style>

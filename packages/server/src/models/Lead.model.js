@@ -50,8 +50,11 @@ const LeadSchema = new Schema(
     className: { type: String, trim: true, default: '' },
 
     // ─── 试听意向 ───
-    // 想试听的科目
+    // 想试听的科目 (主意向快照; 历史/兼容字段; 新录入优先用 trialSubjects)
     trialSubject: { type: Schema.Types.ObjectId, ref: 'Subject', default: null },
+    // 意向全集 (多选, 2026-06): 1 孩可试多门课; 录入时按数组长度建 N 笔 TrialBooking
+    // 老 lead 没这字段 (默认 []), 读时回落到 trialSubject
+    trialSubjects: { type: [Schema.Types.ObjectId], ref: 'Subject', default: [] },
     // 试听缴费金额 (纯记账, 阶段 1 不接支付; 后续可走 Order)
     trialFee: { type: Number, default: 0, min: 0 },
     // 招生渠道 (自由文本: walkin/refer/douyin/xiaohongshu/ad/...; 阶段 2 接 Category 字典)
@@ -100,11 +103,11 @@ const LeadSchema = new Schema(
 
 // 漏斗主查询: 机构 + 状态 + 时间
 LeadSchema.index({ org: 1, status: 1, createdAt: -1 })
-// 同机构内手机号唯一 (partial filter 让 null 不参与, 防止极少数历史脏数据导致建索引失败)
-LeadSchema.index(
-  { org: 1, phone: 1 },
-  { unique: true, partialFilterExpression: { phone: { $type: 'string' } } }
-)
+// 同机构内手机号索引 (2026-06 改造: 去掉 unique; 同 phone 允许多 Lead = 1 家长带多孩)
+// 软唯一仍由 service.create 在 application 层检查, 用户显式 force=true 时跳过
+// 注: 老库残留的 {org,phone} unique index 不会自动消失, 由
+//   src/utils/startupMigrations.js#dropLeadPhoneUniqueIndex 在 server 启动时幂等 drop
+LeadSchema.index({ org: 1, phone: 1 })
 // "我的潜客" 视图 (按 createdBy 过滤)
 LeadSchema.index({ org: 1, createdBy: 1, createdAt: -1 })
 // 跟进列表 (按 lastContactedAt 倒序)

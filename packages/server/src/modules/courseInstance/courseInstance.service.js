@@ -823,8 +823,10 @@ async function ensureTrialCourseInstance(orgId) {
     status: 'closed',
     maxStudents: 999,
     schedulePlan: {
+      // 试听专用 = 攒批排课模式, 没有"每周几节"概念; lessonsPerWeek=1 是 schema min:1 约束下的占位值
+      // 业务上 computeEstimatedEndDate 对此 instance 也不调用 (status=closed + isTrial=true)
       mode: 'weekly',
-      lessonsPerWeek: 0,
+      lessonsPerWeek: 1,
       restDays: [],
       totalPlannedLessons: 1
     },

@@ -8,15 +8,25 @@
     @close="onClose"
   >
     <el-alert
-      v-if="duplicate"
+      v-if="duplicates.length > 0"
       type="warning"
       :closable="false"
       show-icon
       class="mb"
     >
       <template #title>
-        该手机号已存在潜客:
-        <el-button link type="primary" @click="onOpenExisting">{{ duplicate.name }} ({{ duplicate.phone }})</el-button>
+        该手机号已存在 {{ duplicates.length }} 个潜客:
+        <span class="dup-list">
+          <el-button
+            v-for="d in duplicates"
+            :key="d._id || d.id"
+            link
+            type="primary"
+            @click="onOpenExisting(d)"
+          >
+            {{ d.name }}
+          </el-button>
+        </span>
       </template>
     </el-alert>
 
@@ -64,8 +74,17 @@
           <el-input v-model="form.className" placeholder="如 2 班" maxlength="30" />
         </div>
       </el-form-item>
-      <el-form-item label="试听科目" prop="trialSubject">
-        <el-select v-model="form.trialSubject" filterable clearable placeholder="选填" style="width: 100%">
+      <el-form-item label="试听科目" prop="trialSubjects">
+        <el-select
+          v-model="form.trialSubjects"
+          multiple
+          filterable
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          placeholder="可多选, 不选则后续在试听看板排课时再补"
+          style="width: 100%"
+        >
           <el-option
             v-for="s in subjects"
             :key="s._id || s.id"
@@ -119,7 +138,7 @@
     <template #footer>
       <el-button @click="emit('update:visible', false)">取消</el-button>
       <el-button type="primary" :loading="submitting" @click="submit">
-        {{ isEdit ? '保存' : (duplicate ? '覆盖新建' : '创建并建试听') }}
+        {{ isEdit ? '保存' : (duplicates.length ? '为这个手机号加一个孩子' : '创建并建试听') }}
       </el-button>
     </template>
   </el-dialog>
@@ -144,7 +163,7 @@ const auth = useAuthStore()
 const isEdit = computed(() => !!props.lead)
 const formRef = ref(null)
 const submitting = ref(false)
-const duplicate = ref(null) // 命中既有 lead 时填
+const duplicates = ref([]) // 同 phone 命中的全部 lead (1 家长带多孩场景下可能 N 个, 2026-06)
 const subjects = ref([])
 const schools = ref([])
 const orgEmployees = ref([]) // 邀约老师下拉: 本公司员工
@@ -157,7 +176,7 @@ const form = reactive({
   school: null,
   grade: '',
   className: '',
-  trialSubject: null,
+  trialSubjects: [],  // 2026-06 多选: 1 孩可试多门课, 后端按数组拆 N 笔 TrialBooking
   trialFee: 19.9,  // 默认 19.9 元 (2026-06 用户反馈)
   inviteTeacher: null, // 编辑时填, 新建时取当前用户 id
   expectedTime: '',
@@ -177,9 +196,15 @@ const rules = {
 
 watch(() => props.visible, async (v) => {
   if (v) {
-    duplicate.value = null
+    duplicates.value = []
     await loadOptions()
     if (props.lead) {
+      // 试听科目: 优先 trialSubjects 数组; 老 lead 没这字段, 回落到 trialSubject 单值包成数组
+      const subs = Array.isArray(props.lead.trialSubjects) && props.lead.trialSubjects.length > 0
+        ? props.lead.trialSubjects.map((x) => (typeof x === 'object' ? (x._id || x.id) : x))
+        : (props.lead.trialSubject
+            ? [typeof props.lead.trialSubject === 'object' ? props.lead.trialSubject._id : props.lead.trialSubject]
+            : [])
       Object.assign(form, {
         name: props.lead.name || '',
         gender: props.lead.gender || 'male',
@@ -188,7 +213,7 @@ watch(() => props.visible, async (v) => {
         school: typeof props.lead.school === 'object' ? props.lead.school?._id : props.lead.school,
         grade: props.lead.grade || '',
         className: props.lead.className || '',
-        trialSubject: typeof props.lead.trialSubject === 'object' ? props.lead.trialSubject?._id : props.lead.trialSubject,
+        trialSubjects: subs,
         trialFee: props.lead.trialFee ?? 19.9,
         inviteTeacher: typeof props.lead.inviteTeacher === 'object'
           ? (props.lead.inviteTeacher?._id || props.lead.inviteTeacher?.id)
@@ -201,7 +226,7 @@ watch(() => props.visible, async (v) => {
       Object.assign(form, {
         name: '', gender: 'male', age: 7, phone: '',
         school: null, grade: '', className: '',
-        trialSubject: null, trialFee: 19.9,
+        trialSubjects: [], trialFee: 19.9,
         inviteTeacher: auth.user?.id || auth.user?._id || null,
         expectedTime: '', specificDate: null, remark: ''
       })
@@ -237,22 +262,22 @@ function onPhoneBlur() {
   clearTimeout(phoneBlurTimer)
   phoneBlurTimer = setTimeout(async () => {
     try {
-      const r = await leadApi.list({ phone: form.phone, pageSize: 1 })
+      // 1 家长带多孩: 同 phone 可能 N 个 lead, 一次拉满, alert 全列出来
+      // pageSize 上限 50 (validator 允许 200, 但实际业务一般 < 10, 50 足够兜底)
+      const r = await leadApi.list({ phone: form.phone, pageSize: 50 })
       const items = r.data?.items || []
-      if (items.length > 0) {
-        duplicate.value = items[0]
-      } else {
-        duplicate.value = null
-      }
+      // 排除自己 (编辑模式理论上不会进这里, 保险一下)
+      duplicates.value = items.filter((x) => (x._id || x.id) !== (props.lead?._id || props.lead?.id))
     } catch (e) {
       // 静默
     }
   }, 400)
 }
 
-function onOpenExisting() {
-  if (!duplicate.value) return
-  emit('open-existing', duplicate.value)
+function onOpenExisting(lead) {
+  const target = lead || duplicates.value[0]
+  if (!target) return
+  emit('open-existing', target)
   emit('update:visible', false)
 }
 
@@ -264,16 +289,16 @@ async function submit() {
     return
   }
   // 软唯一命中: 弹确认是否继续新建 (默认行为不阻断, 但提示)
-  if (!isEdit.value && duplicate.value) {
+  if (!isEdit.value && duplicates.value.length > 0) {
     try {
       await ElMessageBox.confirm(
-        '已存在相同手机号的潜客, 是否仍要创建? 这将产生两个潜客记录。',
+        `已存在 ${duplicates.value.length} 个相同手机号的潜客, 是否仍要创建? (1 家长带多孩)`,
         '重复手机号',
         { type: 'warning', confirmButtonText: '仍要新建', cancelButtonText: '打开既有' }
       )
     } catch (_) {
-      // 取消 → 打开既有
-      onOpenExisting()
+      // 取消 → 打开既有 (默认第一个, 实际操作中用户多已通过 alert 上 link 跳了具体那个)
+      onOpenExisting(duplicates.value[0])
       return
     }
   }
@@ -287,26 +312,35 @@ async function submit() {
       school: form.school || null,
       grade: form.grade || '',
       className: form.className || '',
-      trialSubject: form.trialSubject || null,
+      trialSubjects: form.trialSubjects || [],  // 2026-06 多选; 后端按数组拆 N 笔 TrialBooking
       trialFee: form.trialFee,
       inviteTeacher: form.inviteTeacher || null,
       expectedTime: form.expectedTime || '',
       specificDate: form.specificDate || null,
       remark: form.remark || ''
     }
+    // 2026-06: 1 家长带多孩, 同 phone 允许; 用户在 confirm 已显式"仍要新建", force=true 跳过软唯一
+    const isDuplicateForce = !isEdit.value && duplicates.value.length > 0
+    if (isDuplicateForce) payload.force = true
+
     if (isEdit.value) {
       await leadApi.update(props.lead._id || props.lead.id, payload)
       ElMessage.success('已保存')
     } else {
       const r = await leadApi.create(payload)
       if (r.data?.duplicate) {
-        // 软唯一命中: 跳转既有
+        // 兜底: 万一后端还返 duplicate (force 没传到位), 走打开既有
         ElMessage.info('该手机号已存在潜客, 已为您打开既有记录')
         emit('open-existing', r.data.lead)
         emit('update:visible', false)
         return
       }
-      ElMessage.success('已创建, 并自动建了首笔试听预约')
+      // 成功: 提示文案按业务场景区分 (新建 1 个 vs 加 1 个孩子)
+      ElMessage.success(
+        isDuplicateForce
+          ? `已为这个手机号添加新孩子: ${form.name}`
+          : '已创建, 并自动建了首笔试听预约'
+      )
     }
     emit('saved')
     emit('update:visible', false)
@@ -316,7 +350,7 @@ async function submit() {
 }
 
 function onClose() {
-  duplicate.value = null
+  duplicates.value = []
   formRef.value?.resetFields()
 }
 </script>
@@ -324,5 +358,11 @@ function onClose() {
 <style scoped>
 .mb {
   margin-bottom: 16px;
+}
+.dup-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  vertical-align: middle;
 }
 </style>

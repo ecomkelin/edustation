@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="批量排试听课"
+    title="批量排试听日程"
     width="640px"
     :close-on-click-modal="false"
     @update:model-value="(v) => emit('update:visible', v)"
@@ -14,10 +14,19 @@
       class="mb"
     >
       <template #title>
-        将为 <strong>{{ bookings.length }}</strong> 个试听预约排进同一节课
+        将为 <strong>{{ childrenCount }}</strong> 个孩子 ({{ bookings.length }} 个试听预约) 排进同一时段
       </template>
-      <div class="subject-line" v-if="subjectLabel">
-        试听科目: <el-tag size="small">{{ subjectLabel }}</el-tag>
+      <div class="subject-line" v-if="subjectSummary.length">
+        试听科目:
+        <el-tag
+          v-for="(it, idx) in subjectSummary"
+          :key="idx"
+          size="small"
+          :type="idx === 0 ? '' : 'info'"
+          class="subj-tag"
+        >
+          {{ it.name }} × {{ it.count }}
+        </el-tag>
       </div>
     </el-alert>
 
@@ -28,17 +37,34 @@
       label-width="100px"
       label-position="right"
     >
-      <el-form-item label="上课时间" prop="range">
+      <el-form-item label="试听日期" prop="date">
         <el-date-picker
-          v-model="form.range"
-          type="datetimerange"
-          range-separator="至"
-          start-placeholder="开始"
-          end-placeholder="结束"
-          value-format="YYYY-MM-DDTHH:mm:ss.SSS[Z]"
-          format="YYYY-MM-DD HH:mm"
+          v-model="form.date"
+          type="date"
+          placeholder="选具体某一天"
+          value-format="YYYY-MM-DD"
           style="width: 100%"
         />
+      </el-form-item>
+      <el-form-item label="开始时间" prop="startTime">
+        <el-time-select
+          v-model="form.startTime"
+          start="08:00"
+          end="20:00"
+          step="00:30"
+          placeholder="默认 10:00"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-form-item label="持续时长" prop="duration">
+        <el-input-number
+          v-model="form.duration"
+          :min="15"
+          :max="240"
+          :step="15"
+          style="width: 100%"
+        />
+        <span class="duration-hint">分钟 (默认 60 = 1 小时)</span>
       </el-form-item>
       <el-form-item label="试听老师" prop="teacher">
         <el-select v-model="form.teacher" filterable placeholder="选老师" style="width: 100%">
@@ -50,8 +76,8 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="教室" prop="room">
-        <el-select v-model="form.room" filterable placeholder="选教室" style="width: 100%">
+      <el-form-item label="试听教室" prop="room">
+        <el-select v-model="form.room" filterable clearable placeholder="选填 (2026-06 试听不查教室冲突)" style="width: 100%">
           <el-option
             v-for="r in roomOptions"
             :key="r._id || r.id"
@@ -59,9 +85,6 @@
             :value="r._id || r.id"
           />
         </el-select>
-      </el-form-item>
-      <el-form-item label="排课标题" prop="title">
-        <el-input v-model="form.title" :placeholder="`默认: 试听 (${bookings.length}人)`" maxlength="100" />
       </el-form-item>
       <el-form-item label="备注" prop="notes">
         <el-input v-model="form.notes" type="textarea" :rows="2" maxlength="500" />
@@ -71,7 +94,7 @@
     <template #footer>
       <el-button @click="emit('update:visible', false)">取消</el-button>
       <el-button type="primary" :loading="submitting" @click="submit">
-        创建并排进 N 条预约
+        排进 N 条预约
       </el-button>
     </template>
   </el-dialog>
@@ -95,32 +118,59 @@ const submitting = ref(false)
 const teacherOptions = ref([])
 const roomOptions = ref([])
 
-const subjectLabel = computed(() => {
-  if (!props.bookings.length) return ''
-  const s = props.bookings[0]?.subject
-  return typeof s === 'object' ? s?.name : ''
+// 2026-06 混合多课: 1 个试听时段可挂不同 subject; 显示"科目×数量"汇总
+const childrenCount = computed(() => {
+  const ids = new Set()
+  for (const b of props.bookings) {
+    const id = b.preStudent?._id || b.preStudent?.id || b.preStudent
+    if (id) ids.add(String(id))
+  }
+  return ids.size
+})
+
+const subjectSummary = computed(() => {
+  // 按 subject 聚合; 兼容 booking.subject 是 ObjectId 字符串 / 已是对象 两种情况
+  const byId = new Map()
+  for (const b of props.bookings) {
+    const s = b.subject
+    if (!s) continue
+    const id = typeof s === 'object' ? (s._id || s.id) : s
+    const name = typeof s === 'object' ? s.name : null
+    if (!id) continue
+    if (!byId.has(String(id))) byId.set(String(id), { id, name, count: 0 })
+    byId.get(String(id)).count += 1
+  }
+  // 没拉 populate 名字的, 暂时用 "(未命名)"
+  return Array.from(byId.values()).map((x) => ({
+    name: x.name || '(未命名)',
+    count: x.count
+  }))
 })
 
 const form = reactive({
-  range: null,
+  date: null,
+  startTime: '10:00',   // 默认上午 10:00 (2026-06-15 用户反馈)
+  duration: 60,         // 默认 1 小时 (2026-06-15 用户反馈)
   teacher: null,
   room: null,
-  title: '',
   notes: ''
 })
 
 const rules = {
-  range: [{ required: true, message: '请选择上课时间', trigger: 'change' }],
-  teacher: [{ required: true, message: '请选择试听老师', trigger: 'change' }],
-  room: [{ required: true, message: '请选择教室', trigger: 'change' }]
+  date: [{ required: true, message: '请选择试听日期', trigger: 'change' }],
+  startTime: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
+  duration: [{ required: true, type: 'number', message: '请填写持续时长', trigger: 'change' }],
+  teacher: [{ required: true, message: '请选择试听老师', trigger: 'change' }]
+  // room 不必填 (2026-06 试听不查教室冲突)
 }
 
 watch(() => props.visible, async (v) => {
   if (v) {
-    form.range = null
+    form.date = null
+    form.startTime = '10:00'
+    form.duration = 60
     form.teacher = null
     form.room = null
-    form.title = ''
     form.notes = ''
     await loadOptions()
   }
@@ -151,22 +201,28 @@ async function submit() {
   } catch (_) {
     return
   }
-  if (!Array.isArray(form.range) || form.range.length !== 2) {
-    ElMessage.error('时间范围不合法')
+  if (!form.date || !form.startTime || !form.duration) {
+    ElMessage.error('请填写完整的试听时间')
+    return
+  }
+  // 拼装 ISO 字符串: "YYYY-MM-DDTHH:mm:00.000Z" (字面 UTC, 跟 el-date-picker datetimerange 旧行为一致)
+  const startIso = `${form.date}T${form.startTime}:00.000Z`
+  const startMs = new Date(startIso).getTime()
+  const endMs = startMs + Number(form.duration) * 60 * 1000
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) {
+    ElMessage.error('时间格式不合法')
     return
   }
   submitting.value = true
   try {
     const res = await trialBookingApi.batchSchedule({
       bookingIds: props.bookings.map((b) => b._id || b.id),
-      plannedStartTime: form.range[0],
-      plannedEndTime: form.range[1],
+      plannedStartTime: startIso,
+      plannedEndTime: new Date(endMs).toISOString(),
       teacher: form.teacher,
-      room: form.room,
-      title: form.title || undefined,
-      notes: form.notes || undefined
+      room: form.room || undefined
     })
-    ElMessage.success(`已创建试听课, 关联 ${res.data.bookingCount} 条预约`)
+    ElMessage.success(`已为 ${res.data.bookingCount} 条预约排进同一时段`)
     emit('scheduled', res.data)
     emit('update:visible', false)
   } finally {
@@ -186,5 +242,13 @@ function onClose() {
 .subject-line {
   margin-top: 4px;
   font-size: 13px;
+}
+.subj-tag {
+  margin-left: 4px;
+}
+.duration-hint {
+  margin-left: 8px;
+  color: #909399;
+  font-size: 12px;
 }
 </style>

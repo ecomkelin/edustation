@@ -406,7 +406,9 @@ async function reload() {
     const { from, to } = getCurrentRange()
     const params = {
       from: from instanceof Date ? from.toISOString() : from,
-      to: to instanceof Date ? to.toISOString() : to
+      to: to instanceof Date ? to.toISOString() : to,
+      // 2026-06 试听不再走排课系统, 日历默认不显示试听
+      isTrialLesson: false
     }
     if (filters.courseInstance) params.courseInstance = filters.courseInstance
     if (filters.teacher) params.teacher = filters.teacher

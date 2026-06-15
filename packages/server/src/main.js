@@ -14,6 +14,10 @@ async function bootstrap() {
   // eslint-disable-next-line no-console
   console.log(`[mongo] connected to ${config.db.uri.replace(/\/\/[^@]+@/, '//***@')}`)
 
+  // 1.5 启动迁移 (幂等, 业务无感; 任一失败 log warn 不阻塞 server)
+  // 必须在 createApp/listen 之前跑完, 避免"server 已 ready 但索引还没修"的窗口
+  await require('@utils/startupMigrations').runStartupMigrations()
+
   // 2. Express
   const app = createApp()
 

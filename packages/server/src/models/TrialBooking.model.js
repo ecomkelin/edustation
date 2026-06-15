@@ -40,11 +40,14 @@ const TrialBookingSchema = new Schema(
     attemptNo: { type: Number, required: true, min: 1, default: 1 },
 
     // ─── 排课关联 ───
-    // solo = 排了专属试听课 (在 [试听专用] CourseInstance 下); attached = 跟随正常开班某节课
+    // solo = 排了专属试听课; attached = 跟随正常开班某节课
+    // 2026-06: 试听不再走 LessonSchedule 中间层, solo 模式直接存本 booking 的 time/teacher/room
     joinMode: { type: String, enum: ['solo', 'attached'], required: true },
-    // 关联的 LessonSchedule; 必填时机: status ∈ {scheduled, arrived, no_show, completed}
-    // 允许为空: status='awaiting_schedule' (还没排进任何试听课) 或 'cancelled'
+    // 关联的 LessonSchedule; 仅 attached 模式填; 2026-06 起 solo 模式不再写
+    // (保留字段, 兼容历史 + 跟班试听场景)
     lessonSchedule: { type: Schema.Types.ObjectId, ref: 'LessonSchedule', default: null },
+    // 试听教室 (2026-06 新增, solo 模式用); 之前挂在 LessonSchedule.room, 拆出来直接存
+    room: { type: Schema.Types.ObjectId, ref: 'Room', default: null },
 
     // ─── 时间 ───
     // 计划时间; 排课前 (awaiting_schedule) 允许 null; 排课后 = schedule.plannedStartTime

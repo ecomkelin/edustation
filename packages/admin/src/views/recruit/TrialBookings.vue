@@ -32,7 +32,7 @@
           :disabled="selectedRows.length === 0"
           @click="batchDialog.visible = true"
         >
-          批量排课
+          批量排日程
         </el-button>
       </div>
     </el-card>
@@ -165,7 +165,7 @@
       </el-tabs>
     </el-card>
 
-    <!-- 批量排课 dialog -->
+    <!-- 批量排日程 dialog (2026-06: 试听不再走排课系统, 排的是"试听日程") -->
     <BatchScheduleDialog
       v-model:visible="batchDialog.visible"
       :bookings="selectedRows"
@@ -204,7 +204,8 @@ const TABS = [
   { value: 'scheduled', label: '已约' },
   { value: 'arrived', label: '已到店' },
   { value: 'completed', label: '已完成' },
-  { value: 'no_show', label: '未到' }
+  { value: 'no_show', label: '未到' },
+  { value: 'cancelled', label: '已取消' }
 ]
 
 const activeTab = ref('awaiting_schedule')
@@ -212,7 +213,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const counts = reactive({
-  awaiting_schedule: 0, scheduled: 0, arrived: 0, completed: 0, no_show: 0
+  awaiting_schedule: 0, scheduled: 0, arrived: 0, completed: 0, no_show: 0, cancelled: 0
 })
 const selectedRows = ref([])
 const filters = reactive({ status: '', dateRange: null })
@@ -300,7 +301,8 @@ async function onCancel(row) {
   if (!ok) return
   try {
     await trialBookingApi.update(row._id, { status: 'cancelled' })
-    ElMessage.success('已取消')
+    // 提示用户行已从当前 tab 移至"已取消" tab; 计数实时刷新, 徽标 +1 用户一眼能看到
+    ElMessage.success(`已取消 · 可在 [已取消] tab 找到该记录 (${row.preStudent?.name} - 第 ${row.attemptNo} 次)`)
     load()
     loadAllCounts()
   } catch (e) {
