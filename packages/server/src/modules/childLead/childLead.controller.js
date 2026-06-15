@@ -33,6 +33,27 @@ exports.createActivity = async (req, res) => {
   res.status(201).json(ApiResponse.created(data))
 }
 
+exports.updateActivity = async (req, res) => {
+  const data = await s.updateActivity({
+    childLeadId: req.params.id,
+    activityId: req.params.actId,
+    orgId: req.orgId,
+    currentUser: req.user,
+    body: req.body
+  })
+  res.json(ApiResponse.ok(data))
+}
+
+exports.removeActivity = async (req, res) => {
+  // 物理删, 由 requirePlatformPassword 中间件先校验超管 + 密码
+  const data = await s.removeActivity({
+    childLeadId: req.params.id,
+    activityId: req.params.actId,
+    orgId: req.orgId
+  })
+  res.json(ApiResponse.ok(data))
+}
+
 exports.unconvert = async (req, res) => {
   const data = await s.unconvert({ id: req.params.id, orgId: req.orgId, currentUser: req.user })
   res.json(ApiResponse.ok(data))

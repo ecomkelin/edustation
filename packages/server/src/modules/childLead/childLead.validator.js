@@ -77,6 +77,17 @@ exports.createActivity = [
   body('remark').optional({ nullable: true }).isString().isLength({ max: 500 })
 ]
 
+exports.updateActivity = [
+  body('type').optional().isIn(['call', 'wechat', 'visit', 'sms', 'note']).withMessage('type 必须为 call/wechat/visit/sms/note'),
+  body('at').optional().isISO8601().withMessage('at 需为 ISO 日期'),
+  body('remark').optional({ nullable: true }).isString().isLength({ max: 500 })
+]
+
 exports.idParam = [
   param('id').isMongoId().withMessage('id 需为合法 id')
+]
+
+exports.actIdParam = [
+  param('id').isMongoId().withMessage('id 需为合法 id'),
+  param('actId').isMongoId().withMessage('actId 需为合法 id')
 ]

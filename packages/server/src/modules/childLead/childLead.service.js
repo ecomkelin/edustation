@@ -284,6 +284,83 @@ async function createActivity(id, orgId, currentUser, body) {
   return activity.toObject()
 }
 
+/* ─── 触点编辑 / 物理删 (2026-06-15) ────── */
+
+// 24 小时内可改, 之后的操作只允许超管
+const ACTIVITY_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/**
+ * 编辑触点 (PUT)
+ *   权限:
+ *     - 自己 + 24h 内 → 任何 recruit.write
+ *     - 别人 / 超 24h → 仅 isPlatformAdmin
+ *   不动 byUser (审计基线)
+ *   改 at 之后要重算 parent 派生时间
+ */
+async function updateActivity({ childLeadId, activityId, orgId, currentUser, body }) {
+  if (!currentUser) throw ApiError.unauthorized()
+  const child = await ChildLead.findOne({ _id: childLeadId, org: orgId })
+  if (!child) throw ApiError.notFound('孩子潜客不存在')
+  const activity = await LeadActivity.findOne({ _id: activityId, lead: childLeadId, org: orgId })
+  if (!activity) throw ApiError.notFound('触点不存在')
+
+  // 权限闸门
+  const isOwner = String(activity.byUser) === String(currentUser.id)
+  const isAdmin = !!currentUser.isPlatformAdmin
+  const ageMs = Date.now() - new Date(activity.at || activity.createdAt).getTime()
+  const inWindow = ageMs <= ACTIVITY_EDIT_WINDOW_MS
+  if (!(isAdmin || (isOwner && inWindow))) {
+    throw ApiError.forbidden(
+      isOwner
+        ? `仅 24 小时内可编辑自己创建的触点, 当前已超 ${Math.floor(ageMs / 3600000)} 小时`
+        : '仅创建人 24 小时内或平台超管可编辑该触点'
+    )
+  }
+
+  // 字段白名单 + 校验
+  const set = {}
+  if (body.type !== undefined) {
+    if (!['call', 'wechat', 'visit', 'sms', 'note'].includes(body.type)) {
+      throw ApiError.unprocessable('type 必须为 call/wechat/visit/sms/note')
+    }
+    set.type = body.type
+  }
+  if (body.remark !== undefined) set.remark = String(body.remark || '').slice(0, 500)
+  let atChanged = false
+  if (body.at !== undefined) {
+    const t = new Date(body.at)
+    if (isNaN(t.getTime())) throw ApiError.unprocessable('at 需为合法日期')
+    if (t.getTime() > Date.now() + 60_000) throw ApiError.unprocessable('at 不可晚于当前时间')
+    set.at = t
+    atChanged = true
+  }
+  if (Object.keys(set).length === 0) throw ApiError.badRequest('无可更新字段')
+
+  const updated = await LeadActivity.findOneAndUpdate(
+    { _id: activityId },
+    { $set: set },
+    { new: true, runValidators: true }
+  ).populate('byUser', 'mobile realName').lean()
+
+  // at 改了 → parent 派生时间线可能变
+  if (atChanged) await syncParentContactedAt(child.parent)
+  return updated
+}
+
+/**
+ * 物理删触点 (DELETE) — 平台超管 + 密码门控 (无软删)
+ *   中间件 requirePlatformPassword 已验过身份 (isPlatformAdmin + 密码对)
+ *   这里只查存在性 + 删 + 重算 parent 派生时间
+ */
+async function removeActivity({ childLeadId, activityId, orgId }) {
+  const child = await ChildLead.findOne({ _id: childLeadId, org: orgId })
+  if (!child) throw ApiError.notFound('孩子潜客不存在')
+  const activity = await LeadActivity.findOneAndDelete({ _id: activityId, lead: childLeadId, org: orgId })
+  if (!activity) throw ApiError.notFound('触点不存在')
+  await syncParentContactedAt(child.parent)
+  return { id: activityId, deleted: true }
+}
+
 async function syncParentContactedAt(parentId) {
   if (!parentId) return
   // 拉同 parent 下所有 childLead 的最新触点
@@ -440,7 +517,7 @@ async function removableCheck({ id, orgId }) {
 
 module.exports = {
   list, detail, create, update, remove, removableCheck,
-  listActivities, createActivity, unconvert,
+  listActivities, createActivity, updateActivity, removeActivity, unconvert,
   syncParentContactedAt,
   childLeadUsageChecks
 }

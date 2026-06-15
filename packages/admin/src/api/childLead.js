@@ -20,6 +20,11 @@ export const childLeadApi = {
   // 触点
   listActivities: (id) => http.get(`/child-leads/${id}/activities`),
   createActivity: (id, data) => http.post(`/child-leads/${id}/activities`, data),
+  // 编辑触点 (自己 24h / 超管)
+  updateActivity: (id, actId, data) => http.put(`/child-leads/${id}/activities/${actId}`, data),
+  // 物理删触点 (超管 + 密码, 无软删)
+  removeActivity: (id, actId, { password } = {}) =>
+    http.delete(`/child-leads/${id}/activities/${actId}`, { data: { password } }),
 
   // 撤销转化 (5 分钟内)
   unconvert: (id) => http.post(`/child-leads/${id}/unconvert`)

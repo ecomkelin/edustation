@@ -31,6 +31,10 @@ router.post('/', mws.requirePermission('recruit.write'), v.create, mws.validateR
 router.put('/:id', mws.requirePermission('recruit.write'), v.idParam, v.update, mws.validateRequest, asyncHandler(c.update))
 // 记录触点
 router.post('/:id/activities', mws.requirePermission('recruit.write'), v.idParam, v.createActivity, mws.validateRequest, asyncHandler(c.createActivity))
+// 编辑触点 (自己 24h 内 / 超管; 不动 byUser)
+router.put('/:id/activities/:actId', mws.requirePermission('recruit.write'), v.actIdParam, v.updateActivity, mws.validateRequest, asyncHandler(c.updateActivity))
+// 物理删触点 (高风险): 平台超管 + 密码, 无软删
+router.delete('/:id/activities/:actId', mws.requirePlatformPassword, v.actIdParam, mws.validateRequest, asyncHandler(c.removeActivity))
 // 撤销转化 (5 分钟内)
 router.post('/:id/unconvert', mws.requirePermission('recruit.convert'), v.idParam, mws.validateRequest, asyncHandler(c.unconvert))
 

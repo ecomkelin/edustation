@@ -20,7 +20,7 @@
       </template>
       <div v-for="d in duplicates" :key="d._id" class="dup-line">
         <el-link type="primary" @click="onOpenExisting(d)">
-          [查看] {{ d.phone }} - lifecycle: {{ d.lifecycle }} ({{ formatTime(d.createdAt) }})
+          [查看] {{ d.phone }} - 状态: {{ lifecycleLabel(d.lifecycle) }} ({{ formatTime(d.createdAt) }})
         </el-link>
       </div>
     </el-alert>
@@ -201,6 +201,7 @@ import { subjectApi } from '@/api/subject'
 import { schoolApi } from '@/api/school'
 import { userApi } from '@/api/user'
 import { categoryApi } from '@/api/category'
+import { PARENT_LIFECYCLE_LABEL } from '@/utils/constants'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -367,6 +368,7 @@ function formatTime(d) {
   if (!d) return '-'
   return new Date(d).toLocaleString('zh-CN')
 }
+function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s || '-' }
 
 async function submit() {
   if (!formRef.value) return
