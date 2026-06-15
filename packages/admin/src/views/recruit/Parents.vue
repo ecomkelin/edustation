@@ -5,11 +5,12 @@
       <div class="filter-row">
         <el-select
           v-model="filters.lifecycle"
-          placeholder="家长状态 (多选)"
+          placeholder="家长状态 (多选, 默认全部)"
           multiple
           collapse-tags
           collapse-tags-tooltip
-          style="width: 200px"
+          clearable
+          style="width: 220px"
           @change="load"
         >
           <el-option
@@ -18,6 +19,17 @@
             :label="label"
             :value="value"
           />
+        </el-select>
+        <el-select
+          v-model="filters.range"
+          placeholder="时间范围"
+          style="width: 140px"
+          @change="load"
+        >
+          <el-option label="近 7 天" value="7d" />
+          <el-option label="近 1 月" value="1m" />
+          <el-option label="近 3 月" value="3m" />
+          <el-option label="全部" value="all" />
         </el-select>
         <el-select
           v-model="filters.tag"
@@ -233,12 +245,32 @@ const total = ref(0)
 const tagOptions = ref([])
 const channelOptions = ref([])
 const filters = reactive({
-  lifecycle: ['new'],
+  // 2026-06-16: 默认空 (全部), 不再预选 'new' (业务上想看全状态)
+  lifecycle: [],
+  // 2026-06-16: 时间段默认 '3m' (近 3 月); 后端按 updatedAt 过滤 + 排序
+  range: '3m',
   tag: '',
   source: '',
   keyword: '',
   phone: ''
 })
+
+/**
+ * 把 range 预设 ('7d' / '1m' / '3m' / 'all') 翻译成 from (Date, ISO)
+ *  - 'all' → 不传 from (后端不过滤时间)
+ *  - 其他 → now - 区间
+ * 后端按 updatedAt 过滤 (parent.service.js)
+ */
+function rangeToFrom(range) {
+  if (!range || range === 'all') return null
+  const now = new Date()
+  const d = new Date(now)
+  if (range === '7d') d.setDate(d.getDate() - 7)
+  else if (range === '1m') d.setMonth(d.getMonth() - 1)
+  else if (range === '3m') d.setMonth(d.getMonth() - 3)
+  else return null
+  return d.toISOString()
+}
 const pagination = reactive({ page: 1, pageSize: 20 })
 
 const editDialog = reactive({ visible: false })
@@ -271,8 +303,18 @@ async function load() {
     const params = { ...filters, page: pagination.page, pageSize: pagination.pageSize }
     // lifecycle 是多选数组, 后端走逗号分隔 (parent.service.js#list 已支持 $in)
     if (Array.isArray(params.lifecycle)) {
-      params.lifecycle = params.lifecycle.join(',')
+      if (params.lifecycle.length === 0) {
+        // 默认空 = 全部, 不传 lifecycle 给后端, 避免 'new,partial,...' 拼字符串
+        delete params.lifecycle
+      } else {
+        params.lifecycle = params.lifecycle.join(',')
+      }
     }
+    // range → from (ISO 字符串)
+    const from = rangeToFrom(params.range)
+    if (from) params.from = from
+    else delete params.from
+    delete params.range
     Object.keys(params).forEach((k) => { if (params[k] === '' || params[k] == null) delete params[k] })
     const r = await parentApi.list(params)
     rows.value = r.data?.items || []
@@ -283,7 +325,8 @@ async function load() {
 }
 
 function onReset() {
-  filters.lifecycle = ['new']
+  filters.lifecycle = []
+  filters.range = '3m'
   filters.tag = ''
   filters.source = ''
   filters.keyword = ''

@@ -447,20 +447,13 @@ async function convert({ id, orgId, currentUser }) {
   child.convertedRemark = claimed.result?.attractionPoint || ''
   await child.save()
 
-  // Step 8: 同 Parent 下其他 ChildLead 自动 mark (1 家长带多孩)
-  //   - 排除当前 childLead
-  //   - 仅对非 converted/lost 的 childLead 操作 (lost 状态不强制翻)
-  const autoMarkResult = await ChildLead.updateMany(
-    { parent: parent._id, _id: { $ne: child._id }, status: { $nin: ['converted', 'lost'] } },
-    {
-      $set: {
-        status: 'converted',
-        convertedAt: null,
-        remark: '同家长其他孩子已报名'
-      }
-    }
-  )
-  const autoConvertedSiblingCount = autoMarkResult.modifiedCount || 0
+  // Step 8: 1 家长带多孩, **不再自动 mark 其他孩子** (2026-06-16 设计调整)
+  //   - 历史: 同 parent 下其他 ChildLead auto-mark 'converted' + '同家长其他孩子已报名'
+  //   - 问题: 销售误以为 siblings 也真的建了 Student/账号, 实际只是状态跟着翻
+  //   - 新规: 1 个孩子真的转化, 真的建 Student; 其他孩子保持当前状态
+  //           销售需要哪个孩子正式建档, 就逐个走 convert 流程
+  //   - 业务影响: lifecycle 重算从 "数 status=converted" 改回 "数 convertedStudent != null"
+  //               (更精确, 避免虚高)
 
   // Step 9: Parent.lifecycle 重算
   const { recomputeLifecycle } = require('@modules/parent/parent.service')
@@ -473,8 +466,7 @@ async function convert({ id, orgId, currentUser }) {
     student: { id: String(student._id), name: student.name, school: student.school, grade: student.grade, className: student.className },
     childLead: child.toObject(),
     parent: { id: String(parent._id), lifecycle: newLifecycle },
-    undoWindowMs: 5 * 60 * 1000,
-    autoConvertedSiblingCount
+    undoWindowMs: 5 * 60 * 1000
   }
 }
 

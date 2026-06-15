@@ -52,7 +52,11 @@ function _resetDefaultChannelCache() { _defaultChannelIdCache = null }
 
 async function recomputeLifecycle(parentId) {
   const total = await ChildLead.countDocuments({ parent: parentId })
-  const converted = await ChildLead.countDocuments({ parent: parentId, status: 'converted' })
+  // 2026-06-16: lifecycle 推导改为"数真正转化的" (convertedStudent != null)
+  // 之前数 status=converted 会把 auto-mark 的兄弟也算进去, 虚高 lifecycle
+  // 去掉 auto-mark 后, status=converted 和 convertedStudent != null 理论上等价,
+  // 但 convertedStudent 字段是真正的"已建学员档案"标志, 语义更准
+  const converted = await ChildLead.countDocuments({ parent: parentId, convertedStudent: { $ne: null } })
   const lost = await ChildLead.countDocuments({ parent: parentId, status: 'lost' })
   let lifecycle
   if (total === 0 || converted === 0) lifecycle = 'new'
@@ -107,9 +111,11 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
     if (kw) filter.remark = { $regex: kw, $options: 'i' }
   }
   if (from || to) {
-    filter.createdAt = {}
-    if (from) filter.createdAt.$gte = new Date(from)
-    if (to) filter.createdAt.$lte = new Date(to)
+    // 2026-06-16: 改查 updatedAt (业务上"最近变动"比"创建时间"对销售更有意义;
+    //   创建 1 年前但昨天打了触点的家长, 也应该出现在 '近 7 天' 列表里)
+    filter.updatedAt = {}
+    if (from) filter.updatedAt.$gte = new Date(from)
+    if (to) filter.updatedAt.$lte = new Date(to)
   }
 
   const [items, total] = await Promise.all([
@@ -118,7 +124,8 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
       .populate('consultant', 'mobile realName')
       .populate('tags', 'name model')
       .populate('source', 'name model')
-      .sort({ createdAt: -1 })
+      // 2026-06-16: 排序改 updatedAt desc (时间越晚越靠上)
+      .sort({ updatedAt: -1 })
       .skip(p.skip)
       .limit(p.limit)
       .lean(),

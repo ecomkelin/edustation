@@ -204,13 +204,15 @@ eduStation/
 **Parent.lifecycle 状态机 (2026-06 核心):**
 - 触发自动重算:
   - `childLead.service.unconvert` 撤销转化后
-  - `trialBooking.service.convert` 转化后 (还会自动 mark 同 parent 下其他 ChildLead → 翻 'converted' + remark='同家长其他孩子已报名')
+  - `trialBooking.service.convert` 转化后 (1 家长带多孩, **不再**自动 mark 其他 ChildLead; 哪个孩子真转化, 哪个孩子真建 Student)
   - `parent.service.addChild` 加孩后
   - `parent.service.addTag/removeTag` 涉及 '已流失' 时强制
 - 手动重算: `POST /api/v1/parents/:id/recompute-lifecycle`
 - 推导逻辑: `total === 0 || converted === 0` → 'new'; `converted < total` → 'partial'; `converted === total` → 'full'; 打了 '已流失' 标签或全 lost → 'lost'
+  - **`converted` 数法**: `ChildLead.countDocuments({parent, convertedStudent: { $ne: null }})` (数真建了 Student 的, 避免虚高)
+  - 历史 (2026-06 初次重构) 数 `status='converted'`, 会把 auto-mark 的兄弟也算进去; 2026-06-16 删 auto-mark 后改用此条件
 
-**转化两步式 (claim token 模式, 2026-06 改造):**
+**转化两步式 (claim token 模式, 2026-06 改造; 2026-06-16 去 auto-mark):**
 - 试听完成后 (`status=completed`, `result.isEnrolled=true`) 触发转化
 - `POST /api/v1/trial-bookings/:id/convert-preview` 返回 `initialPassword` + 即将创建 User/Student 预览; 若 parent.user 已存在, 标注 `alreadyExists: true`, 复用现有 User
 - `POST /api/v1/trial-bookings/:id/convert` 真提交:
@@ -220,14 +222,14 @@ eduStation/
   4. **Parent.user 回填** (仅首次): `Parent.findOneAndUpdate({_id: parent._id, user: null}, {$set: {user: user._id}})`
   5. **Student create**: 从 ChildLead 拷 name/gender/school/grade/className
   6. **ChildLead 写回**: status='converted', convertedStudent/At/Remark
-  7. **同 Parent 下其他 ChildLead 自动 mark**: `ChildLead.updateMany({parent, _id: {$ne: childLeadId}, status: {$nin: ['converted','lost']}}, {status: 'converted', convertedAt: null, remark: '同家长其他孩子已报名'})` — 业务上 1 家长带多孩自动级联
-  8. **Parent.lifecycle 重算**: `parent.service.recomputeLifecycle`
-  9. 返回 `{idempotent, initialPassword, user, student, childLead, parent: {lifecycle}, undoWindowMs, autoConvertedSiblingCount}`
+  7. **(2026-06-16 取消) 同 Parent 下其他 ChildLead 自动 mark**: 之前用 `ChildLead.updateMany` 把兄弟翻 'converted' + remark='同家长其他孩子已报名', 但**只翻状态不建 Student**, 销售误以为都建了账号, 实则不然; 改为"逐个转化"才真建学员档案
+  8. **Parent.lifecycle 重算**: `parent.service.recomputeLifecycle` (数 convertedStudent != null)
+  9. 返回 `{idempotent, initialPassword, user, student, childLead, parent: {lifecycle}, undoWindowMs}`
 - **不用 mongoose 事务** (单节点 Mongo 不支持); 用 upsert 链 + claim token 模式实现重试安全
 - **5 分钟撤销窗口**: `POST /api/v1/child-leads/:id/unconvert` (改路径, 旧 `/leads/:id/unconvert` 已下线)
   - 校验 `convertedAt` 在 5 分钟内
   - 校验 Parent.user 没用作其他 ChildLead.convertedStudent 主监护人
-  - **不级联**回退同 parent 下其他"自动转化的" ChildLead (业务决策: 自动 mark 是"被带过去"语义, 撤销当前不连带); 但 lifecycle 重算反映真实状态
+  - **不级联**回退同 parent 下其他"自动转化的" ChildLead (2026-06-16 后这分支不会命中, 因为没有 auto-mark; 业务上的兄弟转化是逐个点 convert, 各管各的)
   - User 仅在"无其他 converted 兄弟"时删; 否则保留 User 但从 Parent.user 解绑
   - 物理删 Student (校验无下游引用)
   - 重算 Parent.lifecycle
