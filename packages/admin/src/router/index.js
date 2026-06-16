@@ -13,6 +13,8 @@ const routes = [
       // 个人中心：查看 / 修改自己的资料、修改密码 —— 无需权限,登录即可访问
       { path: 'profile', component: () => import('@/views/profile/Profile.vue') },
       { path: 'orgs', component: () => import('@/views/orgs/Orgs.vue') },
+      // 机构推广信息 (2026-06): 机构 admin 编辑自己机构的推广内容
+      { path: 'org/promotion', component: () => import('@/views/orgs/OrgPromotion.vue') },
       { path: 'categories', component: () => import('@/views/categories/Categories.vue') },
       { path: 'regions', component: () => import('@/views/regions/Regions.vue') },
       { path: 'users', component: () => import('@/views/users/Users.vue') },

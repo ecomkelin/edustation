@@ -32,6 +32,19 @@
       }
     },
     {
+      "key": "org-promotion",
+      "label": "机构推广",
+      "description": "管理本机构对外宣传的推广信息：机构简介、品牌故事、教学特色、招生热线、公众号/抖音/小红书自媒体号、SEO、资质证书图、分享海报等。2026-06 与 Org 基础信息拆分（OrgPromotion 单独 collection）。",
+      "permissions": [
+        "org-promotion.read",
+        "org-promotion.write"
+      ],
+      "permissionLabels": {
+        "org-promotion.read": { "label": "查看推广信息", "description": "查看本机构对外宣传的推广信息" },
+        "org-promotion.write": { "label": "编辑推广信息", "description": "修改本机构对外宣传的推广信息（机构简介/联系方式/自媒体/SEO/资质图）" }
+      }
+    },
+    {
       "key": "user",
       "label": "用户",
       "description": "管理部门员工 / 老师 / 教务的账号：邀请、重置密码、绑定职位、启停用等。家长不在此模块。",

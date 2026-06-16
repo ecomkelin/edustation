@@ -35,6 +35,7 @@ const DEFAULT_POSITIONS = [
       'studentWork.read', 'studentWork.write',
       'points.read', 'pet.read',
       'recruit.read', 'recruit.write', 'recruit.convert',
+      'org-promotion.read', 'org-promotion.write',
       'report.read'
     ]
   },
@@ -54,6 +55,7 @@ const DEFAULT_POSITIONS = [
       'studentWork.read',
       'points.read', 'pet.read',
       'recruit.read', 'recruit.write', 'recruit.convert',
+      'org-promotion.read', 'org-promotion.write',
       'report.read'
     ]
   },

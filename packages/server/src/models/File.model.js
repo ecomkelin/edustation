@@ -29,6 +29,7 @@ const REF_ENTITY = {
   STUDENT_WORK: 'StudentWork',
   PET: 'Pet',
   ORG: 'Org',
+  ORG_PROMOTION: 'OrgPromotion',
   COURSE_PRODUCT: 'CourseProduct',
   LESSON_SCHEDULE: 'LessonSchedule',
   SUBJECT: 'Subject',

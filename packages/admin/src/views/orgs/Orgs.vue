@@ -7,9 +7,9 @@
         <el-form-item label="关键字">
           <el-input
             v-model="filters.keyword"
-            placeholder="机构全称 / 简称 / 信用代码"
+            placeholder="机构全称 / 简称 / 内部编码 / 信用代码"
             clearable
-            style="width: 240px"
+            style="width: 280px"
             @keyup.enter="reload"
             @clear="reload"
           />
@@ -60,7 +60,8 @@
       </el-table-column>
       <el-table-column prop="name" label="全称" min-width="200" show-overflow-tooltip />
       <el-table-column prop="nameAbbreviation" label="简称" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="unicode" label="信用代码" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="unicode" label="内部编码" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="socialCreditCode" label="社会信用代码" min-width="180" show-overflow-tooltip />
       <el-table-column label="类型" min-width="120">
         <template #default="{ row }">{{ row.type && row.type.name ? row.type.name : '-' }}</template>
       </el-table-column>
@@ -80,10 +81,11 @@
           <el-tag :type="row.isActive ? 'success' : 'info'">{{ row.isActive ? '是' : '否' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="320" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openDetail(row)">详情</el-button>
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" type="primary" plain @click="openPromotion(row)">推广信息</el-button>
           <el-button
             v-if="row.isActive"
             size="small"
@@ -143,9 +145,18 @@
             <span class="form-tip">支持 jpg/png/webp/gif/svg，≤ 20MB。建议正方形</span>
           </div>
         </el-form-item>
-        <el-form-item label="社会信用代码" prop="unicode">
-          <el-input v-model="form.unicode" :disabled="!!form.id" maxlength="64" placeholder="18 位统一社会信用代码" />
-          <span v-if="form.id" class="form-tip">信用代码创建后不可修改</span>
+        <el-form-item label="社会信用代码">
+          <el-input v-model="form.socialCreditCode" maxlength="64" placeholder="18 位统一社会信用代码" />
+        </el-form-item>
+        <el-form-item label="法人代表">
+          <el-input v-model="form.legalPerson" maxlength="50" />
+        </el-form-item>
+        <el-form-item label="办学许可证号">
+          <el-input v-model="form.licenseNumber" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="内部编码" prop="unicode">
+          <el-input v-model="form.unicode" :disabled="!!form.id" maxlength="64" placeholder="内部统一编码" />
+          <span v-if="form.id" class="form-tip">内部编码创建后不可修改</span>
         </el-form-item>
         <el-form-item label="机构全称" prop="name">
           <el-input v-model="form.name" maxlength="100" />
@@ -201,11 +212,10 @@
             v-model="form.establishedDate"
             type="date"
             value-format="YYYY-MM-DD"
-            :disabled="!!form.id && !!form.establishedDate"
             placeholder="请选择"
             style="width: 100%"
           />
-          <span v-if="form.id && form.establishedDate" class="form-tip">已设置，开设时间不可修改</span>
+          <span class="form-tip">2026-06 起，开设时间可由平台超管修改</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -222,8 +232,11 @@
         </el-avatar>
       </div>
       <el-descriptions v-if="detail" :column="2" border>
-        <el-descriptions-item label="社会信用代码">{{ detail.unicode }}</el-descriptions-item>
+        <el-descriptions-item label="内部编码">{{ detail.unicode }}</el-descriptions-item>
+        <el-descriptions-item label="社会信用代码">{{ detail.socialCreditCode || '-' }}</el-descriptions-item>
         <el-descriptions-item label="简称">{{ detail.nameAbbreviation }}</el-descriptions-item>
+        <el-descriptions-item label="法人代表">{{ detail.legalPerson || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="办学许可证号" :span="2">{{ detail.licenseNumber || '-' }}</el-descriptions-item>
         <el-descriptions-item label="全称" :span="2">{{ detail.name }}</el-descriptions-item>
         <el-descriptions-item label="类型">{{ detail.type ? detail.type.name : '-' }}</el-descriptions-item>
         <el-descriptions-item label="地区">{{ detail.region ? detail.region.name : '-' }}</el-descriptions-item>
@@ -262,6 +275,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture, Upload, Folder } from '@element-plus/icons-vue'
 import { orgApi } from '@/api/org'
@@ -291,6 +305,8 @@ const saving = ref(false)
 const formRef = ref()
 const form = reactive(emptyForm())
 const formRegion = ref(null)
+const principalOptions = ref([])
+const principalsLoading = ref(false)
 
 // 本次编辑会话内"已上传但 form 最终没采用"的 Logo 文件 id 列表。
 // 弹窗关闭时清理这些"未绑定的孤儿"，避免磁盘残留 + Files.vue 列表里冒出 refCount=0 的项。
@@ -309,6 +325,9 @@ function emptyForm() {
   return {
     id: '',
     unicode: '',
+    socialCreditCode: '',
+    legalPerson: '',
+    licenseNumber: '',
     name: '',
     nameAbbreviation: '',
     type: '',
@@ -323,7 +342,7 @@ function emptyForm() {
 }
 
 const rules = {
-  unicode: [{ required: true, message: '请输入社会信用代码', trigger: 'blur' }],
+  unicode: [{ required: true, message: '请输入内部编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入机构全称', trigger: 'blur' }],
   nameAbbreviation: [{ required: true, message: '请输入机构简称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择类型', trigger: 'change' }],
@@ -400,6 +419,9 @@ function openEdit(row) {
   Object.assign(form, {
     id: row.id,
     unicode: row.unicode || '',
+    socialCreditCode: row.socialCreditCode || '',
+    legalPerson: row.legalPerson || '',
+    licenseNumber: row.licenseNumber || '',
     name: row.name || '',
     nameAbbreviation: row.nameAbbreviation || '',
     type: row.type ? row.type.id || row.type._id : '',
@@ -436,6 +458,14 @@ async function openDetail(row) {
   detailDialog.value = true
 }
 
+// 平台超管: 跳到 /org/promotion, 需先切到目标 org
+// 流程: 切 currentOrgId (auth.setOrg) → 跳路由 → OrgPromotion.vue 用 auth.currentOrgId 加载
+const router = useRouter()
+function openPromotion(row) {
+  auth.setOrg(row.id)
+  router.push('/org/promotion')
+}
+
 async function submit() {
   if (!formRef.value) return
   try {
@@ -447,6 +477,9 @@ async function submit() {
   try {
     const payload = {
       unicode: form.unicode,
+      socialCreditCode: form.socialCreditCode,
+      legalPerson: form.legalPerson,
+      licenseNumber: form.licenseNumber,
       name: form.name,
       nameAbbreviation: form.nameAbbreviation,
       type: form.type || null,

@@ -73,7 +73,9 @@
             <div class="picker-card-name" :title="f.originalName || f.key">{{ f.originalName || f.key }}</div>
             <div class="picker-card-sub">
               <el-tag size="small" :type="scopeTagType(f.scope)">{{ scopeLabel(f.scope) }}</el-tag>
-              <span class="text-muted text-12" style="margin-left: 4px">引用 {{ f.refCount || 0 }}</span>
+              <!-- 孤儿时把"引用 N"换成红色"孤儿"标签，提醒用户这张图还不在用 -->
+              <el-tag v-if="f.isOrphan" size="small" type="danger" style="margin-left: 4px">孤儿</el-tag>
+              <span v-else class="text-muted text-12" style="margin-left: 4px">引用 {{ f.refCount || 0 }}</span>
             </div>
           </div>
         </div>
@@ -138,7 +140,11 @@ const props = defineProps({
   multiple: { type: Boolean, default: false },
   scope: { type: String, default: '' },
   mimePrefix: { type: String, default: '' },
-  title: { type: String, default: '从文件库选择' }
+  title: { type: String, default: '从文件库选择' },
+  // 是否包含孤儿文件（refCount=0）。
+  // host 自己决定：logo/头像/作品/课件 picker 通常需要"看孤儿"，因为用户经常
+  // 是先在 picker 里看到一个刚上传未保存的图、再点"确认"——这时该图就是孤儿。
+  includeOrphan: { type: Boolean, default: true }
 })
 
 const emit = defineEmits(['update:modelValue', 'select'])
@@ -254,10 +260,13 @@ async function load() {
   try {
     const params = {
       page: filter.page,
-      pageSize: filter.pageSize,
-      // picker 永远只列已绑定的（孤儿不该被选）
-      isOrphan: 'false'
+      pageSize: filter.pageSize
     }
+    // 是否过滤孤儿，由 host 决定（prop.includeOrphan）。
+    // host 默认 includeOrphan=true —— 因为 host 经常需要从"刚上传未保存"的孤儿里挑。
+    // 比如：用户在弹窗里上传 logo → File 文档建立但还没绑业务实体（孤儿）→ 用户关掉
+    // 弹窗没提交 → 下次再开 picker 还得能找到这张图。
+    if (!props.includeOrphan) params.isOrphan = 'false'
     if (filter.scope) params.scope = filter.scope
     if (filter.originalName) params.originalName = filter.originalName
     const { data } = await storageApi.list(params)

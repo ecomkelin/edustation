@@ -174,6 +174,18 @@ const menuGroups = [
       { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true },
       { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true }
     ]
+  },
+  {
+    // 机构推广信息 (2026-06): 机构 admin 维护自己机构的对外宣传内容
+    //   - 平台超管: 看不到 (走 /orgs 平台管理页改, 但基础信息卡在超管门控)
+    //   - 机构 admin: 看到, 改自己机构
+    //   - 注: 这是新一级菜单, 不挂其他子项; 后续加'装修模板''海报设计' 等也塞这组
+    key: 'org-mgmt',
+    title: '机构管理',
+    icon: Box,
+    children: [
+      { path: '/org/promotion', label: '推广信息', icon: Promotion, perm: 'org-promotion.write' }
+    ]
   }
 ]
 

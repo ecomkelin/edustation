@@ -23,7 +23,11 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   // fileBindOrgId：req.orgId（上传 logo 时用的源 org），用于 fileBind 跨租户校验。
   // 不传会导致"在 X scope 上传、在 Y org 上 PUT"时，fileBind.isOurFile 误判为跨租户 → 孤儿。
-  const data = await service.update(req.params.id, req.body, { fileBindOrgId: req.orgId })
+  // isPlatformAdmin: 透传到 service 层做字段白名单 (2026-06: super-admin-only 字段硬卡)
+  const data = await service.update(req.params.id, req.body, {
+    fileBindOrgId: req.orgId,
+    isPlatformAdmin: !!(req.user && req.user.isPlatformAdmin)
+  })
   res.json(ApiResponse.ok(data))
 }
 

@@ -6,6 +6,7 @@ const v = require('./org.validator')
 const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
 const ApiError = require('@utils/ApiError')
+const orgPromoRouter = require('@modules/orgPromotion/orgPromotion.routes')
 
 // 平台超管专属
 router.use(mws.authenticate)
@@ -14,6 +15,10 @@ router.use(mws.authenticate)
 // requireOrg 对超管是"可选"语义：有 x-org-id 就用，没有就 req.orgId = null。
 // 加上 requireOrg 主要是让 controller 能拿到 req.orgId（fileBind 跨租户校验要用）。
 router.use(mws.requireOrg)
+
+// 机构推广信息 (OrgPromotion) —— 必须在 platform-admin 门控**之前**挂载
+// 否则机构 admin 也会被"仅平台超管"挡住。自身走 org-promotion.* 权限码。
+router.use('/:id/promotion', orgPromoRouter)
 
 router.use((req, res, next) => {
   if (!req.user) return next(ApiError.unauthorized())

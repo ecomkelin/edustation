@@ -49,7 +49,26 @@ eduStation/
 > 每个核心实体均包含 `meta: { type: Mongoose.Schema.Types.Mixed, default: {} }` 用于存储扩展属性。
 
 ### 7.1 机构与用户
-- **Org**：name, type, address, contact, isActive
+- **Org**（基础信息，2026-06 强化）：
+  - 基础：`unicode`（内部编码）、`name`（全称）、`nameAbbreviation`（简称）、`type`（机构类型-字典）、`region`（地区-字典）、`principal`（负责人，User ref）
+  - 联系：`contactPerson`、`contactPhone`、`address`
+  - 业务：`establishedDate`（开设日期，2026-06 起允许超管修改）、`isActive`
+  - 合规（**仅平台超管可写**）：`socialCreditCode`（统一社会信用代码）、`legalPerson`（法人代表）、`licenseNumber`（办学许可证号）
+  - 媒体：`logo`（File ref）
+  - 扩展：`meta: Mixed`
+  - 字段权限分层（`org.service.update` 硬卡）：super-admin-only 字段（unicode / name / nameAbbreviation / socialCreditCode / legalPerson / licenseNumber / principal / type / region / establishedDate）非超管写直接 403；shared 字段（contactPerson / contactPhone / address / logo）都可写；`isActive` 走 toggle-active
+- **OrgPromotion**（推广信息，2026-06 新增，1:1 with Org，collection `org_promotions`）：
+  - **拆分原因**：Org 10 字段 vs Promotion 20+ 字段；更新频率差异大；权限天然分层（基础超管 / 推广机构改）；未来装修/多语言/校区级推广挂这里不动 Org
+  - A. 基础展示：`description`（简介）、`brandStory`、`teachingFeatures[]`（教学特色 tag）、`facultyIntro`（师资简版）、`environmentImages[]`（环境图，Ref<File>）、`businessHours`、`businessScope[]`（经营范围 tag）
+  - B. 联系方式：`hotline`（招生热线，**与 Org.contactPhone 区分**：hotline=对外宣传，contactPhone=内部对接）、`serviceWechat`、`serviceQq`、`email`、`website`、`wechatPublic`、`wechatQrcode`（Ref<File>）
+  - C. 自媒体：`douyin`、`xiaohongshu`、`videoAccount`
+  - D. 地图：`longitude` / `latitude` / `nearbyLandmark`
+  - E. 资质荣誉：`registeredCapital`（展示用）、`certificates[]`（Ref<File>）、`honors[]`
+  - F. SEO：`seoTitle` / `seoKeywords` / `seoDescription`
+  - G. 第三方集成：`baiduAnalyticsId` / `wechatMiniAppId`
+  - 分享：`sharePoster`（Ref<File>）
+  - 端点：`GET /api/v1/orgs/:id/promotion`（不存在返回空文档，前端借此判断"还没填"）、`PUT /api/v1/orgs/:id/promotion`（upsert + fileBind）
+  - 权限码：`org-promotion.read` / `org-promotion.write`（挂在「管理员」「教务」系统职位，不挂「老师」「家长」「财务」）
 - **User**：mobile (unique), passwordHash, realName, avatar, wechatUnionId
 - **UserOrgRel**：user, org, positions, isMain
 - **Position**：org, name, permissions, isSystem

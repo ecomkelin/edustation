@@ -13,6 +13,32 @@ const POPULATE_TYPE = { path: 'type', select: 'name model level' }
 const POPULATE_REGION = { path: 'region', select: 'name code level' }
 const POPULATE_PRINCIPAL = { path: 'principal', select: 'mobile realName' }
 
+/* ─── 字段权限分层 (2026-06 引入) ───
+ * Org 表上分三档权限:
+ *   1. super-admin-only (合规/身份类): 仅平台超管可写
+ *      - unicode / name / nameAbbreviation / socialCreditCode / legalPerson / licenseNumber
+ *      - principal / type / region / establishedDate
+ *   2. shared (展示/联系类): 平台超管 + 机构 admin 均可写
+ *      - contactPerson / contactPhone / address / logo
+ *   3. 不可写: isActive (走 toggle-active) / _id / timestamps
+ *
+ * 为什么在 service 层硬卡, 不依赖前端隐藏:
+ *   - 前端可以绕过; 非法请求直接返回 403
+ *   - "机构 admin 改基础信息" 这个功能未来若有需求, 加在 shared 即可, 老接口不变
+ */
+const SUPER_ADMIN_ONLY_FIELDS = new Set([
+  'unicode',
+  'name',
+  'nameAbbreviation',
+  'socialCreditCode',
+  'legalPerson',
+  'licenseNumber',
+  'principal',
+  'type',
+  'region',
+  'establishedDate'
+])
+
 async function list({ keyword, type, region, isActive, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = {}
@@ -20,7 +46,9 @@ async function list({ keyword, type, region, isActive, page, pageSize }) {
     filter.$or = [
       { name: { $regex: keyword, $options: 'i' } },
       { nameAbbreviation: { $regex: keyword, $options: 'i' } },
-      { unicode: { $regex: keyword, $options: 'i' } }
+      { unicode: { $regex: keyword, $options: 'i' } },
+      // 2026-06: 同时按对外信用代码搜索
+      { socialCreditCode: { $regex: keyword, $options: 'i' } }
     ]
   }
   if (type) filter.type = type
@@ -107,13 +135,14 @@ async function create(payload, options = {}) {
 }
 
 async function update(id, payload, options = {}) {
-  // establishedDate 不可改
-  if (Object.prototype.hasOwnProperty.call(payload, 'establishedDate')) {
-    if (payload.establishedDate !== undefined) {
-      // eslint-disable-next-line no-console
-      console.warn(`[org.update] 尝试修改 establishedDate 已被忽略: org=${id}`)
+  // 2026-06: 字段权限分层。options.isPlatformAdmin=false 时, 拒绝任何 super-admin-only 字段
+  // (前端隐藏是 UX, 这里硬卡是安全)
+  const isSuperAdmin = options.isPlatformAdmin === true
+  if (!isSuperAdmin) {
+    const attempted = Object.keys(payload).filter((k) => SUPER_ADMIN_ONLY_FIELDS.has(k))
+    if (attempted.length > 0) {
+      throw ApiError.forbidden(`以下字段仅平台超管可改: ${attempted.join(', ')}`)
     }
-    delete payload.establishedDate
   }
 
   // principal 必须属于本机构

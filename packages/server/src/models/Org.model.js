@@ -10,10 +10,14 @@ const { Schema, model } = require('mongoose')
  *
  * 关键约束：
  *  - unicode / name / nameAbbreviation 三者均 unique（防止重名/编码冲突）
- *  - establishedDate 创建后不可修改（mongoose immutable）—— 防止运营误改机构创立时间
+ *  - 合规字段（unicode / socialCreditCode / legalPerson / licenseNumber / name / nameAbbreviation / principal / type / region / establishedDate）只允许平台超管写入
  *  - type 引用 Category 字典（model='Org'），便于运营在后台维护机构类型
  *  - region 引用 Region 字典（省/市/区），用于按地域筛选机构
  *  - principal 必须属于本机构（更新时在 service 层校验，避免跨机构挂名）
+ *
+ * 推广信息（description / brandStory / businessScope / hotline / 自媒体 / SEO / 资质图等）
+ * 不在本表，独立走 OrgPromotion（1:1 关系，org_promotions collection）。
+ * 拆分理由见 OrgPromotion.model.js 头注释。
  *
  * 关系：
  *  - 1 个 Org 对应 N 个 User（通过 UserOrgRel 关联；同一用户可在多家机构任职）
@@ -39,8 +43,20 @@ const OrgSchema = new Schema(
     contactPhone: { type: String, trim: true },
     // 详细地址
     address: { type: String, trim: true },
-    // 成立日期（创建后不可改；mongoose immutable 保证）
-    establishedDate: { type: Date, immutable: true },
+    // 成立/开设日期（业务字段名沿用 establishedDate；2026-06 移除 immutable，允许平台超管修改）
+    establishedDate: { type: Date, default: null },
+
+    // ── 合规字段（仅平台超管可写） ──
+    // 统一社会信用代码（"信用代码"对外公示版）。
+    // 业务上 1 机构 1 信用代码，作为对外公示的合规主键。
+    // 历史上 unicode 字段承担过该角色；2026-06 起两个并存：unicode=内部编码（保持 unique），
+    // socialCreditCode=对外的 18 位社会信用代码。仅超管可改。
+    socialCreditCode: { type: String, trim: true, default: '' },
+    // 法人代表（营业执照上的"法定代表人"）。仅超管可改。
+    legalPerson: { type: String, trim: true, default: '' },
+    // 办学许可证号（民办教育机构必填；非教培机构可空）。仅超管可改。
+    licenseNumber: { type: String, trim: true, default: '' },
+
     // 是否启用；false 时该机构下用户无法登录/操作（"停用"而非"删除"以保留历史数据）
     isActive: { type: Boolean, default: true },
     // 机构 logo URL（走统一 storage：上传到 /storage/upload?scope=org，拿到 url 后写入）
@@ -59,5 +75,7 @@ OrgSchema.index({ region: 1 })
 OrgSchema.index({ isActive: 1 })
 // 全文检索：按名称/简称模糊搜索
 OrgSchema.index({ name: 'text', nameAbbreviation: 'text' })
+// 对外公示信用代码查询
+OrgSchema.index({ socialCreditCode: 1 })
 
 module.exports = model('Org', OrgSchema)
