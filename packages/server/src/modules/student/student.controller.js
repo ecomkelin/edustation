@@ -1,6 +1,7 @@
 'use strict'
 
 const service = require('./student.service')
+const profile = require('./student.profile')
 const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => {
@@ -47,5 +48,15 @@ exports.setBlocked = async (req, res) => {
 // 家长查自己孩子
 exports.me = async (req, res) => {
   const data = await service.listForGuardian({ orgId: req.orgId, userId: req.user.id })
+  res.json(ApiResponse.ok(data))
+}
+
+// === 学生学习画像 (2026-06 新增) ===
+exports.getProfile = async (req, res) => {
+  const data = await profile.getProfile(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(data))
+}
+exports.setProfile = async (req, res) => {
+  const data = await profile.setProfile(req.params.id, req.orgId, req.body, req.user)
   res.json(ApiResponse.ok(data))
 }

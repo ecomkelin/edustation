@@ -81,9 +81,29 @@
           <span v-else style="color: #999">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <el-button
+            size="small"
+            :type="row.hasProfile ? 'primary' : ''"
+            @click="openProfile(row)"
+          >画像{{ row.hasProfile ? '✓' : '' }}</el-button>
+          <!-- 2026-06-16: 家长沟通画像 (续课/谈判前看"沟通偏好")
+               - parentId 由后端 list() 关联 guardians[0].mobile → Parent 返回
+               - parentId 为 null = 该学员未走招生流程 (直接通过"新建学生"创建), 按钮灰禁用
+               - 复用 ParentProfileDialog (潜客管理那边同一组件) -->
+          <el-tooltip
+            :content="row.parentId ? '' : '该学员未关联潜客档案, 无法维护家长画像'"
+            placement="top"
+          >
+            <el-button
+              size="small"
+              :type="row.hasParentProfile ? 'warning' : ''"
+              :disabled="!row.parentId"
+              @click="openParentProfile(row)"
+            >家长画像{{ row.hasParentProfile ? '✓' : '' }}</el-button>
+          </el-tooltip>
           <el-button
             v-if="auth.isPlatformAdmin"
             size="small"
@@ -175,6 +195,22 @@
         <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 学生学习画像 (2026-06 新增) -->
+    <StudentProfileDialog
+      v-model:visible="profileDialog.visible"
+      :student="profileDialog.student"
+      @saved="onProfileSaved"
+    />
+
+    <!-- 2026-06-16: 已转化家长的「沟通画像」(从潜客管理复用同一组件)
+         - 弹窗前先 fetch parent detail, 组装 {id, realName, phone, lifecycle} 传过去
+         - ParentProfileDialog 已存在, 不需要新建组件 -->
+    <ParentProfileDialog
+      v-model:visible="parentProfileDialog.visible"
+      :parent="parentProfileDialog.parent"
+      @saved="onParentProfileSaved"
+    />
   </div>
 </template>
 
@@ -183,7 +219,10 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { studentApi } from '@/api/student'
+import { parentApi } from '@/api/parent'
 import { schoolApi } from '@/api/school'
+import StudentProfileDialog from '@/components/Profile/StudentProfileDialog.vue'
+import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
 import { handleRemoveError } from '@/utils/removable'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
@@ -314,6 +353,42 @@ function openEdit(row) {
     notes: row.notes
   })
   dialog.value = true
+}
+
+// === 学生学习画像 (2026-06 新增) ===
+const profileDialog = reactive({ visible: false, student: null })
+function openProfile(row) {
+  // 列表项的 _id 即 Student._id, 但 dialog 用 id 字段
+  profileDialog.student = { ...row, id: row._id }
+  profileDialog.visible = true
+}
+function onProfileSaved() {
+  load()
+}
+
+// === 已转化家长沟通画像 (2026-06-16 新增)
+//   - 续课/谈判前场景: 教务需要看"该学员家长的沟通偏好/家庭背景/孩子关注/跟进备忘"
+//   - 复用 ParentProfileDialog (潜客管理那边同款), 弹窗前先 fetch parent detail
+//   - parentId 为 null 时按钮已 disabled, 不会走到这里
+const parentProfileDialog = reactive({ visible: false, parent: null })
+async function openParentProfile(row) {
+  if (!row.parentId) return
+  try {
+    const r = await parentApi.detail(row.parentId)
+    parentProfileDialog.parent = {
+      id: row.parentId,
+      realName: r.data.realName || r.data.phone || '家长',
+      phone: r.data.phone,
+      lifecycle: r.data.lifecycle
+    }
+    parentProfileDialog.visible = true
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载家长信息失败')
+  }
+}
+function onParentProfileSaved() {
+  // 家长画像保存后, 列表 hasParentProfile 标记要刷新 (✓ 可能新增/消失)
+  load()
 }
 
 async function submit() {

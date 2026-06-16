@@ -109,3 +109,13 @@ exports.tagIdParam = [
   param('id').isMongoId(),
   param('tagId').isMongoId()
 ]
+
+/**
+ * 家长画像 (2026-06 新增) — 挂在 UserOrgRel 上, 4 个结构化字段
+ */
+exports.setProfile = [
+  body('commStyle').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('沟通偏好不能超过 500 字'),
+  body('familyBg').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('家庭背景不能超过 500 字'),
+  body('childFocus').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('孩子关注不能超过 500 字'),
+  body('followUp').optional({ nullable: true }).isString().isLength({ max: 2000 }).withMessage('跟进备忘不能超过 2000 字')
+]

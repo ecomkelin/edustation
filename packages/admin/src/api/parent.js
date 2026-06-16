@@ -37,5 +37,9 @@ export const parentApi = {
 
   // 标签
   addTag: (id, tagId) => http.post(`/parents/${id}/tags`, { tagId }),
-  removeTag: (id, tagId) => http.delete(`/parents/${id}/tags/${tagId}`)
+  removeTag: (id, tagId) => http.delete(`/parents/${id}/tags/${tagId}`),
+
+  // 家长沟通画像 (2026-06 新增) — 挂在 UserOrgRel 上, 跨机构独立
+  getProfile: (id) => http.get(`/parents/${id}/profile`),
+  setProfile: (id, data) => http.put(`/parents/${id}/profile`, data)
 }

@@ -1,6 +1,6 @@
 'use strict'
 
-const { body } = require('express-validator')
+const { body, param } = require('express-validator')
 const { GENDERS } = require('@shared/enums')
 
 const create = [
@@ -35,4 +35,21 @@ const setBlocked = [
   body('reason').optional().isString().isLength({ max: 500 })
 ]
 
-module.exports = { create, update, setGuardians, setBlocked }
+/**
+ * 学生学习画像 (2026-06 新增) — 6 个结构化字段
+ * 与 notes (过敏史/特殊需求/老师注意事项) 完全独立, 互不影响
+ */
+const setProfile = [
+  body('personality').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('性格不能超过 500 字'),
+  body('learningGoal').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('学习目标不能超过 500 字'),
+  body('weakness').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('薄弱项不能超过 500 字'),
+  body('classFeedback').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('上课反馈不能超过 500 字'),
+  body('strengths').optional({ nullable: true }).isString().isLength({ max: 500 }).withMessage('特长不能超过 500 字'),
+  body('followUp').optional({ nullable: true }).isString().isLength({ max: 2000 }).withMessage('跟进备忘不能超过 2000 字')
+]
+
+const idParam = [
+  param('id').isMongoId().withMessage('id 需为合法 id')
+]
+
+module.exports = { create, update, setGuardians, setBlocked, setProfile, idParam }

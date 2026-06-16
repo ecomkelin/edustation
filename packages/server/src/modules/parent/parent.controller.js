@@ -1,6 +1,7 @@
 'use strict'
 
 const s = require('./parent.service')
+const profile = require('./parent.profile')
 const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => {
@@ -58,5 +59,15 @@ exports.remove = async (req, res) => {
 
 exports.removableCheck = async (req, res) => {
   const data = await s.removableCheck({ id: req.params.id, orgId: req.orgId })
+  res.json(ApiResponse.ok(data))
+}
+
+// === 家长画像 (2026-06 新增) ===
+exports.getProfile = async (req, res) => {
+  const data = await profile.getProfile(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(data))
+}
+exports.setProfile = async (req, res) => {
+  const data = await profile.setProfile(req.params.id, req.orgId, req.body, req.user)
   res.json(ApiResponse.ok(data))
 }

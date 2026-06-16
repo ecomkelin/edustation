@@ -42,6 +42,21 @@ const StudentSchema = new Schema(
     className: { type: String, trim: true, default: '' },
     // 备注（过敏史/特殊需求/老师注意事项等）
     notes: { type: String },
+
+    // === 学生学习画像 (2026-06 新增) ===
+    // 业务上 1 个学生在 1 个机构下有 1 份画像; Student 本身已按 org 隔离, 天然支持
+    // 与 notes (过敏史/特殊需求/老师注意事项) 分开: notes 是安全关键信息, 画像是教学画像
+    personality:   { type: String, default: '', maxlength: 500 }, // 性格 (例: 安静/好动/敏感/慢热)
+    learningGoal:  { type: String, default: '', maxlength: 500 }, // 学习目标 (例: 冲刺小升初/培养兴趣/考级)
+    weakness:      { type: String, default: '', maxlength: 500 }, // 薄弱项 (例: 应用题/英语口语/音准)
+    classFeedback: { type: String, default: '', maxlength: 500 }, // 上课反馈 (例: 上周第 3 节表现好/最近注意力下降)
+    strengths:     { type: String, default: '', maxlength: 500 }, // 特长 (例: 逻辑思维强/绘画有天赋)
+    followUp:      { type: String, default: '', maxlength: 2000 },// 跟进备忘 (例: 家长希望 9 月冲比赛; 老师建议加 1 节课)
+    // 元数据: 追踪最后编辑
+    profileLastUpdatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    profileLastUpdatedAt: { type: Date, default: null },
+    // 扩展位 (后续阶段加字段不需改 schema)
+    profileMeta: { type: Schema.Types.Mixed, default: {} },
     // 是否在读；false 时不再出现在新报名/排课的学生下拉中（历史数据保留）
     isActive: { type: Boolean, default: true },
     // 黑名单标记(与 isActive 独立): true 时拒绝新报名/下单/家长端不可见

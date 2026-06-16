@@ -156,6 +156,39 @@
       </el-table>
       <div v-else class="empty">该家长下还没有孩子, 点击右上"+ 加一个孩子"</div>
 
+      <!-- 家长沟通画像 (2026-06 新增) — 挂在 UserOrgRel 上, 跨机构独立 -->
+      <el-divider content-position="left">
+        <span>家长沟通画像</span>
+      </el-divider>
+      <el-descriptions
+        v-if="parent.profile && hasAnyProfile"
+        :column="2"
+        border
+        size="small"
+      >
+        <el-descriptions-item label="沟通偏好">{{ parent.profile.commStyle || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="家庭背景">{{ parent.profile.familyBg || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="孩子关注">{{ parent.profile.childFocus || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="跟进备忘" :span="2">
+          <div style="white-space: pre-wrap">{{ parent.profile.followUp || '—' }}</div>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="parent.profile.lastUpdatedAt" label="最后更新" :span="2">
+          <span class="meta-text">
+            {{ parent.profile.lastUpdatedBy?.realName || '系统' }} ·
+            {{ formatTime(parent.profile.lastUpdatedAt) }}
+          </span>
+        </el-descriptions-item>
+      </el-descriptions>
+      <div v-else class="empty">
+        尚未填写画像
+        <el-button v-if="canEditProfile" size="small" type="primary" link @click="openProfileEdit">去填写</el-button>
+      </div>
+      <div v-if="canEditProfile" style="margin-top: 8px">
+        <el-button size="small" type="primary" link @click="openProfileEdit">
+          {{ hasAnyProfile ? '编辑画像' : '填写画像' }}
+        </el-button>
+      </div>
+
       <!-- 触点时间线 (聚合该家长下所有孩子的触点) -->
       <el-divider content-position="left">
         <span>触点时间线 ({{ parent.activities?.length || 0 }})</span>
@@ -278,6 +311,13 @@
       :child-name="createActivityDialog.childName"
       @saved="onActivityCreated"
     />
+
+    <!-- 家长沟通画像 (2026-06 新增) — 详情内编辑入口 -->
+    <ParentProfileDialog
+      v-model:visible="profileDialog.visible"
+      :parent="profileDialog.parent"
+      @saved="onProfileSaved"
+    />
   </el-dialog>
 </template>
 
@@ -300,6 +340,7 @@ import ChildLeadEditDialog from './ChildLeadEditDialog.vue'
 import ParentEditDialog from './ParentEditDialog.vue'
 import ActivityEditDialog from './ActivityEditDialog.vue'
 import ActivityCreateDialog from './ActivityCreateDialog.vue'
+import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -320,6 +361,37 @@ const editParentDialog = reactive({ visible: false })
 const editChildDialog = reactive({ visible: false, childLead: null })
 const editActivityDialog = reactive({ visible: false, childLeadId: null, activity: null })
 const createActivityDialog = reactive({ visible: false, childLeadId: null, childName: '' })
+
+// === 家长沟通画像 (2026-06 新增) ===
+const profileDialog = reactive({ visible: false, parent: null })
+const hasAnyProfile = computed(() => {
+  const p = parent.value?.profile
+  if (!p) return false
+  return !!(p.commStyle || p.familyBg || p.childFocus || p.followUp)
+})
+// 权限检查: 复刻 Dashboard.vue 的 hasPerm 模式 (auth store 没有这个方法)
+function hasPerm(code) {
+  if (authStore.user?.isPlatformAdmin) return true
+  const org = authStore.orgs.find((o) => o.id === authStore.currentOrgId)
+  if (!org) return false
+  const perms = new Set()
+  for (const p of org.positions || []) {
+    for (const c of p.permissions || []) perms.add(c)
+  }
+  return perms.has(code)
+}
+const canEditProfile = computed(() => hasPerm('recruit.write'))
+function openProfileEdit() {
+  // 详情 dialog 内的 parent 含 id/_id + profile 字段, 直接传
+  const p = parent.value
+  if (!p) return
+  profileDialog.parent = { ...p, id: p.id || p._id }
+  profileDialog.visible = true
+}
+async function onProfileSaved(updated) {
+  // 用后端返回的最新 profile 直接覆盖, 不重 load 整个详情 (避免闪烁)
+  if (parent.value) parent.value.profile = updated
+}
 const currentUserId = computed(() => authStore.user?._id || authStore.user?.id || null)
 
 const dialogTitle = computed(() => parent.value ? `家长账户 - ${parent.value.phone}` : '家长账户')

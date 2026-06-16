@@ -231,6 +231,28 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
     }
   }
 
+  // 2026-06: 增补 hasProfile (任一画像字段非空 → true, 前端列表可显示 ✓ 标记)
+  // 注意: 老 rel 文档可能没有这 4 个字段 (值为 undefined), 用 $ne: '' 会误判; 用 $regex 强制要求至少一个非空白字符
+  const userIds = items.map((p) => p.user).filter(Boolean)
+  if (userIds.length > 0) {
+    const profileRels = await UserOrgRel.find({
+      user: { $in: userIds },
+      org: orgId,
+      $or: [
+        { commStyle: { $regex: '\\S' } },
+        { familyBg: { $regex: '\\S' } },
+        { childFocus: { $regex: '\\S' } },
+        { followUp: { $regex: '\\S' } }
+      ]
+    }, { user: 1 }).lean()
+    const hasProfileUserIds = new Set(profileRels.map((r) => String(r.user)))
+    for (const p of items) {
+      p.hasProfile = p.user ? hasProfileUserIds.has(String(p.user)) : false
+    }
+  } else {
+    for (const p of items) p.hasProfile = false
+  }
+
   return { items, total, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
 }
 
@@ -275,6 +297,28 @@ async function detail(id, orgId) {
   parent.childLeads = childLeads
   parent.activities = activities
   parent.bookings = bookings
+
+  // 2026-06: 增补家长沟通画像 (UserOrgRel 上的 4 字段, 跨机构独立)
+  if (parent.user) {
+    const rel = await UserOrgRel.findOne({ user: parent.user, org: orgId })
+      .populate('profileLastUpdatedBy', 'realName')
+      .lean()
+    parent.profile = rel
+      ? {
+          commStyle: rel.commStyle || '',
+          familyBg: rel.familyBg || '',
+          childFocus: rel.childFocus || '',
+          followUp: rel.followUp || '',
+          lastUpdatedBy: rel.profileLastUpdatedBy
+            ? { id: String(rel.profileLastUpdatedBy._id || rel.profileLastUpdatedBy.id), realName: rel.profileLastUpdatedBy.realName }
+            : null,
+          lastUpdatedAt: rel.profileLastUpdatedAt || null
+        }
+      : null
+  } else {
+    parent.profile = null
+  }
+
   return parent
 }
 

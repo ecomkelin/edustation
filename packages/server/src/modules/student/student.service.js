@@ -6,6 +6,8 @@ const UserOrgRel = require('@models/UserOrgRel.model')
 const Position = require('@models/Position.model')
 const CourseEnrollment = require('@models/CourseEnrollment.model')
 const StudentProduct = require('@models/StudentProduct.model')
+const Parent = require('@models/Parent.model')
+const parentProfile = require('@modules/parent/parent.profile')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const password = require('@utils/password')
@@ -34,6 +36,77 @@ async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSiz
       .lean(),
     Student.countDocuments(filter)
   ])
+
+  // 2026-06: 增补 hasProfile (任一画像字段非空 → true)
+  for (const it of items) {
+    it.hasProfile = !!(
+      (it.personality && it.personality !== '') ||
+      (it.learningGoal && it.learningGoal !== '') ||
+      (it.weakness && it.weakness !== '') ||
+      (it.classFeedback && it.classFeedback !== '') ||
+      (it.strengths && it.strengths !== '') ||
+      (it.followUp && it.followUp !== '')
+    )
+  }
+
+  // 2026-06-16: 增补家长沟通画像标记 (续课/谈判前看"沟通偏好"的核心场景)
+  //   路径: Student.guardians[0] (主监护人) → User.mobile → Parent (org, phone) → UserOrgRel
+  //   - 业务上 Parent.user 在转化时回填; 也可走 phone 兜底 (Parent.user 可能为 null 但 Parent 存在)
+  //   - 三态: null=未关联潜客; false=已关联但未填; true=已填
+  //   - 用 $regex: '\S' 处理老 rel 文档 (字段 undefined → $ne: '' 误判, 之前已踩坑)
+  const phoneToParent = new Map()
+  const phoneSet = new Set()
+  for (const it of items) {
+    const g = (it.guardians || [])[0]
+    const phone = g && typeof g === 'object' ? (g.mobile || '') : ''
+    if (phone) phoneSet.add(phone)
+  }
+  if (phoneSet.size > 0) {
+    const parents = await Parent.find({ org: orgId, phone: { $in: [...phoneSet] } })
+      .select('_id user phone')
+      .lean()
+    for (const p of parents) phoneToParent.set(p.phone, p)
+    const userIds = parents.map((p) => p.user).filter(Boolean)
+    if (userIds.length > 0) {
+      const profileRels = await UserOrgRel.find({
+        user: { $in: userIds },
+        org: orgId,
+        $or: [
+          { commStyle: { $regex: '\\S' } },
+          { familyBg: { $regex: '\\S' } },
+          { childFocus: { $regex: '\\S' } },
+          { followUp: { $regex: '\\S' } }
+        ]
+      }, { user: 1 }).lean()
+      const hasProfileUserIds = new Set(profileRels.map((r) => String(r.user)))
+      for (const it of items) {
+        const g = (it.guardians || [])[0]
+        const phone = g && typeof g === 'object' ? (g.mobile || '') : ''
+        const parent = phone ? phoneToParent.get(phone) : null
+        if (parent) {
+          it.parentId = String(parent._id)
+          it.hasParentProfile = !!(parent.user && hasProfileUserIds.has(String(parent.user)))
+        } else {
+          it.parentId = null
+          it.hasParentProfile = false
+        }
+      }
+    } else {
+      for (const it of items) {
+        const g = (it.guardians || [])[0]
+        const phone = g && typeof g === 'object' ? (g.mobile || '') : ''
+        const parent = phone ? phoneToParent.get(phone) : null
+        it.parentId = parent ? String(parent._id) : null
+        it.hasParentProfile = false
+      }
+    }
+  } else {
+    for (const it of items) {
+      it.parentId = null
+      it.hasParentProfile = false
+    }
+  }
+
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
@@ -42,8 +115,53 @@ async function detail(id, orgId) {
     .populate('guardians', 'mobile realName avatar')
     .populate('guardianUser', 'mobile realName')
     .populate('school', 'name type address')
+    .populate('profileLastUpdatedBy', 'realName')
     .lean()
   if (!s) throw ApiError.notFound('学生不存在')
+
+  // 2026-06: 增补 profile 摘要 (与 notes 完全独立, 仅前端展示用)
+  s.profile = {
+    personality: s.personality || '',
+    learningGoal: s.learningGoal || '',
+    weakness: s.weakness || '',
+    classFeedback: s.classFeedback || '',
+    strengths: s.strengths || '',
+    followUp: s.followUp || '',
+    lastUpdatedBy: s.profileLastUpdatedBy
+      ? { id: String(s.profileLastUpdatedBy._id || s.profileLastUpdatedBy.id), realName: s.profileLastUpdatedBy.realName }
+      : null,
+    lastUpdatedAt: s.profileLastUpdatedAt || null
+  }
+
+  // 2026-06-16: 增补家长沟通画像 (续课/谈判前看"沟通偏好"; 跨机构独立)
+  //   路径: Student.guardians[0] (主监护人) → User.mobile → Parent (org, phone) → UserOrgRel
+  //   - null = 学员未关联潜客档案 (例如直接走"新建学生"流程, 没经过招生)
+  //   - 非 null 但 4 字段全空 = 关联了家长档案但未填画像
+  //   - parentId 一并返回, 前端弹 ParentProfileDialog 用
+  const guardian = (s.guardians && s.guardians[0]) || s.guardianUser
+  const guardianMobile = guardian && typeof guardian === 'object' ? (guardian.mobile || '') : ''
+  if (guardianMobile) {
+    const parent = await Parent.findOne({ org: orgId, phone: guardianMobile })
+      .select('_id user phone')
+      .lean()
+    if (parent) {
+      s.parentId = String(parent._id)
+      s.parentProfile = parent.user
+        ? parentProfile.shapeProfile(
+            await UserOrgRel.findOne({ user: parent.user, org: orgId })
+              .populate('profileLastUpdatedBy', 'realName')
+              .lean()
+          )
+        : null  // 家长存在但未绑定账号 (兜底: 不可能有画像)
+    } else {
+      s.parentId = null
+      s.parentProfile = null
+    }
+  } else {
+    s.parentId = null
+    s.parentProfile = null
+  }
+
   return s
 }
 

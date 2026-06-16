@@ -19,6 +19,9 @@ router.use(mws.authenticate, mws.requireOrg)
 router.get('/', mws.requirePermission('recruit.read'), v.list, mws.validateRequest, asyncHandler(c.list))
 // 详情
 router.get('/:id', mws.requirePermission('recruit.read'), v.idParam, mws.validateRequest, asyncHandler(c.detail))
+// 家长画像 (2026-06 新增) — 挂在 UserOrgRel 上, 跨机构独立
+router.get('/:id/profile', mws.requirePermission('recruit.read'), v.idParam, mws.validateRequest, asyncHandler(c.getProfile))
+router.put('/:id/profile', mws.requirePermission('recruit.write'), v.idParam, v.setProfile, mws.validateRequest, asyncHandler(c.setProfile))
 // 预检 (删除)
 router.get('/:id/removable-check', mws.requirePermission('recruit.read'), v.idParam, mws.validateRequest, asyncHandler(c.removableCheck))
 // 触点时间线 (聚合该家长下所有孩子的触点)

@@ -183,9 +183,15 @@
         <el-table-column label="最近联系" width="160">
           <template #default="{ row }">{{ formatTime(row.lastContactedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button size="small" link @click="openDetail(row)">详情</el-button>
+            <el-button
+              size="small"
+              link
+              :type="row.hasProfile ? 'primary' : ''"
+              @click="openProfile(row)"
+            >画像{{ row.hasProfile ? '✓' : '' }}</el-button>
             <el-button size="small" link type="primary" @click="openAddChild(row)">+ 加孩子</el-button>
           </template>
         </el-table-column>
@@ -224,6 +230,13 @@
       @updated="load"
       @open-existing="onOpenExisting"
     />
+
+    <!-- 家长沟通画像 (2026-06 新增) -->
+    <ParentProfileDialog
+      v-model:visible="profileDialog.visible"
+      :parent="profileDialog.parent"
+      @saved="onProfileSaved"
+    />
   </div>
 </template>
 
@@ -238,6 +251,7 @@ import {
 } from '@/utils/constants'
 import ChildLeadEditDialog from './ChildLeadEditDialog.vue'
 import ParentDetailDialog from './ParentDetailDialog.vue'
+import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
 
 const loading = ref(false)
 const rows = ref([])
@@ -347,6 +361,16 @@ function openAddChild(row) {
 function openDetail(row) {
   detailDialog.parentId = row._id
   detailDialog.visible = true
+}
+
+const profileDialog = reactive({ visible: false, parent: null })
+function openProfile(row) {
+  // 列表项的 _id 即 Parent._id; 但 dialog 内的 parentApi 用 id
+  profileDialog.parent = { ...row, id: row._id }
+  profileDialog.visible = true
+}
+function onProfileSaved() {
+  load()
 }
 
 function onSaved() {
