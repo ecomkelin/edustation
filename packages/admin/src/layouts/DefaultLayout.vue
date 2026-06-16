@@ -83,7 +83,9 @@ import {
   SwitchButton,
   DataAnalysis,
   Picture,
-  // 招生试听 (2026-06)
+  // 招生试听 (2026-06) — 图标: TrendCharts (上升趋势图), 表达"招生漏斗 + 业绩增长"
+  TrendCharts,
+  // 机构推广 (Promotion 小喇叭) — 与 TrendCharts 区分
   Promotion,
   UserFilled
 } from '@element-plus/icons-vue'
@@ -127,18 +129,20 @@ const menuGroups = [
     title: '机构管理',
     icon: Setting,
     children: [
-      // 原 /org/promotion 改名为 机构推广
-      { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
       // 用户管理 + 职位管理从系统管理挪过来, 与推广信息合并成一组'本机构运营'
       { path: '/users', label: '用户管理', icon: User, perm: 'user.read' },
-      { path: '/positions', label: '职位管理', icon: Lock, perm: 'position.read' }
+      // 2026-06: 职位管理提到机构推广前 (机构 admin 进首页常看'我的人权限对不对')
+      { path: '/positions', label: '职位管理', icon: Lock, perm: 'position.read' },
+      // 原 /org/promotion 改名为 机构推广
+      { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' }
     ]
   },
   {
     // 招生试听 (2026-06): 招生漏斗入口, 地推/教务共用
+    // 2026-06 图标换为 TrendCharts (上升趋势图), 与机构推广的 Promotion (小喇叭) 区分
     key: 'recruit',
     title: '招生试听',
-    icon: Promotion,
+    icon: TrendCharts,
     children: [
       { path: '/recruit/leads', label: '潜客管理', icon: UserFilled, perm: 'recruit.read' },
       { path: '/recruit/trial-bookings', label: '试听记录', icon: Calendar, perm: 'recruit.read' }

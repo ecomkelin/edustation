@@ -17,7 +17,20 @@ const raw = require('./permissions.json')
  */
 const groups = raw.groups
 
-const visibleGroups = groups.filter((g) => !g.hidden)
+/**
+ * 把「职位 / 权限」group 排在最前 (机构编辑职位时第一眼看到自己最关心的权限域);
+ * 其余 group 保持 permissions.json 原声明顺序.
+ * (2026-06: 编辑职位弹窗 UX 调整)
+ */
+const visibleGroups = (() => {
+  const list = groups.filter((g) => !g.hidden)
+  const positionIdx = list.findIndex((g) => g.key === 'position')
+  if (positionIdx > 0) {
+    const pos = list.splice(positionIdx, 1)[0]
+    list.unshift(pos)
+  }
+  return list
+})()
 
 const allPermissions = groups.flatMap((g) => g.permissions)
 const visibleAllPermissions = visibleGroups.flatMap((g) => g.permissions)
