@@ -95,14 +95,16 @@ const route = useRoute()
 // 一级导航分组：按业务域聚合
 const menuGroups = [
   {
+    // 平台级: 平台超管管理多机构档案 + 系统级说明
     key: 'system',
     title: '系统管理',
-    icon: Setting,
+    icon: Platform,
     children: [
-      { path: '/orgs', label: '机构管理', icon: Box, requirePlatform: true },
-      { path: '/users', label: '用户管理', icon: User, perm: 'user.read' },
-      { path: '/positions', label: '职位权限', icon: Lock, perm: 'position.read' },
-      { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' }
+      // 原 /orgs 改名为 机构档案; 与新一级菜单'机构管理'(本机构内部运营) 消歧
+      { path: '/orgs', label: '机构档案', icon: Box, requirePlatform: true },
+      // 原平台管理下的二级全部并入
+      { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true },
+      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true }
     ]
   },
   {
@@ -110,11 +112,36 @@ const menuGroups = [
     title: '基础数据',
     icon: Files,
     children: [
+      // 文件管理从系统管理挪过来, 与其他字典/基础实体同组
+      { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' },
       { path: '/categories', label: '类别字典', icon: Files, requirePlatform: true },
       { path: '/regions', label: '地区字典', icon: Box, requirePlatform: true },
       { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
       { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
       { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
+    ]
+  },
+  {
+    // 本机构内部运营: 机构推广 (机构 admin 维护) + 用户/职位 (本机构成员)
+    key: 'org-mgmt',
+    title: '机构管理',
+    icon: Setting,
+    children: [
+      // 原 /org/promotion 改名为 机构推广
+      { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
+      // 用户管理 + 职位管理从系统管理挪过来, 与推广信息合并成一组'本机构运营'
+      { path: '/users', label: '用户管理', icon: User, perm: 'user.read' },
+      { path: '/positions', label: '职位管理', icon: Lock, perm: 'position.read' }
+    ]
+  },
+  {
+    // 招生试听 (2026-06): 招生漏斗入口, 地推/教务共用
+    key: 'recruit',
+    title: '招生试听',
+    icon: Promotion,
+    children: [
+      { path: '/recruit/leads', label: '潜客管理', icon: UserFilled, perm: 'recruit.read' },
+      { path: '/recruit/trial-bookings', label: '试听记录', icon: Calendar, perm: 'recruit.read' }
     ]
   },
   {
@@ -127,16 +154,6 @@ const menuGroups = [
       { path: '/course-enrollments', label: '课程报名', icon: Notebook, perm: 'courseEnrollment.read' },
       { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
       { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' }
-    ]
-  },
-  {
-    // 招生试听 (2026-06): 招生漏斗入口, 地推/教务共用
-    key: 'recruit',
-    title: '招生试听',
-    icon: Promotion,
-    children: [
-      { path: '/recruit/leads', label: '潜客管理', icon: UserFilled, perm: 'recruit.read' },
-      { path: '/recruit/trial-bookings', label: '试听记录', icon: Calendar, perm: 'recruit.read' }
     ]
   },
   {
@@ -163,28 +180,6 @@ const menuGroups = [
       { path: '/reports/points-activity', label: '积分与活跃', icon: Present, perm: 'report.read' },
       // 招生看板 (2026-06)
       { path: '/reports/recruit', label: '招生看板', icon: Promotion, perm: 'recruit.read' }
-    ]
-  },
-  {
-    key: 'platform',
-    title: '平台管理',
-    icon: Platform,
-    children: [
-      // 仅平台超管可见：当前是『系统说明』单页，未来平台级运维入口都放这里
-      { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true },
-      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true }
-    ]
-  },
-  {
-    // 机构推广信息 (2026-06): 机构 admin 维护自己机构的对外宣传内容
-    //   - 平台超管: 看不到 (走 /orgs 平台管理页改, 但基础信息卡在超管门控)
-    //   - 机构 admin: 看到, 改自己机构
-    //   - 注: 这是新一级菜单, 不挂其他子项; 后续加'装修模板''海报设计' 等也塞这组
-    key: 'org-mgmt',
-    title: '机构管理',
-    icon: Box,
-    children: [
-      { path: '/org/promotion', label: '推广信息', icon: Promotion, perm: 'org-promotion.write' }
     ]
   }
 ]

@@ -183,10 +183,24 @@ const perm = computed(() => ({
   orderRead: hasPerm('report.read') || hasPerm('order.read'),
   recruitRead: hasPerm('recruit.read')
 }))
+/**
+ * 权限校验：
+ * - 平台超管直通（与后端 requirePermission / 左侧菜单 isAllowed 行为一致）
+ * - 否则从 auth.orgs 中找当前 currentOrgId 的职位聚合权限
+ * 修复：原本用 user.permissions 检查,但 publicUser() 出参不包含 permissions 字段,
+ *       导致 perms 永远为空 → 兜底返回 true → Dashboard 触发无权限的 recruit 看板请求 → 403
+ */
 function hasPerm(code) {
-  const perms = user.value?.permissions || []
-  if (perms.length === 0) return true
-  return perms.includes(code)
+  if (user.value?.isPlatformAdmin) return true
+  const org = auth.orgs.find((o) => o.id === auth.currentOrgId)
+  if (!org) return false
+  const perms = new Set()
+  for (const p of org.positions || []) {
+    if (p && p.isActive !== false) {
+      for (const c of p.permissions || []) perms.add(c)
+    }
+  }
+  return perms.has(code)
 }
 
 async function loadRecruitKpi() {

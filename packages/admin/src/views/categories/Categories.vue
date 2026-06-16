@@ -40,6 +40,7 @@
                   <el-button link size="small" type="primary" @click.stop="openEdit(data)">编辑</el-button>
                   <!-- 误操删除:超管+密码二次确认;无子级 + 无 Org 引用才能删 -->
                   <DestructiveConfirm
+                    v-if="isPlatformAdmin"
                     :target="`类别 ${data.name}`"
                     warning="中风险"
                     :precheck-notes="['无子级类别', '无任何机构引用该类别']"
@@ -84,6 +85,7 @@
                 <el-button size="small" @click="openEdit(row)">编辑</el-button>
                 <el-button size="small" @click="openCreate(row)">+ 子级</el-button>
                 <DestructiveConfirm
+                  v-if="isPlatformAdmin"
                   :target="`类别 ${row.name}`"
                   warning="中风险"
                   :precheck-notes="['无子级类别', '无任何机构引用该类别']"
@@ -140,11 +142,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoryApi } from '@/api/category'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const MODELS = ['Org', 'Student', 'Subject', 'LeadTag']
 const MODEL_LABELS = { Org: '机构', Student: '学生', Subject: '学科', LeadTag: '家长标签' }

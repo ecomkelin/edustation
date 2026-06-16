@@ -29,8 +29,9 @@
                 <span class="tree-actions">
                   <el-button link size="small" @click.stop="openCreate(data)">+ 子级</el-button>
                   <el-button link size="small" type="primary" @click.stop="openEdit(data)">编辑</el-button>
-                  <!-- 误操删除:无子级 + 无 Org 引用才能删 -->
+                  <!-- 误操删除:无子级 + 无 Org 引用才能删;仅超管可见 -->
                   <DestructiveConfirm
+                    v-if="isPlatformAdmin"
                     :target="`地区 ${data.name}`"
                     warning="中风险"
                     :precheck-notes="['无子级地区', '无任何机构引用该地区']"
@@ -75,6 +76,7 @@
                 <el-button size="small" @click="openEdit(row)">编辑</el-button>
                 <el-button size="small" @click="openCreate(row)">+ 子级</el-button>
                 <DestructiveConfirm
+                  v-if="isPlatformAdmin"
                   :target="`地区 ${row.name}`"
                   warning="中风险"
                   :precheck-notes="['无子级地区', '无任何机构引用该地区']"
@@ -125,11 +127,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { regionApi } from '@/api/region'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const tree = ref([])
 const treeRef = ref()

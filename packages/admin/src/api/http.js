@@ -80,6 +80,7 @@ function shouldSkipRefresh(url = '') {
 
 // 响应拦截：401 自动 refresh；业务失败弹 ElMessage
 // config.silent = true 时不弹错误 toast（用于"非关键路径"的下拉/预加载；调用方自己处理）
+// 例外: /auth/login 自身的 401 永远要 toast(凭证错 / 账号状态错),其他 401 仍走静默重定向
 apiClient.interceptors.response.use(
   (response) => {
     const body = response.data
@@ -102,6 +103,13 @@ apiClient.interceptors.response.use(
     const { response, config } = error
     if (!response) {
       ElMessage.error('网络异常')
+      return Promise.reject(error)
+    }
+
+    // 登录接口自身的 401 永远走 toast 通道(后端 4 种文案已分桶,前端直接弹给用户)
+    if (response.status === 401 && shouldSkipRefresh(config.url)) {
+      const message = response.data && response.data.message ? response.data.message : '登录失败'
+      if (!(config && config.silent)) ElMessage.error(message)
       return Promise.reject(error)
     }
 

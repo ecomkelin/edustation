@@ -13,15 +13,41 @@ const SELF_UPDATE_WHITELIST = ['realName', 'avatar', 'idCard', 'region']
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
- * 登录：校验密码 → 签 access + refresh → 写 refreshToken 入库。
+ * 登录：校验账号状态 + 密码 → 签 access + refresh → 写 refreshToken 入库。
+ *
+ * 错误信息按"账号是否存在 / 状态 / 密码"分桶返回,前端能区分提示
+ * "账号不存在 / 账号已停用 / 账号已被禁用 / 密码错误"。
+ * 4 种都是 401, 前端 http 拦截器对 /auth/login 的 401 单开 toast 通道(其他 401 仍走静默)。
+ *
+ * 性能/时序: 走一次 findOne + 一次 verify, 不存在时也走一次 verify 占位(用随机的 hash),
+ * 避免"账号不存在" 比 "密码错" 快很多导致被枚举。
+ *
  * @returns {{ accessToken, user, refreshToken }}
  */
 async function login({ mobile, password: plain, ip, userAgent }) {
-  const user = await User.findOne({ mobile, isActive: true, isBlocked: { $ne: true } }).select('+passwordHash')
-  if (!user) throw ApiError.unauthorized('账号或密码错误')
+  // 1) 先按手机号查 (不挂 isActive / isBlocked, 用于区分具体原因)
+  const user = await User.findOne({ mobile }).select('+passwordHash')
 
+  // 占位 hash —— 账号不存在时也跑一次 verify, 让两种情况的耗时相近
+  const DUMMY_HASH = '$argon2id$v=19$m=65536,t=3,p=4$ZHVtbXlzYWx0Zm9yYWNjb3VudG5vdGV4aXN0$0000000000000000000000000000000000000000000'
+
+  if (!user) {
+    // 账号不存在 —— 跑一次假 verify 平衡时序
+    await password.verify(DUMMY_HASH, plain).catch(() => false)
+    throw ApiError.unauthorized('账号不存在')
+  }
+  if (user.isBlocked) {
+    await password.verify(user.passwordHash, plain).catch(() => false)
+    throw ApiError.unauthorized('账号已被禁用,请联系管理员')
+  }
+  if (!user.isActive) {
+    await password.verify(user.passwordHash, plain).catch(() => false)
+    throw ApiError.unauthorized('账号已停用,请联系管理员')
+  }
+
+  // 2) 密码校验
   const ok = await password.verify(user.passwordHash, plain)
-  if (!ok) throw ApiError.unauthorized('账号或密码错误')
+  if (!ok) throw ApiError.unauthorized('密码错误')
 
   const accessToken = JwtUtil.signAccessToken({ userId: String(user._id) })
   const refreshToken = JwtUtil.signRefreshToken({ userId: String(user._id), jti: Date.now() + Math.random() })
@@ -175,6 +201,8 @@ async function me(userId) {
  * 自助修改资料：白名单字段(realName / avatar / idCard / region)。
  * - mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律由管理员走 user 模块改。
  * - idCard 唯一性手动校验(与 user.update 等价,避免 partial index 异常回包不友好)。
+ * - avatar 是 File 引用字段(走 URL 字符串),引用追踪由 fileBind 维护,这里必须调
+ *   diffSingle,否则新上传的头像永远是孤儿、引用数 = 0(详见 user.service.update)。
  * - 完成后回包用 me(userId) 的全量结构,与 GET /auth/me 完全一致,前端可以直接覆盖。
  */
 async function updateMe(userId, payload) {
@@ -192,10 +220,32 @@ async function updateMe(userId, payload) {
     if (dup) throw ApiError.conflict('身份证号已存在')
   }
 
+  // avatar 是 File 引用字段 —— 先抓旧值,update 完做 diffSingle(unbind 旧 / bind 新)
+  let prevAvatar = null
+  if (Object.prototype.hasOwnProperty.call(patch, 'avatar')) {
+    const prev = await User.findById(userId).select('avatar').lean()
+    prevAvatar = prev ? prev.avatar : null
+  }
+
   const user = await User.findByIdAndUpdate(userId, { $set: patch }, { new: true, runValidators: true })
-    .select('_id')
+    .select('_id avatar')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
+
+  // avatar 引用追踪 —— 与 user.service.update 行为一致
+  if (Object.prototype.hasOwnProperty.call(patch, 'avatar')) {
+    const { REF_ENTITY } = require('@models/File.model')
+    const fileBind = require('@modules/storage/fileBind')
+    await fileBind.diffSingle({
+      orgId: null, // user 跨机构,avatar scope 允许 File.org=null
+      oldUrl: prevAvatar,
+      newUrl: user.avatar,
+      entity: REF_ENTITY.USER,
+      entityId: user._id,
+      field: 'avatar'
+    })
+  }
+
   return me(userId)
 }
 

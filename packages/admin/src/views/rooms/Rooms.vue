@@ -28,8 +28,9 @@
             type="success"
             @click="reactivate(row)"
           >启用</el-button>
-          <!-- 误操删除:先 removable-check,有挡板则不进入密码弹窗 -->
+          <!-- 误操删除:先 removable-check,有挡板则不进入密码弹窗;仅超管可见 -->
           <DestructiveConfirm
+            v-if="isPlatformAdmin"
             :target="`教室 ${row.name}`"
             warning="高风险"
             :precheck-notes="['无未归档的开班/排课引用']"
@@ -64,11 +65,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { roomApi } from '@/api/room'
 import { handleRemoveError } from '@/utils/removable'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const list = ref([])
 const loading = ref(false)
