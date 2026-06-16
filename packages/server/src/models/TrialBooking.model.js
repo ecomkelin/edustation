@@ -7,7 +7,7 @@ const { Schema, model } = require('mongoose')
  *
  * 业务上代表"一个孩子的一次试听参与记录"。ChildLead 1:N TrialBooking:
  *   - 同 ChildLead 第一次约: attemptNo=1
- *   - no_show / cancelled 后再约: 创建新一笔 TrialBooking, attemptNo=max+1
+ *   - cancelled 后再约: 创建新一笔 TrialBooking, attemptNo=max+1
  *   - 试听完成后 (status=completed) 填 result.isEnrolled 决定是否触发转化
  *
  * 关键设计 (与 plans/staged-roaming-honey.md §1.4 一致):
@@ -15,15 +15,17 @@ const { Schema, model } = require('mongoose')
  *   - parent 冗余, 加速"该家长的所有试听"查询
  *   - consultant 谈单老师 (与 teacher 上课老师分离)
  *   - lessonSchedule **可选**: 创建时 (status='awaiting_schedule') 必为空;
- *     排课后才填 (status ∈ {scheduled, arrived, no_show, completed})。
+ *     排课后才填 (status ∈ {scheduled, arrived, completed})。
  *   - 1:N 共享模型: 1 个 LessonSchedule (isTrialLesson=true) 可对应 N 个 TrialBooking
  *     (5 个孩子一起上同一节试听课)。这正是批量排课 (BatchScheduleDialog) 的核心。
  *   - 与 LessonAttendance 完全无关: 试听课不生成 LessonAttendance, 也不消耗 StudentProduct。
  *
- * 状态机:
+ * 状态机 (2026-06-16 调整: 删除 no_show):
  *   awaiting_schedule → scheduled → arrived → completed
  *                              ↓        ↓
- *                          no_show   cancelled
+ *                          cancelled
+ *   - scheduled 状态可改预约时间 (rescheduleTime) 或退回到 awaiting_schedule (revertToUnscheduled)
+ *   - 取消一律走 cancelled; 任何状态均可删除 (高危操作)
  *
  * 转化流程 (claim token 模式, 不依赖 mongoose 事务):
  *   1. TrialBooking.result.isEnrolled: null → true  (原子翻转作为重试安全 token)
@@ -75,10 +77,10 @@ const TrialBookingSchema = new Schema(
     //   result.negotiateTeacher 保留作为 alias (向后兼容老数据)
     consultant: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
 
-    // ─── 状态机 ───
+    // ─── 状态机 (2026-06-16 调整: 删 no_show) ───
     status: {
       type: String,
-      enum: ['awaiting_schedule', 'scheduled', 'arrived', 'no_show', 'completed', 'cancelled'],
+      enum: ['awaiting_schedule', 'scheduled', 'arrived', 'completed', 'cancelled'],
       default: 'awaiting_schedule',
       required: true
     },

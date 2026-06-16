@@ -33,8 +33,12 @@ router.put('/:id', mws.requirePermission('recruit.write'), v.idParam, v.update, 
 router.post('/:id/check-in', mws.requirePermission('recruit.write'), v.idParam, v.checkIn, mws.validateRequest, asyncHandler(c.checkIn))
 // 完成
 router.post('/:id/complete', mws.requirePermission('recruit.write'), v.idParam, v.complete, mws.validateRequest, asyncHandler(c.complete))
-// 再约一次 (no_show)
-router.post('/:id/reschedule', mws.requirePermission('recruit.write'), v.idParam, v.reschedule, mws.validateRequest, asyncHandler(c.reschedule))
+// 改预约时间 (scheduled → scheduled, 仅改 scheduledAt/teacher/room; 2026-06-16 替代 markNoShow+reschedule)
+router.post('/:id/reschedule-time', mws.requirePermission('recruit.write'), v.idParam, v.rescheduleTime, mws.validateRequest, asyncHandler(c.rescheduleTime))
+// 退回未约 (scheduled → awaiting_schedule; 2026-06-16 新增)
+router.post('/:id/revert-to-unscheduled', mws.requirePermission('recruit.write'), v.idParam, mws.validateRequest, asyncHandler(c.revertToUnscheduled))
+// 取消后再约一次 (cancelled → 新 awaiting_schedule + 走 batchSchedule; 2026-06-16 新增)
+router.post('/:id/reschedule-from-cancelled', mws.requirePermission('recruit.write'), v.idParam, v.rescheduleFromCancelled, mws.validateRequest, asyncHandler(c.rescheduleFromCancelled))
 // 转化预览
 router.post('/:id/convert-preview', mws.requirePermission('recruit.convert'), v.idParam, mws.validateRequest, asyncHandler(c.convertPreview))
 // 转化执行

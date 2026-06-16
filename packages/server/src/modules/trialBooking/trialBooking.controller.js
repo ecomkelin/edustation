@@ -58,7 +58,19 @@ exports.convert = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
-exports.reschedule = async (req, res) => {
-  const data = await s.reschedule({ id: req.params.id, orgId: req.orgId, currentUser: req.user, body: req.body })
+// 2026-06-16: 替换 markNoShow / reschedule; 业务上对"已约"做精细调整
+exports.rescheduleTime = async (req, res) => {
+  const data = await s.rescheduleTime({ id: req.params.id, orgId: req.orgId, currentUser: req.user, body: req.body })
+  res.json(ApiResponse.ok(data))
+}
+
+exports.revertToUnscheduled = async (req, res) => {
+  const data = await s.revertToUnscheduled({ id: req.params.id, orgId: req.orgId, currentUser: req.user })
+  res.json(ApiResponse.ok(data))
+}
+
+// 2026-06-16: cancelled tab 后的"再约一次" (旧 booking 留作审计, 新建一笔)
+exports.rescheduleFromCancelled = async (req, res) => {
+  const data = await s.rescheduleFromCancelled({ id: req.params.id, orgId: req.orgId, currentUser: req.user, body: req.body })
   res.json(ApiResponse.ok(data))
 }

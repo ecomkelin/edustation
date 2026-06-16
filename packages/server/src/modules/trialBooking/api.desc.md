@@ -14,7 +14,9 @@
 | PUT | `/api/v1/trial-bookings/:id` | `recruit.write` | 编辑 (仅 status='cancelled' / remark) |
 | POST | `/api/v1/trial-bookings/:id/check-in` | `recruit.write` | 到店打卡 (status='arrived') |
 | POST | `/api/v1/trial-bookings/:id/complete` | `recruit.write` | 完成 (status='completed', 填 result) |
-| POST | `/api/v1/trial-bookings/:id/reschedule` | `recruit.write` | no_show 后再约一次 (内部走 batch-schedule) |
+| **POST** | **`/api/v1/trial-bookings/:id/reschedule-time`** | **`recruit.write`** | **改预约时间 (scheduled→scheduled, 仅改 scheduledAt/teacher/room/duration; 2026-06-16 替代 markNoShow+reschedule)** |
+| **POST** | **`/api/v1/trial-bookings/:id/revert-to-unscheduled`** | **`recruit.write`** | **退回未约 (scheduled→awaiting_schedule, 2026-06-16 新增)** |
+| **POST** | **`/api/v1/trial-bookings/:id/reschedule-from-cancelled`** | **`recruit.write`** | **取消后再约一次 (cancelled→新建 awaiting_schedule attemptNo+1 + batchSchedule, 2026-06-16 新增)** |
 | POST | `/api/v1/trial-bookings/:id/convert-preview` | `recruit.convert` | 转化预览 (返回 initialPassword 等) |
 | POST | `/api/v1/trial-bookings/:id/convert` | `recruit.convert` | 转化执行 (claim token + upsert 链) |
 | DELETE | `/api/v1/trial-bookings/:id` | `requirePlatformPassword` | 物理删除 (completed 阻) |
@@ -26,12 +28,14 @@
 - 批量排课 (batch-schedule) 一次创建 1 个 schedule + 更新 N 个 booking
 - TrialBooking.lessonSchedule 在 `awaiting_schedule` 状态为空, 排课后才填
 
-### 状态机
+### 状态机 (2026-06-16 调整: 删除 no_show)
 ```
 awaiting_schedule → scheduled → arrived → completed
                               ↓        ↓
-                          no_show   cancelled
+                          cancelled
 ```
+- `scheduled` 状态可改预约时间 (`POST /:id/reschedule-time`) 或退回到 `awaiting_schedule` (`POST /:id/revert-to-unscheduled`)
+- 取消一律走 `cancelled`; 任何状态均可物理删除 (高危)
 
 ### 转化两步式 (claim token 模式)
 1. `POST /convert-preview` — 软预览, 返回 `initialPassword` 等

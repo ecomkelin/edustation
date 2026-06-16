@@ -25,30 +25,10 @@
           >
             到店打卡
           </el-button>
-          <el-button
-            v-if="booking.status === 'arrived'"
-            type="success"
-            :loading="acting"
-            @click="onComplete"
-          >
-            完成试听
-          </el-button>
-          <el-button
-            v-if="booking.status === 'completed' && booking.result?.isEnrolled === null"
-            type="success"
-            :loading="acting"
-            @click="onComplete"
-          >
-            补填结果
-          </el-button>
-          <el-button
-            v-if="booking.status === 'no_show'"
-            type="warning"
-            :loading="acting"
-            @click="emit('reschedule', booking)"
-          >
-            再约一次
-          </el-button>
+          <!-- 2026-06-16: 删 "完成试听" 按钮
+               - 业务上"完成试听"和"保存结果"是同一个动作 (都翻 completed + 填 result)
+               - 表单底部"保存结果"按钮已经覆盖, 头部按钮冗余且容易让人点了没反应
+               - 补填结果也用底部按钮, 不需要单独 -->
         </div>
       </div>
 
@@ -71,17 +51,48 @@
         <el-descriptions-item label="计划时间" :span="2">
           {{ formatTime(booking.scheduledAt) }}
         </el-descriptions-item>
+        <!-- 2026-06-16: 试听备注 — 之前 batch-schedule 写入了 remark 但前端 dialog 不显示 -->
+        <el-descriptions-item v-if="booking.remark" label="试听备注" :span="2">
+          <span style="white-space: pre-wrap">{{ booking.remark }}</span>
+        </el-descriptions-item>
       </el-descriptions>
 
       <!-- 完成结果 / 转化 -->
       <el-divider content-position="left">试听结果</el-divider>
+      <!-- 2026-06-16: 已保存的结果只读展示区
+           - 业务上: status=completed 后, 试听结果只读, 但 el-input disabled 容易看不出"这是保存值"
+           - 用 el-descriptions 显式列出 attractionPoint / reasonNotEnrolled / negotiateTeacher
+           - 避免依赖 el-input placeholder 区分"空值/已保存" -->
+      <el-descriptions
+        v-if="booking.status === 'completed' && booking.result?.isEnrolled !== null"
+        :column="1"
+        border
+        size="small"
+        class="mb saved-result"
+      >
+        <el-descriptions-item v-if="booking.result?.isEnrolled === true" label="是否报名">
+          <el-tag type="success" size="small">是</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item v-else-if="booking.result?.isEnrolled === false" label="是否报名">
+          <el-tag type="info" size="small">否</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="booking.result?.isEnrolled === true && booking.result?.attractionPoint" label="吸引报名的点">
+          <span style="white-space: pre-wrap">{{ booking.result.attractionPoint }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="booking.result?.isEnrolled === false && booking.result?.reasonNotEnrolled" label="为什么不报名">
+          <span style="white-space: pre-wrap">{{ booking.result.reasonNotEnrolled }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="booking.result?.isEnrolled === true && negotiateTeacherLabel" label="谈单老师">
+          {{ negotiateTeacherLabel }}
+        </el-descriptions-item>
+      </el-descriptions>
       <el-form
         ref="resultFormRef"
         :model="result"
         :rules="resultRules"
         label-width="100px"
         label-position="right"
-        :disabled="booking.status !== 'arrived' && !(booking.status === 'completed' && booking.result?.isEnrolled === null)"
+        v-show="booking.status === 'arrived' || (booking.status === 'completed' && booking.result?.isEnrolled === null)"
       >
         <el-form-item label="是否报名" prop="isEnrolled">
           <el-radio-group v-model="result.isEnrolled">
@@ -199,6 +210,28 @@ const canConvert = computed(() => {
     && !props.booking.result?.enrolledAt
 })
 
+/**
+ * 谈单老师显示名 (2026-06-16 修复)
+ *   - 后端 detail / list 的 populate('result.negotiateTeacher', 'mobile realName') 会带回对象
+ *   - 但 el-select 展示时优先从 teacherOptions (列表拉的) 匹配
+ *   - 找不到时 fallback 到 populate 对象的 realName
+ *   - 再不行就显示手机号或 id (而非裸 ObjectId)
+ */
+const negotiateTeacherLabel = computed(() => {
+  const nt = props.booking?.result?.negotiateTeacher
+  if (!nt) return ''
+  // 1) 从 teacherOptions 找
+  const id = typeof nt === 'object' ? (nt._id || nt.id) : nt
+  const hit = teacherOptions.value.find((u) => (u._id || u.id) === id)
+  if (hit) return `${hit.realName || ''} (${hit.mobile || ''})`.trim()
+  // 2) fallback 到 populate 对象字段
+  if (typeof nt === 'object') {
+    return `${nt.realName || ''} (${nt.mobile || ''})`.trim()
+  }
+  // 3) 实在没办法, 显示裸 id (理论上不走到这)
+  return String(nt)
+})
+
 watch(() => props.visible, async (v) => {
   if (v && props.booking) {
     // 同步 result 表单
@@ -206,7 +239,12 @@ watch(() => props.visible, async (v) => {
     result.isEnrolled = r.isEnrolled ?? null
     result.attractionPoint = r.attractionPoint || ''
     result.reasonNotEnrolled = r.reasonNotEnrolled || ''
-    result.negotiateTeacher = r.negotiateTeacher || null
+    // 2026-06-16: negotiateTeacher 可能是 ObjectId 字符串 或 populate 后的 User 对象
+    //   el-select v-model 需要 id 字符串才能在 options 中找到 label
+    //   否则 input 区域会显示裸 ObjectId (用户反馈问题 3)
+    result.negotiateTeacher = (r.negotiateTeacher && typeof r.negotiateTeacher === 'object')
+      ? (r.negotiateTeacher._id || r.negotiateTeacher.id)
+      : (r.negotiateTeacher || null)
     if (!result.negotiateTeacher && props.booking.preStudent?.inviteTeacher) {
       const inv = props.booking.preStudent.inviteTeacher
       result.negotiateTeacher = typeof inv === 'object' ? inv._id : inv
@@ -216,6 +254,26 @@ watch(() => props.visible, async (v) => {
       // 排除「家长」(2026-06 用户反馈); u.positions 是 [{name, ...}]
       teacherOptions.value = (r.data?.items || [])
         .filter((u) => !(u.positions || []).some((p) => p.name === '家长'))
+      // 2026-06-16: 谈单老师 / 邀请老师可能在 list 前 200 之外 → 查不到 label
+      //   兜底: 用 userApi.detail 单独查, 注入到 options 头部
+      //   这样 el-select 能显示 "用户名 (手机号)" 而不是裸 ObjectId
+      const needDetail = new Set()
+      if (result.negotiateTeacher
+        && !teacherOptions.value.some((u) => (u._id || u.id) === result.negotiateTeacher)) {
+        needDetail.add(result.negotiateTeacher)
+      }
+      // inviteTeacher (行 261-263 默认填充的) 也兜底
+      const inv = props.booking.preStudent?.inviteTeacher
+      const invId = inv ? (typeof inv === 'object' ? (inv._id || inv.id) : inv) : null
+      if (invId && !teacherOptions.value.some((u) => (u._id || u.id) === invId)) {
+        needDetail.add(invId)
+      }
+      for (const id of needDetail) {
+        try {
+          const detail = await userApi.detail(id)
+          if (detail.data) teacherOptions.value.unshift(detail.data)
+        } catch (e) { /* 404 / 跨 org 都不影响主体逻辑 */ }
+      }
     } catch (e) {}
   }
 }, { immediate: true })
@@ -235,8 +293,13 @@ async function onCheckIn() {
   acting.value = true
   try {
     const r = await trialBookingApi.checkIn(props.booking._id)
+    // 2026-06-16: 到店打卡成功后自动关闭弹窗
+    //   - 老版: 不关弹窗, 用户看到 status=arrived 但还要手动点 X
+    //   - 业务上打卡就是"人来了, 录一下", 关弹窗让用户继续走"完成试听"流程
+    //   - 列表 tab 自动从"已约"切到"已到店" (load() 刷新)
     ElMessage.success('已打卡')
     emit('updated', r.data)
+    emit('update:visible', false)
   } finally {
     acting.value = false
   }
@@ -254,15 +317,22 @@ async function onComplete() {
     }
   }
   // 2) 保存 result
-  await onSaveResult(true)
+  // 2026-06-16: 修复"完成试听"按钮无反应
+  //   - 老版: silent=true 不弹 toast, 弹窗不关 → 用户以为没生效
+  //   - 新版: silent=true 但成功后关闭弹窗 + 弹 toast
+  const ok = await onSaveResult(true)
+  if (ok) {
+    ElMessage.success('已完成试听')
+    emit('update:visible', false)
+  }
 }
 
 async function onSaveResult(silent) {
-  if (!resultFormRef.value) return
+  if (!resultFormRef.value) return false
   try {
     await resultFormRef.value.validate()
   } catch (_) {
-    return
+    return false
   }
   acting.value = true
   try {
@@ -275,7 +345,16 @@ async function onSaveResult(silent) {
       }
     })
     if (!silent) ElMessage.success('已保存')
+    // 2026-06-16: 同步本地 props.booking.result, 让 dialog 关闭再开仍能展示已保存值
+    props.booking.result = { ...(props.booking.result || {}), ...r.data.result }
     emit('updated', r.data)
+    // 2026-06-16: 业务决策 — 试听结果保存即关闭弹窗
+    //   - 业务上"保存结果"是终态动作, 弹窗留作再编辑意义不大
+    //   - silent 模式 (onComplete 内部调) 会再 emit 一次, 幂等
+    emit('update:visible', false)
+    return true
+  } catch (e) {
+    return false
   } finally {
     acting.value = false
   }

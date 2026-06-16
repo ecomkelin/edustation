@@ -41,11 +41,33 @@
           <span v-else style="color: #999">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="监护人">
+      <el-table-column label="监护人" width="140">
         <template #default="{ row }">
           <span v-for="g in row.guardians" :key="g._id" style="margin-right: 6px">
-            {{ g.realName || g.mobile }}
+            {{ g.realName || '-' }}
           </span>
+        </template>
+      </el-table-column>
+      <!-- 2026-06-16: 单独列"家长电话" — 方便找学生打电话
+           - 监护人列只显示名字 (realName 可能是 "家长-张三" 这种格式, 看不出电话)
+           - 直接从 guardians[0].mobile 拉, 配合 el-tooltip 显示完整号码 + 拨号
+           - 业务上主监护人 = guardians[0] (Student.guardianUser)
+           - 列表场景: 显示主监护人电话就够, 不展示所有监护人避免冗长 -->
+      <el-table-column label="家长电话" width="140">
+        <template #default="{ row }">
+          <el-tooltip
+            v-if="row.guardians && row.guardians.length"
+            :content="`点击拨打: ${primaryGuardianMobile(row)}`"
+            placement="top"
+          >
+            <a
+              :href="`tel:${primaryGuardianMobile(row)}`"
+              style="color: #409eff; text-decoration: none"
+            >
+              {{ formatMobile(primaryGuardianMobile(row)) }}
+            </a>
+          </el-tooltip>
+          <span v-else style="color: #999">未登记</span>
         </template>
       </el-table-column>
       <el-table-column prop="isActive" label="启用" width="80">
@@ -215,6 +237,32 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/**
+ * 取主监护人手机号 (2026-06-16 加)
+ *   - 业务上 guardians[0] = 主监护人 (Student.guardianUser 也是它)
+ *   - 后端 list() 已 .populate('guardians', 'mobile realName avatar')
+ *   - 兼容 guardians 是 [ObjectId] 数组(没 populate)的情况
+ *   - 用于"家长电话"列展示 + tel: 拨号
+ */
+function primaryGuardianMobile(row) {
+  const g = (row.guardians || [])[0]
+  if (!g) return ''
+  return typeof g === 'object' ? (g.mobile || '') : ''
+}
+
+/**
+ * 手机号脱敏: 138****5678 (2026-06-16 加)
+ *   - 默认中段 4 位掩, 列表不暴露完整号
+ *   - 鼠标 hover 看 tooltip 看完整号
+ *   - 长度异常时原样显示
+ */
+function formatMobile(m) {
+  if (!m) return '-'
+  const s = String(m)
+  if (s.length === 11) return `${s.slice(0, 3)}****${s.slice(7)}`
+  return s
 }
 
 async function loadOrgUsers() {

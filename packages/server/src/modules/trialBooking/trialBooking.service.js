@@ -33,7 +33,7 @@ const password = require('@utils/password')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, status, from, to, teacher, subject, preStudent, parent, attemptNo, page, pageSize }) {
+async function list({ orgId, status, from, to, teacher, subject, preStudent, parent, attemptNo, isEnrolled, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (status) {
@@ -41,22 +41,46 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
     if (arr.length > 1) filter.status = { $in: arr }
     else if (arr.length === 1) filter.status = arr[0]
   }
+  // 2026-06-16: 已完成按"已报名/未报名"分桶
+  //   - isEnrolled=true  → 已报名 (result.isEnrolled === true)
+  //   - isEnrolled=false → 未报名 (result.isEnrolled === false 或 null, 业务上"未填 = 未报名")
+  if (isEnrolled === 'true') filter['result.isEnrolled'] = true
+  else if (isEnrolled === 'false') filter['result.isEnrolled'] = { $in: [false, null] }
   if (teacher) filter.teacher = teacher
   if (subject) filter.subject = subject
   if (preStudent) filter.preStudent = preStudent
   if (parent) filter.parent = parent
   if (attemptNo) filter.attemptNo = Number(attemptNo)
   if (from || to) {
-    filter.scheduledAt = {}
-    if (from) filter.scheduledAt.$gte = new Date(from)
-    if (to) filter.scheduledAt.$lte = new Date(to)
+    // 2026-06-16: 日期过滤只对有 scheduledAt 的 booking 生效;
+    //   - 'awaiting_schedule' 状态的 booking 没有 scheduledAt (还没排课),
+    //     用 $gte/$lte 会把它滤掉 (条件永远 false)
+    //   - 修法: 用 $or 包一层,scheduledAt 缺失的记录不参与日期判断
+    const range = {}
+    if (from) range.$gte = new Date(from)
+    if (to) range.$lte = new Date(to)
+    filter.$or = [
+      { scheduledAt: range },
+      { scheduledAt: { $exists: false } },
+      { scheduledAt: null }
+    ]
   }
   const [items, total] = await Promise.all([
     TrialBooking.find(filter)
       .populate('preStudent', 'name age gender grade className school trialSubject inviteTeacher')
+      .populate({
+        // 2026-06-16: 列表关联家长电话 + 邀约人 (前端 row.preStudent.parent.phone / .inviteTeacher.realName)
+        //   preStudent 是 ChildLead, phone 在 Parent 上, inviteTeacher 是 User id
+        //   必须二次 populate, 否则前端拿不到 realName/phone
+        path: 'preStudent',
+        populate: [
+          { path: 'parent', select: 'phone lifecycle' },
+          { path: 'inviteTeacher', select: 'mobile realName' }
+        ]
+      })
       .populate('parent', 'phone lifecycle')
-      .populate('teacher', 'mobile realName')
       .populate('subject', 'name')
+      .populate('teacher', 'mobile realName')  // 2026-06-16: 修复 — 列表试听老师列一直显示 "-"
       .populate('lessonSchedule', 'plannedStartTime plannedEndTime room title isTrialLesson status')
       .populate('consultant', 'mobile realName')
       .populate('result.negotiateTeacher', 'mobile realName')
@@ -185,7 +209,12 @@ async function batchSchedule({ orgId, currentUser, body }) {
         teacher: body.teacher,
         room: body.room || null,
         joinMode: 'solo',
-        status: 'scheduled'
+        status: 'scheduled',
+        // 2026-06-16: 修老 bug — 之前前端填的备注被丢
+        //   - 接受 notes (BatchScheduleDialog 字段名) 或 remark (统一别名), 任一即可
+        ...(body.notes !== undefined || body.remark !== undefined
+          ? { remark: body.notes ?? body.remark ?? '' }
+          : {})
       }
     }
   )
@@ -209,33 +238,106 @@ async function batchSchedule({ orgId, currentUser, body }) {
   }
 }
 
-/* ─── 再约一次 (no_show / cancelled) ──────────────── */
+/* ─── 改预约时间 (scheduled → scheduled, 仅改 scheduledAt/teacher/room) ─── */
+/**
+ * 2026-06-16 调整:
+ *   - 删 no_show 后, 销售对"已约但人没来/想换时间" 的处理从"标未到 → 再约一次" 改成
+ *     直接改预约时间 / 取消 (cancelled) / 退回未约 (awaiting_schedule)
+ *   - 已约态调整不走"老 booking 留作审计 + 新建一笔 attemptNo+1" 路径, 避免历史越来越乱
+ *   - 仅改 scheduledAt / teacher / room / scheduledDuration, 不改其他业务字段
+ *   - 业务校验: 仅 scheduled 状态可改时间
+ */
+async function rescheduleTime({ id, orgId, currentUser, body }) {
+  if (!currentUser) throw ApiError.unauthorized()
+  const doc = await TrialBooking.findOne({ _id: id, org: orgId })
+  if (!doc) throw ApiError.notFound('试听预约不存在')
+  if (doc.status !== 'scheduled') {
+    throw ApiError.badRequest(`仅 scheduled 状态可改预约时间, 当前 ${doc.status}`)
+  }
+  const start = body.plannedStartTime ? new Date(body.plannedStartTime) : null
+  const end = body.plannedEndTime ? new Date(body.plannedEndTime) : null
+  if (start && end && !(start < end)) {
+    throw ApiError.badRequest('开始时间必须早于结束时间')
+  }
+  if (start) doc.scheduledAt = start
+  if (start && end) {
+    // 同步 scheduledDuration (分钟), 跟 batchSchedule 计算口径一致
+    doc.scheduledDuration = Math.round((end - start) / 60000)
+  } else if (end && doc.scheduledAt) {
+    doc.scheduledDuration = Math.round((end - doc.scheduledAt) / 60000)
+  }
+  if (body.teacher) doc.teacher = body.teacher
+  if (body.room !== undefined) doc.room = body.room || null
+  await doc.save()
+  return doc.toObject()
+}
 
-async function reschedule({ id, orgId, currentUser, body }) {
+/* ─── 退回到未约 (scheduled → awaiting_schedule) ─── */
+/**
+ * 2026-06-16 调整:
+ *   - 销售在"已约" tab 看到一笔计划但又想从"批量排课" 池子里重新挑老师/时间时, 可退回
+ *   - 退回后 status=awaiting_schedule, lessonSchedule 清空 (跟 awaiting_schedule 一致)
+ *   - 业务校验: 仅 scheduled 可退; 退回后该 booking 会出现在"待约" tab 顶部 (按 createdAt 排)
+ */
+async function revertToUnscheduled({ id, orgId, currentUser }) {
+  if (!currentUser) throw ApiError.unauthorized()
+  const doc = await TrialBooking.findOne({ _id: id, org: orgId })
+  if (!doc) throw ApiError.notFound('试听预约不存在')
+  if (doc.status !== 'scheduled') {
+    throw ApiError.badRequest(`仅 scheduled 状态可退回未约, 当前 ${doc.status}`)
+  }
+  doc.status = 'awaiting_schedule'
+  doc.lessonSchedule = null
+  // 不清 scheduledAt / teacher / room, 销售退回时保留原 hint;
+  // 重新走 batchSchedule 时会被覆盖; 跟"从未排过" 不严格区分, 业务上没问题
+  await doc.save()
+  return doc.toObject()
+}
+
+/* ─── 取消后"再约一次" (cancelled → 新 awaiting_schedule + 走 batchSchedule) ─── */
+/**
+ * 2026-06-16: 销售在 cancelled tab 找到之前的预约, 想为同一孩子创建新一笔预约
+ *   - 旧 booking 留作审计 (status 仍 cancelled, 业务可追溯)
+ *   - 算新 attemptNo = max + 1
+ *   - 创建一笔 awaiting_schedule 的新 booking, 继承旧 booking 的 subject
+ *   - 写一条 LeadActivity 记录"第 N 次取消, 重新约第 M 次"
+ *   - 内部调 batchSchedule, 直接走通排课 (起 teacher/room/start/end 校验)
+ *   - 业务校验: 仅 cancelled 可触发 (scheduled 应该用 rescheduleTime; awaiting_schedule 直接 batchSchedule)
+ */
+async function rescheduleFromCancelled({ id, orgId, currentUser, body }) {
   if (!currentUser) throw ApiError.unauthorized()
   const oldBooking = await TrialBooking.findOne({ _id: id, org: orgId })
   if (!oldBooking) throw ApiError.notFound('试听预约不存在')
-  // 2026-06-15: cancelled 也允许再约
-  if (!['no_show', 'cancelled'].includes(oldBooking.status)) {
-    throw ApiError.badRequest(`仅 no_show / cancelled 状态可触发再约一次, 当前: ${oldBooking.status}`)
+  if (oldBooking.status !== 'cancelled') {
+    throw ApiError.badRequest(`仅 cancelled 状态可触发再约一次, 当前: ${oldBooking.status}`)
   }
+  // 校验入参 (复用 batchSchedule 的口径)
+  const start = new Date(body.plannedStartTime)
+  const end = new Date(body.plannedEndTime)
+  if (!(start < end)) throw ApiError.badRequest('开始时间必须早于结束时间')
+  if (!body.teacher) throw ApiError.badRequest('teacher 必填')
+  if (body.room && !await Room.exists({ _id: body.room, org: orgId })) {
+    throw ApiError.badRequest('room 不属于本机构')
+  }
+
   // 算新 attemptNo
   const maxAttempt = await TrialBooking.findOne({ preStudent: oldBooking.preStudent, org: orgId })
     .sort({ attemptNo: -1 })
     .select('attemptNo')
     .lean()
   const newAttempt = (maxAttempt?.attemptNo || 0) + 1
+
   // 写一条 LeadActivity 记录"再约一次"事件
-  const oldStatusLabel = oldBooking.status === 'no_show' ? '未到' : '取消'
   await LeadActivity.create({
     org: orgId,
     lead: oldBooking.preStudent,
     type: 'note',
     byUser: currentUser.id,
     at: new Date(),
-    remark: `第 ${oldBooking.attemptNo} 次${oldStatusLabel}, 重新约第 ${newAttempt} 次`
+    remark: `第 ${oldBooking.attemptNo} 次取消, 重新约第 ${newAttempt} 次`
   })
-  // 新建一条 awaiting_schedule
+
+  // 新建一笔 awaiting_schedule, 继承 subject
   const newBooking = await TrialBooking.create({
     org: orgId,
     preStudent: oldBooking.preStudent,
@@ -245,9 +347,10 @@ async function reschedule({ id, orgId, currentUser, body }) {
     subject: oldBooking.subject,
     status: 'awaiting_schedule',
     createdBy: currentUser.id,
-    remark: `由 ${id} 再约产生`
+    remark: `由 ${id} (第 ${oldBooking.attemptNo} 次取消) 再约产生`
   })
-  // 直接调 batchSchedule
+
+  // 走 batchSchedule 一次性排课
   return batchSchedule({
     orgId,
     currentUser,
@@ -340,7 +443,12 @@ async function convertPreview({ id, orgId }) {
     initialPassword,
     previewUser: existingUser
       ? { mobile: existingUser.mobile, realName: existingUser.realName, requirePasswordChange: false, alreadyExists: true }
-      : { mobile: parent.phone, realName: `家长-${parent.phone.slice(-4)}`, requirePasswordChange: true },
+      // 2026-06-16: 改"首孩转化时的 realName 命名" — 按第一个转化的孩子的名字
+      //   - 老版: 家长-${phone.slice(-4)} (手机号后 4 位)
+      //   - 新版: 家长-${child.name} (本次转化的孩子名字)
+      //   - 业务语义: 首孩转化时建 User, realName 取该孩名字; 次孩转化时 parent.user 已存在,
+      //     $setOnInsert 不会覆盖, 保持首孩名字 — 跟用户决策"按第一个转化的孩子的名字"对齐
+      : { mobile: parent.phone, realName: `家长-${child.name}`, requirePasswordChange: true },
     previewStudent: {
       name: child.name,
       gender: child.gender,
@@ -403,7 +511,10 @@ async function convert({ id, orgId, currentUser }) {
         $setOnInsert: {
           mobile: parent.phone,
           passwordHash,
-          realName: `家长-${parent.phone.slice(-4)}`,
+          // 2026-06-16: 改首孩命名 — 家长-{首孩名字}
+          //   - 次孩转化时 parent.user 已存在, 该 if 分支跳过, realName 保持首孩名
+          //   - 跟用户决策"按第一个转化的孩子的名字"对齐
+          realName: `家长-${child.name}`,
           requirePasswordChange: true,
           isActive: true,
           isBlocked: false
@@ -475,7 +586,7 @@ async function convert({ id, orgId, currentUser }) {
 /**
  * 试听预约的"互锁"检查:
  *   只有「已取消」状态的预约可以物理删除, 其余状态一律阻挡。
- *   - awaiting_schedule / scheduled / arrived / no_show / completed 都不可删
+ *   - awaiting_schedule / scheduled / arrived / completed 都不可删 (2026-06-16 删 no_show)
  *   - completed 还会涉及转化下游 (User/Student/Parent.user 回填等), 物理删会破坏一致性
  *   - 其余进行中状态避免误操; 业务上「已取消」是无后续动作的死记录, 可清理
  */
@@ -505,6 +616,8 @@ async function removableCheck({ id, orgId }) {
 module.exports = {
   list, detail, create, update, remove, removableCheck,
   batchSchedule, checkIn, complete,
-  convertPreview, convert, reschedule,
+  convertPreview, convert,
+  // 2026-06-16: 删 reschedule (旧 no_show 路径); 加 rescheduleTime / revertToUnscheduled / rescheduleFromCancelled
+  rescheduleTime, revertToUnscheduled, rescheduleFromCancelled,
   trialBookingUsageChecks
 }

@@ -220,7 +220,9 @@ async function submit() {
       plannedStartTime: startIso,
       plannedEndTime: new Date(endMs).toISOString(),
       teacher: form.teacher,
-      room: form.room || undefined
+      room: form.room || undefined,
+      // 2026-06-16: 修老 bug — 之前 form.notes 字段填了但没传, 备注全丢
+      notes: form.notes || undefined
     })
     ElMessage.success(`已为 ${res.data.bookingCount} 条预约排进同一时段`)
     emit('scheduled', res.data)

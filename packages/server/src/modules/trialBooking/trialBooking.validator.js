@@ -15,7 +15,8 @@ const { body, query, param } = require('express-validator')
  *   POST /:id/complete      - 完成 (填 result)
  *   POST /:id/convert-preview - 转化预览
  *   POST /:id/convert       - 转化执行
- *   POST /:id/reschedule    - 再约一次 (no_show 走 batch-schedule)
+ *   POST /:id/reschedule-time      - 改预约时间 (scheduled→scheduled, 替代 markNoShow+reschedule)
+ *   POST /:id/revert-to-unscheduled - 退回未约 (scheduled→awaiting_schedule)
  *   DELETE /:id             - 物理删除 (requirePlatformPassword)
  */
 
@@ -27,6 +28,10 @@ exports.list = [
   query('subject').optional().isMongoId(),
   query('preStudent').optional().isMongoId(),
   query('attemptNo').optional().isInt({ min: 1 }),
+  // 2026-06-16: 已完成按"已报名/未报名"分桶
+  //   - 'true'  → 已报名 (result.isEnrolled === true)
+  //   - 'false' → 未报名 (result.isEnrolled === false 或 null)
+  query('isEnrolled').optional().isIn(['true', 'false']).withMessage('isEnrolled 需为 true/false'),
   query('page').optional().isInt({ min: 1 }),
   query('pageSize').optional().isInt({ min: 1, max: 200 })
 ]
@@ -58,9 +63,15 @@ exports.batchSchedule = [
   body('plannedStartTime').isISO8601().withMessage('plannedStartTime 需为 ISO 日期'),
   body('plannedEndTime').isISO8601().withMessage('plannedEndTime 需为 ISO 日期'),
   body('teacher').isMongoId().withMessage('teacher 需为合法 id'),
-  body('room').isMongoId().withMessage('room 需为合法 id'),
+  // 2026-06-16: room 改可选
+  //   - 老版: 必填, 试听不排教室就报错
+  //   - 业务上: 试听可以"就地谈" (咨询室/会议室), 不强制占用正式教室
+  //   - service 内部: body.room || null 写入, 已兼容
+  body('room').optional({ nullable: true }).isMongoId().withMessage('room 需为合法 id'),
   body('title').optional({ nullable: true }).isString().isLength({ max: 100 }),
-  body('notes').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('notes').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  // 2026-06-16: 也接受 remark (统一别名, service 内 notes/remark 任一即可)
+  body('remark').optional({ nullable: true }).isString().isLength({ max: 500 })
 ]
 
 exports.checkIn = [
@@ -86,3 +97,37 @@ exports.reschedule = [
 exports.idParam = [
   param('id').isMongoId().withMessage('id 需为合法 id')
 ]
+
+/**
+ * 改预约时间 (2026-06-16 替代 markNoShow + reschedule)
+ * Body 字段 (全部可选, 但至少给一个):
+ *   - plannedStartTime: ISO 日期
+ *   - plannedEndTime:   ISO 日期 (与 plannedStartTime 配对, 用于算 scheduledDuration)
+ *   - teacher:          ObjectId
+ *   - room:             ObjectId (可空)
+ * - 后端 service 校验: scheduled 状态才允许
+ */
+exports.rescheduleTime = [
+  body('plannedStartTime').optional({ nullable: true }).isISO8601().withMessage('plannedStartTime 需为 ISO 日期'),
+  body('plannedEndTime').optional({ nullable: true }).isISO8601().withMessage('plannedEndTime 需为 ISO 日期'),
+  body('teacher').optional({ nullable: true }).isMongoId().withMessage('teacher 需为合法 id'),
+  body('room').optional({ nullable: true }).isMongoId().withMessage('room 需为合法 id')
+]
+
+/**
+ * 取消后再约一次 (2026-06-16 新增, 替代 markNoShow 后已经删的 reschedule)
+ * Body 字段 (与 batchSchedule 一致):
+ *   - plannedStartTime: ISO 日期 (必填)
+ *   - plannedEndTime:   ISO 日期 (必填, 必须晚于开始)
+ *   - teacher:          ObjectId (必填)
+ *   - room:             ObjectId (可选)
+ * - 后端 service 校验: cancelled 状态才允许
+ *   - 旧 booking 留作审计; 新建一笔 awaiting_schedule (attemptNo=max+1) 并走 batchSchedule
+ */
+exports.rescheduleFromCancelled = [
+  body('plannedStartTime').isISO8601().withMessage('plannedStartTime 需为 ISO 日期'),
+  body('plannedEndTime').isISO8601().withMessage('plannedEndTime 需为 ISO 日期'),
+  body('teacher').isMongoId().withMessage('teacher 需为合法 id'),
+  body('room').optional({ nullable: true }).isMongoId().withMessage('room 需为合法 id')
+]
+
