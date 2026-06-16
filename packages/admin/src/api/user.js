@@ -2,7 +2,8 @@ import http from './http'
 
 export const userApi = {
   list: (params) => http.get('/users', { params }),
-  lookup: (params) => http.get('/users/lookup', { params }),
+  // 查找接口: 用户不存在是预期分支 (走"新建"), 4xx 不弹 toast, 由调用方处理
+  lookup: (params) => http.get('/users/lookup', { params, silent: true }),
   detail: (id) => http.get(`/users/${id}`),
   create: (data) => http.post('/users', data),
   update: (id, data) => http.put(`/users/${id}`, data),

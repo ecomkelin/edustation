@@ -55,8 +55,7 @@
       </el-form-item>
       <el-form-item>
         <el-button @click="reload">搜索</el-button>
-        <el-button type="primary" :disabled="!auth.currentOrgId" @click="openCreate">新建用户</el-button>
-        <el-button :disabled="!auth.currentOrgId" @click="openAttach">添加已有用户</el-button>
+        <el-button type="primary" :disabled="!auth.currentOrgId" @click="openCreate">添加用户</el-button>
       </el-form-item>
     </el-form>
 
@@ -145,45 +144,167 @@
       @size-change="reload"
     />
 
-    <el-dialog v-model="dialog" :title="form.id ? '编辑用户' : '新建用户'" width="520px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
-        <el-form-item label="姓名" prop="realName"><el-input v-model="form.realName" /></el-form-item>
-        <el-form-item v-if="!form.id" label="手机号" prop="mobile">
-          <el-input v-model="form.mobile" maxlength="20" />
-        </el-form-item>
-        <el-form-item v-if="!form.id" label="密码">
-          <el-input v-model="form.password" placeholder="留空使用默认密码" show-password />
-        </el-form-item>
-        <el-form-item label="身份证号" prop="idCard">
-          <el-input v-model="form.idCard" placeholder="选填，15 或 18 位" maxlength="18" />
-        </el-form-item>
-        <el-form-item label="现居地" prop="region">
-          <el-cascader
-            v-model="formRegion"
-            :options="regionTree"
-            :props="{ value: 'id', label: 'name', children: 'children', checkStrictly: true, emitPath: false }"
-            placeholder="请选择"
-            style="width: 100%"
-            clearable
-          />
-        </el-form-item>
-        <el-form-item label="职位">
-          <el-select v-model="form.positions" multiple style="width: 100%">
-            <el-option
-              v-for="p in positions"
-              :key="p._id"
-              :label="Number(p.clientLevel) > 0 ? `${p.name}（L${p.clientLevel} 家长）` : p.name"
-              :value="p._id"
+    <el-dialog v-model="dialog" :title="dialogTitle" width="560px" @close="resetCreate">
+      <!-- 编辑分支 (form.id 已存在): 原编辑表单不变 -->
+      <template v-if="form.id">
+        <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+          <el-form-item label="姓名" prop="realName"><el-input v-model="form.realName" /></el-form-item>
+          <el-form-item v-if="!form.id" label="手机号" prop="mobile">
+            <el-input v-model="form.mobile" maxlength="20" />
+          </el-form-item>
+          <el-form-item label="身份证号" prop="idCard">
+            <el-input v-model="form.idCard" placeholder="选填，15 或 18 位" maxlength="18" />
+          </el-form-item>
+          <el-form-item label="现居地" prop="region">
+            <el-cascader
+              v-model="formRegion"
+              :options="regionTree"
+              :props="{ value: 'id', label: 'name', children: 'children', checkStrictly: true, emitPath: false }"
+              placeholder="请选择"
+              style="width: 100%"
+              clearable
             />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.id" label="启用">
-          <el-switch v-model="form.isActive" />
-        </el-form-item>
-      </el-form>
+          </el-form-item>
+          <el-form-item label="职位">
+            <el-select v-model="form.positions" multiple style="width: 100%">
+              <el-option
+                v-for="p in positions"
+                :key="p._id"
+                :label="Number(p.clientLevel) > 0 ? `${p.name}（L${p.clientLevel} 家长）` : p.name"
+                :value="p._id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="form.id" label="启用">
+            <el-switch v-model="form.isActive" />
+          </el-form-item>
+        </el-form>
+      </template>
+
+      <!-- 新增分支 (form.id 空): 合并「新建用户」+「添加已有用户」为一个流程
+           步骤: 输入手机号 → 查找 → 三种分支
+             A. 用户不存在 → 显示新建表单
+             B. 用户已存在但不在本机构 → 显示分配职位表单
+             C. 用户已在当前机构 → 提示信息 + 按钮禁用
+      -->
+      <template v-else>
+        <el-form label-width="90px">
+          <el-form-item label="手机号">
+            <el-input
+              v-model="form.mobile"
+              placeholder="输入 11 位手机号后点「查找」"
+              maxlength="11"
+              @keyup.enter="doLookup"
+            >
+              <template #append>
+                <el-button :loading="lookupLoading" @click="doLookup">查找</el-button>
+              </template>
+            </el-input>
+          </el-form-item>
+
+          <!-- 查找后的三态展示 -->
+          <template v-if="lookupState !== 'idle'">
+            <!-- A. 用户不存在 → 新建 -->
+            <template v-if="lookupState === 'not_found'">
+              <el-alert
+                type="info"
+                show-icon
+                :closable="false"
+                title="该手机号未注册过"
+                description="请补全姓名、密码等基础信息完成新建"
+                style="margin-bottom: 16px"
+              />
+              <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+                <el-form-item label="姓名" prop="realName"><el-input v-model="form.realName" /></el-form-item>
+                <el-form-item label="密码">
+                  <el-input v-model="form.password" placeholder="留空使用默认密码" show-password />
+                </el-form-item>
+                <el-form-item label="身份证号" prop="idCard">
+                  <el-input v-model="form.idCard" placeholder="选填，15 或 18 位" maxlength="18" />
+                </el-form-item>
+                <el-form-item label="现居地" prop="region">
+                  <el-cascader
+                    v-model="formRegion"
+                    :options="regionTree"
+                    :props="{ value: 'id', label: 'name', children: 'children', checkStrictly: true, emitPath: false }"
+                    placeholder="请选择"
+                    style="width: 100%"
+                    clearable
+                  />
+                </el-form-item>
+                <el-form-item label="职位">
+                  <el-select v-model="form.positions" multiple style="width: 100%">
+                    <el-option
+                      v-for="p in positions"
+                      :key="p._id"
+                      :label="Number(p.clientLevel) > 0 ? `${p.name}（L${p.clientLevel} 家长）` : p.name"
+                      :value="p._id"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+            </template>
+
+            <!-- B. 用户已存在, 不在本机构 → 分配职位 -->
+            <template v-else-if="lookupState === 'found_other_org'">
+              <el-alert
+                type="success"
+                show-icon
+                :closable="false"
+                :title="`已找到账号：${form.realName || form.mobile}`"
+                description="该用户已在其他机构，请为他在本机构分配职位"
+                style="margin-bottom: 12px"
+              />
+              <el-descriptions :column="2" border size="small" style="margin-bottom: 12px">
+                <el-descriptions-item label="姓名">{{ form.realName || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="手机号">{{ form.mobile }}</el-descriptions-item>
+                <el-descriptions-item label="身份证">{{ maskIdCard(form.idCard) }}</el-descriptions-item>
+                <el-descriptions-item label="地区">{{ form.regionName || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="启用">
+                  <el-tag :type="form.isActive ? 'success' : 'info'" size="small">
+                    {{ form.isActive ? '是' : '否' }}
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-form-item label="分配职位">
+                <el-select v-model="form.positions" multiple style="width: 100%">
+                  <el-option
+                    v-for="p in positions"
+                    :key="p._id"
+                    :label="Number(p.clientLevel) > 0 ? `${p.name}（L${p.clientLevel} 家长）` : p.name"
+                    :value="p._id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="主属机构">
+                <el-switch v-model="form.isMain" />
+              </el-form-item>
+            </template>
+
+            <!-- C. 用户已在当前机构 → 阻止 -->
+            <template v-else-if="lookupState === 'found_same_org'">
+              <el-alert
+                type="warning"
+                show-icon
+                :closable="false"
+                :title="`该用户 (${form.realName || form.mobile}) 已在当前机构`"
+                description="如需调整职位，请关闭弹窗到列表中点击「编辑」修改。"
+              />
+            </template>
+          </template>
+        </el-form>
+      </template>
+
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="lookupState === 'found_same_org' || (!form.id && lookupState === 'idle')"
+          @click="submit"
+        >
+          {{ submitText }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -194,81 +315,11 @@
         <el-button type="primary" @click="doReset">确定</el-button>
       </template>
     </el-dialog>
-
-    <el-dialog v-model="attachDialog" title="添加已有用户到本机构" width="480px" @close="resetAttach">
-      <el-form label-width="80px">
-        <el-form-item label="手机号">
-          <el-input
-            v-model="attachMobile"
-            placeholder="输入要查找的用户手机号"
-            maxlength="11"
-            @keyup.enter="doLookup"
-          >
-            <template #append>
-              <el-button :loading="lookupLoading" @click="doLookup">查找</el-button>
-            </template>
-          </el-input>
-        </el-form-item>
-
-        <template v-if="attachUser">
-          <el-descriptions :column="2" border size="small" style="margin-bottom: 12px">
-            <el-descriptions-item label="姓名">{{ attachUser.realName || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="手机号">{{ attachUser.mobile }}</el-descriptions-item>
-            <el-descriptions-item label="身份证">{{ maskIdCard(attachUser.idCard) }}</el-descriptions-item>
-            <el-descriptions-item label="地区">{{ attachUser.region?.name || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="启用">
-              <el-tag :type="attachUser.isActive ? 'success' : 'info'" size="small">
-                {{ attachUser.isActive ? '是' : '否' }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="平台超管">
-              <el-tag v-if="attachUser.isPlatformAdmin" type="danger" size="small">是</el-tag>
-              <span v-else>否</span>
-            </el-descriptions-item>
-          </el-descriptions>
-
-          <el-alert
-            v-if="attachUser.currentOrgRel"
-            type="warning"
-            show-icon
-            :closable="false"
-            title="该用户已在当前机构"
-            description="如需调整职位，请到列表中点击「编辑」修改。"
-            style="margin-bottom: 12px"
-          />
-
-          <el-form-item label="分配职位">
-            <el-select v-model="attachPositions" multiple style="width: 100%" :disabled="!!attachUser.currentOrgRel">
-              <el-option
-                v-for="p in positions"
-                :key="p._id"
-                :label="Number(p.clientLevel) > 0 ? `${p.name}（L${p.clientLevel} 家长）` : p.name"
-                :value="p._id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="主属机构">
-            <el-switch v-model="attachIsMain" :disabled="!!attachUser.currentOrgRel" />
-          </el-form-item>
-        </template>
-      </el-form>
-      <template #footer>
-        <el-button @click="attachDialog = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="attachSaving"
-          :disabled="!attachUser || !!attachUser.currentOrgRel"
-          @click="doAttach"
-        >
-          加入机构
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { userApi } from '@/api/user'
@@ -305,12 +356,25 @@ const form = reactive({
   password: '',
   idCard: '',
   region: null,
+  regionName: '',
   positions: [],
-  isActive: true
+  isActive: true,
+  isMain: false,
+  // 查找时拿到的 user._id (用于 attach)
+  existingUserId: null
 })
 const formRegion = ref(null)
 const newPassword = ref('')
 let resetTarget = null
+
+// ===== 合并后的「添加用户」流程状态 =====
+// lookupState:
+//   'idle'           - 还没查找 / 输入手机号未确定
+//   'not_found'      - 手机号无对应账号 → 显示新建表单
+//   'found_other_org'- 账号存在但不在本机构 → 显示分配职位表单
+//   'found_same_org' - 账号已在本机构 → 提示并禁用提交
+const lookupState = ref('idle')
+const lookupLoading = ref(false)
 
 // region id → 名称扁平索引，避免在表格中反复回查树
 const regionIndex = ref(new Map())
@@ -400,6 +464,11 @@ async function loadRegionTree() {
 }
 
 function openCreate() {
+  resetCreate()
+  dialog.value = true
+}
+
+function resetCreate() {
   Object.assign(form, {
     id: '',
     realName: '',
@@ -407,11 +476,14 @@ function openCreate() {
     password: '',
     idCard: '',
     region: null,
+    regionName: '',
     positions: [],
-    isActive: true
+    isActive: true,
+    isMain: false,
+    existingUserId: null
   })
   formRegion.value = null
-  dialog.value = true
+  lookupState.value = 'idle'
 }
 
 function openEdit(row) {
@@ -425,6 +497,7 @@ function openEdit(row) {
     isActive: row.isActive
   })
   formRegion.value = row.region || null
+  lookupState.value = 'idle'
   dialog.value = true
 }
 
@@ -432,15 +505,89 @@ watch(formRegion, (v) => {
   form.region = v || null
 })
 
-async function submit() {
-  try {
-    await formRef.value.validate()
-  } catch {
-    return
+/**
+ * 弹窗标题 / 提交按钮文案 — 合并后随查找状态变化
+ * - 编辑: '编辑用户' / '保存'
+ * - 新建分支 A (未查到): '添加用户' / '新建'
+ * - 新建分支 B (查到但不在本机构): '添加用户' / '加入机构'
+ * - 新建分支 C (已在本机构): 提交按钮禁用
+ */
+const dialogTitle = computed(() => {
+  if (form.id) return '编辑用户'
+  return '添加用户'
+})
+const submitText = computed(() => {
+  if (form.id) return '保存'
+  if (lookupState.value === 'found_other_org') return '加入机构'
+  return '新建'
+})
+
+/**
+ * 查找手机号:
+ *   - 用户不存在 → lookupState='not_found', 显示新建表单
+ *   - 用户存在且 currentOrgRel 非空 → lookupState='found_same_org', 提示
+ *   - 用户存在但 currentOrgRel 为空 → lookupState='found_other_org', 显示分配职位表单
+ */
+async function doLookup() {
+  const m = (form.mobile || '').trim()
+  if (!/^1[3-9]\d{9}$/.test(m)) {
+    return ElMessage.warning('请输入合法的 11 位手机号')
   }
-  saving.value = true
+  lookupLoading.value = true
   try {
-    if (form.id) {
+    const r = await userApi.lookup({ mobile: m })
+    const u = r.data
+    if (u && u.currentOrgRel) {
+      // 已在当前机构
+      Object.assign(form, {
+        realName: u.realName || '',
+        idCard: u.idCard || '',
+        regionName: u.region?.name || '',
+        isActive: !!u.isActive,
+        existingUserId: u.id,
+        positions: []
+      })
+      lookupState.value = 'found_same_org'
+    } else {
+      // 存在但不在本机构 → 可加入
+      Object.assign(form, {
+        realName: u.realName || '',
+        idCard: u.idCard || '',
+        regionName: u.region?.name || '',
+        isActive: !!u.isActive,
+        existingUserId: u.id,
+        positions: [],
+        isMain: false
+      })
+      lookupState.value = 'found_other_org'
+    }
+  } catch (e) {
+    // 后端 lookup 在用户不存在时返回 404 → catch 内走新建分支
+    lookupState.value = 'not_found'
+    Object.assign(form, {
+      realName: '',
+      password: '',
+      idCard: '',
+      region: null,
+      regionName: '',
+      positions: []
+    })
+    formRegion.value = null
+  } finally {
+    lookupLoading.value = false
+  }
+}
+
+async function submit() {
+  // 编辑分支 → 走原 update
+  if (form.id) {
+    try {
+      await formRef.value.validate()
+    } catch {
+      return
+    }
+    saving.value = true
+    try {
       await userApi.update(form.id, {
         realName: form.realName,
         idCard: form.idCard || null,
@@ -448,7 +595,33 @@ async function submit() {
         isActive: form.isActive
       })
       await userApi.setPositions(form.id, form.positions)
-    } else {
+      ElMessage.success('已保存')
+      dialog.value = false
+      load()
+    } finally {
+      saving.value = false
+    }
+    return
+  }
+
+  // 新建分支: 必须先查找过
+  if (lookupState.value === 'idle') {
+    return ElMessage.warning('请先输入手机号并点击「查找」')
+  }
+  if (lookupState.value === 'found_same_org') {
+    return ElMessage.warning('该用户已在当前机构，请关闭弹窗到列表中编辑')
+  }
+
+  saving.value = true
+  try {
+    if (lookupState.value === 'not_found') {
+      // A. 新建用户
+      try {
+        await formRef.value.validate()
+      } catch {
+        saving.value = false
+        return
+      }
       await userApi.create({
         mobile: form.mobile,
         password: form.password || undefined,
@@ -457,8 +630,15 @@ async function submit() {
         region: form.region || undefined,
         positions: form.positions
       })
+      ElMessage.success('已创建')
+    } else if (lookupState.value === 'found_other_org') {
+      // B. 把已有用户加入本机构
+      await userApi.attachToOrg(form.existingUserId, {
+        positions: form.positions,
+        isMain: form.isMain
+      })
+      ElMessage.success('已加入机构')
     }
-    ElMessage.success('已保存')
     dialog.value = false
     load()
   } finally {
@@ -510,61 +690,6 @@ async function toggleBlock(row) {
   } catch (e) {
     if (e === 'cancel') return
     ElMessage.error(e?.response?.data?.message || `${action}失败`)
-  }
-}
-
-// ===== 添加已有用户到本机构 =====
-const attachDialog = ref(false)
-const attachMobile = ref('')
-const attachUser = ref(null)
-const attachPositions = ref([])
-const attachIsMain = ref(false)
-const lookupLoading = ref(false)
-const attachSaving = ref(false)
-
-function openAttach() {
-  resetAttach()
-  attachDialog.value = true
-}
-
-function resetAttach() {
-  attachMobile.value = ''
-  attachUser.value = null
-  attachPositions.value = []
-  attachIsMain.value = false
-}
-
-async function doLookup() {
-  const m = (attachMobile.value || '').trim()
-  if (!/^1[3-9]\d{9}$/.test(m)) {
-    return ElMessage.warning('请输入合法的 11 位手机号')
-  }
-  lookupLoading.value = true
-  try {
-    const r = await userApi.lookup({ mobile: m })
-    attachUser.value = r.data
-    attachPositions.value = []
-    attachIsMain.value = false
-  } catch (e) {
-    attachUser.value = null
-  } finally {
-    lookupLoading.value = false
-  }
-}
-
-async function doAttach() {
-  if (!attachUser.value) return
-  attachSaving.value = true
-  try {
-    await userApi.attachToOrg(attachUser.value.id, {
-      positions: attachPositions.value,
-      isMain: attachIsMain.value
-    })
-    ElMessage.success('已加入机构')
-    attachDialog.value = false
-    load()
-  } finally {
-    attachSaving.value = false
   }
 }
 
