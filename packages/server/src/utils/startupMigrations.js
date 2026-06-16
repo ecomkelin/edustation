@@ -16,6 +16,7 @@
  */
 
 const mongoose = require('mongoose')
+const { hiddenPerms } = require('@shared/permissions')
 
 /* ─── 迁移 1: 清理旧 Lead collection (2026-06 大重构) ────────────
  * 背景:
@@ -47,9 +48,32 @@ async function dropLegacyLeadCollections() {
   return dropped.length ? `dropped:${dropped.join(',')}` : 'no-op'
 }
 
+/* ─── 迁移 2: 从 Position.permissions 移除 hidden 权限码 (2026-06) ─────
+ * 背景:
+ *   `platform.*` (4 个) + `org.*` (2 个) 已从「机构职位 - 可分配权限」列表移除
+ *   (它们是平台超管专属或已并入独立 group). 但历史数据可能仍在某些机构的
+ *   Position.permissions 数组里, 而且这些码**完全无效** (无任何路由 requirePermission 它们).
+ *
+ * 动作: 对所有 Position 做 $pull, 把 hidden 码一次性清掉. 幂等: 第二次跑 no-op.
+ */
+async function pullHiddenPermsFromPositions() {
+  if (!hiddenPerms || hiddenPerms.size === 0) return 'no-hidden-perms'
+  const codes = Array.from(hiddenPerms)
+  // 注意: 故意**不**加 org 过滤 —— hidden 码全局不应出现, 跨机构清理
+  const Position = require('@models/Position.model')
+  const before = await Position.countDocuments({ permissions: { $in: codes } })
+  if (before === 0) return 'no-op'
+  const r = await Position.updateMany(
+    { permissions: { $in: codes } },
+    { $pull: { permissions: { $in: codes } } }
+  )
+  return `pulled:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
+}
+
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
-  { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections }
+  { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections },
+  { name: 'pull-hidden-perms-from-positions', run: pullHiddenPermsFromPositions }
 ]
 
 /**

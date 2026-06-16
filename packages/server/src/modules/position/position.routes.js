@@ -13,18 +13,21 @@ const ApiError = require('@utils/ApiError')
  *    - 仍然挂 `requireOrg`：对超管来说，x-org-id 是可选的（不传则 req.orgId=null），
  *      传了就校验存在并写入 req.orgId。GET 类接口不依赖 req.orgId；POST /sync
  *      在 service 层强制要求 req.orgId 非空（对应"请先在顶部选择机构"）。
+ *    - 关键: isPlatformAdmin 守卫**必须挂在每个路由前**, 不能用 platformRouter.use(...);
+ *      否则 router.use(platformRouter) 会让 platformRouter 接管**所有**路径, 本机构查询
+ *      也会被 403 (2026-06 修过这个坑).
  * ------------------------------------------------------------------ */
 const platformRouter = require('express').Router()
 platformRouter.use(mws.authenticate)
-platformRouter.use(mws.requireOrg)
-platformRouter.use((req, res, next) => {
+const platformAdminOnly = (req, res, next) => {
   if (!req.user) return next(ApiError.unauthorized())
   if (!req.user.isPlatformAdmin) return next(ApiError.forbidden('仅平台超管可执行跨机构同步'))
   next()
-})
-platformRouter.get('/source-orgs', asyncHandler(c.listSourceOrgs))
-platformRouter.get('/by-org/:orgId', asyncHandler(c.listByOrg))
-platformRouter.post('/sync', v.sync, mws.validateRequest, asyncHandler(c.sync))
+}
+platformRouter.use(mws.requireOrg)
+platformRouter.get('/source-orgs', platformAdminOnly, asyncHandler(c.listSourceOrgs))
+platformRouter.get('/by-org/:orgId', platformAdminOnly, asyncHandler(c.listByOrg))
+platformRouter.post('/sync', platformAdminOnly, v.sync, mws.validateRequest, asyncHandler(c.sync))
 router.use(platformRouter)
 
 /* ------------------------------------------------------------------

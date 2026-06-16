@@ -78,6 +78,29 @@ function shouldSkipRefresh(url = '') {
   return NO_REFRESH_PATHS.some((p) => url.includes(p))
 }
 
+// 静默端点: 错误响应**不**弹 toast(用于"非关键路径" + "用户没权限是预期行为"两类)
+// - 平台超管专属的跨机构同步端点: 非超管调用是预期 403, 弹 toast 没意义(且容易被误诊为代码错)
+//   这些端点由后端 platformRouter 统一守卫 isPlatformAdmin
+// - 预检/目录类: 失败由调用方自己处理(removable-check / permissions-catalog 等)
+const SILENT_PATHS = [
+  // 跨机构同步 (subject / position / courseProduct)
+  '/subjects/source-orgs',
+  '/subjects/by-org/',
+  '/subjects/sync',
+  '/positions/source-orgs',
+  '/positions/by-org/',
+  '/positions/sync',
+  '/course-products/_sync/source-orgs',
+  '/course-products/_sync/by-org/',
+  '/course-products/_sync'
+]
+function shouldSilent(url = '') {
+  if (!url) return false
+  // 兼容 baseURL 前缀(可能含 /api/v1)
+  const path = url.replace(/^https?:\/\/[^/]+/, '').replace(/^\/api\/v1/, '')
+  return SILENT_PATHS.some((p) => path.includes(p) || path.endsWith(p))
+}
+
 // 响应拦截：401 自动 refresh；业务失败弹 ElMessage
 // config.silent = true 时不弹错误 toast（用于"非关键路径"的下拉/预加载；调用方自己处理）
 // 例外: /auth/login 自身的 401 永远要 toast(凭证错 / 账号状态错),其他 401 仍走静默重定向
@@ -86,7 +109,9 @@ apiClient.interceptors.response.use(
     const body = response.data
     if (body && body.success === false) {
       if (!response.config || !response.config.silent) {
-        ElMessage.error(body.message || '请求失败')
+        if (!shouldSilent(response.config?.url)) {
+          ElMessage.error(body.message || '请求失败')
+        }
       }
       // 关键:必须 reject 一个 axios 形态的 error,这样 catch 端的
       // err.response.data.data.blockers 才能取到;否则 422 互锁挡板无法弹出。
@@ -141,7 +166,9 @@ apiClient.interceptors.response.use(
     }
 
     const message = response.data && response.data.message ? response.data.message : `请求失败 ${response.status}`
-    if (response.status !== 401 && !(config && config.silent)) ElMessage.error(message)
+    if (response.status !== 401 && !(config && config.silent) && !shouldSilent(config?.url)) {
+      ElMessage.error(message)
+    }
     return Promise.reject(error)
   }
 )

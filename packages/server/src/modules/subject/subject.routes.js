@@ -13,15 +13,20 @@ const ApiError = require('@utils/ApiError')
  * ------------------------------------------------------------------ */
 const platformRouter = require('express').Router()
 platformRouter.use(mws.authenticate)
-platformRouter.use(mws.requireOrg)
-platformRouter.use((req, res, next) => {
+// 关键: isPlatformAdmin 检查**必须挂在每个具体路由前**, 而不能用 platformRouter.use(...) 当中间件!
+// 因为 router.use(platformRouter) 会让 platformRouter 接管**所有**路径 (含 GET /, GET /:id),
+//   若把 isPlatformAdmin 挂在 platformRouter.use 上, 就会让本机构查询也被 403.
+// 正确做法: 平台路由层只挂 authenticate + requireOrg (顺序对超管友好), 在每个 .get/.post 上
+//   显式 requirePlatformAdmin 守卫.
+const platformAdminOnly = (req, res, next) => {
   if (!req.user) return next(ApiError.unauthorized())
   if (!req.user.isPlatformAdmin) return next(ApiError.forbidden('仅平台超管可执行跨机构同步'))
   next()
-})
-platformRouter.get('/source-orgs', asyncHandler(c.listSourceOrgs))
-platformRouter.get('/by-org/:orgId', asyncHandler(c.listByOrg))
-platformRouter.post('/sync', v.sync, mws.validateRequest, asyncHandler(c.sync))
+}
+platformRouter.use(mws.requireOrg)
+platformRouter.get('/source-orgs', platformAdminOnly, asyncHandler(c.listSourceOrgs))
+platformRouter.get('/by-org/:orgId', platformAdminOnly, asyncHandler(c.listByOrg))
+platformRouter.post('/sync', platformAdminOnly, v.sync, mws.validateRequest, asyncHandler(c.sync))
 router.use(platformRouter)
 
 /* ------------------------------------------------------------------

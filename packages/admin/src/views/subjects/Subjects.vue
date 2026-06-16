@@ -17,17 +17,19 @@
       />
       <el-button @click="load">搜索</el-button>
       <el-button type="primary" @click="openCreate">新建学科</el-button>
-      <el-tooltip
-        v-if="auth.isPlatformAdmin"
-        :disabled="!!auth.currentOrgId"
-        content="请先在顶部「机构切换」中选择一个目标机构"
-        placement="top"
-      >
-        <el-button
-          :disabled="!auth.currentOrgId"
-          @click="openSync"
-        >从其他机构同步学科</el-button>
-      </el-tooltip>
+      <!-- 跨机构同步: 仅平台超管可见/可点。非超管连入口都没有, 不会发 listSourceOrgs / listByOrg / sync 请求 -->
+      <template v-if="auth.isPlatformAdmin">
+        <el-tooltip
+          :disabled="!!auth.currentOrgId"
+          content="请先在顶部「机构切换」中选择一个目标机构"
+          placement="top"
+        >
+          <el-button
+            :disabled="!auth.currentOrgId"
+            @click="openSync"
+          >从其他机构同步学科</el-button>
+        </el-tooltip>
+      </template>
     </el-space>
 
     <el-table :data="list" v-loading="loading" border>
@@ -575,6 +577,11 @@ async function load() {
   try {
     const r = await subjectApi.list({ keyword: keyword.value })
     list.value = (r.data || []).map((s) => ({ ...s, id: s.id || s._id }))
+  } catch (e) {
+    // 拦截器已 toast 业务错误, 这里只在 console 留底方便排查
+    // eslint-disable-next-line no-console
+    console.error('[subjects.load] failed:', e?.response?.data || e)
+    list.value = []
   } finally {
     loading.value = false
   }
@@ -1025,6 +1032,11 @@ const syncing = ref(false)
 const syncTableRef = ref(null)
 
 async function openSync() {
+  // 防御性: 非超管即便绕开 v-if 触发到这里, 也不发同步 API
+  if (!auth.isPlatformAdmin) {
+    ElMessage.warning('仅平台超管可执行跨机构同步')
+    return
+  }
   syncDialog.value = true
   // 重置状态
   sourceOrgs.value = []

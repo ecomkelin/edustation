@@ -5,9 +5,29 @@ const ChildLead = require('@models/ChildLead.model')
 const LeadActivity = require('@models/LeadActivity.model')
 const TrialBooking = require('@models/TrialBooking.model')
 const Category = require('@models/Category.model')
+const UserOrgRel = require('@models/UserOrgRel.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const removable = require('@utils/removable')
+
+/* ─── 看全部的职位名 (与系统默认职位绑定) ───────────
+ * 业务约定: 招生模块"看全部" = 管理员 / 教务 系统职位.
+ * 销售/地推若只用 '招生专员' 类自定义职位, 默认只看自己录入的.
+ * 这条白名单与 DEFAULT_POSITIONS 中两个系统职位名一一对应, 不能改字面量 (前端 Position 管理也用).
+ * 平台超管天然拥有"看全部"权限 (跨机构视角).
+ */
+const FULL_VIEW_POSITION_NAMES = ['管理员', '教务']
+async function canSeeAllParents(currentUser, orgId) {
+  if (!currentUser) return false
+  if (currentUser.isPlatformAdmin) return true
+  if (!orgId) return false
+  const rel = await UserOrgRel.findOne({ user: currentUser._id || currentUser.id, org: orgId })
+    .select('positions')
+    .populate({ path: 'positions', select: 'name isSystem' })
+    .lean()
+  if (!rel || !rel.positions) return false
+  return rel.positions.some((p) => p.isSystem && FULL_VIEW_POSITION_NAMES.includes(p.name))
+}
 
 /* ─── 默认渠道 (Channel = '地推') ───────────────────── */
 
@@ -90,8 +110,9 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
   if (!orgId) throw ApiError.badRequest('缺少 orgId (前端未传 x-org-id header)')
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
-  // 销售/教务分级
-  const canSeeAll = currentUser && currentUser.isPlatformAdmin
+  // 销售/教务分级: 管理员/教务/平台超管 → 看全部; 销售(招生专员等自定义职位) → 仅看自己录入
+  // 2026-06 修复: 之前只判 isPlatformAdmin, 把"非超管的管理员"也当销售看, 导致校长进潜客管理看到 total=0
+  const canSeeAll = await canSeeAllParents(currentUser, orgId)
   const effectiveScope = canSeeAll ? (scope || 'all') : 'mine'
   if (effectiveScope === 'mine' && currentUser) {
     filter.promoteBy = currentUser.id

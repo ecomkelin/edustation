@@ -658,6 +658,11 @@ const syncing = ref(false)
 const syncTableRef = ref(null)
 
 async function openSync() {
+  // 防御性: 非超管即便绕开 v-if 触发到这里, 也不发同步 API
+  if (!auth.isPlatformAdmin) {
+    ElMessage.warning('仅平台超管可执行跨机构同步')
+    return
+  }
   syncDialog.value = true
   // 重置状态
   sourceOrgs.value = []

@@ -6,7 +6,7 @@ const Org = require('@models/Org.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
-const { groups, allPermissions } = require('@shared/permissions')
+const { visibleGroups, visibleAllPermissions, isAssignablePermission } = require('@shared/permissions')
 const { CLIENT_LEVEL } = require('@shared/enums')
 
 /**
@@ -242,9 +242,20 @@ async function removableCheck({ id, orgId }) {
 }
 
 async function setPermissions(id, orgId, permissions) {
+  // 权威过滤: hidden 权限码(platform.* / org.*)即便前端传过来也直接 drop,
+  // 不允许任何机构职位持有。这是服务端最后一道防线, 防止:
+  //   - 前端 stale 缓存把旧码塞回来
+  //   - 用户直接 curl 调本接口
+  // 旧数据由 startupMigrations.pullHiddenPerms 一次性清, 见 utils/startupMigrations.js
+  const cleaned = (permissions || []).filter(isAssignablePermission)
+  const dropped = (permissions || []).filter((p) => !isAssignablePermission(p))
+  if (dropped.length) {
+    // 仅记日志, 不阻断 (前端不应该传, 真传了就静默 drop)
+    console.warn(`[position.setPermissions] dropped hidden perms: ${dropped.join(', ')}`)
+  }
   const pos = await Position.findOneAndUpdate(
     { _id: id, org: orgId },
-    { $set: { permissions } },
+    { $set: { permissions: cleaned } },
     { new: true }
   ).lean()
   if (!pos) throw ApiError.notFound('职位不存在')
@@ -252,7 +263,8 @@ async function setPermissions(id, orgId, permissions) {
 }
 
 function permissionsCatalog() {
-  return { groups, all: allPermissions }
+  // 只暴露 visible group (hidden 标记的 platform / org 不进 catalog)
+  return { groups: visibleGroups, all: visibleAllPermissions }
 }
 
 /* ------------------------------------------------------------------

@@ -4,7 +4,8 @@
     {
       "key": "platform",
       "label": "平台管理",
-      "description": "管理 SaaS 平台层面的数据：机构、字典等。仅平台超管可见。",
+      "hidden": true,
+      "description": "管理 SaaS 平台层面的数据：机构、字典等。仅平台超管可见(由 isPlatformAdmin 硬门, 不走 Position)。",
       "permissions": [
         "platform.org.read",
         "platform.org.write",
@@ -21,7 +22,8 @@
     {
       "key": "org",
       "label": "机构",
-      "description": "管理当前机构自身的基本信息（名称、地址、联系人、地区等），不含员工 / 学生 / 课程。",
+      "hidden": true,
+      "description": "管理当前机构自身的基本信息（名称、地址、联系人、地区等），不含员工 / 学生 / 课程。仅平台超管可改(org.routes 走 requirePlatformAdmin); 机构推广信息已拆为独立 group org-promotion。",
       "permissions": [
         "org.read",
         "org.write"
