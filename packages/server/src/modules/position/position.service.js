@@ -36,6 +36,7 @@ const DEFAULT_POSITIONS = [
       'points.read', 'pet.read',
       'recruit.read', 'recruit.write', 'recruit.convert',
       'org-promotion.read', 'org-promotion.write',
+      'legal.read', 'legal.write',
       'report.read'
     ]
   },
@@ -56,6 +57,7 @@ const DEFAULT_POSITIONS = [
       'points.read', 'pet.read',
       'recruit.read', 'recruit.write', 'recruit.convert',
       'org-promotion.read', 'org-promotion.write',
+      'legal.read', 'legal.write',
       'report.read'
     ]
   },

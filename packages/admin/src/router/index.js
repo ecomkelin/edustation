@@ -44,6 +44,12 @@ const routes = [
       { path: 'files', component: () => import('@/views/files/Files.vue') },
       { path: 'platform/info', component: () => import('@/views/platformInfo/PlatformInfo.vue') },
       { path: 'platform/flow-guide', component: () => import('@/views/platformInfo/CourseInstanceFlowGuide.vue') },
+      // 法律协议 (2026-06)
+      { path: 'legal/org-docs', component: () => import('@/views/legal/LegalDocs.vue') },
+      { path: 'legal/platform', component: () => import('@/views/legal/PlatformLegal.vue'), meta: { platform: true } },
+      { path: 'system/site-config', component: () => import('@/views/system/SiteConfigEdit.vue'), meta: { platform: true } },
+      // 协议接受页 (强制拦截目标; 不可被 pendingConsents 守卫拦截, 否则死循环)
+      { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },
       // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)
       { path: 'recruit/leads', component: () => import('@/views/recruit/Parents.vue') },
       { path: 'recruit/trial-bookings', component: () => import('@/views/recruit/TrialBookings.vue') },
@@ -72,6 +78,20 @@ router.beforeEach((to, from, next) => {
   // 招生试听 (2026-06): 首登强改密守卫 — 任何非改密页的访问都拦到 /reset-password
   if (auth.needPasswordChange && to.path !== '/reset-password') {
     return next({ path: '/reset-password', query: { initial: '1', redirect: to.fullPath } })
+  }
+  // 法律协议 (2026-06): 有待同意协议时拦到 /agreement/accept
+  // (改密页 + 接受页本身不拦, 否则死循环; 业已改密成功后 needPasswordChange=false 才会走到这条)
+  if (
+    auth.isAuthenticated
+    && auth.hasPendingConsents
+    && !to.meta.agreement
+    && to.path !== '/reset-password'
+  ) {
+    return next({ path: '/agreement/accept', query: { redirect: to.fullPath } })
+  }
+  // 平台超管专属页面
+  if (to.meta.platform && !auth.isPlatformAdmin) {
+    return next('/dashboard')
   }
   next()
 })

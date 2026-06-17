@@ -1,9 +1,14 @@
 <script>
 import { useAuthStore } from '@/stores/auth'
 import { useStudentStore } from '@/stores/student'
+import { useSiteConfigStore } from '@/stores/siteConfig'
 
 export default {
   onLaunch() {
+    // 站点配置 (备案号 / 版权 / 运营主体) — 公开端点, 不依赖登录态
+    const siteConfig = useSiteConfigStore()
+    siteConfig.load().catch(() => null)
+
     // 启动时尝试恢复登录态
     const auth = useAuthStore()
     auth.restore().then((user) => {
@@ -16,6 +21,7 @@ export default {
   },
   onShow() {
     // 每次进入前台时如有缓存 token 静默拉取一次 /me
+    // (顺带把 pendingConsents 也带回来 → agreement-modal 自动弹层)
     const auth = useAuthStore()
     if (auth.accessToken) {
       auth.fetchMe().catch(() => null)
@@ -25,7 +31,7 @@ export default {
 </script>
 
 <style lang="scss">
-/* 全局样式 - 注意 uni-app 不支持顶层 :root，需要写到 page */
+/* 全局样式 - 注意 uni-app 不支持顶层 :root,需要写到 page */
 page {
   background-color: #f7f8fa;
   color: #1f2937;

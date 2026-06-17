@@ -4,10 +4,12 @@ const Order = require('@models/Order.model')
 const CourseProduct = require('@models/CourseProduct.model')
 const Student = require('@models/Student.model')
 const StudentProduct = require('@models/StudentProduct.model')
+const LegalDoc = require('@models/LegalDoc.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { OrderStatus, StudentProductSource } = require('@shared/enums')
 const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
+const legalService = require('@modules/legal/legal.service')
 
 /**
  * 计算订单 originalPrice（按 items 各项的 unitPrice * quantity 求和）
@@ -117,13 +119,46 @@ async function createStudentProductsForOrder({ order, orgId }) {
  *
  * items: [{ courseProduct, quantity }]；unitPrice 与 name 在 service 内由 CourseProduct
  * 当前售价快照；originalPrice = Σ unitPrice * quantity。
+ *
+ * 法律协议 (2026-06):
+ *   入参 agreements: [{ docKey, version, type, org? }] — client 下单时携带的协议同意快照
+ *   - 如果传入 agreements: 校验每项 LegalDoc(org, key, version, isActive=true) 都存在,
+ *     不存在直接 400 + pending 数据让前端重弹层
+ *   - 校验通过后写入 Order.agreements + 同步落 UserConsent (idempotent)
+ *   - 如果不传 agreements: 视为后台手动开单 (操作员代客户开票), 不强制校验
+ *     [TODO 阶段 2] 业务上可加配置"是否所有渠道都强制",目前留口子
  */
-async function create({ orgId, student, items, actualPrice, paymentMethod, paidAmount, remark }) {
+async function create({ orgId, student, items, actualPrice, paymentMethod, paidAmount, remark, agreements, actor }) {
   if (!Array.isArray(items) || items.length === 0) {
     throw ApiError.badRequest('订单至少包含 1 个 item')
   }
   if (!await Student.exists({ _id: student, org: orgId, isBlocked: { $ne: true } })) {
     throw ApiError.badRequest('学生不存在或已被禁用')
+  }
+
+  // 法律协议校验: 如果 client 端传了 agreements, 逐项校验版本一致
+  // (后台手动开单不传 agreements 时跳过, 保留后台快捷开单的灵活性)
+  if (Array.isArray(agreements) && agreements.length > 0) {
+    for (const ag of agreements) {
+      if (!ag.docKey || !ag.version || !ag.type) {
+        throw ApiError.badRequest('agreement 缺少 docKey / version / type')
+      }
+      if (ag.type === 'org') {
+        const doc = await LegalDoc.findOne({
+          org: orgId, key: ag.docKey, version: ag.version, isActive: true
+        }).select('_id title version').lean()
+        if (!doc) {
+          // 把当前生效版本回传, 让前端重弹层让用户重新同意
+          const current = await LegalDoc.findOne({ org: orgId, key: ag.docKey, isActive: true })
+            .select('key version title').lean()
+          throw ApiError.badRequest(
+            `《${current ? current.title : ag.docKey}》已升级到新版本, 请重新阅读并同意后再下单`,
+            { pending: current ? [{ key: current.key, version: current.version, type: 'org', org: orgId }] : [] }
+          )
+        }
+      }
+      // platform 类型的协议在登录拦截已经把关, 这里允许快照入库即可, 不重新校验
+    }
   }
 
   // 「线下收款」分支：paymentMethod + paidAmount 同时存在即视为已收款订单
@@ -166,6 +201,16 @@ async function create({ orgId, student, items, actualPrice, paymentMethod, paidA
   const initialPaidAmount = isOfflinePaid ? paidAmount : 0
   const initialPaidAt = isOfflinePaid ? new Date() : null
 
+  const agreementsSnapshot = Array.isArray(agreements)
+    ? agreements.map((a) => ({
+      docKey: a.docKey,
+      version: a.version,
+      type: a.type,
+      org: a.type === 'org' ? (a.org || orgId) : null,
+      agreedAt: new Date()
+    }))
+    : []
+
   const order = await Order.create({
     org: orgId,
     student,
@@ -176,8 +221,27 @@ async function create({ orgId, student, items, actualPrice, paymentMethod, paidA
     paidAt: initialPaidAt,
     status: initialStatus,
     paymentMethod,
-    remark
+    remark,
+    agreements: agreementsSnapshot
   })
+
+  // 法律协议: 同步落 UserConsent (append-only, 重复 (user,docKey,version) 被 unique 拦截即忽略)
+  // 失败不阻断订单创建 (审计降级, log warn)
+  if (actor && actor.userId && agreementsSnapshot.length) {
+    try {
+      await legalService.recordConsents({
+        userId: actor.userId,
+        ip: actor.ip || '',
+        userAgent: actor.userAgent || '',
+        consents: agreementsSnapshot.map((a) => ({
+          key: a.docKey, type: a.type, version: a.version, org: a.org
+        }))
+      })
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(`[order.create] recordConsents failed: ${e && e.message}`)
+    }
+  }
 
   // 5. 「线下收款」分支：按 items 逐项创建 StudentProduct；失败回滚订单
   let createdStudentProducts = []

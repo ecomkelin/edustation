@@ -14,6 +14,13 @@ async function bootstrap() {
   // eslint-disable-next-line no-console
   console.log(`[mongo] connected to ${config.db.uri.replace(/\/\/[^@]+@/, '//***@')}`)
 
+  // 1.2 加载平台级法律协议清单 (shared/legal/*.md → 内存单例).
+  // 任一文件缺失 / frontmatter 不合法直接 throw, 阻止启动 (合规风险, fail-loud)
+  require('@utils/legalCatalog').loadPlatformLegal()
+
+  // 1.3 站点配置单例 (备案号 / 运营主体 / 版权年份). 已存在则 no-op
+  await require('@modules/siteConfig/siteConfig.service').ensureSingleton()
+
   // 1.5 启动迁移 (幂等, 业务无感; 任一失败 log warn 不阻塞 server)
   // 必须在 createApp/listen 之前跑完, 避免"server 已 ready 但索引还没修"的窗口
   await require('@utils/startupMigrations').runStartupMigrations()

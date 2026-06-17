@@ -45,10 +45,36 @@
       </view>
     </view>
 
+    <!-- 法律协议 + 机构主页 + FAQ + 联系客服 入口 (2026-06) -->
+    <view class="list card">
+      <view class="row" @tap="go('/pages/org/home')">
+        <text class="icon-emoji">🏫</text>
+        <text class="text-14 flex-1">关于本机构</text>
+        <text class="text-12 text-muted">›</text>
+      </view>
+      <view class="row" @tap="go('/pages/legal/index')">
+        <text class="icon-emoji">📜</text>
+        <text class="text-14 flex-1">服务协议与隐私政策</text>
+        <text class="text-12 text-muted">›</text>
+      </view>
+      <view class="row" @tap="go('/pages/help/faq')">
+        <text class="icon-emoji">❓</text>
+        <text class="text-14 flex-1">常见问题 FAQ</text>
+        <text class="text-12 text-muted">›</text>
+      </view>
+      <view class="row" @tap="go('/pages/help/contact')">
+        <text class="icon-emoji">📞</text>
+        <text class="text-14 flex-1">联系客服</text>
+        <text class="text-12 text-muted">›</text>
+      </view>
+    </view>
+
     <button class="btn-secondary" @tap="onLogout">退出登录</button>
 
-    <view class="text-center text-12 text-muted" style="margin-top: 24rpx;">
-      EduStation Client v0.1.0
+    <view class="footer-license">
+      <text v-if="siteConfig.copyrightLine">{{ siteConfig.copyrightLine }}</text>
+      <text v-if="siteConfig.beianLine" class="beian">{{ siteConfig.beianLine }}</text>
+      <text class="ver">EduStation Client v0.1.0</text>
     </view>
   </view>
 </template>
@@ -56,6 +82,7 @@
 <script>
 import ActiveStudentHeader from '@/components/active-student-header.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteConfigStore } from '@/stores/siteConfig'
 import { mapState } from 'pinia'
 import { clearPushBinding, requestSubscribe } from '@/utils/push'
 
@@ -66,6 +93,7 @@ export default {
   },
   computed: {
     ...mapState(useAuthStore, ['user', 'isPlatformAdmin']),
+    siteConfig() { return useSiteConfigStore() },
     avatarChar() {
       if (!this.user) return '👤'
       return (this.user.realName || this.user.mobile || 'U').slice(-2)
@@ -80,7 +108,7 @@ export default {
     go(url) { uni.navigateTo({ url }) },
     async onLogout() {
       const res = await uni.showModal({
-        title: '确认退出？',
+        title: '确认退出?',
         content: '退出后将无法接收课程提醒'
       })
       if (!res.confirm) return
@@ -151,10 +179,21 @@ export default {
   .row {
     display: flex;
     align-items: center;
+    gap: 16rpx;
     padding: 24rpx 0;
     border-bottom: 1rpx solid #f3f4f6;
     &:last-child { border-bottom: none; }
+    .icon-emoji { font-size: 32rpx; }
   }
 }
-.text-center { text-align: center; }
+.footer-license {
+  margin-top: 32rpx;
+  padding: 16rpx 0;
+  text-align: center;
+  font-size: 22rpx;
+  color: #9ca3af;
+  line-height: 1.7;
+  .beian { display: block; }
+  .ver { display: block; margin-top: 8rpx; color: #c0c4cc; }
+}
 </style>

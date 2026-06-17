@@ -110,6 +110,36 @@
       "style": {
         "navigationBarTitleText": "积分商城"
       }
+    },
+    {
+      "path": "pages/legal/index",
+      "style": {
+        "navigationBarTitleText": "协议与帮助"
+      }
+    },
+    {
+      "path": "pages/legal/detail",
+      "style": {
+        "navigationBarTitleText": "协议详情"
+      }
+    },
+    {
+      "path": "pages/org/home",
+      "style": {
+        "navigationBarTitleText": "机构主页"
+      }
+    },
+    {
+      "path": "pages/help/faq",
+      "style": {
+        "navigationBarTitleText": "常见问题"
+      }
+    },
+    {
+      "path": "pages/help/contact",
+      "style": {
+        "navigationBarTitleText": "联系我们"
+      }
     }
   ],
   "globalStyle": {

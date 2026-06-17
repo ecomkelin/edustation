@@ -28,7 +28,7 @@
         </el-dropdown>
       </div>
     </el-header>
-    <el-container>
+    <el-container class="body">
       <el-aside width="220px" class="aside">
         <el-menu :default-active="route.path" router :default-openeds="defaultOpeneds">
           <el-menu-item index="/dashboard">
@@ -48,9 +48,12 @@
           </template>
         </el-menu>
       </el-aside>
-      <el-main class="main">
-        <router-view />
-      </el-main>
+      <el-container direction="vertical" class="content">
+        <el-main class="main">
+          <router-view />
+        </el-main>
+        <AppFooter />
+      </el-container>
     </el-container>
   </el-container>
 </template>
@@ -60,6 +63,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import OrgSwitcher from '@/components/OrgSwitcher.vue'
+import AppFooter from '@/components/AppFooter.vue'
 import {
   ArrowDown,
   Odometer,
@@ -106,7 +110,10 @@ const menuGroups = [
       { path: '/orgs', label: '机构档案', icon: Box, requirePlatform: true },
       // 原平台管理下的二级全部并入
       { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true },
-      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true }
+      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
+      // 法律协议 (2026-06): 平台级协议只读 + 站点配置 (备案号/运营主体)
+      { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
+      { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true }
     ]
   },
   {
@@ -134,7 +141,9 @@ const menuGroups = [
       // 2026-06: 职位管理提到机构推广前 (机构 admin 进首页常看'我的人权限对不对')
       { path: '/positions', label: '职位管理', icon: Lock, perm: 'position.read' },
       // 原 /org/promotion 改名为 机构推广
-      { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' }
+      { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
+      // 法律协议 (2026-06): 机构 admin 维护本机构购买协议/退费规则/FAQ 等
+      { path: '/legal/org-docs', label: '机构协议', icon: Notebook, perm: 'legal.read' }
     ]
   },
   {
@@ -241,7 +250,10 @@ const avatarInitial = computed(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
+  flex-shrink: 0;
 }
+.body { flex: 1; min-height: 0; }
+.content { flex: 1; min-width: 0; }
 .logo {
   font-size: 18px;
   font-weight: 600;
@@ -272,9 +284,12 @@ const avatarInitial = computed(() => {
 .aside {
   background: #fff;
   border-right: 1px solid #ebeef5;
+  overflow-y: auto;
 }
 .main {
   background: #f5f7fa;
   padding: 16px;
+  flex: 1;
+  overflow-y: auto;
 }
 </style>

@@ -70,10 +70,31 @@ async function pullHiddenPermsFromPositions() {
   return `pulled:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
 }
 
+/* ─── 迁移 3: 给已有机构的「管理员」「教务」补 legal.* 权限码 (2026-06) ─────
+ * 背景:
+ *   2026-06 新增「法律协议」模块, 默认权限码 legal.read / legal.write 加进了
+ *   DEFAULT_POSITIONS 的"管理员"和"教务"。但已落地的历史机构 Position 还没有,
+ *   导致他们登录后看不到"机构协议"菜单 / 调 API 403.
+ *
+ * 动作: 对所有 name ∈ {管理员, 教务} 的 Position 做 $addToSet, 一次性补码. 幂等.
+ */
+async function addLegalPermsToExistingPositions() {
+  const Position = require('@models/Position.model')
+  const codes = ['legal.read', 'legal.write']
+  // 用 $nin 前置过滤, 避免对已有码的 position 重复写入 (虽然 $addToSet 也幂等,
+  // 但 modifiedCount 才能准确反映"真正补码的数量")
+  const filter = { name: { $in: ['管理员', '教务'] }, permissions: { $nin: codes } }
+  const before = await Position.countDocuments(filter)
+  if (before === 0) return 'no-op'
+  const r = await Position.updateMany(filter, { $addToSet: { permissions: { $each: codes } } })
+  return `added:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
+}
+
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
   { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections },
-  { name: 'pull-hidden-perms-from-positions', run: pullHiddenPermsFromPositions }
+  { name: 'pull-hidden-perms-from-positions', run: pullHiddenPermsFromPositions },
+  { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions }
 ]
 
 /**

@@ -6,6 +6,7 @@ const UserOrgRel = require('@models/UserOrgRel.model')
 const ApiError = require('@utils/ApiError')
 const password = require('@utils/password')
 const JwtUtil = require('@utils/JwtUtil')
+const legalService = require('@modules/legal/legal.service')
 
 // 自助资料可改字段白名单：mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律不可由用户自助修改
 const SELF_UPDATE_WHITELIST = ['realName', 'avatar', 'idCard', 'region']
@@ -61,6 +62,16 @@ async function login({ mobile, password: plain, ip, userAgent }) {
     ip: ip || ''
   })
 
+  // 法律协议: 登录时只计算平台级 (此时尚未选择 org). 机构级在 /me 或下单时再算.
+  // 任何异常都不应阻塞登录本身, 失败时返回空数组 (合规拦截在客户端 graceful 降级)
+  let pendingConsents = []
+  try {
+    pendingConsents = await legalService.computePendingConsents({ userId: user._id, orgId: null })
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.login] computePendingConsents failed: ${e && e.message}`)
+  }
+
   return {
     accessToken,
     refreshToken,
@@ -68,7 +79,9 @@ async function login({ mobile, password: plain, ip, userAgent }) {
     // 招生试听 (2026-06): 试听转化时为新家长设的初始密码 = mobile.slice(-6),
     // 首登后必须改密 (User.requirePasswordChange=true). 前端拦截器据此
     // 跳到 /reset-password?initial=1 强制改密.
-    requirePasswordChange: !!user.requirePasswordChange
+    requirePasswordChange: !!user.requirePasswordChange,
+    // 法律协议 (2026-06): 平台级未对齐版本的协议清单. 前端 router guard 据此拦到 /agreement/accept
+    pendingConsents
   }
 }
 
@@ -129,8 +142,11 @@ async function logout({ refreshToken }) {
  *
  * 个人中心(Profile) 页同时复用这个出参 —— 因此把 idCard / region 一并附上,
  * 现有调用方(auth store 的 fetchMe)只是多拿到几个字段,纯加性,不破兼容。
+ *
+ * 2026-06: 加 pendingConsents 字段, controller 透传 req.orgId 让 service 算"该机构内
+ * 也需重新同意"的协议. 未传 orgId 时只算平台级.
  */
-async function me(userId) {
+async function me(userId, options = {}) {
   const user = await User.findById(userId)
     .select('mobile realName avatar idCard region isPlatformAdmin isActive isBlocked blockedAt blockedReason createdAt')
     .populate('region', 'name level code')
@@ -178,6 +194,18 @@ async function me(userId) {
     }))
   }
 
+  // 法律协议: 当前 orgId (来自 x-org-id) 决定机构级协议是否纳入计算
+  let pendingConsents = []
+  try {
+    pendingConsents = await legalService.computePendingConsents({
+      userId,
+      orgId: options.orgId || null
+    })
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.me] computePendingConsents failed: ${e && e.message}`)
+  }
+
   return {
     id: String(user._id),
     mobile: user.mobile,
@@ -193,7 +221,9 @@ async function me(userId) {
     blockedAt: user.blockedAt,
     blockedReason: user.blockedReason,
     createdAt: user.createdAt,
-    orgs
+    orgs,
+    // 法律协议 (2026-06): 当前用户在当前 org 下需要重新同意的协议清单
+    pendingConsents
   }
 }
 
@@ -205,7 +235,7 @@ async function me(userId) {
  *   diffSingle,否则新上传的头像永远是孤儿、引用数 = 0(详见 user.service.update)。
  * - 完成后回包用 me(userId) 的全量结构,与 GET /auth/me 完全一致,前端可以直接覆盖。
  */
-async function updateMe(userId, payload) {
+async function updateMe(userId, payload, options = {}) {
   const patch = {}
   for (const key of SELF_UPDATE_WHITELIST) {
     if (Object.prototype.hasOwnProperty.call(payload, key)) {
@@ -246,7 +276,7 @@ async function updateMe(userId, payload) {
     })
   }
 
-  return me(userId)
+  return me(userId, { orgId: options.orgId || null })
 }
 
 /**

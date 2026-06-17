@@ -18,7 +18,9 @@ exports.login = async (req, res) => {
     accessToken: result.accessToken,
     user: result.user,
     // 招生试听 (2026-06): 试听转化建的家长账号首登强改; 前端拦截器据此跳改密页
-    requirePasswordChange: result.requirePasswordChange
+    requirePasswordChange: result.requirePasswordChange,
+    // 法律协议 (2026-06): 平台级未对齐版本协议清单 (登录时机构未确定, 只算平台级)
+    pendingConsents: result.pendingConsents || []
   }))
 }
 
@@ -42,13 +44,16 @@ exports.logout = async (req, res) => {
 }
 
 exports.me = async (req, res) => {
-  const data = await service.me(req.user.id)
+  // 法律协议 (2026-06): 透传 req.orgId 让 service 把"该机构内未对齐的协议"也算进
+  // pendingConsents. /me 路由不要求 requireOrg, 所以 orgId 可能为 undefined → 只算平台级.
+  const data = await service.me(req.user.id, { orgId: req.orgId || null })
   res.json(ApiResponse.ok(data))
 }
 
 // 自助修改资料：只允许 realName / avatar / idCard / region
 exports.updateMe = async (req, res) => {
-  const data = await service.updateMe(req.user.id, req.body)
+  // 透传当前 orgId 给 service.me, 保证 update 后返回的 pendingConsents 含机构维度
+  const data = await service.updateMe(req.user.id, req.body, { orgId: req.orgId || null })
   res.json(ApiResponse.ok(data))
 }
 

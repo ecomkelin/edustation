@@ -2,7 +2,10 @@
   <view class="page">
     <active-student-header />
 
-    <!-- 概览卡片：剩余课时 + 积分 -->
+    <!-- 法律协议强制接受 modal: pendingConsents > 0 时自动弹层 -->
+    <agreement-modal />
+
+    <!-- 概览卡片:剩余课时 + 积分 -->
     <view class="overview card">
       <view class="overview-item" @tap="go('/pages/studentProduct/list')">
         <text class="num">{{ remainingLessons }}</text>
@@ -78,6 +81,7 @@
 
 <script>
 import ActiveStudentHeader from '@/components/active-student-header.vue'
+import AgreementModal from '@/components/agreement-modal.vue'
 import { useStudentStore } from '@/stores/student'
 import { useAuthStore } from '@/stores/auth'
 import { usePointsStore } from '@/stores/points'
@@ -88,7 +92,7 @@ import { addDays, startOfWeek, formatTime } from '@/utils/format'
 import { summarizeRemainingLessons, sortStudentProductsFifo, LessonScheduleStatusLabel, WeekdayLabel } from '@/utils/constants'
 
 export default {
-  components: { ActiveStudentHeader },
+  components: { ActiveStudentHeader, AgreementModal },
   data() {
     return {
       loading: false,

@@ -8,6 +8,7 @@ import * as ElIcons from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import { useAuthStore } from './stores/auth'
+import { useSiteConfigStore } from './stores/siteConfig'
 import './styles/index.scss'
 
 const app = createApp(App)
@@ -21,8 +22,10 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 
-// 启动时尝试恢复登录态
+// 启动时:并行恢复登录态 + 加载站点配置 (Footer 备案号/版权等)
+// 任一失败都不阻塞 mount, store 内部已 catch
 const auth = useAuthStore()
-auth.restore().finally(() => {
+const siteConfig = useSiteConfigStore()
+Promise.allSettled([auth.restore(), siteConfig.load()]).finally(() => {
   app.mount('#app')
 })

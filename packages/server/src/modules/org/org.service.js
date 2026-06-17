@@ -104,6 +104,16 @@ async function create(payload, options = {}) {
     console.error(`[org.create] ensureTrialCourseInstance failed: org=${org._id}`, e.message)
   }
 
+  // 法律协议 (2026-06): 给新机构 seed 默认机构级协议 (购买协议 + 退费规则).
+  // 失败不阻断创建 (协议可后续手动补)
+  try {
+    const orgDefaultLegal = require('./orgDefaultLegal')
+    await orgDefaultLegal.seedDefaultLegalDocs(org._id)
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[org.create] seedDefaultLegalDocs failed: org=${org._id}`, e.message)
+  }
+
   // logo 字段在创建时也需要 fileBind 绑定。
   // 前端可能在新建时直接传 logo url（场景：上传完一张新 logo 后点"确定"创建机构）。
   // 若不绑定，File 文档会 refCount=0 / isOrphan=true，"文件管理"里出现孤儿。

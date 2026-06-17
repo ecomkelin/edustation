@@ -33,7 +33,10 @@ export const useAuthStore = defineStore('auth', {
       accessToken: saved.accessToken || '',
       user: saved.user || null,
       orgs: saved.orgs || [],
-      currentOrgId: saved.currentOrgId || ''
+      currentOrgId: saved.currentOrgId || '',
+      // 法律协议 (2026-06): 平台 + 当前机构内未对齐版本的协议清单
+      // App.vue watch 该字段 > 0 时弹层强制接受
+      pendingConsents: Array.isArray(saved.pendingConsents) ? saved.pendingConsents : []
     }
   },
   getters: {
@@ -43,18 +46,25 @@ export const useAuthStore = defineStore('auth', {
     mainOrg() {
       if (!this.orgs || !this.orgs.length) return null
       return this.orgs.find((o) => o.isMain) || this.orgs[0]
-    }
+    },
+    hasPendingConsents: (s) => Array.isArray(s.pendingConsents) && s.pendingConsents.length > 0
   },
   actions: {
     async login({ mobile, password }) {
       const res = await authApi.login({ mobile, password })
       this.accessToken = res.data.accessToken
       this.user = res.data.user
+      // 法律协议 (2026-06): 平台级待同意清单 (login 时尚未选 org, 只有平台级)
+      this.pendingConsents = Array.isArray(res.data.pendingConsents) ? res.data.pendingConsents : []
       const me = await authApi.me()
       this.orgs = me.data.orgs || []
       if (this.orgs.length) {
         const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
         this.currentOrgId = main.org ? main.org.id : main.id
+      }
+      // 用 /me 返回的更全的 pendingConsents (含机构级) 覆盖
+      if (Array.isArray(me.data.pendingConsents)) {
+        this.pendingConsents = me.data.pendingConsents
       }
       storage.set(StorageKeys.ORG_ID, this.currentOrgId)
       this.persist()
@@ -81,6 +91,10 @@ export const useAuthStore = defineStore('auth', {
       const me = await authApi.me()
       this.user = me.data
       this.orgs = me.data.orgs || []
+      // 法律协议 (2026-06): 同步 pendingConsents (按 x-org-id 含机构级)
+      if (Array.isArray(me.data.pendingConsents)) {
+        this.pendingConsents = me.data.pendingConsents
+      }
       if (!this.currentOrgId && this.orgs.length) {
         const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
         this.currentOrgId = main.org ? main.org.id : main.id
@@ -101,7 +115,8 @@ export const useAuthStore = defineStore('auth', {
         accessToken: this.accessToken,
         user: this.user,
         orgs: this.orgs,
-        currentOrgId: this.currentOrgId
+        currentOrgId: this.currentOrgId,
+        pendingConsents: this.pendingConsents
       })
     },
 
@@ -110,9 +125,16 @@ export const useAuthStore = defineStore('auth', {
       this.user = null
       this.orgs = []
       this.currentOrgId = ''
+      this.pendingConsents = []
       storage.remove(StorageKeys.ORG_ID)
       storage.remove(StorageKeys.ACTIVE_STUDENT)
       writeLs(null)
+    },
+
+    /** 法律协议 (2026-06): 接受页提交成功后清空 */
+    clearPendingConsents() {
+      this.pendingConsents = []
+      this.persist()
     },
 
     /**

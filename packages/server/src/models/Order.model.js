@@ -48,6 +48,30 @@ const OrderItemSchema = new Schema(
   { _id: false }
 )
 
+/**
+ * 订单同意的法律协议快照 (2026-06 立项)
+ *
+ * 一旦订单创建成功, 这里锁定的版本号即为审计依据;
+ * 后续协议升级**不**回填历史订单 (订单时间 = 同意时间).
+ *
+ * 字段:
+ *   - docKey: 'purchase-agreement' | 'refund-policy' | ...
+ *   - version: semver, 当前生效版本号
+ *   - type: 'platform' | 'org' (机构购买协议是 'org')
+ *   - org: 机构级 = orgId; 平台级 = null
+ *   - agreedAt: 同意时间
+ */
+const OrderAgreementSchema = new Schema(
+  {
+    docKey: { type: String, required: true },
+    version: { type: String, required: true },
+    type: { type: String, enum: ['platform', 'org'], required: true },
+    org: { type: Schema.Types.ObjectId, ref: 'Org', default: null },
+    agreedAt: { type: Date, default: Date.now }
+  },
+  { _id: false }
+)
+
 const OrderSchema = new Schema(
   {
     // 所属机构（多租户隔离）
@@ -73,7 +97,10 @@ const OrderSchema = new Schema(
     // 支付方式（具体取值见 @shared/enums 的 PAYMENT_METHODS）
     paymentMethod: { type: String, enum: PAYMENT_METHODS },
     // 订单备注（家长留言、特殊优惠说明等）
-    remark: { type: String }
+    remark: { type: String },
+    // 创建时同意的协议快照 (2026-06)
+    // 仅在 client 端"立即购买"流程中由前端携带; 后台手动开单可不传 (跳过校验).
+    agreements: { type: [OrderAgreementSchema], default: [] }
   },
   { timestamps: true, collection: 'orders' }
 )
