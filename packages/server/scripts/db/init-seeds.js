@@ -17,20 +17,23 @@ const channelSeed = require('./seeds/channel.seed')
 const schoolSeed = require('./seeds/school.seed')
 
 async function initSeeds() {
+  // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
   // eslint-disable-next-line no-console
   console.log('[seed] initialising via seeds/initial.seed.js ...')
   const summary = await initialSeed.run()
   // eslint-disable-next-line no-console
   console.log('[seed] summary:', summary)
 
-  // 招生家长标签 (2026-06): 独立幂等 seed, 不依赖 initial 的 dropDatabase 流程
-  // 单独跑也不会破坏已有数据, 已存在则跳过并修正 sort/isActive
+  // 2. 招生家长标签 (2026-06): 独立幂等 seed, 不依赖 initial 的 dropDatabase 流程
+  //    单独跑也不会破坏已有数据, 已存在则跳过并修正 sort/isActive
+  //    initial.seed.js 已经把 LeadTag 一并写入, 这里跑只是"二次校验" sort/isActive
   await leadTagSeed.run()
 
-  // 招生渠道 (2026-06-15): 同 LeadTag, 独立幂等 seed; 默认渠道 = 地推
+  // 3. 招生渠道 (2026-06-15): 同 LeadTag, 独立幂等 seed; 默认渠道 = 地推
   await channelSeed.run()
 
-  // 学校档案: 给所有启用 org 写入周边学校名单, 幂等
+  // 4. 学校档案: 给所有启用 org 写入周边学校名单, 幂等
+  //    initial.seed.js 已经把梓潼人工智网下的学校档案写入, 这里跑会补全其他 org 的学校
   await schoolSeed.run()
 }
 

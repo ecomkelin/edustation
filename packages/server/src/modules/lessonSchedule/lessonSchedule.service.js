@@ -82,10 +82,17 @@ async function list({ orgId, from, to, courseInstance, teacher, room, status, st
   // 招生试听 (2026-06): 按是否试听课过滤; 'true'/'false'/'undefined'(不传=全部)
   if (isTrialLesson === 'true' || isTrialLesson === true) filter.isTrialLesson = true
   else if (isTrialLesson === 'false' || isTrialLesson === false) filter.isTrialLesson = { $ne: true }
-  // 状态筛选：兼容单值 status（逗号分隔）和数组 statuses；多值用 $in
-  const rawStatuses = Array.isArray(statuses)
-    ? statuses
-    : (status ? String(status).split(',').map((s) => s.trim()).filter(Boolean) : [])
+  // 状态筛选：兼容 数组 statuses / 单值 status / 逗号分隔字符串
+  //  - statuses: 数组 (axios paramsSerializer 把 ?statuses=a&statuses=b 展成数组)
+  //  - statuses: 字符串 'a,b,c' (前端 join 后的扁平串)
+  //  - status:   旧版单值/逗号串（兼容老路由）
+  let rawStatuses = []
+  if (Array.isArray(statuses)) rawStatuses = statuses
+  else if (typeof statuses === 'string' && statuses.length) {
+    rawStatuses = statuses.split(',').map((s) => s.trim()).filter(Boolean)
+  } else if (status) {
+    rawStatuses = String(status).split(',').map((s) => s.trim()).filter(Boolean)
+  }
   if (rawStatuses.length === 1) filter.status = rawStatuses[0]
   else if (rawStatuses.length > 1) filter.status = { $in: rawStatuses }
   if (from || to) {

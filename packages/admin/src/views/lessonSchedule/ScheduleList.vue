@@ -45,9 +45,9 @@
         <el-form-item label="状态">
           <el-select
             v-model="filters.statuses"
-            multiple collapse-tags collapse-tags-tooltip
+            multiple
             placeholder="全部"
-            style="width: 220px"
+            style="width: 260px"
             @change="load"
           >
             <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="s.label" :value="s.value" />
