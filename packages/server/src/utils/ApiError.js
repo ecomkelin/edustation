@@ -42,6 +42,10 @@ class ApiError extends Error {
     return new ApiError(422, message, data)
   }
 
+  static tooManyRequests(message = '请求过于频繁，请稍后再试', data) {
+    return new ApiError(429, message, data)
+  }
+
   static internal(message = '服务器内部错误') {
     return new ApiError(500, message)
   }

@@ -50,10 +50,10 @@ async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSiz
   }
 
   // 2026-06-16: 增补家长沟通画像标记 (续课/谈判前看"沟通偏好"的核心场景)
-  //   路径: Student.guardians[0] (主监护人) → User.mobile → Parent (org, phone) → UserOrgRel
-  //   - 业务上 Parent.user 在转化时回填; 也可走 phone 兜底 (Parent.user 可能为 null 但 Parent 存在)
+  //   路径: Student.guardians[0] (主监护人) → User.mobile → Parent (org, phone) → Parent 画像字段
+  //   2026-06-16 重构: 画像字段从 UserOrgRel 搬到 Parent, 不再绕道 rel
   //   - 三态: null=未关联潜客; false=已关联但未填; true=已填
-  //   - 用 $regex: '\S' 处理老 rel 文档 (字段 undefined → $ne: '' 误判, 之前已踩坑)
+  //   - Parent 字段有 default: '', 直接读 p.commStyle 等即可
   const phoneToParent = new Map()
   const phoneSet = new Set()
   for (const it of items) {
@@ -63,40 +63,23 @@ async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSiz
   }
   if (phoneSet.size > 0) {
     const parents = await Parent.find({ org: orgId, phone: { $in: [...phoneSet] } })
-      .select('_id user phone')
+      .select('_id phone commStyle familyBg childFocus followUp')
       .lean()
     for (const p of parents) phoneToParent.set(p.phone, p)
-    const userIds = parents.map((p) => p.user).filter(Boolean)
-    if (userIds.length > 0) {
-      const profileRels = await UserOrgRel.find({
-        user: { $in: userIds },
-        org: orgId,
-        $or: [
-          { commStyle: { $regex: '\\S' } },
-          { familyBg: { $regex: '\\S' } },
-          { childFocus: { $regex: '\\S' } },
-          { followUp: { $regex: '\\S' } }
-        ]
-      }, { user: 1 }).lean()
-      const hasProfileUserIds = new Set(profileRels.map((r) => String(r.user)))
-      for (const it of items) {
-        const g = (it.guardians || [])[0]
-        const phone = g && typeof g === 'object' ? (g.mobile || '') : ''
-        const parent = phone ? phoneToParent.get(phone) : null
-        if (parent) {
-          it.parentId = String(parent._id)
-          it.hasParentProfile = !!(parent.user && hasProfileUserIds.has(String(parent.user)))
-        } else {
-          it.parentId = null
-          it.hasParentProfile = false
-        }
-      }
-    } else {
-      for (const it of items) {
-        const g = (it.guardians || [])[0]
-        const phone = g && typeof g === 'object' ? (g.mobile || '') : ''
-        const parent = phone ? phoneToParent.get(phone) : null
-        it.parentId = parent ? String(parent._id) : null
+    for (const it of items) {
+      const g = (it.guardians || [])[0]
+      const phone = g && typeof g === 'object' ? (g.mobile || '') : ''
+      const parent = phone ? phoneToParent.get(phone) : null
+      if (parent) {
+        it.parentId = String(parent._id)
+        it.hasParentProfile = !!(
+          (parent.commStyle && parent.commStyle !== '') ||
+          (parent.familyBg && parent.familyBg !== '') ||
+          (parent.childFocus && parent.childFocus !== '') ||
+          (parent.followUp && parent.followUp !== '')
+        )
+      } else {
+        it.parentId = null
         it.hasParentProfile = false
       }
     }
@@ -134,7 +117,8 @@ async function detail(id, orgId) {
   }
 
   // 2026-06-16: 增补家长沟通画像 (续课/谈判前看"沟通偏好"; 跨机构独立)
-  //   路径: Student.guardians[0] (主监护人) → User.mobile → Parent (org, phone) → UserOrgRel
+  //   路径: Student.guardians[0] (主监护人) → User.mobile → Parent (org, phone) → Parent 画像字段
+  //   2026-06-16 重构: 画像字段从 UserOrgRel 搬到 Parent, 直接读 Parent.commStyle 等
   //   - null = 学员未关联潜客档案 (例如直接走"新建学生"流程, 没经过招生)
   //   - 非 null 但 4 字段全空 = 关联了家长档案但未填画像
   //   - parentId 一并返回, 前端弹 ParentProfileDialog 用
@@ -142,17 +126,11 @@ async function detail(id, orgId) {
   const guardianMobile = guardian && typeof guardian === 'object' ? (guardian.mobile || '') : ''
   if (guardianMobile) {
     const parent = await Parent.findOne({ org: orgId, phone: guardianMobile })
-      .select('_id user phone')
+      .populate('profileLastUpdatedBy', 'realName')
       .lean()
     if (parent) {
       s.parentId = String(parent._id)
-      s.parentProfile = parent.user
-        ? parentProfile.shapeProfile(
-            await UserOrgRel.findOne({ user: parent.user, org: orgId })
-              .populate('profileLastUpdatedBy', 'realName')
-              .lean()
-          )
-        : null  // 家长存在但未绑定账号 (兜底: 不可能有画像)
+      s.parentProfile = parentProfile.shapeProfile(parent)  // 一行
     } else {
       s.parentId = null
       s.parentProfile = null

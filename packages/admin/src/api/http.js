@@ -132,10 +132,48 @@ apiClient.interceptors.response.use(
     }
 
     // 登录接口自身的 401 永远走 toast 通道(后端 4 种文案已分桶,前端直接弹给用户)
-    if (response.status === 401 && shouldSkipRefresh(config.url)) {
+    // /auth/refresh 自身 401 是"刷新失败"信号, 弹用户可见的 toast 没意义 ——
+    //   调它的场景只有两种: (a) 登录页 store.restore() 调, 此时还在 /login 路由,
+    //     用户已经从 /login 看到了 redirect=... 的占位, 跳走不算突兀;
+    //   (b) 业务请求 401 触发自动续签, 此时 toast 会盖住业务错误且误导用户.
+    //   统一走静默 — 由 store.restore / 172-194 行的 catch 自己处理
+    //   (clear + router.replace('/login')).
+    if (response.status === 401 && config.url && config.url.includes('/auth/login')) {
       const message = response.data && response.data.message ? response.data.message : '登录失败'
+      // 登录防刷 (2026-06): 透传 X-RateLimit-Remaining 给登录页, 让"密码错误"附带"还剩 N 次"
+      const remaining = parseInt(response.headers['x-ratelimit-remaining'], 10)
+      if (Number.isFinite(remaining) && remaining >= 0) {
+        error.rateLimitRemaining = remaining
+      }
+      // 滑块 (2026-06): 把 data.data 挂到 error 上, Login.vue 据此判 reason
+      if (response.data && response.data.data) {
+        error.responseData = response.data.data
+      }
       if (!(config && config.silent)) ElMessage.error(message)
       return Promise.reject(error)
+    }
+
+    // 登录防刷 (2026-06): 429 锁定, 透传 Retry-After (秒) 给登录页做倒计时禁用
+    //   只对 /auth/login 响应做透传; /auth/refresh 的 429 是限流器副作用, 用户不应看到
+    if (response.status === 429 && config.url && config.url.includes('/auth/login')) {
+      const retryAfter = parseInt(response.headers['retry-after'], 10)
+      if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        error.retryAfterSec = retryAfter
+      }
+      // 滑块 (2026-06): 把 data.data 挂到 error 上
+      if (response.data && response.data.data) {
+        error.responseData = response.data.data
+      }
+      // 仍然走 toast 通道(与其他错误一致), 倒计时禁用由登录页自己渲染
+    }
+
+    // 滑块 (2026-06): /auth/login 的 400 (captcha_required) 也要把 data.data 透出
+    //   这是滑块流程的关键钩子: 后端 400 + {reason: 'captcha_required'} 时,
+    //   Login.vue 读 e.responseData.reason 决定弹滑块 dialog
+    if (response.status === 400 && config.url && config.url.includes('/auth/login')) {
+      if (response.data && response.data.data) {
+        error.responseData = response.data.data
+      }
     }
 
     if (response.status === 401 && !config._retry && !shouldSkipRefresh(config.url)) {

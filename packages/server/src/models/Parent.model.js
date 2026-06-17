@@ -76,6 +76,20 @@ const ParentSchema = new Schema(
       index: true
     },
 
+    // === 家长沟通画像 (2026-06-16 重构, 从 UserOrgRel 搬过来) ===
+    // 业务: 1 家长 × 1 机构 ≤ 1 份画像; Parent 自身就按 org 隔离, 跨机构独立
+    // 潜客阶段 (parent.user=null) 也能写, 无需等待转化
+    // 字段结构化优先于 meta, 便于索引 / 校验 / UI 渲染
+    commStyle:   { type: String, default: '', maxlength: 500 },   // 沟通偏好
+    familyBg:    { type: String, default: '', maxlength: 500 },   // 家庭背景
+    childFocus:  { type: String, default: '', maxlength: 500 },   // 孩子关注
+    followUp:    { type: String, default: '', maxlength: 2000 },  // 跟进备忘
+    // 元数据: 追踪最后编辑
+    profileLastUpdatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    profileLastUpdatedAt: { type: Date, default: null },
+    // 扩展位 (后续阶段加字段不需改 schema)
+    profileMeta: { type: Schema.Types.Mixed, default: {} },
+
     // ─── 标签 (N:N → Category, model='LeadTag') ───
     tags: [{ type: Schema.Types.ObjectId, ref: 'Category' }],
 

@@ -37,7 +37,77 @@
 | data.user | Object | `{ id, mobile, realName, avatar, isPlatformAdmin }` |
 
 - **Set-Cookie**：`refreshToken=<token>; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age=...`
-- **失败**：手机号不存在或密码错误返回 `401`。
+- **失败**：
+  - `401` 手机号不存在 / 密码错误 / 账号已停用 / 账号已禁用
+  - `400 + reason: 'captcha_required'` 失败次数触发滑块验证（详见下文"滑块验证"）
+  - `429` 登录防刷触发（详见下文"登录防刷"）
+- **请求体扩展**（可选）：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| captchaPass | String | 视情况 | 当后端返回 `captcha_required` 后，前端通过 `/captcha/verify` 拿到 pass，下一次 `/auth/login` 必须带上 |
+
+- **响应头（每次 /login 都有）**：
+  - `X-RateLimit-Limit` 当前限流线阈值（5 或 30）
+  - `X-RateLimit-Remaining` 窗口内剩余次数
+  - `X-RateLimit-Reset` 窗口 / 锁定期结束的 unix 秒
+  - `Retry-After` 触发 429 时的封禁剩余秒数
+
+#### 登录防刷（2026-06）
+
+为防止暴力破解 / 凭证填充，`POST /auth/login` 在 `validateRequest` 之后挂了一个进程内的频次限制中间件 `loginRateLimit`。两条独立限流线，任意一条超阈值即返回 `429`：
+
+| 维度 | 默认阈值 | 触发封禁时长 | 环境变量 |
+| ---- | -------- | ------------ | -------- |
+| per-mobile | 5 次 / 15 分钟 | 15 分钟 | `LOGIN_RL_MOBILE_MAX` / `LOGIN_RL_MOBILE_LOCK_MS` |
+| per-IP | 30 次 / 15 分钟 | 15 分钟 | `LOGIN_RL_IP_MAX` / `LOGIN_RL_IP_LOCK_MS` |
+
+- 算法：固定窗口 + 触发即封。锁定期内该 key 的所有 `/auth/login` 请求直接 `429`，不再计数。
+- 成功登录：`mobile` 桶会被清空（避免"输错几次后输对一次仍被锁"），`ip` 桶**不清**（防"1 真账号 + N 假账号"混合扫绕过）。
+- 响应：`429` + `Retry-After: <秒>` 响应头 + 错误 `data: { reason: 'mobile' | 'ip', retryAfterMs }`。
+- **前端配套**（`packages/admin/src/views/Login.vue`）：
+  - 每次 401 响应把 `X-RateLimit-Remaining` 读出来，登录页 **inline 提示"密码错误, 还剩 N 次尝试机会"**（颜色由红到橙，最后一次变锁图标）
+  - 触发 429 时按钮**禁用 + 实时倒计时**（"已锁定 (14:59)"），输入框和协议勾选也禁用，倒计时归零自动恢复
+  - 锁定期间前端直接拦截请求，不发到后端
+- **注意**：中间件挂在参数校验**之后**，所以格式错误的请求不消耗任何桶配额（也防 DoS 任意正常用户）。
+- 部署：进程内 Map，**单实例**有效。多实例部署需换 Redis（阶段 2 TODO）。
+
+#### 滑块验证（2026-06）
+
+为挡住"输错密码"的中等水平脚本，在频次限制**之前**插入一道交互验证。**触发门槛**：同一 mobile 在 15 分钟内失败 **`CAPTCHA_AFTER_FAILURES` 次**（默认 2）后，下一次登录必传 `captchaPass`，否则返回 `400` + `data: { reason: 'captcha_required' }`。
+
+**端点**：
+
+1. **`GET /api/v1/captcha/challenge`** — 拿挑战
+   - 响应：
+     ```json
+     {
+       "token": "<challenge token>",
+       "backgroundSvg": "<svg>含目标槽虚线</svg>",
+       "pieceSvg": "<svg>拼图块</svg>",
+       "width": 320, "height": 160, "pieceWidth": 50,
+       "expiresAt": 1781679562572
+     }
+     ```
+   - 挑战有效期 `CAPTCHA_CHALLENGE_TTL_MS`（默认 2 min），过期作废
+
+2. **`POST /api/v1/captcha/verify`** — 提交答案
+   - 请求体：`{ token, x, track? }`，`x` 为拼图块左边缘相对背景左边缘的像素距离
+   - 容差 `CAPTCHA_TOLERANCE` 像素（默认 5）
+   - 答错 → 标记 challenge 已用，**该 challenge 不能再试**（防暴力试答案）
+   - 答对 → 颁发 `pass`（一次性令牌，有效期 `CAPTCHA_PASS_TTL_MS` 默认 60s）
+   - 响应：`{ pass, expiresAt }`
+
+3. **`POST /api/v1/auth/login`** 带 `captchaPass`
+   - 满足滑块门槛时必传，登录成功后 pass 自动作废
+   - 缺 / 无效 → `400 + reason: 'captcha_required'`，前端再弹一次
+
+**安全模型**：
+- 滑块是防"无脑脚本"（直接 POST 字典攻击），**不是**防高水平 AI（OCR 可破解 SVG 中的目标位置）
+- 真阻断靠频次限制：失败 5 次 / 15 min 锁 IP+mobile 15 min，攻击者即使绕过滑块也跑不完一轮
+- 阶段 2 可升级：接极验 / 腾讯防水墙 / 鼠标轨迹分析
+
+**前端**：`packages/admin/src/components/SliderCaptcha.vue`（弹窗拖拽组件），`Login.vue` 检测到 `captcha_required` 自动打开，验证通过后**自动重试登录**带 pass，用户无感。
 
 ---
 
@@ -143,7 +213,7 @@
 
 | 状态码 | 场景 |
 | ------ | ---- |
-| 400 | 请求体校验失败 |
-| 401 | 未登录 / refresh token 无效或过期 |
-| 429 | 登录防刷限制（如启用） |
+| 400 | 请求体校验失败 / 滑块验证缺失（`captcha_required`） |
+| 401 | 未登录 / refresh token 无效或过期 / 密码错 / 账号状态错 |
+| 429 | 登录防刷限制触发 |
 | 500 | 服务器内部错误 |

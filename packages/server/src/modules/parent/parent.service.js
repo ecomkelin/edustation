@@ -9,6 +9,7 @@ const UserOrgRel = require('@models/UserOrgRel.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const removable = require('@utils/removable')
+const parentProfile = require('@modules/parent/parent.profile')
 
 /* ─── 看全部的职位名 (与系统默认职位绑定) ───────────
  * 业务约定: 招生模块"看全部" = 管理员 / 教务 系统职位.
@@ -232,25 +233,16 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
   }
 
   // 2026-06: 增补 hasProfile (任一画像字段非空 → true, 前端列表可显示 ✓ 标记)
-  // 注意: 老 rel 文档可能没有这 4 个字段 (值为 undefined), 用 $ne: '' 会误判; 用 $regex 强制要求至少一个非空白字符
-  const userIds = items.map((p) => p.user).filter(Boolean)
-  if (userIds.length > 0) {
-    const profileRels = await UserOrgRel.find({
-      user: { $in: userIds },
-      org: orgId,
-      $or: [
-        { commStyle: { $regex: '\\S' } },
-        { familyBg: { $regex: '\\S' } },
-        { childFocus: { $regex: '\\S' } },
-        { followUp: { $regex: '\\S' } }
-      ]
-    }, { user: 1 }).lean()
-    const hasProfileUserIds = new Set(profileRels.map((r) => String(r.user)))
-    for (const p of items) {
-      p.hasProfile = p.user ? hasProfileUserIds.has(String(p.user)) : false
-    }
-  } else {
-    for (const p of items) p.hasProfile = false
+  // 2026-06-16 重构: 字段从 UserOrgRel 搬到 Parent, 直接从 items 读 Parent 文档字段
+  //   - Parent 字段有 default: '', 老文档不会是 undefined (不像 UserOrgRel 老文档那样 $ne:'' 误判)
+  //   - 不需要再走 UserOrgRel 二次查询
+  for (const p of items) {
+    p.hasProfile = !!(
+      (p.commStyle && p.commStyle !== '') ||
+      (p.familyBg && p.familyBg !== '') ||
+      (p.childFocus && p.childFocus !== '') ||
+      (p.followUp && p.followUp !== '')
+    )
   }
 
   return { items, total, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
@@ -298,26 +290,12 @@ async function detail(id, orgId) {
   parent.activities = activities
   parent.bookings = bookings
 
-  // 2026-06: 增补家长沟通画像 (UserOrgRel 上的 4 字段, 跨机构独立)
-  if (parent.user) {
-    const rel = await UserOrgRel.findOne({ user: parent.user, org: orgId })
-      .populate('profileLastUpdatedBy', 'realName')
-      .lean()
-    parent.profile = rel
-      ? {
-          commStyle: rel.commStyle || '',
-          familyBg: rel.familyBg || '',
-          childFocus: rel.childFocus || '',
-          followUp: rel.followUp || '',
-          lastUpdatedBy: rel.profileLastUpdatedBy
-            ? { id: String(rel.profileLastUpdatedBy._id || rel.profileLastUpdatedBy.id), realName: rel.profileLastUpdatedBy.realName }
-            : null,
-          lastUpdatedAt: rel.profileLastUpdatedAt || null
-        }
-      : null
-  } else {
-    parent.profile = null
-  }
+  // 2026-06: 增补家长沟通画像 (Parent 上的 4 字段, 跨机构独立; 2026-06-16 从 UserOrgRel 搬过来)
+  // 直接从 parent 文档读, 任何阶段 (潜客 / 已转化) 都有值
+  const fresh = await Parent.findById(parent._id)
+    .populate('profileLastUpdatedBy', 'realName')
+    .lean()
+  parent.profile = parentProfile.shapeProfile(fresh)
 
   return parent
 }

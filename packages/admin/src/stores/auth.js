@@ -45,8 +45,8 @@ export const useAuthStore = defineStore('auth', {
     hasPendingConsents: (s) => Array.isArray(s.pendingConsents) && s.pendingConsents.length > 0
   },
   actions: {
-    async login({ mobile, password }) {
-      const res = await http.post('/auth/login', { mobile, password })
+    async login({ mobile, password, captchaPass }) {
+      const res = await http.post('/auth/login', { mobile, password, captchaPass })
       this.accessToken = res.data.accessToken
       this.user = res.data.user
       // 招生试听 (2026-06): 首登强改密标志

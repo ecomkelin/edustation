@@ -192,6 +192,46 @@
       <!-- 触点时间线 (聚合该家长下所有孩子的触点) -->
       <el-divider content-position="left">
         <span>触点时间线 ({{ parent.activities?.length || 0 }})</span>
+        <span class="divider-actions">
+          <!--
+            触点添加入口: 之前只藏在孩子行的"+ 触点"按钮里, 触点时间线区本身没入口, 用户找不到
+            单孩: 直接打开该孩子的触点 dialog
+            多孩: el-popover 弹孩子列表
+            仅 recruit.write 权限 + 至少 1 个非 converted/lost 孩子可见
+          -->
+          <el-popover
+            v-if="canAddActivity"
+            placement="bottom-start"
+            :width="240"
+            trigger="click"
+            popper-class="add-activity-popover"
+          >
+            <template #reference>
+              <el-button
+                size="small"
+                type="primary"
+                link
+              >+ 添加触点</el-button>
+            </template>
+            <div class="add-activity-content">
+              <div class="add-activity-title">选择孩子</div>
+              <div
+                v-for="c in addableChildren"
+                :key="c._id"
+                class="add-activity-item"
+                @click="onPickChildForActivity(c)"
+              >
+                <span>{{ c.name }}</span>
+                <el-tag size="small" :type="statusTagType(c.status)" effect="plain">
+                  {{ statusLabel(c.status) }}
+                </el-tag>
+              </div>
+              <div v-if="addableChildren.length === 0" class="add-activity-empty">
+                暂无可加触点的孩子 (都已转化或流失)
+              </div>
+            </div>
+          </el-popover>
+        </span>
       </el-divider>
       <div v-if="!parent.activities || parent.activities.length === 0" class="empty">暂无触点</div>
       <el-timeline v-else>
@@ -227,25 +267,28 @@
       </el-timeline>
     </div>
 
-    <!-- 加孩子子 dialog -->
+    <!-- 加孩子子 dialog (append-to-body: 必须, 否则被父 dialog mask 遮挡, 看不见) -->
     <ChildLeadEditDialog
       v-model:visible="addChildDialog.visible"
       :parent="parent"
+      append-to-body
       @saved="onChildAdded"
     />
 
-    <!-- 编辑单个孩子子 dialog -->
+    <!-- 编辑单个孩子子 dialog (append-to-body: 必须) -->
     <ChildLeadEditDialog
       v-model:visible="editChildDialog.visible"
       :parent="parent"
       :child-lead="editChildDialog.childLead"
+      append-to-body
       @saved="onChildEdited"
     />
 
-    <!-- 编辑家长档案子 dialog -->
+    <!-- 编辑家长档案子 dialog (append-to-body: 必须) -->
     <ParentEditDialog
       v-model:visible="editParentDialog.visible"
       :parent="parent"
+      append-to-body
       @saved="onParentEdited"
     />
 
@@ -296,26 +339,29 @@
       </div>
     </el-dialog>
 
-    <!-- 编辑触点子 dialog -->
+    <!-- 编辑触点子 dialog (append-to-body: 必须) -->
     <ActivityEditDialog
       v-model:visible="editActivityDialog.visible"
       :child-lead-id="editActivityDialog.childLeadId"
       :activity="editActivityDialog.activity"
+      append-to-body
       @saved="onActivityEdited"
     />
 
-    <!-- 添加触点子 dialog -->
+    <!-- 添加触点子 dialog (append-to-body: 必须) -->
     <ActivityCreateDialog
       v-model:visible="createActivityDialog.visible"
       :child-lead-id="createActivityDialog.childLeadId"
       :child-name="createActivityDialog.childName"
+      append-to-body
       @saved="onActivityCreated"
     />
 
-    <!-- 家长沟通画像 (2026-06 新增) — 详情内编辑入口 -->
+    <!-- 家长沟通画像 (2026-06 新增) — 详情内编辑入口 (append-to-body: 必须) -->
     <ParentProfileDialog
       v-model:visible="profileDialog.visible"
       :parent="profileDialog.parent"
+      append-to-body
       @saved="onProfileSaved"
     />
   </el-dialog>
@@ -381,6 +427,22 @@ function hasPerm(code) {
   return perms.has(code)
 }
 const canEditProfile = computed(() => hasPerm('recruit.write'))
+// 触点添加入口: 需要 recruit.write + 至少一个非 converted/lost 的孩子
+const canAddActivity = computed(() => {
+  if (!hasPerm('recruit.write')) return false
+  const list = parent.value?.childLeads || []
+  return list.some((c) => !['converted', 'lost'].includes(c.status))
+})
+// 可加触点的孩子列表 (排除已转化/已流失)
+const addableChildren = computed(() => {
+  const list = parent.value?.childLeads || []
+  return list.filter((c) => !['converted', 'lost'].includes(c.status))
+})
+// 选完孩子 → 关闭 popover (由 popover 自身 click outside 关闭) → 打开触点 dialog
+function onPickChildForActivity(child) {
+  if (!child) return
+  openCreateActivity(child)
+}
 function openProfileEdit() {
   // 详情 dialog 内的 parent 含 id/_id + profile 字段, 直接传
   const p = parent.value
@@ -667,4 +729,36 @@ async function onRemove({ password }) {
   transition: opacity 0.15s;
 }
 .el-timeline-item:hover .activity-actions { opacity: 1; }
+
+/* 触点时间线 divider 旁的内联操作 (eg. + 添加触点) */
+.divider-actions {
+  margin-left: 12px;
+  display: inline-flex;
+  gap: 8px;
+  vertical-align: middle;
+}
+
+/* + 添加触点 popover 内容 */
+.add-activity-content { padding: 4px 0; }
+.add-activity-title {
+  font-size: 12px;
+  color: #909399;
+  padding: 0 8px 6px;
+}
+.add-activity-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.add-activity-item:hover { background: #f5f7fa; }
+.add-activity-empty {
+  padding: 12px 8px;
+  text-align: center;
+  color: #909399;
+  font-size: 12px;
+}
 </style>

@@ -9,6 +9,7 @@ module.exports = {
   requirePlatformPassword: require('./requirePlatformPassword'),
   activeStudent: require('./activeStudent'),
   validateRequest: require('./validateRequest'),
+  loginRateLimit: require('./loginRateLimit'),
   notFound: require('./notFound'),
   errorHandler: require('./errorHandler')
 }

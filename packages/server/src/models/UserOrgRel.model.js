@@ -26,20 +26,10 @@ const UserOrgRelSchema = new Schema(
     // 该用户在本机构下持有的岗位列表（数组：一个员工可同时是"教务+老师"等）
     positions: [{ type: Schema.Types.ObjectId, ref: 'Position' }],
     // 是否主机构：true 表示登录后默认进入这家；同一用户多个机构时仅一个 isMain=true
-    isMain: { type: Boolean, default: false },
-
-    // === 家长沟通画像 (2026-06 新增) ===
-    // 业务上 1 个家长在 1 个机构下有 1 份画像; 跨机构独立
-    // 字段结构化优先于 meta, 便于索引 / 校验 / UI 渲染
-    commStyle:   { type: String, default: '', maxlength: 500 },   // 沟通偏好 (例: 偏好微信/电话; 晚上 9 点后不接电话; 决策快/慢)
-    familyBg:    { type: String, default: '', maxlength: 500 },   // 家庭背景 (例: 双职工/全职妈妈/二孩家庭)
-    childFocus:  { type: String, default: '', maxlength: 500 },   // 家长对孩子最关心什么 (例: 升学/兴趣/习惯养成)
-    followUp:    { type: String, default: '', maxlength: 2000 },  // 跟进备忘 (长文本, 例: 暑假班续费意向; 对某某老师有好感; 上次约下周回访)
-    // 元数据: 追踪最后编辑
-    profileLastUpdatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    profileLastUpdatedAt: { type: Date, default: null },
-    // 扩展位 (后续阶段加字段不需改 schema)
-    profileMeta: { type: Schema.Types.Mixed, default: {} }
+    isMain: { type: Boolean, default: false }
+    // 注: 家长沟通画像字段 (commStyle/familyBg/childFocus/followUp 等) 2026-06-16 搬到 Parent 表
+    //   原因: Parent 自身就按 org 隔离, 潜客阶段 (parent.user=null) 也能写, 不依赖 user 绑定
+    //   老 rel 数据已由 scripts/migrate-parent-profile-to-parent.js 迁移并 $unset
   },
   { timestamps: true, collection: 'user_org_rels' }
 )

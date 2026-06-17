@@ -7,6 +7,8 @@ const ApiError = require('@utils/ApiError')
 const password = require('@utils/password')
 const JwtUtil = require('@utils/JwtUtil')
 const legalService = require('@modules/legal/legal.service')
+const captchaService = require('@modules/captcha/captcha.service')
+const config = require('@config/index')
 
 // 自助资料可改字段白名单：mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律不可由用户自助修改
 const SELF_UPDATE_WHITELIST = ['realName', 'avatar', 'idCard', 'region']
@@ -23,9 +25,29 @@ const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
  * 性能/时序: 走一次 findOne + 一次 verify, 不存在时也走一次 verify 占位(用随机的 hash),
  * 避免"账号不存在" 比 "密码错" 快很多导致被枚举。
  *
+ * 滑块验证 (2026-06):
+ *  - 同一 mobile 失败 >= config.captcha.afterFailures 次后, 必传 captchaPass
+ *  - controller 把 req.loginRateLimit 透传给本 service, 用于:
+ *      · 读 failureCount 判定是否要滑块
+ *      · 失败时 recordMobileFailure()
+ *      · 成功时清桶(已由 controller 调 clearMobile)
+ *
  * @returns {{ accessToken, user, refreshToken }}
  */
-async function login({ mobile, password: plain, ip, userAgent }) {
+async function login({ mobile, password: plain, ip, userAgent, captchaPass, rateLimit }) {
+  // 0) 滑块验证: 该 mobile 失败次数 >= afterFailures → 必传 captchaPass
+  const failureCount = rateLimit && typeof rateLimit.getMobileFailureCount === 'function'
+    ? rateLimit.getMobileFailureCount()
+    : 0
+  if (failureCount >= config.captcha.afterFailures) {
+    if (!captchaPass || !captchaService.verifyPass(captchaPass)) {
+      // 缺或无效: 抛 400 + reason='captcha_required', 前端据此弹滑块
+      throw ApiError.badRequest('请完成滑块验证', { reason: 'captcha_required' })
+    }
+    // 验证通过, 烧掉这个 pass
+    captchaService.consumePass(captchaPass)
+  }
+
   // 1) 先按手机号查 (不挂 isActive / isBlocked, 用于区分具体原因)
   const user = await User.findOne({ mobile }).select('+passwordHash')
 
@@ -35,20 +57,35 @@ async function login({ mobile, password: plain, ip, userAgent }) {
   if (!user) {
     // 账号不存在 —— 跑一次假 verify 平衡时序
     await password.verify(DUMMY_HASH, plain).catch(() => false)
+    // 视为失败: 累计 failureCount (防枚举 + 后续弹滑块)
+    if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
+      rateLimit.recordMobileFailure()
+    }
     throw ApiError.unauthorized('账号不存在')
   }
   if (user.isBlocked) {
     await password.verify(user.passwordHash, plain).catch(() => false)
+    if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
+      rateLimit.recordMobileFailure()
+    }
     throw ApiError.unauthorized('账号已被禁用,请联系管理员')
   }
   if (!user.isActive) {
     await password.verify(user.passwordHash, plain).catch(() => false)
+    if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
+      rateLimit.recordMobileFailure()
+    }
     throw ApiError.unauthorized('账号已停用,请联系管理员')
   }
 
   // 2) 密码校验
   const ok = await password.verify(user.passwordHash, plain)
-  if (!ok) throw ApiError.unauthorized('密码错误')
+  if (!ok) {
+    if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
+      rateLimit.recordMobileFailure()
+    }
+    throw ApiError.unauthorized('密码错误')
+  }
 
   const accessToken = JwtUtil.signAccessToken({ userId: String(user._id) })
   const refreshToken = JwtUtil.signRefreshToken({ userId: String(user._id), jti: Date.now() + Math.random() })

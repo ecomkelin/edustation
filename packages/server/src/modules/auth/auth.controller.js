@@ -11,8 +11,15 @@ exports.login = async (req, res) => {
     mobile: req.body.mobile,
     password: req.body.password,
     ip,
-    userAgent: ua
+    userAgent: ua,
+    captchaPass: req.body.captchaPass,
+    rateLimit: req.loginRateLimit
   })
+  // 登录成功 → 清掉该 mobile 的限流桶 (登录防刷, 2026-06)
+  // IP 桶不清, 防 "1 真账号 + N 假账号" 混合扫绕过
+  if (req.loginRateLimit && typeof req.loginRateLimit.clearMobile === 'function') {
+    req.loginRateLimit.clearMobile()
+  }
   setRefreshCookie(res, result.refreshToken)
   res.json(ApiResponse.ok({
     accessToken: result.accessToken,
