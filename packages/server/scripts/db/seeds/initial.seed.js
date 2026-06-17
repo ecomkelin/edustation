@@ -9,9 +9,10 @@
  * 从 `.env` 中 `MONGODB_URI` 指向的目标库导出（默认 edustation_dev）后落盘。
  * 每次导出/导入都保持固定 _id、createdAt、updatedAt，幂等。
  *
- * 当前出厂数据 (11 collection)：
+ * 当前出厂数据 (12 collection)：
  *   - regions: 10 (四川/绵阳/梓潼/江油/成都/北京/朝阳/山东/济宁/嘉祥)
  *   - categories: 23 (Org × 2 + Subject × 5 + Student × 2 + LeadTag × 8 + Channel × 6)
+ *   - subjects: 5 (Python初级/C++初级/Scratch初级/Spike初级/大颗粒智能积木)
  *   - users: 3 (李科霖/高艺齐 平台超管 + 梓潼校长)
  *   - orgs: 2 (梓潼/绵阳人工智网)
  *   - user_org_rels: 1 (梓潼校长挂管理员)
@@ -23,7 +24,7 @@
  *   - refresh_tokens: 1 (登录态)
  *
  * 执行策略：dropDatabase() → 按依赖顺序 insertMany。
- * 依赖顺序: regions/categories → users → orgs → user_org_rels → positions → schools/rooms/course_products → user_consents/refresh_tokens
+ * 依赖顺序: regions/categories → subjects → users → orgs → user_org_rels → positions → schools/rooms/course_products → user_consents/refresh_tokens
  * 重复执行结果一致（dropDatabase 后整体灌入，_id 由 JSON 锁定不变）。
  */
 
@@ -32,6 +33,7 @@ const path = require('path')
 
 const Region = require('@models/Region.model')
 const Category = require('@models/Category.model')
+const Subject = require('@models/Subject.model')
 const User = require('@models/User.model')
 const Org = require('@models/Org.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
@@ -61,6 +63,7 @@ function loadDump() {
 
 // 依赖顺序:
 //   - regions/categories: 字典表, 无外键
+//   - subjects: 引用 categories (Subject model)
 //   - users: 主键表, 但 user_consents/refresh_tokens/user_org_rels 引用它
 //   - orgs: 引用 users (principal); user_org_rels 引用它
 //   - user_org_rels: 引用 users + orgs + positions
@@ -69,6 +72,7 @@ function loadDump() {
 const LOAD_ORDER = [
   'regions',
   'categories',
+  'subjects',
   'users',
   'orgs',
   'positions',
@@ -83,6 +87,7 @@ const LOAD_ORDER = [
 const COLLECTION_TO_MODEL = {
   regions: Region,
   categories: Category,
+  subjects: Subject,
   users: User,
   orgs: Org,
   positions: Position,

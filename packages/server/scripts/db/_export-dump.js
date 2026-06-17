@@ -28,6 +28,7 @@ const OUT_PATH = path.join(__dirname, 'seeds/initial.data.json')
 const COLLECTIONS = [
   'regions',
   'categories',
+  'subjects',
   'users',
   'orgs',
   'positions',

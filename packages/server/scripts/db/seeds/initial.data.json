@@ -389,6 +389,108 @@
       "__v": 0
     }
   ],
+  "subjects": [
+    {
+      "_id": "6a328e0d17263671219a9fc4",
+      "org": "6a2fb342aa8152333e4de50c",
+      "name": "Python初级",
+      "objectives": [],
+      "posterFileId": null,
+      "description": "",
+      "videoFileId": null,
+      "category": "6a2fb342aa8152333e4de4fa",
+      "syllabus": {
+        "totalLessons": 0,
+        "lessons": []
+      },
+      "lessonMaterials": {
+        "items": []
+      },
+      "createdAt": "2026-06-17T12:07:41.845Z",
+      "updatedAt": "2026-06-17T12:07:41.845Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a328e1a17263671219a9fd2",
+      "org": "6a2fb342aa8152333e4de50c",
+      "name": "C++初级",
+      "objectives": [],
+      "posterFileId": null,
+      "description": "",
+      "videoFileId": null,
+      "category": "6a2fb342aa8152333e4de4f9",
+      "syllabus": {
+        "totalLessons": 0,
+        "lessons": []
+      },
+      "lessonMaterials": {
+        "items": []
+      },
+      "createdAt": "2026-06-17T12:07:54.133Z",
+      "updatedAt": "2026-06-17T12:08:12.942Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a328e2717263671219a9fe1",
+      "org": "6a2fb342aa8152333e4de50c",
+      "name": "Scratch初级",
+      "objectives": [],
+      "posterFileId": null,
+      "description": "",
+      "videoFileId": null,
+      "category": "6a2fb342aa8152333e4de4fb",
+      "syllabus": {
+        "totalLessons": 0,
+        "lessons": []
+      },
+      "lessonMaterials": {
+        "items": []
+      },
+      "createdAt": "2026-06-17T12:08:07.040Z",
+      "updatedAt": "2026-06-17T12:08:07.040Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a328e3717263671219aa000",
+      "org": "6a2fb342aa8152333e4de50c",
+      "name": "Spike初级",
+      "objectives": [],
+      "posterFileId": null,
+      "description": "",
+      "videoFileId": null,
+      "category": "6a2fb342aa8152333e4de4fc",
+      "syllabus": {
+        "totalLessons": 0,
+        "lessons": []
+      },
+      "lessonMaterials": {
+        "items": []
+      },
+      "createdAt": "2026-06-17T12:08:23.197Z",
+      "updatedAt": "2026-06-17T12:08:23.197Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a328e4917263671219aa00f",
+      "org": "6a2fb342aa8152333e4de50c",
+      "name": "大颗粒智能积木",
+      "objectives": [],
+      "posterFileId": null,
+      "description": "",
+      "videoFileId": null,
+      "category": "6a2fb342aa8152333e4de4fd",
+      "syllabus": {
+        "totalLessons": 0,
+        "lessons": []
+      },
+      "lessonMaterials": {
+        "items": []
+      },
+      "createdAt": "2026-06-17T12:08:41.700Z",
+      "updatedAt": "2026-06-17T12:08:41.700Z",
+      "__v": 0
+    }
+  ],
   "users": [
     {
       "_id": "6a2fb342aa8152333e4de513",
@@ -1257,8 +1359,8 @@
       "title": "EduStation 用户服务协议",
       "ip": "::1",
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-      "__v": 0,
-      "createdAt": "2026-06-17T09:42:32.179Z"
+      "createdAt": "2026-06-17T09:42:32.179Z",
+      "__v": 0
     },
     {
       "_id": "6a326c0878f3e58700fd56c3",
@@ -1270,8 +1372,8 @@
       "title": "EduStation 隐私政策",
       "ip": "::1",
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-      "__v": 0,
-      "createdAt": "2026-06-17T09:42:32.179Z"
+      "createdAt": "2026-06-17T09:42:32.179Z",
+      "__v": 0
     },
     {
       "_id": "6a326c0878f3e58700fd56c4",
@@ -1283,8 +1385,8 @@
       "title": "EduStation 未成年人个人信息处理规则",
       "ip": "::1",
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-      "__v": 0,
-      "createdAt": "2026-06-17T09:42:32.179Z"
+      "createdAt": "2026-06-17T09:42:32.179Z",
+      "__v": 0
     },
     {
       "_id": "6a326c0878f3e58700fd56c5",
@@ -1296,8 +1398,8 @@
       "title": "EduStation Cookie 政策",
       "ip": "::1",
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-      "__v": 0,
-      "createdAt": "2026-06-17T09:42:32.179Z"
+      "createdAt": "2026-06-17T09:42:32.179Z",
+      "__v": 0
     }
   ],
   "refresh_tokens": [
@@ -1306,11 +1408,35 @@
       "user": "6a2fb342aa8152333e4de513",
       "tokenHash": "bc7a6e7f53747cc185f71b1f054e1e501ce0271153b40f2feb37bd6771002d2a",
       "expiresAt": "2026-06-24T09:42:22.530Z",
-      "isRevoked": false,
+      "isRevoked": true,
       "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
       "ip": "::1",
       "createdAt": "2026-06-17T09:42:22.533Z",
-      "updatedAt": "2026-06-17T09:42:22.533Z",
+      "updatedAt": "2026-06-17T10:08:31.633Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a32721f17263671219a9f9a",
+      "user": "6a2fb342aa8152333e4de513",
+      "tokenHash": "69aa1df4271607a8a5e54172cab01cc1857ad1a3e626bd6e91a54a47d1ff88ea",
+      "expiresAt": "2026-06-24T10:08:31.655Z",
+      "isRevoked": true,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "ip": "::1",
+      "createdAt": "2026-06-17T10:08:31.655Z",
+      "updatedAt": "2026-06-17T12:07:07.802Z",
+      "__v": 0
+    },
+    {
+      "_id": "6a328deb17263671219a9fab",
+      "user": "6a2fb342aa8152333e4de513",
+      "tokenHash": "2d141d8048717ee234742207d332c22bf7282617266ae7e680f9b823f340c255",
+      "expiresAt": "2026-06-24T12:07:07.804Z",
+      "isRevoked": false,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      "ip": "::1",
+      "createdAt": "2026-06-17T12:07:07.804Z",
+      "updatedAt": "2026-06-17T12:07:07.804Z",
       "__v": 0
     }
   ]
