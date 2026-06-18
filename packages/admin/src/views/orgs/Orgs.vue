@@ -17,10 +17,10 @@
         <el-form-item label="类型">
           <el-select v-model="filters.type" placeholder="全部" clearable style="width: 160px" @change="reload">
             <el-option
-              v-for="c in orgTypeOptions"
-              :key="c.id"
-              :value="c.id"
-              :label="c.name"
+              v-for="opt in ORG_TYPE_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
             />
           </el-select>
         </el-form-item>
@@ -63,7 +63,7 @@
       <el-table-column prop="unicode" label="内部编码" min-width="120" show-overflow-tooltip />
       <el-table-column prop="socialCreditCode" label="社会信用代码" min-width="180" show-overflow-tooltip />
       <el-table-column label="类型" min-width="120">
-        <template #default="{ row }">{{ row.type && row.type.name ? row.type.name : '-' }}</template>
+        <template #default="{ row }">{{ orgTypeLabel(row.type) }}</template>
       </el-table-column>
       <el-table-column label="地区" min-width="140">
         <template #default="{ row }">{{ row.region && row.region.name ? row.region.name : '-' }}</template>
@@ -166,7 +166,7 @@
         </el-form-item>
         <el-form-item label="类型" prop="type">
           <el-select v-model="form.type" placeholder="请选择" style="width: 100%" filterable>
-            <el-option v-for="c in orgTypeOptions" :key="c.id" :value="c.id" :label="c.name" />
+            <el-option v-for="opt in ORG_TYPE_OPTIONS" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="地区" prop="region">
@@ -238,7 +238,7 @@
         <el-descriptions-item label="法人代表">{{ detail.legalPerson || '-' }}</el-descriptions-item>
         <el-descriptions-item label="办学许可证号" :span="2">{{ detail.licenseNumber || '-' }}</el-descriptions-item>
         <el-descriptions-item label="全称" :span="2">{{ detail.name }}</el-descriptions-item>
-        <el-descriptions-item label="类型">{{ detail.type ? detail.type.name : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="类型">{{ orgTypeLabel(detail.type) }}</el-descriptions-item>
         <el-descriptions-item label="地区">{{ detail.region ? detail.region.name : '-' }}</el-descriptions-item>
         <el-descriptions-item label="负责人">
           {{ detail.principal ? (detail.principal.realName || detail.principal.mobile) : '未指定' }}
@@ -279,15 +279,21 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture, Upload, Folder } from '@element-plus/icons-vue'
 import { orgApi } from '@/api/org'
-import { categoryApi } from '@/api/category'
 import { regionApi } from '@/api/region'
 import { storageApi } from '@/api/storage'
 import { useAuthStore } from '@/stores/auth'
+import { ORG_TYPES, ORG_TYPE_LABELS } from '@shared/enums.mjs'
 import PasswordConfirmDialog from '@/components/PasswordConfirmDialog.vue'
 import FilePicker from '@/components/FilePicker.vue'
 
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.isPlatformAdmin)
+
+// 2026-06: Org.type 是 String enum (10 种), 硬编码选项, 无需拉后端字典
+const ORG_TYPE_OPTIONS = ORG_TYPES.map((v) => ({ value: v, label: ORG_TYPE_LABELS[v] || v }))
+function orgTypeLabel(v) {
+  return v ? (ORG_TYPE_LABELS[v] || v) : '-'
+}
 
 const list = ref([])
 const loading = ref(false)
@@ -298,7 +304,6 @@ const pageSize = ref(20)
 const filters = reactive({ keyword: '', type: '', region: '', isActive: 'true' })
 const regionCascader = ref(null)
 const regionTree = ref([])
-const orgTypeOptions = ref([])
 
 const dialog = ref(false)
 const saving = ref(false)
@@ -352,11 +357,6 @@ const rules = {
 watch(formRegion, (v) => {
   form.region = v || null
 })
-
-async function loadOrgTypes() {
-  const r = await categoryApi.list({ model: 'Org', isActive: 'true' })
-  orgTypeOptions.value = (r.data || []).map((c) => ({ id: c.id || c._id, name: c.name }))
-}
 
 async function loadRegionTree() {
   const r = await regionApi.tree()
@@ -424,7 +424,8 @@ function openEdit(row) {
     licenseNumber: row.licenseNumber || '',
     name: row.name || '',
     nameAbbreviation: row.nameAbbreviation || '',
-    type: row.type ? row.type.id || row.type._id : '',
+    // 2026-06: type 是 String enum, 直接取 row.type
+    type: row.type || '',
     region: row.region ? row.region.id || row.region._id : null,
     principal: row.principal ? row.principal.id || row.principal._id : null,
     contactPerson: row.contactPerson || '',
@@ -622,7 +623,8 @@ function fmtTime(t) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadOrgTypes(), loadRegionTree()])
+  // 2026-06 整改: Org.type 改成 String enum, 选项硬编码本地, 不再 loadOrgTypes()
+  await loadRegionTree()
   load()
 })
 </script>

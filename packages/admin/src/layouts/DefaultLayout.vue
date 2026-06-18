@@ -126,28 +126,16 @@ const menuGroups = [
     children: [
       // 原 /orgs 改名为 机构档案; 与新一级菜单'机构管理'(本机构内部运营) 消歧
       { path: '/orgs', label: '机构档案', icon: Box, requirePlatform: true },
-      // 原平台管理下的二级全部并入
-      { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true },
-      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
+      // AI 管理 (2026-06-18): 会话/知识库/审计; 当前先做会话管理
+      { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true },
+      // 地区字典 (2026-06): 从基础数据挪到系统管理 (平台超管维护)
+      { path: '/regions', label: '地区字典', icon: Box, requirePlatform: true },
       // 法律协议 (2026-06): 平台级协议只读 + 站点配置 (备案号/运营主体)
       { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
       { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
-      // AI 管理 (2026-06-18): 会话/知识库/审计; 当前先做会话管理
-      { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true }
-    ]
-  },
-  {
-    key: 'basic',
-    title: '基础数据',
-    icon: Files,
-    children: [
-      // 文件管理从系统管理挪过来, 与其他字典/基础实体同组
-      { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' },
-      { path: '/categories', label: '类别字典', icon: Files, requirePlatform: true },
-      { path: '/regions', label: '地区字典', icon: Box, requirePlatform: true },
-      { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
-      { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
-      { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
+      // 流程/说明类放最下面: 一次性的阅读材料, 不常看
+      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
+      { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true }
     ]
   },
   {
@@ -164,6 +152,20 @@ const menuGroups = [
       { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
       // 法律协议 (2026-06): 机构 admin 维护本机构购买协议/退费规则/FAQ 等
       { path: '/legal/org-docs', label: '机构协议', icon: Notebook, perm: 'legal.read' }
+    ]
+  },
+  {
+    key: 'basic',
+    title: '基础数据',
+    icon: Files,
+    children: [
+      // 文件管理从系统管理挪过来, 与其他字典/基础实体同组
+      { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' },
+      // 类别字典 (2026-06 整改): per-org, 机构 admin 可维护本机构字典
+      { path: '/categories', label: '类别字典', icon: Files },
+      { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
+      { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
+      { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
     ]
   },
   {

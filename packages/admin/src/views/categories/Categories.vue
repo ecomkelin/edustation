@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <h2>类别字典</h2>
-    <p class="hint">为机构、学生、产品、用户等业务对象提供统一类别。平台超管维护，全局共享。</p>
+    <p class="hint">为学员、学科、家长标签、招生渠道等业务对象提供统一类别。每个机构独立维护自己的字典（按 x-org-id 隔离）。</p>
 
     <el-row :gutter="16">
       <el-col :span="8">
@@ -38,12 +38,11 @@
                 <span class="tree-actions">
                   <el-button link size="small" @click.stop="openCreate(data)">+ 子级</el-button>
                   <el-button link size="small" type="primary" @click.stop="openEdit(data)">编辑</el-button>
-                  <!-- 误操删除:超管+密码二次确认;无子级 + 无 Org 引用才能删 -->
+                  <!-- 误操删除:本机构管理员/教务(按 model 对应权限);无子级 + 无业务引用才能删 -->
                   <DestructiveConfirm
-                    v-if="isPlatformAdmin"
                     :target="`类别 ${data.name}`"
                     warning="中风险"
-                    :precheck-notes="['无子级类别', '无任何机构引用该类别']"
+                    :precheck-notes="['无子级类别', '无业务实体引用该类别']"
                     :precheck="() => categoryApi.removableCheck(data._id).then((r) => r.data)"
                     @click.stop
                     @confirm="(p) => onRemoveConfirm(data, p)"
@@ -85,10 +84,9 @@
                 <el-button size="small" @click="openEdit(row)">编辑</el-button>
                 <el-button size="small" @click="openCreate(row)">+ 子级</el-button>
                 <DestructiveConfirm
-                  v-if="isPlatformAdmin"
                   :target="`类别 ${row.name}`"
                   warning="中风险"
-                  :precheck-notes="['无子级类别', '无任何机构引用该类别']"
+                  :precheck-notes="['无子级类别', '无业务实体引用该类别']"
                   :precheck="() => categoryApi.removableCheck(row._id).then((r) => r.data)"
                   @confirm="(p) => onRemoveConfirm(row, p)"
                 >
@@ -150,12 +148,11 @@ import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
-const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
-const MODELS = ['Org', 'Student', 'Subject', 'LeadTag']
-const MODEL_LABELS = { Org: '机构', Student: '学生', Subject: '学科', LeadTag: '家长标签' }
+const MODELS = ['Student', 'Subject', 'LeadTag', 'Channel']
+const MODEL_LABELS = { Student: '学员', Subject: '学科', LeadTag: '家长标签', Channel: '招生渠道' }
 
-const model = ref('Org')
+const model = ref('Student')
 const tree = ref([])
 const treeRef = ref()
 const filterText = ref('')
@@ -170,7 +167,7 @@ const form = reactive(emptyForm())
 const parentOptions = ref([])
 
 function emptyForm() {
-  return { id: '', model: 'Org', name: '', parentCategory: null, code: '', sort: 0, isActive: true }
+  return { id: '', model: 'Student', name: '', parentCategory: null, code: '', sort: 0, isActive: true }
 }
 
 const rules = {

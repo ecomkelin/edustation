@@ -17,6 +17,14 @@ export default defineConfig(({ mode }) => {
         '@shared': path.resolve(__dirname, '../../shared')
       }
     },
+    // 2026-06: shared/*.js 是 CommonJS, Vite dev 默认按 ESM 解析, 会报
+    // `exports is not defined`. optimizeDeps.include 强制 esbuild 预构建走 CJS interop,
+    // 把 `exports.X = X` 和 `module.exports = ...` 都转成 ESM named exports.
+    // 后端 server 端用 require('@shared/enums') 不受影响 (走 module-alias, 不是 Vite).
+    optimizeDeps: {
+      // 用 alias 名 (@shared) 让 Vite 走 resolve.alias 找到路径
+      include: ['@shared/enums.js', '@shared/permissions.js']
+    },
     server: {
       port: 8000,
       proxy: {
