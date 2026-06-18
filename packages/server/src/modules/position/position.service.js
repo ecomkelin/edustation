@@ -37,7 +37,8 @@ const DEFAULT_POSITIONS = [
       'recruit.read', 'recruit.write', 'recruit.convert',
       'org-promotion.read', 'org-promotion.write',
       'legal.read', 'legal.write',
-      'report.read'
+      'report.read',
+      'agent.read', 'agent.write'
     ]
   },
   {
@@ -58,7 +59,8 @@ const DEFAULT_POSITIONS = [
       'recruit.read', 'recruit.write', 'recruit.convert',
       'org-promotion.read', 'org-promotion.write',
       'legal.read', 'legal.write',
-      'report.read'
+      'report.read',
+      'agent.read', 'agent.write'
     ]
   },
   {

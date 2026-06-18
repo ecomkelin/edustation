@@ -30,9 +30,13 @@
     </el-header>
     <el-container class="body">
       <el-aside width="220px" class="aside">
-        <el-menu :default-active="route.path" router :default-openeds="defaultOpeneds">
+        <el-menu :default-active="route.path" router :default-openeds="defaultOpeneds" class="aside-menu">
           <el-menu-item index="/dashboard">
             <el-icon><Odometer /></el-icon><span>仪表盘</span>
+          </el-menu-item>
+          <!-- AI 助手 (2026-06): 顶层入口, 跨业务域能力 -->
+          <el-menu-item v-if="showAiAssistant" index="/ai-assistant">
+            <el-icon><MagicStick /></el-icon><span>AI 助手</span>
           </el-menu-item>
           <template v-for="group in visibleGroups" :key="group.key">
             <el-sub-menu :index="group.key">
@@ -47,12 +51,13 @@
             </el-sub-menu>
           </template>
         </el-menu>
+        <!-- 版权 (2026-06): 挪到左侧菜单底部固定, 省内容区高度 -->
+        <AppFooter class="aside-footer" />
       </el-aside>
       <el-container direction="vertical" class="content">
         <el-main class="main">
           <router-view />
         </el-main>
-        <AppFooter />
       </el-container>
     </el-container>
   </el-container>
@@ -91,12 +96,25 @@ import {
   TrendCharts,
   // 机构推广 (Promotion 小喇叭) — 与 TrendCharts 区分
   Promotion,
-  UserFilled
+  UserFilled,
+  // AI 助手 (2026-06) — 魔棒图标
+  MagicStick
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+
+// AI 助手 (2026-06): 顶层菜单项, 需 agent.write 权限
+// 平台超管直通; 否则查当前 org 的职位权限码
+const showAiAssistant = computed(() => {
+  if (auth.isPlatformAdmin) return true
+  const cur = auth.orgs.find((o) => o.id === auth.currentOrgId)
+  if (!cur) return false
+  return (cur.positions || []).some((p) =>
+    (p.permissions || []).includes('agent.write')
+  )
+})
 
 // 一级导航分组：按业务域聚合
 const menuGroups = [
@@ -177,8 +195,7 @@ const menuGroups = [
       { path: '/students', label: '学生管理', icon: Reading, perm: 'student.read' },
       { path: '/student-products', label: '学生课包', icon: Present, perm: 'studentProduct.read' },
       { path: '/student-works', label: '学生作品', icon: Goods, perm: 'studentWork.read' },
-      { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
-      { path: '/ai-chat', label: 'AI 客服测试', icon: ChatLineRound, perm: 'order.read' }
+      { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' }
     ]
   },
   {
@@ -284,7 +301,19 @@ const avatarInitial = computed(() => {
 .aside {
   background: #fff;
   border-right: 1px solid #ebeef5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;       /* 整体 aside 不滚, 内部 .aside-menu 滚 */
+}
+.aside-menu {
+  flex: 1;
   overflow-y: auto;
+  border-right: none !important; /* el-menu 自带 border, 跟 aside 重叠 */
+}
+.aside-footer {
+  /* footer 走自己的样式, 这里只控宽度不超 */
+  flex-shrink: 0;
+  border-top: 1px solid #ebeef5;
 }
 .main {
   background: #f5f7fa;

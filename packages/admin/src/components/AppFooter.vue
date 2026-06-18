@@ -46,16 +46,20 @@ const hasAnyOrgPerm = computed(() => {
 
 <style scoped>
 .app-footer {
-  padding: 16px 24px;
+  /* 2026-06: 挪到左侧菜单栏底部固定, 220px 宽度内紧凑展示 */
+  padding: 10px 12px;
   background: #fff;
   border-top: 1px solid #ebeef5;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   color: #909399;
   flex-shrink: 0;
+  /* 超出 3 行时让用户感知有更多内容, 但默认不滚 (侧边栏 hover 时可考虑加 scroll) */
+  line-height: 1.55;
+  word-break: break-all;
 }
-.footer-line { line-height: 1.8; }
-.copyright { color: #606266; }
+.footer-line { line-height: 1.55; margin: 1px 0; }
+.copyright { color: #606266; font-weight: 500; }
 .footer-line a {
   color: #909399;
   text-decoration: none;
@@ -64,5 +68,5 @@ const hasAnyOrgPerm = computed(() => {
   color: #409EFF;
   text-decoration: underline;
 }
-.muted { color: #c0c4cc; }
+.muted { color: #c0c4cc; font-size: 10px; }
 </style>

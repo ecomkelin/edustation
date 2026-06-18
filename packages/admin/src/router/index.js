@@ -33,6 +33,8 @@ const routes = [
       { path: 'schedule/makeup', component: () => import('@/views/lessonSchedule/MakeupPage.vue') },
       { path: 'orders', component: () => import('@/views/orders/Orders.vue') },
       { path: 'ai-chat', component: () => import('@/views/agent/AiChatTest.vue') },
+      // AI 助手 (2026-06): 多模态输入 + 工具调用, 替代旧的 AI 客服测试
+      { path: 'ai-assistant', component: () => import('@/views/agent/AiAssistant.vue') },
       { path: 'student-products', component: () => import('@/views/studentProducts/StudentProducts.vue') },
       { path: 'student-works', component: () => import('@/views/studentWorks/StudentWorks.vue') },
       // 经营分析:5 块看板对应后端 /api/v1/reports/* ；二级菜单入口见 DefaultLayout
