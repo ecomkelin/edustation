@@ -53,6 +53,10 @@ eduStation/
   - 基础：`unicode`（内部编码）、`name`（全称）、`nameAbbreviation`（简称）、`type`（机构类型-字典）、`region`（地区-字典）、`principal`（负责人，User ref）
   - 联系：`contactPerson`、`contactPhone`、`address`
   - 业务：`establishedDate`（开设日期，2026-06 起允许超管修改）、`isActive`
+  - **`type`（机构业态分类）**（2026-06 整改：原 ObjectId 引用 Category，改为 String enum）：
+    - 10 种平台层统一枚举：`academic`(学科类) / `arts`(艺术类) / `sports`(体育类) / `stem`(科技类) / `comprehensive`(综合素质) / `language`(语言类) / `vocational`(职业/成人) / `preschool`(学前/托育) / `tutoring_arts`(艺考集训) / `other`(其他)
+    - 见 `@shared/enums#ORG_TYPES` / `ORG_TYPE_LABELS`；前后端硬编码共享
+    - 历史 `model='Org'` 的 Category 文档已全部下线（迁移脚本 `migrate-org-type-to-string.js`）
   - 合规（**仅平台超管可写**）：`socialCreditCode`（统一社会信用代码）、`legalPerson`（法人代表）、`licenseNumber`（办学许可证号）
   - 媒体：`logo`（File ref）
   - 扩展：`meta: Mixed`
@@ -75,6 +79,49 @@ eduStation/
 
 ### 7.2 学生
 - **Student**：org, name, gender, birthday, guardianUser (-> User), notes, meta
+
+### 7.3 类别字典（Category, 2026-06 整改）
+**整改前状况**：
+- Category 是平台级共享字典（无 org 字段），写权限仅平台超管
+- `model` enum 含 5 个：`Org / Student / Subject / LeadTag / Channel`
+- `Org.type` 引用 `Category(model='Org')`，其余 4 个 model 被本机构业务（Parent.tags / Subject.category / 等）引用
+
+**问题**：
+- LeadTag/Channel/Student/Subject 都是 per-org 业务数据，但全局共享导致不同机构互相干扰（"高意向"标签含义可能不同 / "VIP 客户"渠道名冲突）
+- Org.type 用 ObjectId 引用 Category 太重——机构业态是平台层统一枚举，不该走 per-org 字典
+
+**整改后**：
+- **Org.type**：从 ObjectId 改成 String enum（10 种，详见 §7.1）
+  - Category 字典 `model` enum 移除 `'Org'`
+  - 老的 `Category(model='Org')` 文档全部 drop（迁移脚本 `scripts/migrate-org-type-to-string.js`）
+- **Category 加 `org` 字段**（ObjectId, ref Org, default null, indexed）：
+  - 4 个 model（`Student / Subject / LeadTag / Channel`）全 per-org
+  - list / tree / detail 默认按 `req.orgId` 过滤
+  - create 时 controller 强制 `org = req.orgId`；不允许创建 `org=null` 的字典（保留字段以备扩展）
+- **写权限下放机构**（复用各引用方写权限，不新增）：
+  - `Student` → `student.write`
+  - `Subject` → `subject.write`
+  - `LeadTag` → `recruit.write`
+  - `Channel` → `recruit.write`
+- **路由**：所有路由走 `requireOrg` 中间件（拿 req.orgId）；GET 任何登录用户可调，POST/PUT 在 controller 内部按 body.model 动态选权限码
+- **删除**：仍走 `requirePlatformPassword`（高风险），互锁检查 `categoryUsageChecks(orgId, doc, id)` 按本 org 隔离
+
+**唯一性索引**：`{org, model, name, parentCategory}` unique —— 同 org 内同 model 同 parent 下 name 不可重复，跨 org 同名不冲突。
+
+**前端（Categories.vue）**：
+- 业务域选项去掉 'Org'：MODELS = `['Student', 'Subject', 'LeadTag', 'Channel']`
+- 顶部说明改为"按 x-org-id 隔离"
+- 菜单 `/categories` 不再 `requirePlatform: true`（机构 admin 可访问本机构字典）
+- 删除按钮 `precheck-notes` 由"无任何机构引用该类别"改为"无业务实体引用该类别"
+
+**种子清理**：
+- `scripts/db/seeds/category.seed.js` → noop（保留为兼容文件）
+- `scripts/db/seeds/org.seed.js` → `type: 'arts'` 硬编码
+- `scripts/db/seeds/initial.data.json` → 删 2 个 Org Category；梓潼/绵阳的 org.type 从 ObjectId 改成 `"stem"`
+
+**迁移顺序**：
+1. `node scripts/migrate-org-type-to-string.js`（老 ObjectId → 新 String enum + drop 老 Org Category）
+2. （可选）`node scripts/db/seeds/leadTag.seed.js` / `channel.seed.js` 给本机构 LeadTag/Channel seed 基础项
 
 ### 7.3 课程体系
 - **Subject**：org, name, category

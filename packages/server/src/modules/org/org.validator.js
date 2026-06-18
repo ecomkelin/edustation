@@ -1,7 +1,10 @@
 'use strict'
 
 const { body, param } = require('express-validator')
+const { ORG_TYPES } = require('@shared/enums')
 
+// 2026-06: Org.type 从 ObjectId(Category) 改成 String enum,
+// 校验用 isIn(ORG_TYPES) 而不是 isMongoId.
 const create = [
   body('unicode').isString().trim().isLength({ min: 1, max: 64 }).withMessage('内部编码 1-64 字'),
   body('socialCreditCode').optional().isString().trim().isLength({ max: 64 }).withMessage('社会信用代码 ≤ 64 字'),
@@ -9,7 +12,7 @@ const create = [
   body('licenseNumber').optional().isString().trim().isLength({ max: 64 }).withMessage('办学许可证号 ≤ 64 字'),
   body('name').isString().trim().isLength({ min: 1, max: 100 }).withMessage('机构全称 1-100 字'),
   body('nameAbbreviation').isString().trim().isLength({ min: 1, max: 50 }).withMessage('机构简称 1-50 字'),
-  body('type').optional({ nullable: true }).isMongoId().withMessage('类型不合法'),
+  body('type').optional({ nullable: true }).isIn(ORG_TYPES).withMessage(`机构业态不合法, 必须是: ${ORG_TYPES.join('/')}`),
   body('region').optional({ nullable: true }).isMongoId().withMessage('地区不合法'),
   body('principal').optional({ nullable: true }).isMongoId().withMessage('负责人不合法'),
   body('contactPerson').optional().isString().isLength({ max: 50 }),
@@ -26,7 +29,7 @@ const update = [
   body('licenseNumber').optional().isString().trim().isLength({ max: 64 }),
   body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
   body('nameAbbreviation').optional().isString().trim().isLength({ min: 1, max: 50 }),
-  body('type').optional({ nullable: true }).isMongoId(),
+  body('type').optional({ nullable: true }).isIn(ORG_TYPES).withMessage(`机构业态不合法`),
   body('region').optional({ nullable: true }).isMongoId(),
   body('principal').optional({ nullable: true }).isMongoId(),
   body('establishedDate').optional({ nullable: true }).isISO8601().withMessage('开设时间格式不合法'),

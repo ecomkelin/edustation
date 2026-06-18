@@ -113,30 +113,6 @@
   ],
   "categories": [
     {
-      "_id": "6a2fb342aa8152333e4de4f6",
-      "model": "Org",
-      "name": "科技",
-      "level": 0,
-      "parentCategory": null,
-      "sort": 0,
-      "isActive": true,
-      "createdAt": "2026-06-15T08:09:38.313Z",
-      "updatedAt": "2026-06-15T08:09:38.313Z",
-      "__v": 0
-    },
-    {
-      "_id": "6a2fb342aa8152333e4de4f7",
-      "model": "Org",
-      "name": "艺术",
-      "level": 0,
-      "parentCategory": null,
-      "sort": 1,
-      "isActive": true,
-      "createdAt": "2026-06-15T08:09:38.313Z",
-      "updatedAt": "2026-06-15T08:09:38.313Z",
-      "__v": 0
-    },
-    {
       "_id": "6a2fb342aa8152333e4de4f9",
       "model": "Subject",
       "name": "C++",
@@ -552,7 +528,7 @@
       "unicode": "91510725MAEKMMYW9W",
       "name": "梓潼县人工智网科技培训学校有限公司",
       "nameAbbreviation": "梓潼人工智网",
-      "type": "6a2fb342aa8152333e4de4f6",
+      "type": "stem",
       "region": "6a2fb342aa8152333e4de4e6",
       "principal": "6a2fb342aa8152333e4de51d",
       "contactPerson": "高艺齐",
@@ -573,7 +549,7 @@
       "unicode": "91510725MAEKMMYW3A",
       "name": "绵阳市人工智网科技培训学校有限公司",
       "nameAbbreviation": "绵阳人工智网",
-      "type": "6a2fb342aa8152333e4de4f6",
+      "type": "stem",
       "region": "6a2fb342aa8152333e4de4e6",
       "principal": null,
       "contactPerson": "高艺齐",

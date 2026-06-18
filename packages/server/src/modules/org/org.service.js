@@ -9,9 +9,13 @@ const ApiError = require('@utils/ApiError')
 const password = require('@utils/password')
 const { normalizePagination } = require('@utils/pagination')
 
-const POPULATE_TYPE = { path: 'type', select: 'name model level' }
 const POPULATE_REGION = { path: 'region', select: 'name code level' }
 const POPULATE_PRINCIPAL = { path: 'principal', select: 'mobile realName' }
+
+/**
+ * 2026-06: Org.type 已从 ObjectId(Category) 改成 String enum (10 种),
+ * 不再需要 populate。type 字段值见 @shared/enums#ORG_TYPES / ORG_TYPE_LABELS.
+ */
 
 /* ─── 字段权限分层 (2026-06 引入) ───
  * Org 表上分三档权限:
@@ -58,7 +62,6 @@ async function list({ keyword, type, region, isActive, page, pageSize }) {
 
   const [items, total] = await Promise.all([
     Org.find(filter)
-      .populate(POPULATE_TYPE)
       .populate(POPULATE_REGION)
       .populate(POPULATE_PRINCIPAL)
       .sort({ createdAt: -1 })
@@ -72,7 +75,6 @@ async function list({ keyword, type, region, isActive, page, pageSize }) {
 
 async function detail(id) {
   const org = await Org.findById(id)
-    .populate(POPULATE_TYPE)
     .populate(POPULATE_REGION)
     .populate(POPULATE_PRINCIPAL)
     .lean()
@@ -138,7 +140,6 @@ async function create(payload, options = {}) {
   }
 
   return Org.findById(org._id)
-    .populate(POPULATE_TYPE)
     .populate(POPULATE_REGION)
     .populate(POPULATE_PRINCIPAL)
     .lean()
@@ -178,7 +179,6 @@ async function update(id, payload, options = {}) {
   }
 
   const org = await Org.findByIdAndUpdate(id, payload, { new: true, runValidators: true })
-    .populate(POPULATE_TYPE)
     .populate(POPULATE_REGION)
     .populate(POPULATE_PRINCIPAL)
     .lean()
@@ -220,7 +220,6 @@ async function toggleActive(id, operatorId, plainPassword) {
   if (!current) throw ApiError.notFound('机构不存在')
 
   const org = await Org.findByIdAndUpdate(id, { isActive: !current.isActive }, { new: true })
-    .populate(POPULATE_TYPE)
     .populate(POPULATE_REGION)
     .populate(POPULATE_PRINCIPAL)
     .lean()

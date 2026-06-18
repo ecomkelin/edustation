@@ -11,7 +11,9 @@ const { Schema, model } = require('mongoose')
  * 关键约束：
  *  - unicode / name / nameAbbreviation 三者均 unique（防止重名/编码冲突）
  *  - 合规字段（unicode / socialCreditCode / legalPerson / licenseNumber / name / nameAbbreviation / principal / type / region / establishedDate）只允许平台超管写入
- *  - type 引用 Category 字典（model='Org'），便于运营在后台维护机构类型
+ *  - type 是 String enum（机构业态分类，如"学科类"/"艺术类"/"科技类"），硬编码 10 种主流类型；
+ *    历史上曾用 ObjectId 引用 Category（model='Org'），2026-06 整改为 String enum（机构类型是平台层
+ *    统一枚举，无须走 per-org 字典；Category 字典的 model='Org' 同步下线）
  *  - region 引用 Region 字典（省/市/区），用于按地域筛选机构
  *  - principal 必须属于本机构（更新时在 service 层校验，避免跨机构挂名）
  *
@@ -31,8 +33,14 @@ const OrgSchema = new Schema(
     name: { type: String, required: true, unique: true, trim: true },
     // 机构简称（用于列表/搜索时展示）
     nameAbbreviation: { type: String, required: true, unique: true, trim: true },
-    // 机构类型（引用 Category 字典，model='Org'；如"有限责任公司"/"个体工商户"等）
-    type: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
+    // 机构业态分类（2026-06 整改：原 ObjectId 引用 Category（model='Org'），改为 String enum；
+    // 类型是平台层统一枚举，前端 el-select 硬编码展示，后端 validator 校验）。
+    // 取值见 @shared/enums#ORG_TYPE；前端 Orgs.vue#ORG_TYPE_OPTIONS。
+    type: {
+      type: String,
+      enum: ['academic', 'arts', 'sports', 'stem', 'comprehensive', 'language', 'vocational', 'preschool', 'tutoring_arts', 'other'],
+      default: null
+    },
     // 所在地区（引用 Region 字典；省/市/区）
     region: { type: Schema.Types.ObjectId, ref: 'Region', default: null },
     // 负责人（必须是本机构下具有"管理员"岗位的 User；service 层校验所属 org）

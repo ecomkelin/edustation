@@ -5,34 +5,35 @@ const c = require('./category.controller')
 const v = require('./category.validator')
 const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
-const ApiError = require('@utils/ApiError')
 
-// 字典库 (Category) 是**全局共享**的（无 org 字段, 跨机构复用).
-// 设计:
-//   - GET (list/tree/detail/removable-check): 任何登录用户可调用 (本机构也要用 LeadTag/Channel/Subject 字典)
-//   - POST / PUT: 仅平台超管 (统一维护字典, 本机构无自助维护入口)
-//   - DELETE: 仅平台超管 + 密码二次确认
-//
-// 2026-06 修复: 之前 router.use(requirePlatformAdmin) 把所有 GET 也挡了,
-// 导致非超管进潜客管理页面 (Parents.vue) 拉 LeadTag/Channel 字典报 2 次 403.
-router.use(mws.authenticate)
+/* ------------------------------------------------------------------
+ * 2026-06 整改: Category 全 per-org (org 字段隔离).
+ *   - GET (list/tree/detail/removable-check): 任何登录用户, 按 x-org-id 隔离 (走 requireOrg 拿 req.orgId)
+ *   - POST/PUT/DELETE: 机构管理员/教务 (按 body.model 动态选权限码, 见 controller writePermGuard).
+ *     删除: 走 requirePlatformPassword 兜底 (与 subject/dict 保持一致, 高风险).
+ *
+ * 注意: 不同 model 对应不同权限码 (复用引用方权限, 不新增):
+ *   - Student  → student.write
+ *   - Subject  → subject.write
+ *   - LeadTag  → recruit.write
+ *   - Channel  → recruit.write
+ * 写路由**不能**在 router 层用单一 requirePermission('') — 必须在 controller 内部根据 req.body.model 选.
+ *
+ * 历史变更:
+ *   - 2026-06-15 之前: Category 是平台共享, 写权限仅平台超管.
+ *   - 2026-06-15: 整改为 per-org, model enum 移除 'Org' (Org.type 改 String enum),
+ *                写权限下放机构 (复用引用方权限).
+ * ------------------------------------------------------------------ */
 
-// 平台超管守卫: 只挂在「写」路由前, 不能用 router.use(...)
-// (若用中间件, 会让 GET 也被 403, 复刻 subject/position 的同款坑)
-const platformAdminOnly = (req, res, next) => {
-  if (!req.user) return next(ApiError.unauthorized())
-  if (!req.user.isPlatformAdmin) return next(ApiError.forbidden('仅平台超管可维护字典库'))
-  next()
-}
+router.use(mws.authenticate, mws.requireOrg)
 
 router.get('/', asyncHandler(c.list))
 router.get('/tree', asyncHandler(c.tree))
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
 router.get('/:id/removable-check', v.idParam, mws.validateRequest, asyncHandler(c.removableCheck))
-router.post('/', platformAdminOnly, v.create, mws.validateRequest, asyncHandler(c.create))
-router.put('/:id', v.idParam, platformAdminOnly, v.update, mws.validateRequest, asyncHandler(c.update))
-// 物理删除(「误操」场景):超管 + 密码二次确认; service 已校验
-// 「子级为 0 + Org 引用为 0」才能删。
-router.delete('/:id', v.idParam, platformAdminOnly, mws.requirePlatformPassword, asyncHandler(c.remove))
+router.post('/', v.create, mws.validateRequest, asyncHandler(c.create))
+router.put('/:id', v.idParam, v.update, mws.validateRequest, asyncHandler(c.update))
+// 物理删除(「误操」场景):走 requirePlatformPassword 二次确认 + service 内业务互锁
+router.delete('/:id', v.idParam, mws.requirePlatformPassword, asyncHandler(c.remove))
 
 module.exports = router

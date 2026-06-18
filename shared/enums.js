@@ -5,12 +5,52 @@
  * 所有需要选项的字段在模型、controller、admin form 中都引用这里。
  */
 
+/**
+ * 机构业态分类 (2026-06 整改:从 3 类扩展到 10 类)
+ * 硬编码平台层统一枚举; Category 字典的 model='Org' 已下线。
+ *  - academic       学科类 (K12 语数英, 双减后大幅压减)
+ *  - arts           艺术类 (美术/音乐/舞蹈/书法/戏剧)
+ *  - sports         体育类 (球类/游泳/田径/武术/跆拳道)
+ *  - stem           科技类 (编程/机器人/STEAM/AI/科学实验)
+ *  - comprehensive  综合素质 (实践/研学/口才/心理)
+ *  - language       语言类 (英语/小语种/对外汉语)
+ *  - vocational     职业/成人 (资格证/考研/公考/IT 培训/企培)
+ *  - preschool      学前/托育 (0-6 岁早教/托班/感统)
+ *  - tutoring_arts  艺考集训 (美术/音乐/传媒艺考)
+ *  - other          其他
+ */
 const OrgType = Object.freeze({
-  TRAINING: 'training',
-  ART: 'art',
-  COMPREHENSIVE: 'comprehensive'
+  ACADEMIC: 'academic',
+  ARTS: 'arts',
+  SPORTS: 'sports',
+  STEM: 'stem',
+  COMPREHENSIVE: 'comprehensive',
+  LANGUAGE: 'language',
+  VOCATIONAL: 'vocational',
+  PRESCHOOL: 'preschool',
+  TUTORING_ARTS: 'tutoring_arts',
+  OTHER: 'other'
 })
 const ORG_TYPES = Object.values(OrgType)
+const ORG_TYPE_LABELS = Object.freeze({
+  academic: '学科类',
+  arts: '艺术类',
+  sports: '体育类',
+  stem: '科技类',
+  comprehensive: '综合素质',
+  language: '语言类',
+  vocational: '职业/成人',
+  preschool: '学前/托育',
+  tutoring_arts: '艺考集训',
+  other: '其他'
+})
+
+// 历史 org.type 兼容映射 (3 老值 → 新 enum), 走 migrate-org-type-to-string.js
+const ORG_TYPE_LEGACY_MAP = Object.freeze({
+  training: 'academic',  // 老 "培训" → 新 "学科类"
+  art: 'arts',
+  comprehensive: 'comprehensive'
+})
 
 const Gender = Object.freeze({
   MALE: 'male',
@@ -169,34 +209,48 @@ function labelOfClientLevel(level) {
   return `未知等级(${level})`
 }
 
-module.exports = {
-  OrgType,
-  ORG_TYPES,
-  Gender,
-  GENDERS,
-  CourseInstanceStatus,
-  COURSE_INSTANCE_STATUSES,
-  CourseEnrollmentStatus,
-  COURSE_ENROLLMENT_STATUSES,
-  LessonScheduleStatus,
-  LESSON_SCHEDULE_STATUSES,
-  AttendanceStatus,
-  ATTENDANCE_STATUSES,
-  OrderStatus,
-  ORDER_STATUSES,
-  PaymentMethod,
-  PAYMENT_METHODS,
-  PointsType,
-  POINTS_TYPES,
-  PetType,
-  PET_TYPES,
-  StudentProductSource,
-  STUDENT_PRODUCT_SOURCES,
-  SchedulePlanMode,
-  SCHEDULE_PLAN_MODES,
-  SchoolType,
-  SCHOOL_TYPES,
-  CLIENT_LEVEL,
-  CLIENT_LEVEL_LABEL,
-  labelOfClientLevel
-}
+// 导出 (双形式):
+//   1. `exports.X = X` —— esbuild CJS→ESM 静态分析 100% 识别 named export
+//      (Vite / admin 前端 named import 直接拿到, 不用 .default)
+//   2. `module.exports = { ... }` —— 保留给 server 端 require 兜底
+//      (server 端目前全部走解构 require, 但 module.exports 必须是完整对象,
+//       否则 `const { X } = require('@shared/enums')` 会拿不到)
+//
+// 顺序很重要: 先用 `exports.X = X` 形式把每个 key 暴露出来 (这同时也会把 key 挂到
+// module.exports 上, 因为 exports === module.exports), 最后再用对象字面量覆盖
+// module.exports —— 两次赋值结果一致, server 解构拿到完整对象, Vite 静态分析
+// 也认得所有 named export.
+exports.OrgType = OrgType
+exports.ORG_TYPES = ORG_TYPES
+exports.ORG_TYPE_LABELS = ORG_TYPE_LABELS
+exports.ORG_TYPE_LEGACY_MAP = ORG_TYPE_LEGACY_MAP
+exports.Gender = Gender
+exports.GENDERS = GENDERS
+exports.CourseInstanceStatus = CourseInstanceStatus
+exports.COURSE_INSTANCE_STATUSES = COURSE_INSTANCE_STATUSES
+exports.CourseEnrollmentStatus = CourseEnrollmentStatus
+exports.COURSE_ENROLLMENT_STATUSES = COURSE_ENROLLMENT_STATUSES
+exports.LessonScheduleStatus = LessonScheduleStatus
+exports.LESSON_SCHEDULE_STATUSES = LESSON_SCHEDULE_STATUSES
+exports.AttendanceStatus = AttendanceStatus
+exports.ATTENDANCE_STATUSES = ATTENDANCE_STATUSES
+exports.OrderStatus = OrderStatus
+exports.ORDER_STATUSES = ORDER_STATUSES
+exports.PaymentMethod = PaymentMethod
+exports.PAYMENT_METHODS = PAYMENT_METHODS
+exports.PointsType = PointsType
+exports.POINTS_TYPES = POINTS_TYPES
+exports.PetType = PetType
+exports.PET_TYPES = PET_TYPES
+exports.StudentProductSource = StudentProductSource
+exports.STUDENT_PRODUCT_SOURCES = STUDENT_PRODUCT_SOURCES
+exports.SchedulePlanMode = SchedulePlanMode
+exports.SCHEDULE_PLAN_MODES = SCHEDULE_PLAN_MODES
+exports.SchoolType = SchoolType
+exports.SCHOOL_TYPES = SCHOOL_TYPES
+exports.CLIENT_LEVEL = CLIENT_LEVEL
+exports.CLIENT_LEVEL_LABEL = CLIENT_LEVEL_LABEL
+exports.labelOfClientLevel = labelOfClientLevel
+
+// 兜底: module.exports 直接给完整对象 (server 端 require 解构)
+module.exports = exports
