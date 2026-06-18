@@ -13,6 +13,35 @@
           style="width: 320px"
           @change="load"
         />
+        <el-select
+          v-model="filters.subject"
+          clearable
+          filterable
+          placeholder="按科目筛选"
+          style="width: 180px"
+          @change="load"
+        >
+          <el-option
+            v-for="s in subjectOptions"
+            :key="s._id"
+            :label="s.name"
+            :value="s._id"
+          />
+        </el-select>
+        <el-select
+          v-model="filters.ageRange"
+          clearable
+          placeholder="按年龄段筛选"
+          style="width: 160px"
+          @change="load"
+        >
+          <el-option
+            v-for="r in AGE_RANGE_OPTIONS"
+            :key="r.value"
+            :label="r.label"
+            :value="r.value"
+          />
+        </el-select>
         <el-button :icon="Refresh" @click="onReset">重置</el-button>
 
         <div class="spacer" />
@@ -331,6 +360,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { trialBookingApi } from '@/api/trialBooking'
 import { userApi } from '@/api/user'
+import { subjectApi } from '@/api/subject'
 import { TRIAL_BOOKING_STATUS_LABEL, TRIAL_BOOKING_STATUS_TAG_TYPE } from '@/utils/constants'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
@@ -366,7 +396,24 @@ const counts = reactive({
   all: 0
 })
 const selectedRows = ref([])
-const filters = reactive({ dateRange: defaultDateRange() })
+const subjectOptions = ref([])
+// 2026-06-18: 年龄段下拉 — 业务上培训行业常用分段
+//   - 学龄前/低年级 (3-5)
+//   - 小学初级 (6-8)
+//   - 小学高年级 (9-12)
+//   - 中学 (13-18)
+//   - 不限 (空)
+const AGE_RANGE_OPTIONS = [
+  { value: '3-5', label: '3-5 岁', min: 3, max: 5 },
+  { value: '6-8', label: '6-8 岁', min: 6, max: 8 },
+  { value: '9-12', label: '9-12 岁', min: 9, max: 12 },
+  { value: '13-18', label: '13-18 岁', min: 13, max: 18 }
+]
+const filters = reactive({
+  dateRange: defaultDateRange(),
+  subject: null,        // ObjectId | null
+  ageRange: null        // '3-5' / '6-8' / '9-12' / '13-18' | null
+})
 const pagination = reactive({ page: 1, pageSize: 20 })
 
 /**
@@ -441,9 +488,18 @@ const authStore = useAuthStore()
 const isPlatformAdmin = computed(() => !!authStore.user?.isPlatformAdmin)
 
 onMounted(async () => {
-  await loadAllCounts()
+  await Promise.all([loadAllCounts(), loadSubjectOptions()])
   load()
 })
+
+async function loadSubjectOptions() {
+  try {
+    const r = await subjectApi.list({ pageSize: 200 })
+    subjectOptions.value = r.data?.items || (Array.isArray(r.data) ? r.data : [])
+  } catch (e) {
+    subjectOptions.value = []
+  }
+}
 
 /**
  * 2026-06-16: counts 也走 TABS 配置
@@ -461,10 +517,24 @@ async function loadAllCounts() {
         params.from = filters.dateRange?.[0] || undefined
         params.to = filters.dateRange?.[1] || undefined
       }
+      // 2026-06-18: counts 也受 subject + ageRange 影响 (顶部筛选联动)
+      applyCommonFilters(params)
       const r = await trialBookingApi.list(params)
       counts[t.value] = r.data?.total || 0
     } catch (e) {
       counts[t.value] = 0
+    }
+  }
+}
+
+// 把顶部通用筛选 (subject + ageRange) 拼到后端 query 上
+function applyCommonFilters(params) {
+  if (filters.subject) params.subject = filters.subject
+  if (filters.ageRange) {
+    const r = AGE_RANGE_OPTIONS.find((x) => x.value === filters.ageRange)
+    if (r) {
+      params.ageMin = r.min
+      params.ageMax = r.max
     }
   }
 }
@@ -493,8 +563,25 @@ async function load() {
       params.from = filters.dateRange?.[0] || undefined
       params.to = filters.dateRange?.[1] || undefined
     }
+    // 2026-06-18: 顶部通用筛选 — 科目 + 年龄段
+    applyCommonFilters(params)
     const r = await trialBookingApi.list(params)
-    rows.value = r.data?.items || []
+    const rawItems = r.data?.items || []
+    // 2026-06-18: 前端二次排序 — 按科目名升序 → 按孩子年龄升序 (后端 cross-collection sort 需 aggregate,代价大)
+    //   业务上"先按科目分桶,桶内按年龄从小学到中学"是销售跟单常用顺序
+    rows.value = rawItems.slice().sort((a, b) => {
+      const subA = (a.subject?.name || '').toString()
+      const subB = (b.subject?.name || '').toString()
+      if (subA !== subB) {
+        // 空字符串排到最后 (未分配科目的 booking 不抢前位)
+        if (!subA) return 1
+        if (!subB) return -1
+        return subA.localeCompare(subB, 'zh-Hans-CN')
+      }
+      const ageA = (a.preStudent?.age ?? Number.POSITIVE_INFINITY)
+      const ageB = (b.preStudent?.age ?? Number.POSITIVE_INFINITY)
+      return ageA - ageB
+    })
     total.value = r.data?.total || 0
   } finally {
     loading.value = false
@@ -513,8 +600,11 @@ function onSelectionChange(sel) {
 
 function onReset() {
   filters.dateRange = defaultDateRange()
+  filters.subject = null
+  filters.ageRange = null
   pagination.page = 1
   load()
+  loadAllCounts()
 }
 
 function openSignIn(row) {

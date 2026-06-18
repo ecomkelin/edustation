@@ -250,7 +250,7 @@ import { subjectApi } from '@/api/subject'
 import { schoolApi } from '@/api/school'
 import { userApi } from '@/api/user'
 import { categoryApi } from '@/api/category'
-import { PARENT_LIFECYCLE_LABEL, CHILD_LEAD_STATUS_LABEL, CHILD_LEAD_STATUS_TAG_TYPE } from '@/utils/constants'
+import { PARENT_LIFECYCLE_LABEL, PARENT_LIFECYCLE_TAG_TYPE, CHILD_LEAD_STATUS_LABEL, CHILD_LEAD_STATUS_TAG_TYPE } from '@/utils/constants'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },

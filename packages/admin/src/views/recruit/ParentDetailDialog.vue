@@ -659,6 +659,7 @@ function openChildDetail(child) {
 }
 
 function openChildEdit(child) {
+  if (!child) return
   editChildDialog.childLead = child
   editChildDialog.visible = true
 }

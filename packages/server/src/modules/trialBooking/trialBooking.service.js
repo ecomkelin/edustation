@@ -33,7 +33,7 @@ const password = require('@utils/password')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, status, from, to, teacher, subject, preStudent, parent, attemptNo, isEnrolled, page, pageSize }) {
+async function list({ orgId, status, from, to, teacher, subject, preStudent, parent, attemptNo, ageMin, ageMax, isEnrolled, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (status) {
@@ -48,7 +48,27 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
   else if (isEnrolled === 'false') filter['result.isEnrolled'] = { $in: [false, null] }
   if (teacher) filter.teacher = teacher
   if (subject) filter.subject = subject
-  if (preStudent) filter.preStudent = preStudent
+  // 2026-06-18: 按孩子年龄过滤 (年龄段筛选)
+  //   - age 字段在 ChildLead (preStudent) 上, 而 TrialBooking 只存 preStudent ObjectId
+  //   - 做法: 先查 ChildLead 拿到匹配的 _id, 再用 $in 过滤 TrialBooking
+  //   - age 跟 preStudent 互斥 (业务上前端不会同时用), 冲突时 age 优先 (粗筛)
+  let preStudentFilter = preStudent || null
+  if (ageMin != null || ageMax != null) {
+    const ageQuery = { org: orgId, age: {} }
+    if (ageMin != null) ageQuery.age.$gte = Number(ageMin)
+    if (ageMax != null) ageQuery.age.$lte = Number(ageMax)
+    const matchedIds = await ChildLead.find(ageQuery).select('_id').lean()
+    const idList = matchedIds.map((d) => d._id)
+    if (idList.length === 0) {
+      return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
+    }
+    // 如果用户同时传了 preStudent, 校验它是否在匹配的 idList 里
+    if (preStudentFilter && !idList.some((id) => String(id) === String(preStudentFilter))) {
+      return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
+    }
+    preStudentFilter = preStudentFilter || { $in: idList }
+  }
+  if (preStudentFilter) filter.preStudent = preStudentFilter
   if (parent) filter.parent = parent
   if (attemptNo) filter.attemptNo = Number(attemptNo)
   if (from || to) {

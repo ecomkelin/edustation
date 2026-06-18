@@ -28,6 +28,9 @@ exports.list = [
   query('subject').optional().isMongoId(),
   query('preStudent').optional().isMongoId(),
   query('attemptNo').optional().isInt({ min: 1 }),
+  // 2026-06-18: 按孩子年龄过滤 (前端年龄段下拉会同时传 min/max)
+  query('ageMin').optional().isInt({ min: 0, max: 100 }),
+  query('ageMax').optional().isInt({ min: 0, max: 100 }),
   // 2026-06-16: 已完成按"已报名/未报名"分桶
   //   - 'true'  → 已报名 (result.isEnrolled === true)
   //   - 'false' → 未报名 (result.isEnrolled === false 或 null)

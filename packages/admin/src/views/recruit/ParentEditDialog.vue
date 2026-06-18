@@ -195,6 +195,15 @@ watch(
   { immediate: true }
 )
 
+// 归一化: 后端 userApi.list 返回的 user 用 `id` 字段(没 `_id`),
+//   而 populate 后的 user 用 `_id`; 这里统一把 `id` 镜像到 `_id`,
+//   保证 el-select value-key="_id" 始终能匹配
+function normalizeUser(u) {
+  if (!u) return u
+  if (u._id) return u
+  return { ...u, _id: u.id }
+}
+
 async function loadOptions() {
   try {
     // 推广人 / 咨询师 = 全员里非"家长"岗位
@@ -202,23 +211,26 @@ async function loadOptions() {
       userApi.list({ pageSize: 200 }),
       categoryApi.list({ model: 'Channel', pageSize: 100 })
     ])
-    const all = uRes.data?.items || (Array.isArray(uRes.data) ? uRes.data : [])
-    const filtered = all.filter((u) => !(u.positions || []).some((p) => p.name === '家长'))
+    const all = (uRes.data?.items || (Array.isArray(uRes.data) ? uRes.data : []))
+      .map(normalizeUser)
+      .filter((u) => !(u.positions || []).some((p) => p.name === '家长'))
     // 兜底: 如果当前 promoteBy/consultant 已被 populate 但不在拉到的列表里 (pageSize=200 上限)
     // 把它加到 options 头部, 避免 select 拿不到 option 导致显示原始 ID
-    const promoteById = props.parent?.promoteBy?._id || props.parent?.promoteBy
-    const consultantId = props.parent?.consultant?._id || props.parent?.consultant
-    if (promoteById && !filtered.some((u) => String(u._id) === String(promoteById))
-        && props.parent.promoteBy && typeof props.parent.promoteBy === 'object') {
-      filtered.unshift(props.parent.promoteBy)
+    const promoteByObj = normalizeUser(props.parent?.promoteBy)
+    const consultantObj = normalizeUser(props.parent?.consultant)
+    const promoteById = promoteByObj?._id
+    const consultantId = consultantObj?._id
+    if (promoteById && !all.some((u) => String(u._id) === String(promoteById))
+        && promoteByObj && typeof promoteByObj === 'object') {
+      all.unshift(promoteByObj)
     }
-    if (consultantId && props.parent.consultant && typeof props.parent.consultant === 'object'
-        && !filtered.some((u) => String(u._id) === String(consultantId))) {
+    if (consultantId && consultantObj && typeof consultantObj === 'object'
+        && !all.some((u) => String(u._id) === String(consultantId))) {
       // 注: 同一个对象引用会同时塞到两个数组; 没问题, label 相同
-      filtered.unshift(props.parent.consultant)
+      all.unshift(consultantObj)
     }
-    promoterOptions.value = filtered
-    consultantOptions.value = [...filtered]
+    promoterOptions.value = all
+    consultantOptions.value = [...all]
     channelOptions.value = cRes.data?.items || (Array.isArray(cRes.data) ? cRes.data : [])
   } catch (e) {
     promoterOptions.value = []

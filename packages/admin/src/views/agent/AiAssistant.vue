@@ -50,7 +50,21 @@
                 <span v-if="pendingFiles.length > 0">已选 {{ pendingFiles.length }} 个附件 · </span>
                 Enter 发送 · Shift+Enter 换行
               </span>
-              <el-button type="primary" :loading="isStreaming" :disabled="!canSend" @click="send">
+              <!-- (2026-06-18) 发送按钮: 流式期间变 [停止] 按钮, 红色 danger, 点击中断 AbortController -->
+              <el-button
+                v-if="isStreaming"
+                type="danger"
+                @click="stopStream"
+              >
+                <el-icon><CircleClose /></el-icon>
+                <span>停止</span>
+              </el-button>
+              <el-button
+                v-else
+                type="primary"
+                :disabled="!canSend"
+                @click="send"
+              >
                 <el-icon><Promotion /></el-icon>
                 <span>发送</span>
               </el-button>
@@ -222,6 +236,12 @@ function resetParams() {
 }
 
 function onKeydown(e) {
+  // (2026-06-18) Esc = 停止流 (与点 [停止] 按钮等价)
+  if (e.key === 'Escape' && isStreaming.value) {
+    e.preventDefault()
+    stopStream()
+    return
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (!isStreaming.value && canSend.value) send()
