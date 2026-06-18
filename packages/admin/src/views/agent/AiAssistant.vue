@@ -1,26 +1,22 @@
 <template>
   <div class="page ai-assistant-page">
     <PermissionGuard perm="agent.read">
-    <h2 class="page-title">
-      <el-icon style="vertical-align: middle"><MagicStick /></el-icon>
-      AI 助手
-    </h2>
-
-    <el-row :gutter="16">
+    <div class="ai-grid">
       <!-- 左侧: 聊天区 + 输入框固定底部 -->
-      <el-col :xs="24" :md="16">
-        <el-card shadow="never" class="chat-card">
+      <div class="left-col">
+        <!-- (2026-06-18) 改用 div 自己实现卡片, 避免 el-card 无 header 时 .el-card__body 包裹不生效 -->
+        <div class="chat-card">
           <div ref="scrollRef" class="chat-body">
-            <!-- 空状态: 仅显示提示, 预设面板挪到右侧 -->
+            <!-- 空状态 -->
             <div v-if="messages.length === 0" class="empty-tip">
               <el-icon size="40" color="#c0c4cc"><ChatLineRound /></el-icon>
-              <p>暂无对话，发条消息开始吧 👋</p>
+              <p>{{ activeConversationId ? '本会话暂无消息' : '暂无对话，发条消息开始吧 👋' }}</p>
               <p class="muted">或拖入 Excel / 图片 / PDF 让 AI 帮你解析并办理</p>
             </div>
 
             <AiMessageBubble
               v-for="(m, i) in messages"
-              :key="i"
+              :key="m._msgId || i"
               :role="m.role"
               :blocks="m.blocks"
               :ts="m.ts"
@@ -60,12 +56,12 @@
               </el-button>
             </div>
           </div>
-        </el-card>
-      </el-col>
+        </div>
+      </div>
 
-      <!-- 右侧: 助手说明 / 试试这样问 / 调用参数 (从上到下堆叠) -->
-      <el-col :xs="24" :md="8" class="right-col">
-        <!-- 1) 助手说明 + 连通状态 -->
+      <!-- 右侧: AI 助手说明 → 会话记录 → 试试这样问 → 调用参数 (2026-06-18 调整顺序) -->
+      <div class="right-col">
+        <!-- 1) 助手说明 + 连通状态 (提到最上) -->
         <el-card shadow="never" class="status-card">
           <div class="status-header">
             <div class="status-title">
@@ -73,7 +69,7 @@
               <span>AI 助手说明</span>
             </div>
             <p class="hint">
-              用自然语言驱动日常业务,或拖入 Excel / 图片 / PDF 让 AI 解析并办理。
+              用自然语言驱动日常业务，或拖入 Excel / 图片 / PDF 让 AI 解析并办理。
               <b style="color: #e6a23c">高风险操作需点确认才执行</b>。
             </p>
           </div>
@@ -95,18 +91,27 @@
                 <el-icon><Connection /></el-icon>
                 <span>连通</span>
               </el-button>
-              <el-button size="small" type="danger" plain :disabled="messages.length === 0 || isStreaming" @click="clearConversation">
-                <el-icon><Delete /></el-icon>
-                <span>清空</span>
-              </el-button>
             </div>
           </div>
         </el-card>
 
-        <!-- 2) 试试这样问 (预设问题面板) -->
+        <!-- 2) 会话记录 (2026-06-18 调整: 移到 AI 助手说明下方) -->
+        <AiConversationList
+          ref="convListRef"
+          class="conv-list-card"
+          :active-id="activeConversationId"
+          :is-streaming="isStreaming"
+          :active-count="conversationLimit.activeCount"
+          :max-allowed="conversationLimit.maxAllowed"
+          @pick="onPickConversation"
+          @new="onNewConversation"
+          @limit="onConversationLimit"
+        />
+
+        <!-- 3) 试试这样问 -->
         <AiPresetPanel class="preset-card" @pick="usePreset" />
 
-        <!-- 3) 调用参数 -->
+        <!-- 4) 调用参数 (保持最下, 不常用) -->
         <el-card shadow="never" class="settings-card">
           <template #header><span>调用参数</span></template>
           <el-form label-position="top" size="default">
@@ -124,8 +129,8 @@
             </el-form-item>
           </el-form>
         </el-card>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
     </PermissionGuard>
   </div>
 </template>
@@ -133,13 +138,13 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import {
   MagicStick,
   ChatLineRound,
   CircleCheck,
   CircleClose,
   Connection,
-  Delete,
   Loading,
   Promotion,
   QuestionFilled
@@ -152,12 +157,17 @@ import AiMessageBubble from './components/AiMessageBubble.vue'
 import AiToolCallCard from './components/AiToolCallCard.vue'
 import AiPresetPanel from './components/AiPresetPanel.vue'
 import AiFileUploader from './components/AiFileUploader.vue'
+import AiConversationList from './components/AiConversationList.vue'
 
 // ─── 状态 ──────────────────────────────────────────────
-const messages = ref([]) // [{role, blocks:[{type,...}], ts}]
+// messages 元素结构:
+//   { _msgId, role, blocks, ts, _serverSeq? }
+// blocks 元素结构: {type:'text'|'file'|'tool_call'|'tool_result'|'error', ...}
+const messages = ref([])
 const input = ref('')
 const pendingFiles = ref([])
 const scrollRef = ref(null)
+const convListRef = ref(null)
 
 const systemPrompt = ref('')
 const temperature = ref(0.5)
@@ -169,9 +179,18 @@ const pingState = reactive({ ok: null, label: '未测试', detail: '' })
 
 const streamingMsg = ref(null) // 流式累积块
 
-const { start: startStream, isStreaming, stop: stopStream } = useAgentStream()
+// 会话状态 (2026-06 新增; 2026-06-18 升级: 不再预建空会话)
+const activeConversationId = ref('') // 空 = 新会话(未发过), 由后端 lazy create
+const activeConversationTitle = ref('')
+const streamingConvId = ref('') // 流中用于持久化绑定的 id
+const conversationLimit = reactive({ activeCount: 0, maxAllowed: 30 }) // 30 上限(2026-06-18)
 
-const canSend = computed(() => !isStreaming.value && (input.value.trim() || pendingFiles.value.length > 0))
+const { start: startStream, isStreaming, stop: stopStream } = useAgentStream()
+const auth = useAuthStore() // (2026-06-18) 用于 30 上限超管豁免判断
+
+const canSend = computed(() =>
+  !isStreaming.value && (input.value.trim() || pendingFiles.value.length > 0)
+)
 
 // ─── 工具 ──────────────────────────────────────────────
 function formatTs(ts) {
@@ -186,9 +205,12 @@ function scrollToBottom() {
   })
 }
 
+function genMsgId() {
+  return `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+}
+
 function usePreset(q) {
   input.value = q
-  // 自动 focus 输入框（如果存在）
   const el = document.querySelector('.chat-input .el-textarea__inner')
   if (el) el.focus()
 }
@@ -199,20 +221,86 @@ function resetParams() {
   maxTokens.value = 2048
 }
 
-function clearConversation() {
-  messages.value = []
-  streamingMsg.value = null
-  lastMeta.model = ''
-  lastMeta.latencyMs = null
-  lastMeta.usage = null
-  ElMessage.success('已清空')
-}
-
 function onKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     if (!isStreaming.value && canSend.value) send()
   }
+}
+
+// ─── 会话操作 (2026-06, 2026-06-18 升级) ─────────
+/**
+ * 开启新会话 (清空当前对话, 不预建空记录)
+ *  - 不调 createConversation (那样会产生无聊天记录的空会话, 用户要求"没聊天记录的不该有")
+ *  - 由后端在首条消息发送时 lazy create
+ *  - 校验 30 上限: 满则提示并拒绝 (普通用户)
+ *  - 平台超管不限
+ */
+async function onNewConversation() {
+  if (isStreaming.value) return
+  // 上限校验 (前端粗判, 后端是权威)
+  if (!auth.isPlatformAdmin && conversationLimit.activeCount >= conversationLimit.maxAllowed) {
+    ElMessage.warning(`已达会话上限 (${conversationLimit.maxAllowed} 个), 请先删除一些旧会话`)
+    return
+  }
+  activeConversationId.value = ''
+  activeConversationTitle.value = ''
+  messages.value = []
+  streamingMsg.value = null
+  lastMeta.model = ''
+  lastMeta.latencyMs = null
+  lastMeta.usage = null
+  // 通知列表刷新
+  convListRef.value?.reload?.()
+  // (2026-06-18) 用户反馈 "新会话没反应": 因为不预建空会话, 列表里不会多一项, 用户以为没生效
+  // 显式 toast 提示, 让用户知道点击成功 + 引导发首条消息
+  ElMessage.success('新会话已开启, 发首条消息开始吧')
+}
+
+async function onPickConversation(c) {
+  if (isStreaming.value) return
+  if (c._id === activeConversationId.value) return
+  try {
+    const res = await agentApi.getConversation(c._id)
+    const conv = res.data
+    activeConversationId.value = conv._id
+    activeConversationTitle.value = conv.title || '新会话'
+    // 把后端的 messages 还原成前端的 messages 格式
+    messages.value = (conv.messages || []).map((m) => ({
+      _msgId: genMsgId(),
+      _serverId: m._id,
+      _serverSeq: m.seq,
+      role: m.role,
+      blocks: m.content || [],
+      ts: new Date(m.createdAt).getTime()
+    }))
+    streamingMsg.value = null
+  } catch (e) {
+    ElMessage.error('加载会话失败: ' + (e?.message || e))
+  }
+}
+
+/**
+ * (2026-06-18) 同步 active 会话的 title (lazy create 之后, 后端会自动设 title, 前端拉一次拿最新)
+ */
+async function refreshActiveTitle(conversationId) {
+  if (!conversationId) return
+  try {
+    const res = await agentApi.getConversation(conversationId)
+    if (res.data && res.data.title) {
+      activeConversationTitle.value = res.data.title
+    }
+  } catch (_) {
+    // 静默: 流已经成功, title 拉不到不影响主体
+  }
+}
+
+/**
+ * (2026-06-18) 子组件透传的上限信息
+ */
+function onConversationLimit({ activeCount, maxAllowed }) {
+  conversationLimit.activeCount = activeCount
+  conversationLimit.maxAllowed = maxAllowed
 }
 
 // ─── 行为 ──────────────────────────────────────────────
@@ -244,6 +332,11 @@ async function runPing() {
 
 /**
  * 主发送流程: 构造 messages → 调 SSE 流 → 处理事件
+ *
+ * (2026-06) 会话持久化:
+ *  - 发前若 activeConversationId 为空, 通知后端 lazy create (后端 chatStream 入口会建)
+ *  - 流中收到 start 事件的 conversationId 即为真实 id, 同步到前端
+ *  - 流结束 / 失败 / 高风险暂停, 都由后端自动落库; 前端在流结束后 reload 列表
  */
 async function send() {
   const text = input.value.trim()
@@ -254,13 +347,22 @@ async function send() {
   }))
   if (!text && attachments.length === 0) return
 
+  // (2026-06-18) 新会话 + 30 上限: 若本次是新会话 (activeConversationId 为空) 且非超管, 看是否到上限
+  //  - 注意: 此时是"即将发首条消息", 如果有 userMessageCount == 0 的空会话被 UI 漏掉, 也会被一起计入
+  //  - 后端是权威, 这里只是粗判, 真正拦截靠后端 409
+  if (!activeConversationId.value && !auth.isPlatformAdmin
+    && conversationLimit.activeCount >= conversationLimit.maxAllowed) {
+    ElMessage.warning(`已达会话上限 (${conversationLimit.maxAllowed} 个), 请先删除一些旧会话`)
+    return
+  }
+
   // 1) 推入 user 消息
   const userBlocks = []
   if (text) userBlocks.push({ type: 'text', content: text })
   for (const f of pendingFiles.value) {
     userBlocks.push({ type: 'file', fileId: f.fileId, fileName: f.fileName, mime: f.mime, size: f.size })
   }
-  messages.value.push({ role: 'user', blocks: userBlocks, ts: Date.now() })
+  messages.value.push({ _msgId: genMsgId(), role: 'user', blocks: userBlocks, ts: Date.now() })
 
   // 清空输入
   input.value = ''
@@ -278,6 +380,7 @@ async function send() {
 
   // 3) 准备 streaming 助手消息
   streamingMsg.value = {
+    _msgId: genMsgId(),
     role: 'assistant',
     blocks: [{ type: 'text', content: '' }],
     ts: Date.now()
@@ -292,14 +395,25 @@ async function send() {
       systemPrompt: systemPrompt.value,
       temperature: temperature.value,
       maxTokens: maxTokens.value,
+      conversationId: activeConversationId.value,
       onEvent: handleStreamEvent
     })
   } catch (e) {
-    // 错误时给 assistant 块追加错误
+    // (2026-06-18) 后端 409: 会话数到上限 (lazy create 触发)
+    if (e?.response?.status === 409 || e?.status === 409) {
+      ElMessage.error(e?.response?.data?.message || e.message || '已达会话上限')
+      // 后端已经回滚了, 移除本地刚 push 的 user 消息
+      if (messages.value.length > 0 && messages.value[messages.value.length - 1].role === 'user') {
+        messages.value.pop()
+      }
+      streamingMsg.value = null
+      return
+    }
     if (streamingMsg.value) {
       streamingMsg.value.blocks.push({ type: 'error', content: e.message || '调用失败' })
     } else {
       messages.value.push({
+        _msgId: genMsgId(),
         role: 'assistant',
         blocks: [{ type: 'error', content: e.message || '调用失败' }],
         ts: Date.now()
@@ -312,6 +426,24 @@ async function send() {
     }
     streamingMsg.value = null
     scrollToBottom()
+    // 刷新会话列表 (可能有新会话) + 上限计数
+    convListRef.value?.reload?.()
+    refreshConversationLimit()
+  }
+}
+
+/**
+ * (2026-06-18) 拉当前活跃会话数, 用于前端 UI 提示
+ */
+async function refreshConversationLimit() {
+  try {
+    const res = await agentApi.listConversations({ limit: 1 })
+    if (res.data) {
+      conversationLimit.activeCount = res.data.activeCount || 0
+      conversationLimit.maxAllowed = res.data.maxAllowed || 30
+    }
+  } catch (_) {
+    // 静默
   }
 }
 
@@ -322,9 +454,17 @@ function handleStreamEvent(event, data) {
   switch (event) {
     case 'start':
       lastMeta.model = data.model || ''
+      // 同步后端真实 conversationId (可能 lazy created)
+      if (data.conversationId && !activeConversationId.value) {
+        activeConversationId.value = data.conversationId
+        streamingConvId.value = data.conversationId
+        // 首条 user 消息后, 后端会自动改 title; 这里先取会话详情同步标题
+        refreshActiveTitle(data.conversationId)
+      } else if (data.conversationId) {
+        streamingConvId.value = data.conversationId
+      }
       break
     case 'content': {
-      // 累积文本到 streamingMsg 的第一个 text 块
       if (!streamingMsg.value) return
       const textBlock = streamingMsg.value.blocks.find((b) => b.type === 'text' && b._editing !== false)
         || streamingMsg.value.blocks[0]
@@ -334,7 +474,6 @@ function handleStreamEvent(event, data) {
     }
     case 'tool_call': {
       if (!streamingMsg.value) return
-      // 找到一个可用的 tool_call 块 (先按 id 找; 没有则新建)
       let block = streamingMsg.value.blocks.find((b) => b.type === 'tool_call' && b.id === data.id)
       if (!block) {
         block = {
@@ -351,13 +490,12 @@ function handleStreamEvent(event, data) {
       } else {
         block.args = data.args
         block.summary = data.summary
+        if (data.requiresConfirmation) block.requiresConfirmation = true
       }
       scrollToBottom()
       break
     }
     case 'tool_result': {
-      // 把结果写入对应 tool_call 块 (可能在历史消息中也可能在 streamingMsg)
-      // 简化: 我们都把 result 写进 streamingMsg 中对应的 tool_call 块
       if (!streamingMsg.value) return
       const block = streamingMsg.value.blocks.find((b) => b.type === 'tool_call' && b.id === data.id)
       if (block) {
@@ -390,7 +528,9 @@ async function confirmHighRisk(msgIdx, block) {
     const res = await agentApi.executeTool({
       toolName: block.name,
       args: block.args,
-      confirmed: true
+      confirmed: true,
+      conversationId: activeConversationId.value,
+      toolCallId: block.id
     })
     if (res.data && res.data.ok !== false) {
       block.status = 'done'
@@ -403,29 +543,52 @@ async function confirmHighRisk(msgIdx, block) {
     block.status = 'error'
     block.error = e?.message || e?.response?.data?.message || '执行失败'
     ElMessage.error(block.error)
+  } finally {
+    convListRef.value?.reload?.()
+    refreshConversationLimit()
   }
 }
 
 onMounted(() => {
   runPing()
+  refreshConversationLimit()
 })
 </script>
 
 <style scoped>
-.ai-assistant-page { display: flex; flex-direction: column; }
-.page-title { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
+/* (2026-06-18) 整体改用弹性布局, 取消 calc(100vh - 160px) 的硬编码
+   - 整体占满 main 高度, el-row 用 flex:1 占满剩余
+   - 顶部不再有 "AI 助手" 标题 (2026-06-18 用户反馈: 占空间), 聊天区直接顶到 main 顶部 */
+.ai-assistant-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+/* (2026-06-18) 改用 CSS Grid 两列布局, 替换 el-row/el-col 嵌套
+   - 高度传递清晰: grid 容器 100% → 两列 100% → 内部 flex 100%
+   - 不再受 el-col 默认 box-sizing / padding 影响 */
+.ai-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+.left-col { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 
 .hint { color: #606266; font-size: 12px; margin: 4px 0 8px; line-height: 1.6; }
 
-/* 右侧列: 状态卡 + 预设 + 参数 堆叠
-   - 与 chat-card 同高 (calc 100vh - 160px)
-   - 内容超出时独立滚, 不会把 chat-card 顶高
-   - 这样保证 chat-card 的输入框始终固定在视口底部 */
+/* 右侧列: 助手说明 / 预设 / 会话记录 / 参数 堆叠
+   - 高度 100% 跟随 ai-row, 不再 calc 100vh
+   - 内容超出时独立滚, 不会把 chat-card 顶高 */
 .right-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: calc(100vh - 160px);
+  gap: 10px;
+  height: 100%;
   overflow-y: auto;
   /* 自定义滚动条样式 (webkit) */
   scrollbar-width: thin;
@@ -441,19 +604,19 @@ onMounted(() => {
 .status-detail { color: #909399; font-size: 11px; }
 .status-right { display: flex; gap: 4px; }
 
-/* 聊天卡: 固定为视口高度 - 头/外边距, 确保输入框始终在视口底部位置固定
-   - 用 height 而非 min-height: 避免右列太长时把 chat-card 顶高导致页面外层滚动
-   - 配合右列 max-height + overflow-y:auto, 两列独立滚, 不互相影响 */
+/* 聊天卡: 改用 div 自己实现 (2026-06-18)
+   - 之前用 el-card 无 header 时 .el-card__body 不出现, flex 失效
+   - 现在 div 包裹, flex 100% 命中
+   - 视觉上模拟 el-card (border + bg) */
 .chat-card {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 160px);
-}
-:deep(.chat-card .el-card__body) {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
+  height: 100%;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
   padding: 12px;
+  box-sizing: border-box;
   min-height: 0;          /* 关键: 允许 chat-body 收缩到 0 高度以便滚动 */
 }
 
@@ -492,7 +655,6 @@ onMounted(() => {
 .chat-input-bar { display: flex; justify-content: space-between; align-items: center; }
 
 .settings-card { /* 跟其他右侧卡同等间距 */ }
-
-/* 预设问题卡: 跟其他右侧卡同等间距 */
 .preset-card { /* 间距由 .right-col gap 控制 */ }
+.conv-list-card { /* 间距由 .right-col gap 控制 */ }
 </style>

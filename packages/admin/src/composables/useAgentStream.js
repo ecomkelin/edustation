@@ -26,7 +26,7 @@ export function useAgentStream() {
   const isStreaming = ref(false)
   const error = ref(null)
 
-  async function start({ messages, attachments = [], systemPrompt, temperature, maxTokens, onEvent }) {
+  async function start({ messages, attachments = [], systemPrompt, temperature, maxTokens, conversationId, onEvent }) {
     if (!auth.accessToken) throw new Error('未登录')
     // 终止上一次流
     acRef.current?.abort()
@@ -48,7 +48,8 @@ export function useAgentStream() {
           attachments,
           systemPrompt,
           temperature,
-          maxTokens
+          maxTokens,
+          conversationId
         }),
         signal: ac.signal
       })

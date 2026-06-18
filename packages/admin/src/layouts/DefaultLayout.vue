@@ -131,7 +131,9 @@ const menuGroups = [
       { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
       // 法律协议 (2026-06): 平台级协议只读 + 站点配置 (备案号/运营主体)
       { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
-      { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true }
+      { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
+      // AI 管理 (2026-06-18): 会话/知识库/审计; 当前先做会话管理
+      { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true }
     ]
   },
   {

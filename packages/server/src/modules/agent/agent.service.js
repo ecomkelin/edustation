@@ -232,7 +232,8 @@ async function* chatStream({
   maxTokens,
   currentUser,
   orgId,
-  signal
+  signal,
+  conversationId = null
 }) {
   const ai = config.ai || {}
   if (!ai.enabled) {
@@ -241,7 +242,8 @@ async function* chatStream({
   }
 
   const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  yield { event: 'start', data: { runId, model: ai.model } }
+  // conversationId 由 controller 注入 (通过入参透传)
+  yield { event: 'start', data: { runId, model: ai.model, conversationId } }
 
   // 1. 处理 attachments: 解析后拼到 user message
   let extraParts = []
