@@ -25,6 +25,8 @@ router.get('/:id/removable-check', mws.requirePermission('recruit.read'), v.idPa
 
 // 单笔跟班 (attached)
 router.post('/', mws.requirePermission('recruit.write'), v.create, mws.validateRequest, asyncHandler(c.create))
+// 2026-06-20: 为已有 childLead 单独创建一笔 awaiting_schedule 预约 (solo, 不排时间; 排课走 batch-schedule)
+router.post('/for-child', mws.requirePermission('recruit.write'), v.createForChild, mws.validateRequest, asyncHandler(c.createForChild))
 // 批量排课 (核心)
 router.post('/batch-schedule', mws.requirePermission('recruit.write'), v.batchSchedule, mws.validateRequest, asyncHandler(c.batchSchedule))
 // 编辑 (cancelled/remark)

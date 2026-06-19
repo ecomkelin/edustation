@@ -187,6 +187,59 @@ async function update(id, orgId, body) {
   return doc
 }
 
+/* ─── 为现有孩子创建一笔 awaiting_schedule 预约 (2026-06-20 新增) ─── */
+/**
+ * 业务场景:
+ *   - 已取消 → 想再试
+ *   - 已转化 → 想再试另一门
+ *   - 录入时漏了某个科目, 现在想补
+ *   - 老流程: 走 rescheduleFromCancelled 但只能从 cancelled 触发, 不通用
+ *   - 新流程: 给已有 ChildLead 单独建一笔 awaiting_schedule booking
+ *
+ * 行为:
+ *   - 算 attemptNo = max + 1
+ *   - joinMode = 'solo' (非跟班), status = 'awaiting_schedule'
+ *   - subject: 优先 body.subject → 回落 kid.trialSubject[0] → null
+ *   - 不动 ChildLead.status (由后续 batchSchedule 翻到 scheduled)
+ *   - 不写 LeadActivity (与 childLead.create 自动建 N 笔的口径一致; 业务上不算"触点", 是"新增预约")
+ */
+async function createForChild({ orgId, currentUser, body }) {
+  if (!currentUser) throw ApiError.unauthorized()
+  const child = await ChildLead.findOne({ _id: body.preStudent, org: orgId }).lean()
+  if (!child) throw ApiError.badRequest('孩子潜客不存在')
+
+  // subject 校验 (字典 model='Subject' 必须属于本机构)
+  let subjectId = body.subject || null
+  if (subjectId) {
+    const Category = require('@models/Category.model')
+    const exists = await Category.exists({ _id: subjectId, org: orgId, model: 'Subject' })
+    if (!exists) throw ApiError.badRequest('试听科目不存在或不属于本机构')
+  } else if (child.trialSubject) {
+    // 回落: 孩子档案里的第一个 trialSubject
+    subjectId = child.trialSubject
+  }
+
+  // 算 attemptNo
+  const maxAttempt = await TrialBooking.findOne({ preStudent: child._id, org: orgId })
+    .sort({ attemptNo: -1 })
+    .select('attemptNo')
+    .lean()
+  const attemptNo = (maxAttempt?.attemptNo || 0) + 1
+
+  const doc = await TrialBooking.create({
+    org: orgId,
+    preStudent: child._id,
+    parent: child.parent,
+    attemptNo,
+    joinMode: 'solo',
+    subject: subjectId,
+    status: 'awaiting_schedule',
+    remark: body.remark || '',
+    createdBy: currentUser.id
+  })
+  return detail(doc._id, orgId)
+}
+
 /* ─── 批量排课 (核心) ─────────────────────────────── */
 
 async function batchSchedule({ orgId, currentUser, body }) {
@@ -635,6 +688,7 @@ async function removableCheck({ id, orgId }) {
 
 module.exports = {
   list, detail, create, update, remove, removableCheck,
+  createForChild, // 2026-06-20: 为已有 childLead 建一笔 awaiting_schedule booking
   batchSchedule, checkIn, complete,
   convertPreview, convert,
   // 2026-06-16: 删 reschedule (旧 no_show 路径); 加 rescheduleTime / revertToUnscheduled / rescheduleFromCancelled

@@ -15,6 +15,13 @@ export const trialBookingApi = {
   detail: (id) => http.get(`/trial-bookings/${id}`),
   // 单笔跟班 (attached)
   create: (data) => http.post('/trial-bookings', data),
+
+  // 2026-06-20: 为已有 childLead 单独创建一笔 awaiting_schedule 预约 (solo, 不排时间)
+  //   场景: 取消后再约 / 已转化想再试另一门 / 录入时漏了某个科目
+  //   data: { preStudent, subject?, remark? }
+  //   返回: 完整 TrialBooking 对象, 走完后可继续调 batchSchedule 排课
+  createForChild: (data) => http.post('/trial-bookings/for-child', data),
+
   update: (id, data) => http.put(`/trial-bookings/${id}`, data),
   remove: (id, { password } = {}) => http.delete(`/trial-bookings/${id}`, { data: { password } }),
   removableCheck: (id) => http.get(`/trial-bookings/${id}/removable-check`),

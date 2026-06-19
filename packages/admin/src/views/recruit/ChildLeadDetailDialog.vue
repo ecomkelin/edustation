@@ -38,6 +38,12 @@
             @click="emit('open-edit', child)"
           >编辑基础信息</el-button>
           <el-button
+            v-if="hasPerm('recruit.write') && !['lost'].includes(child.status)"
+            size="small"
+            type="success"
+            @click="openCreateBooking"
+          >+ 新建预约</el-button>
+          <el-button
             v-if="canSchedule"
             size="small"
             type="warning"
@@ -268,6 +274,13 @@
       append-to-body
       @scheduled="onScheduled"
     />
+    <!-- 2026-06-20: 为现有孩子新建一笔 awaiting_schedule 预约 (solo, 不排时间) -->
+    <CreateBookingDialog
+      v-model:visible="createBookingDialog.visible"
+      :child="createBookingDialog.child"
+      append-to-body
+      @created="onBookingCreated"
+    />
   </el-dialog>
 </template>
 
@@ -290,6 +303,7 @@ import ActivityCreateDialog from './ActivityCreateDialog.vue'
 import ActivityEditDialog from './ActivityEditDialog.vue'
 import TrialBookingSignInDialog from './TrialBookingSignInDialog.vue'
 import BatchScheduleDialog from './BatchScheduleDialog.vue'
+import CreateBookingDialog from './CreateBookingDialog.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -313,6 +327,8 @@ const createActivityDialog = reactive({ visible: false, childLeadId: null, child
 const editActivityDialog = reactive({ visible: false, childLeadId: null, activity: null })
 const signInDialog = reactive({ visible: false, booking: null })
 const scheduleDialog = reactive({ visible: false, bookings: [] })
+// 2026-06-20: 为现有孩子新建预约 (solo, 不排时间)
+const createBookingDialog = reactive({ visible: false, child: null })
 
 const dialogTitle = computed(() => child.value ? `孩子详情 - ${child.value.name}` : '孩子详情')
 
@@ -483,6 +499,25 @@ function openSchedule() {
   // 仅传 awaiting_schedule 的预约; 后端 batchSchedule 接受 1 条也工作
   scheduleDialog.bookings = bookings.value.filter((b) => b.status === 'awaiting_schedule')
   scheduleDialog.visible = true
+}
+
+// 2026-06-20: 为现有孩子新建预约
+function openCreateBooking() {
+  if (!child.value) return
+  createBookingDialog.child = child.value
+  createBookingDialog.visible = true
+}
+
+// 2026-06-20: 新建预约成功 → 刷新 bookings + 立即弹出 BatchScheduleDialog(singleMode) 让用户排时间
+//   流程: 创建 awaiting_schedule → reload bookings (新 booking 出现) → 弹排课 dialog
+async function onBookingCreated({ booking }) {
+  await loadBookings()
+  emit('updated')
+  // 自动接上排课流程, 减少操作步骤
+  if (booking?._id) {
+    scheduleDialog.bookings = [booking]
+    scheduleDialog.visible = true
+  }
 }
 
 async function onScheduled() {

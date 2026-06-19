@@ -134,3 +134,17 @@ exports.rescheduleFromCancelled = [
   body('room').optional({ nullable: true }).isMongoId().withMessage('room 需为合法 id')
 ]
 
+/**
+ * 为已有孩子创建一笔 awaiting_schedule 预约 (2026-06-20 新增)
+ * Body:
+ *   - preStudent: ChildLead._id (必填)
+ *   - subject:    Subject 字典 id (可选, 回落 childLead.trialSubject[0])
+ *   - remark:     备注 (可选)
+ * - 不排时间, 不动 ChildLead.status; 走完后前端可继续调 batchSchedule 排课
+ */
+exports.createForChild = [
+  body('preStudent').isMongoId().withMessage('preStudent 需为合法 id'),
+  body('subject').optional({ nullable: true }).isMongoId().withMessage('subject 需为合法 id'),
+  body('remark').optional({ nullable: true }).isString().isLength({ max: 500 })
+]
+
