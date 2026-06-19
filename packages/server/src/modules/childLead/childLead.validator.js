@@ -65,6 +65,10 @@ exports.list = [
   query('status').optional().isString(),
   query('keyword').optional().isString().isLength({ max: 50 }),
   query('parent').optional().isMongoId(),
+  // 2026-06-19: 新加 3 个过滤维度 — 推广人/咨询师 (Parent 字段, service 内部走两步) + 试听老师 (ChildLead.inviteTeacher, 直过滤)
+  query('promoteBy').optional().isMongoId().withMessage('promoteBy 需为合法 id'),
+  query('consultant').optional().isMongoId().withMessage('consultant 需为合法 id'),
+  query('inviteTeacher').optional().isMongoId().withMessage('inviteTeacher 需为合法 id'),
   query('from').optional().isISO8601(),
   query('to').optional().isISO8601(),
   query('page').optional().isInt({ min: 1 }),

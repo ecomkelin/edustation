@@ -58,6 +58,8 @@ const routes = [
       { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },
       // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)
       { path: 'recruit/leads', component: () => import('@/views/recruit/Parents.vue') },
+      // 孩子管理 (2026-06-19): 按孩子维度的精细跟进页, 与"潜客管理(按家长)"同级并列
+      { path: 'recruit/child-leads', component: () => import('@/views/recruit/ChildLeads.vue') },
       { path: 'recruit/trial-bookings', component: () => import('@/views/recruit/TrialBookings.vue') },
       // 招生看板 (2026-06)
       { path: 'reports/recruit', component: () => import('@/views/reports/RecruitReport.vue') },

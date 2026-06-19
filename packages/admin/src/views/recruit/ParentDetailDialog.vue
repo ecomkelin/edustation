@@ -387,6 +387,7 @@ import ParentEditDialog from './ParentEditDialog.vue'
 import ActivityEditDialog from './ActivityEditDialog.vue'
 import ActivityCreateDialog from './ActivityCreateDialog.vue'
 import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
+import { hasPermInOrg } from '@/utils/permissionHelper'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -415,17 +416,8 @@ const hasAnyProfile = computed(() => {
   if (!p) return false
   return !!(p.commStyle || p.familyBg || p.childFocus || p.followUp)
 })
-// 权限检查: 复刻 Dashboard.vue 的 hasPerm 模式 (auth store 没有这个方法)
-function hasPerm(code) {
-  if (authStore.user?.isPlatformAdmin) return true
-  const org = authStore.orgs.find((o) => o.id === authStore.currentOrgId)
-  if (!org) return false
-  const perms = new Set()
-  for (const p of org.positions || []) {
-    for (const c of p.permissions || []) perms.add(c)
-  }
-  return perms.has(code)
-}
+// 权限检查: 2026-06-19 抽到 utils/permissionHelper.js, 3 处复用 (ParentDetailDialog / ChildLeads / ChildLeadDetailDialog)
+const hasPerm = (code) => hasPermInOrg(authStore, code)
 const canEditProfile = computed(() => hasPerm('recruit.write'))
 // 触点添加入口: 需要 recruit.write + 至少一个非 converted/lost 的孩子
 const canAddActivity = computed(() => {

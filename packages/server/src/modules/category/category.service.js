@@ -11,8 +11,9 @@ const ApiError = require('@utils/ApiError')
 /**
  * 2026-06 整改：
  *  - 4 个 model（Student/Subject/LeadTag/Channel）全部 per-org，加 `org` 字段隔离。
- *  - list/tree/detail 默认按 req.orgId 过滤；平台超管 + orgId=null 表示看跨 org。
- *  - create 时 controller 强制 org=req.orgId。
+ *  - 2026-06-19 起 `org` 必填：所有 Category 必须归属某机构，平台级共享字典完全下线。
+ *  - list/tree/detail 默认按 req.orgId 过滤；非平台超管不传 orgId 时强制要 x-org-id。
+ *  - create 时 controller 强制 org=req.orgId；schema 校验拒绝任何缺 org 的 Category。
  *
  * 唯一索引 {org, model, name, parentCategory} 配合：
  *  - 同一 org 内同 model 同 parent 下 name 不可重复（自然约束）。
@@ -174,11 +175,11 @@ async function detail(id, orgId) {
  * 创建类别。
  * @param {Object} payload     body 数据 (含 model / name / parentCategory / code / sort / isActive)
  * @param {String} orgId       本机构 id (controller 从 req.orgId 注入)
- * @param {Boolean} isPlatformAdmin  是否平台超管 (true 时允许 org=null 创建平台级字典, 当前 4 model 都不允许)
+ * @param {Boolean} _isPlatformAdmin  已废弃: 2026-06-19 起 Category.org 改为必填, 不再允许 org=null
  */
-async function create(payload, orgId, isPlatformAdmin) {
+async function create(payload, orgId, _isPlatformAdmin) {
   if (!orgId) {
-    // 平台级 Category 已经下线 (Org.type 改 enum, 其他 4 model 全是 per-org), 不允许创建 org=null 的 Category
+    // 平台级 Category 已完全下线 (2026-06-19): 4 个 model 都必须是 per-org
     throw ApiError.badRequest('类别字典必须归属某个机构')
   }
   // parent 必须同 org + 同 model

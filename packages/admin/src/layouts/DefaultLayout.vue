@@ -177,7 +177,9 @@ const menuGroups = [
     title: '招生试听',
     icon: TrendCharts,
     children: [
-      { path: '/recruit/leads', label: '潜客管理', icon: UserFilled, perm: 'recruit.read' },
+      // 顺序按数据收敛方向: 家长 (按手机号) → 孩子 (按孩子) → 预约 (按单次试听)
+      { path: '/recruit/leads', label: '潜客管理(按家长)', icon: UserFilled, perm: 'recruit.read' },
+      { path: '/recruit/child-leads', label: '孩子管理', icon: UserFilled, perm: 'recruit.read' },
       { path: '/recruit/trial-bookings', label: '试听记录', icon: Calendar, perm: 'recruit.read' }
     ]
   },

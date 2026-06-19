@@ -152,7 +152,8 @@ const auth = useAuthStore()
 const MODELS = ['Student', 'Subject', 'LeadTag', 'Channel']
 const MODEL_LABELS = { Student: '学员', Subject: '学科', LeadTag: '家长标签', Channel: '招生渠道' }
 
-const model = ref('Student')
+// 默认显示学科 (2026-06-19): 学科字典最常用, 进首页直接看到 5 个学科分类
+const model = ref('Subject')
 const tree = ref([])
 const treeRef = ref()
 const filterText = ref('')

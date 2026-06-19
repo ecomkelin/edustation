@@ -1,14 +1,14 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="批量排试听日程"
+    :title="dialogTitle"
     width="640px"
     :close-on-click-modal="false"
     @update:model-value="(v) => emit('update:visible', v)"
     @close="onClose"
   >
     <el-alert
-      v-if="bookings.length > 0"
+      v-if="!singleMode && bookings.length > 0"
       type="info"
       :closable="false"
       class="mb"
@@ -94,7 +94,7 @@
     <template #footer>
       <el-button @click="emit('update:visible', false)">取消</el-button>
       <el-button type="primary" :loading="submitting" @click="submit">
-        排进 N 条预约
+        {{ singleMode ? '排进预约' : '排进 N 条预约' }}
       </el-button>
     </template>
   </el-dialog>
@@ -109,9 +109,13 @@ import { roomApi } from '@/api/room'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  bookings: { type: Array, default: () => [] }
+  bookings: { type: Array, default: () => [] },
+  // 2026-06-19: 单孩场景 (如 ChildLeadDetailDialog 内的"排一次试听"按钮) 隐藏多孩多科目汇总 alert, 标题改"排一次试听"
+  singleMode: { type: Boolean, default: false }
 })
 const emit = defineEmits(['update:visible', 'scheduled'])
+
+const dialogTitle = computed(() => props.singleMode ? '排一次试听' : '批量排试听日程')
 
 const formRef = ref(null)
 const submitting = ref(false)

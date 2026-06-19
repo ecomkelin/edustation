@@ -94,10 +94,11 @@ eduStation/
 - **Org.type**：从 ObjectId 改成 String enum（10 种，详见 §7.1）
   - Category 字典 `model` enum 移除 `'Org'`
   - 老的 `Category(model='Org')` 文档全部 drop（迁移脚本 `scripts/migrate-org-type-to-string.js`）
-- **Category 加 `org` 字段**（ObjectId, ref Org, default null, indexed）：
+- **Category 加 `org` 字段**（ObjectId, ref Org, **required: true**, indexed）：
   - 4 个 model（`Student / Subject / LeadTag / Channel`）全 per-org
+  - **2026-06-19 起 `org` 改为必填**：所有 Category 必须归属某机构，平台级共享字典完全下线。开发阶段已清理 21 条 `org=null` 的历史 platform-level 类别（python/C++/Scratch/Spike/大颗粒 等 Subject 分类）
   - list / tree / detail 默认按 `req.orgId` 过滤
-  - create 时 controller 强制 `org = req.orgId`；不允许创建 `org=null` 的字典（保留字段以备扩展）
+  - create 时 controller 强制 `org = req.orgId`；schema 校验拒绝任何缺 org 的 Category
 - **写权限下放机构**（复用各引用方写权限，不新增）：
   - `Student` → `student.write`
   - `Subject` → `subject.write`

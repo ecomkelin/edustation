@@ -89,6 +89,17 @@ function dump() {
   }
   const jsonStr = stdout.slice(firstBrace, lastBrace + 1)
   const data = JSON.parse(jsonStr)
+  // 过滤整改前的 org=null category (2026-06 per-org 整改后, 4 个 model 全部按 org 隔离,
+  // 历史遗留的全局共享字典不应再写回 seed)
+  if (Array.isArray(data.categories)) {
+    const before = data.categories.length
+    data.categories = data.categories.filter((c) => c.org)
+    const filtered = before - data.categories.length
+    if (filtered > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[export-dump]   categories 过滤 org=null: ${before} → ${data.categories.length} (删 ${filtered} 条)`)
+    }
+  }
   fs.writeFileSync(OUT_PATH, JSON.stringify(data, null, 2), 'utf8')
 
   // 摘要

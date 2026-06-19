@@ -20,9 +20,9 @@ const { Schema, model } = require('mongoose')
  *  - 移除 'Org'（机构类型已改为 Org.type 的硬编码 enum，不走字典）。
  *  - 新增 `org` 字段（租户隔离）：4 个 model 都是 per-org 业务数据，
  *    由机构管理员维护，跨 org 不可见。
- *    - org = null 表示平台级共享字典（当前 4 个 model 都不再用，保留字段以备将来扩展）。
- *    - 创建时由 controller/service 强制 `org = req.orgId`（非平台超管）。
- *    - 平台超管管理跨 org 时不传 orgId（或传 null）；当前阶段主要走机构维护。
+ *    - 2026-06-19 起 `org` 改为**必填**：所有 Category 必须归属某机构，平台级共享字典
+ *      已完全下线（4 个 model 都不再用）。任何遗漏 `org` 的 Category 创建/更新都会被 schema 校验拒绝。
+ *    - 创建时由 controller/service 强制 `org = req.orgId`；非平台超管不允许创建跨 org 字典。
  *
  * 唯一性约束：
  *  - 同一 (org, model, parentCategory) 下 name 不可重复。
@@ -39,8 +39,8 @@ const CategorySchema = new Schema(
     // 租户隔离 (2026-06): 4 个 model 全是 per-org 业务字典
     //   - 机构内管理员/教务可读写自己 org 的字典
     //   - 跨 org 查询自动隔离 (list / tree 按 req.orgId 过滤)
-    //   - 平台超管可跨 org 浏览, 但通常不需要写
-    org: { type: Schema.Types.ObjectId, ref: 'Org', default: null, index: true },
+    //   - 2026-06-19 起改为必填: 不再支持平台级共享字典
+    org: { type: Schema.Types.ObjectId, ref: 'Org', required: true, index: true },
     // 字典项名称，前端直接展示给用户看
     name: { type: String, required: true, trim: true },
     // 层级深度：0 = 顶级，1 = 二级，以此类推；上限 5 层
@@ -60,7 +60,7 @@ const CategorySchema = new Schema(
 )
 
 // 同一 (org, model, parentCategory) 下，name 不可重复（顶级时 parentCategory 为 null）
-// partial filter 让 org=null（罕见）也参与唯一约束；org=具体 id 时按 org 隔离
+// org 改为必填后, 不再需要 partial filter —— 所有 Category 都带 org, 唯一约束天然生效
 CategorySchema.index(
   { org: 1, model: 1, name: 1, parentCategory: 1 },
   { unique: true }

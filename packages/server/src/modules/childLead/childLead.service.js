@@ -29,7 +29,7 @@ const { getDefaultChannelId } = require('@modules/parent/parent.service')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize }) {
+async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, consultant, inviteTeacher }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   // 销售/教务分级
@@ -44,6 +44,7 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
     else if (arr.length === 1) filter.status = arr[0]
   }
   if (parent) filter.parent = parent
+  if (inviteTeacher) filter.inviteTeacher = inviteTeacher
   if (keyword) {
     const kw = String(keyword).trim()
     if (kw) filter.name = { $regex: kw, $options: 'i' }
@@ -52,6 +53,31 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
     filter.createdAt = {}
     if (from) filter.createdAt.$gte = new Date(from)
     if (to) filter.createdAt.$lte = new Date(to)
+  }
+
+  // 2026-06-19: promoteBy / consultant 是 Parent 字段, 走两步 — 先查匹配 Parent ids, 再过滤 ChildLeads
+  //   - 都为 null 时跳过
+  //   - 找不到匹配 Parent → 直接返回空 (避免下方再查一遍)
+  //   - 跟 parent 过滤相交 (parent 精确 + promoteBy/consultant 范围)
+  if (promoteBy || consultant) {
+    const pf = { org: orgId }
+    if (promoteBy) pf.promoteBy = promoteBy
+    if (consultant) pf.consultant = consultant
+    const matchedParents = await Parent.find(pf).select('_id').lean()
+    if (matchedParents.length === 0) {
+      return { items: [], total: 0, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
+    }
+    const matchedIds = matchedParents.map((x) => x._id)
+    if (filter.parent) {
+      // 跟已有精确 parent 过滤相交 (mongoose 支持 $in + 等值的 $eq — 用 $in 等价 set 表达)
+      const single = String(filter.parent)
+      if (!matchedIds.some((id) => String(id) === single)) {
+        return { items: [], total: 0, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
+      }
+      // filter.parent 保持精确值, 不动
+    } else {
+      filter.parent = { $in: matchedIds }
+    }
   }
 
   const [items, total] = await Promise.all([
@@ -91,7 +117,9 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
       }
     }
     // 派生: 兄弟孩子 rank/count (同 parent 下"第几个孩子")
-    const parentIds = [...new Set(items.map((c) => c.parent).filter(Boolean).map(String))]
+    // 2026-06-19 修 bug: c.parent 可能是 populate 出来的对象, String() 会变 "[object Object]"
+    //   跟下面 line 130 的 `String(c.parent._id || c.parent)` 保持一致
+    const parentIds = [...new Set(items.map((c) => c.parent?._id || c.parent).filter(Boolean).map(String))]
     if (parentIds.length > 0) {
       const sibs = await ChildLead.aggregate([
         { $match: { org: require('mongoose').Types.ObjectId.createFromHexString(String(orgId)), parent: { $in: parentIds.map((p) => require('mongoose').Types.ObjectId.createFromHexString(p)) } } },
