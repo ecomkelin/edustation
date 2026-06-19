@@ -311,16 +311,20 @@ async function withChild({ orgId, currentUser, body }) {
       return { duplicate: true, parent: existing }
     }
   }
-  // 解析试听科目数组
+  // 解析试听科目类别数组 (2026-06-18: 改用 Category(model='Subject'))
   const rawSubjects = Array.isArray(body.trialSubjects) && body.trialSubjects.length > 0
     ? body.trialSubjects
     : (body.trialSubject ? [body.trialSubject] : [])
   const subjectIds = [...new Set(rawSubjects.filter(Boolean).map((s) => String(s)))]
   if (subjectIds.length > 0) {
-    const Subject = require('@models/Subject.model')
-    const validCount = await Subject.countDocuments({ _id: { $in: subjectIds }, org: orgId })
+    const Category = require('@models/Category.model')
+    const validCount = await Category.countDocuments({
+      _id: { $in: subjectIds },
+      org: orgId,
+      model: 'Subject'
+    })
     if (validCount !== subjectIds.length) {
-      throw ApiError.badRequest('试听科目包含不存在或不属于本机构的项')
+      throw ApiError.badRequest('试听科目类别包含不存在或不属于本机构的项')
     }
   }
 
@@ -392,16 +396,20 @@ async function addChild({ orgId, currentUser, id, body }) {
   const parent = await Parent.findOne({ _id: id, org: orgId }).lean()
   if (!parent) throw ApiError.notFound('家长账户不存在')
 
-  // 解析试听科目数组
+  // 解析试听科目类别数组 (2026-06-18: 改用 Category(model='Subject'))
   const rawSubjects = Array.isArray(body.trialSubjects) && body.trialSubjects.length > 0
     ? body.trialSubjects
     : (body.trialSubject ? [body.trialSubject] : [])
   const subjectIds = [...new Set(rawSubjects.filter(Boolean).map((s) => String(s)))]
   if (subjectIds.length > 0) {
-    const Subject = require('@models/Subject.model')
-    const validCount = await Subject.countDocuments({ _id: { $in: subjectIds }, org: orgId })
+    const Category = require('@models/Category.model')
+    const validCount = await Category.countDocuments({
+      _id: { $in: subjectIds },
+      org: orgId,
+      model: 'Subject'
+    })
     if (validCount !== subjectIds.length) {
-      throw ApiError.badRequest('试听科目包含不存在或不属于本机构的项')
+      throw ApiError.badRequest('试听科目类别包含不存在或不属于本机构的项')
     }
   }
 

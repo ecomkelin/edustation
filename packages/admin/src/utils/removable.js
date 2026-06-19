@@ -104,6 +104,7 @@ export async function removableCheckThen(checkResult, onPass, target = '') {
  * @param {string} [target='']                被删除对象名（点明是哪一条）
  */
 export async function handleRemoveError(err, fallbackTitle = '无法删除', target = '') {
+  const { ElMessage } = await import('element-plus')
   const resp = err && err.response
   const data = resp && resp.data
   // ApiError.unprocessable 形态：{ success:false, message, data:{ blockers: [...] } }
@@ -112,6 +113,36 @@ export async function handleRemoveError(err, fallbackTitle = '无法删除', tar
     await showBlockedAlert(blockers, fallbackTitle, target)
     return
   }
-  // 没有结构化 blockers：原样抛出让 axios 拦截器 ElMessage
+  // 2026-06-18: 401 兜底 — 后端 requirePlatformPassword 各种 401 (token/密码错) 都明确告诉用户
+  //   用户报告 "我超管删除 没效果" 实际可能就是这个分支: 后端返回 401, axios 拦截器弹 "Request failed"
+  //   (用户没意识到是密码错), 现在加明确提示
+  if (resp && resp.status === 401) {
+    const backendMsg = data && data.message
+    let hint = backendMsg || '登录状态失效或操作密码错误'
+    if (backendMsg && /密码/.test(backendMsg)) {
+      hint = `${backendMsg}。请重新输入您登录时的密码`
+    } else if (backendMsg && /令牌|失效|过期/.test(backendMsg)) {
+      hint = '登录状态已过期, 请刷新页面重新登录后再试'
+    }
+    ElMessage({
+      type: 'error',
+      message: `${target ? `「${target}」` : '操作'}失败: ${hint}`,
+      duration: 4000,
+      showClose: true
+    })
+    return
+  }
+  // 2026-06-18: 403 — 通常是"非超管"或"权限失效"
+  if (resp && resp.status === 403) {
+    const backendMsg = data && data.message
+    ElMessage({
+      type: 'error',
+      message: `${target ? `「${target}」` : '操作'}失败: ${backendMsg || '权限不足, 仅平台超管可执行该操作'}`,
+      duration: 4000,
+      showClose: true
+    })
+    return
+  }
+  // 其他 (500/网络异常等)：原样抛出让 axios 拦截器 ElMessage
   throw err
 }

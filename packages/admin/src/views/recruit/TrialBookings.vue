@@ -17,12 +17,12 @@
           v-model="filters.subject"
           clearable
           filterable
-          placeholder="按科目筛选"
+          placeholder="按科目类别筛选"
           style="width: 180px"
           @change="load"
         >
           <el-option
-            v-for="s in subjectOptions"
+            v-for="s in trialSubjectCategoryOptions"
             :key="s._id"
             :label="s.name"
             :value="s._id"
@@ -99,7 +99,7 @@
                 <span v-else>1</span>
               </template>
             </el-table-column>
-            <el-table-column label="试听科目" min-width="100">
+            <el-table-column label="试听科目类别" min-width="110">
               <template #default="{ row }">
                 <span v-if="row.subject?.name">{{ row.subject.name }}</span>
                 <span v-else class="muted">-</span>
@@ -360,7 +360,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { trialBookingApi } from '@/api/trialBooking'
 import { userApi } from '@/api/user'
-import { subjectApi } from '@/api/subject'
+import { categoryApi } from '@/api/category'
 import { TRIAL_BOOKING_STATUS_LABEL, TRIAL_BOOKING_STATUS_TAG_TYPE } from '@/utils/constants'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
@@ -396,7 +396,8 @@ const counts = reactive({
   all: 0
 })
 const selectedRows = ref([])
-const subjectOptions = ref([])
+const subjectOptions = ref([])  // 2026-06-18 暂留兼容, 但实际不再用
+const trialSubjectCategoryOptions = ref([])
 // 2026-06-18: 年龄段下拉 — 业务上培训行业常用分段
 //   - 学龄前/低年级 (3-5)
 //   - 小学初级 (6-8)
@@ -494,9 +495,13 @@ onMounted(async () => {
 
 async function loadSubjectOptions() {
   try {
-    const r = await subjectApi.list({ pageSize: 200 })
-    subjectOptions.value = r.data?.items || (Array.isArray(r.data) ? r.data : [])
+    // 2026-06-18: 改用 Category(model='Subject') 作为"试听科目类别"筛选项
+    const r = await categoryApi.list({ model: 'Subject', pageSize: 200 })
+    const items = r.data?.items || (Array.isArray(r.data) ? r.data : [])
+    trialSubjectCategoryOptions.value = items
+    subjectOptions.value = items  // 兼容
   } catch (e) {
+    trialSubjectCategoryOptions.value = []
     subjectOptions.value = []
   }
 }

@@ -86,21 +86,22 @@
         </div>
       </el-form-item>
 
-      <el-form-item label="试听科目" prop="trialSubjects">
+      <el-form-item label="试听科目类别" prop="trialSubjects">
         <el-select
           v-model="form.trialSubjects"
           multiple
           filterable
-          placeholder="可多选 (按数组长度建 N 笔试听预约)"
+          placeholder="可多选 (按数组长度建 N 笔试听预约); 真正的试听级别由老师判定"
           style="width: 100%"
         >
           <el-option
-            v-for="s in subjectOptions"
-            :key="s._id || s.id"
-            :label="s.name"
-            :value="s._id || s.id"
+            v-for="c in trialSubjectCategoryOptions"
+            :key="c._id"
+            :label="c.name"
+            :value="c._id"
           />
         </el-select>
+        <div class="hint">销售录入时只需大致归类 (例如: 科技类/艺术类/体育类); 试课时由老师根据年龄段/级别选具体 Subject</div>
       </el-form-item>
 
       <el-form-item label="试听缴费" prop="trialFee">
@@ -246,7 +247,6 @@ import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { parentApi } from '@/api/parent'
 import { childLeadApi } from '@/api/childLead'
-import { subjectApi } from '@/api/subject'
 import { schoolApi } from '@/api/school'
 import { userApi } from '@/api/user'
 import { categoryApi } from '@/api/category'
@@ -267,7 +267,8 @@ const formRef = ref(null)
 const submitting = ref(false)
 const recomputing = ref(false)
 const duplicates = ref([])
-const subjectOptions = ref([])
+// 2026-06-18: trialSubject(s) 改引 Category(model='Subject'); 录入侧只标记"试听类别"
+const trialSubjectCategoryOptions = ref([])
 const schoolOptions = ref([])
 const teacherOptions = ref([])
 const channelOptions = ref([])
@@ -340,7 +341,7 @@ const phonePattern = /^1[3-9]\d{9}$/
 const rules = computed(() => {
   const r = {
     name: [{ required: true, message: '请填孩子姓名', trigger: 'blur' }],
-    trialSubjects: [{ type: 'array', required: true, min: 1, message: '至少选 1 个试听科目', trigger: 'change' }]
+    trialSubjects: [{ type: 'array', required: true, min: 1, message: '至少选 1 个试听科目类别', trigger: 'change' }]
   }
   if (!props.parent && !props.childLead) {
     r.phone = [
@@ -408,17 +409,18 @@ watch(() => props.visible, async (v) => {
 
 async function loadOptions() {
   try {
-    const [sRes, scRes, uRes, cRes] = await Promise.all([
-      subjectApi.list({ pageSize: 200 }),
+    // 2026-06-18: 试听科目类别改用 Category(model='Subject'); 不再拉 Subject
+    const [catRes, scRes, uRes, chRes] = await Promise.all([
+      categoryApi.list({ model: 'Subject', pageSize: 200 }),
       schoolApi.list({ pageSize: 200 }),
       userApi.list({ pageSize: 200 }),
       categoryApi.list({ model: 'Channel', pageSize: 100 })
     ])
-    subjectOptions.value = Array.isArray(sRes?.data) ? sRes.data : (sRes.data?.items || [])
+    trialSubjectCategoryOptions.value = catRes.data?.items || (Array.isArray(catRes.data) ? catRes.data : [])
     schoolOptions.value = Array.isArray(scRes?.data) ? scRes.data : (scRes.data?.items || [])
     teacherOptions.value = (uRes.data?.items || [])
       .filter((u) => !(u.positions || []).some((p) => p.name === '家长'))
-    channelOptions.value = cRes.data?.items || (Array.isArray(cRes.data) ? cRes.data : [])
+    channelOptions.value = chRes.data?.items || (Array.isArray(chRes.data) ? chRes.data : [])
   } catch (e) { /* ignore */ }
 }
 

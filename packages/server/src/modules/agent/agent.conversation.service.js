@@ -260,10 +260,14 @@ async function platformGetDetail({ id }) {
 }
 
 /**
- * 平台超管: 批量**物理**删除 (2026-06-18 用户决策: 平台超管删 = 不可恢复的物理删, 不走软删)
- *  - 入参 ids 数组
+ * 平台超管: 批量**物理**删除 (2026-06-18 用户决策两轮叠加)
+ *  - 第 1 轮: 平台超管删 = 不可恢复的物理删, 不走软删
+ *  - 第 2 轮: **只清理"已软删"** 的会话 (isDeleted=true)
+ *    业务背景: 用户自己 DELETE 会走 softRemove (留 30 天反悔窗口)
+ *             超管负责定期"清扫"这些已被用户标记的会话 (永久清理)
+ *             没被软删的 (用户还在用的) 不允许超管直接物理删, 自动跳过
  *  - 同步物理删 messages (无外键约束, 用 conversation 字段手 deleteMany)
- *  - 幂等: 找不到的会话不报错
+ *  - 幂等: 没命中 (找不到或未软删) 不报错, 返回 skipped 让前端提示
  *  - 物理删除不反悔, 前端需 DestructiveConfirm 双确认 (前端在 AiConversations.vue 处理)
  */
 async function platformBatchRemove({ ids }) {
@@ -273,13 +277,32 @@ async function platformBatchRemove({ ids }) {
   if (ids.length > 200) {
     throw ApiError.badRequest('单次最多 200 个')
   }
-  // 先物理删 messages, 再物理删 conversations (顺序保证, 便于排查日志)
-  const msgRes = await AgentMessage.deleteMany({ conversation: { $in: ids } })
-  const convRes = await AgentConversation.deleteMany({ _id: { $in: ids } })
+  // 1) 筛"已软删"的会话 id
+  const eligible = await AgentConversation.find(
+    { _id: { $in: ids }, isDeleted: true },
+    { _id: 1 }
+  ).lean()
+  const eligibleIds = eligible.map((d) => d._id)
+  const skipped = ids.length - eligibleIds.length
+
+  if (eligibleIds.length === 0) {
+    // 全是未软删 / 不存在: 不报错, 直接返回, 让前端弹"无可清理"提示
+    return {
+      requested: ids.length,
+      deleted: 0,
+      messagesDeleted: 0,
+      skipped
+    }
+  }
+
+  // 2) 先物理删 messages, 再物理删 conversations (顺序保证, 便于排查日志)
+  const msgRes = await AgentMessage.deleteMany({ conversation: { $in: eligibleIds } })
+  const convRes = await AgentConversation.deleteMany({ _id: { $in: eligibleIds } })
   return {
     requested: ids.length,
     deleted: convRes.deletedCount || 0,
-    messagesDeleted: msgRes.deletedCount || 0
+    messagesDeleted: msgRes.deletedCount || 0,
+    skipped
   }
 }
 

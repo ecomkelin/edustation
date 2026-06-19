@@ -70,8 +70,9 @@ const TrialBookingSchema = new Schema(
     // ─── 人员 ───
     // 试听上课老师; awaiting_schedule 状态允许 null
     teacher: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    // 试听科目 (冗余, 方便按科目筛; 来自 preStudent.lead.trialSubject)
-    subject: { type: Schema.Types.ObjectId, ref: 'Subject', default: null },
+    // 试听科目类别 (2026-06-18: 录入侧只标记"试听类别", 真正的 Subject 排课时由老师判定)
+    //   跟 ChildLead.trialSubject(s) 保持一致; 排课时根据类别选具体 Subject 建 LessonSchedule.subject
+    subject: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
     // 谈单老师 (到店后填, 默认 = Parent.consultant)
     //   业务上 teacher (上课) 与 consultant (谈单) 常是不同人
     //   result.negotiateTeacher 保留作为 alias (向后兼容老数据)

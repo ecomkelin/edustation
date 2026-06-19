@@ -336,23 +336,39 @@ async function openDetail(row) {
 /* ─── 批量操作 (2026-06-18 超管) ──────────────── */
 
 /**
- * 批量物理删除
- *  - 走 adminBatchDelete, 后端是 deleteMany (conversations + messages), 不可恢复
- *  - 提示词明确"物理删除, 不可恢复", 避免误操作
+ * 批量物理删除 (2026-06-18 用户决策二轮叠加)
+ *  - 后端只清理"已软删"的会话 (用户自己 DELETE 走 softRemove 的)
+ *  - 未软删的会话 (用户还在用的) 自动跳过, 不报错
+ *  - 物理删除不可恢复, 弹窗明确警告
+ *  - 成功提示拆分 "已清理 N" + "跳过 M" 让超管知道结果
  */
 async function onBatchDelete() {
   if (selectedIds.value.length === 0) return
   try {
     await ElMessageBox.confirm(
-      `确定批量删除 ${selectedIds.value.length} 个会话?\n` +
-      `会话和聊天记录会被**物理删除**, 操作不可恢复, 请谨慎!`,
-      '批量删除 · 物理删除不可恢复',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+      `确定清理 ${selectedIds.value.length} 个会话?\n` +
+      `**仅清理已被软删的会话** (用户已删除的), 未软删的会自动跳过。\n` +
+      `物理删除操作不可恢复, 请谨慎!`,
+      '批量清理 · 物理删除不可恢复',
+      { type: 'warning', confirmButtonText: '清理', cancelButtonText: '取消' }
     )
     const res = await agentApi.adminBatchDelete([...selectedIds.value])
-    ElMessage.success(
-      `已物理删除 ${res.data?.deleted || 0} 个会话 (含 ${res.data?.messagesDeleted || 0} 条消息), 不可恢复`
-    )
+    const deleted = res.data?.deleted || 0
+    const messagesDeleted = res.data?.messagesDeleted || 0
+    const skipped = res.data?.skipped || 0
+    if (deleted === 0 && skipped > 0) {
+      // 全部跳过 (没软删的或已物理删的)
+      ElMessage.warning(`无可清理的会话 (全部 ${skipped} 个未软删, 已跳过)`)
+    } else if (skipped > 0) {
+      ElMessage.success(
+        `已清理 ${deleted} 个会话 (含 ${messagesDeleted} 条消息), ` +
+        `跳过 ${skipped} 个未软删的会话`
+      )
+    } else {
+      ElMessage.success(
+        `已清理 ${deleted} 个会话 (含 ${messagesDeleted} 条消息), 不可恢复`
+      )
+    }
     selectedIds.value = []
     load()
   } catch (e) {

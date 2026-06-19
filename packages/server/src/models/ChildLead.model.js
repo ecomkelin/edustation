@@ -22,13 +22,14 @@ const { GENDERS } = require('@shared/enums')
  *     Parent.lastContactedAt/By 由 childLead 派生
  *   - 跨年重试: sameAs 链式追溯 (2027 年新建 ChildLead.sameAs 指向 2026 ChildLead)
  *   - 1 孩多课: trialSubjects 数组, 录入时按长度自动建 N 笔 TrialBooking
+ *     (2026-06-18: trialSubjects 改引 Category(model='Subject'), 真正 Subject 排课时再选)
  *
  * 关联:
  *   - Parent N:1 (强绑)
  *   - TrialBooking 1:N (per attemptNo)
  *   - LeadActivity 1:N
  *   - Student 0..1 (转化后回填)
- *   - Subject N:N (trialSubjects 数组)
+ *   - Category(model='Subject') N:N (trialSubjects 数组) — 2026-06-18 改
  *
  * 索引策略:
  *   - 漏斗主查询: { org, status, createdAt }
@@ -59,9 +60,11 @@ const ChildLeadSchema = new Schema(
 
     // ─── 试听意向 ───
     // 主意向快照 (兼容老数据, 等于 trialSubjects[0])
-    trialSubject: { type: Schema.Types.ObjectId, ref: 'Subject', default: null },
-    // 意向全集 (1 孩可试多门课; 录入时按长度建 N 笔 TrialBooking)
-    trialSubjects: { type: [Schema.Types.ObjectId], ref: 'Subject', default: [] },
+    // 2026-06-18: 录入侧只标记"试听类别", 具体 Subject 排课时由老师判定 (年龄段/级别/能力评估)
+    //   录入侧 trialSubject(s) 引用 Category(model='Subject'); 真正的 Subject 在签单转 CourseEnrollment 时再选
+    trialSubject: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
+    // 意向全集 (1 孩可试多门类别; 录入时按长度建 N 笔 TrialBooking, 每笔 booking 各自挂一个类别)
+    trialSubjects: { type: [Schema.Types.ObjectId], ref: 'Category', default: [] },
     // 试听缴费金额 (纯记账, 阶段 1 不接支付)
     trialFee: { type: Number, default: 0, min: 0 },
     // 招生渠道 (2026-06-15: 接 Category model='Channel' 字典; 默认继承 Parent.source; 都为空时回退 '地推')

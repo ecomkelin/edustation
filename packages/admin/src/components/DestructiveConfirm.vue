@@ -70,6 +70,15 @@ async function onClick() {
     if (!result || result.canRemove !== true) {
       const blockers = (result && result.blockers) || []
       emit('blocked', blockers)
+      // 2026-06-18: 弹挡板弹窗的同时, 立即弹一个 toast 告知用户操作被阻止
+      //   之前的实现只弹自定义弹窗, 部分场景(弹窗被其他组件遮住/视觉层级低)
+      //   用户感觉"什么也没发生"; 加 toast 兜底, 让用户立即感知
+      const totalCount = blockers.reduce((sum, b) => sum + (b.count || 0), 0)
+      ElMessage.warning({
+        message: `「${props.target || '该对象'}」被 ${totalCount} 条数据引用, 无法删除`,
+        duration: 3000,
+        showClose: true
+      })
       // 把 target 一并交给弹窗,让用户清楚是"哪个对象"不能删
       await showBlockedAlert(blockers, `无法删除 · ${props.warning}`, props.target)
       return
