@@ -16,6 +16,75 @@ const { normalizePagination } = require('@utils/pagination')
 const removable = require('@utils/removable')
 const config = require('@config/index')
 
+async function listUnaffiliated({ keyword, isActive, isPlatformAdmin, page, pageSize }) {
+  const p = normalizePagination({ page, pageSize })
+
+  // 孤儿用户 = 不在任何 UserOrgRel.user 的 user (UserOrgRel.user 字段有索引, distinct 高效)
+  const relUserIds = await UserOrgRel.distinct('user')
+  const filter = { _id: { $nin: relUserIds } }
+  if (keyword) {
+    const re = { $regex: keyword, $options: 'i' }
+    filter.$or = [{ realName: re }, { mobile: re }, { idCard: re }]
+  }
+  if (isActive === true || isActive === 'true') filter.isActive = true
+  else if (isActive === false || isActive === 'false') filter.isActive = false
+  if (isPlatformAdmin === true || isPlatformAdmin === 'true') filter.isPlatformAdmin = true
+  else if (isPlatformAdmin === false || isPlatformAdmin === 'false') filter.isPlatformAdmin = false
+
+  const [rawItems, total] = await Promise.all([
+    User.find(filter)
+      .populate('region', 'name level')
+      .sort({ createdAt: -1 })
+      .skip(p.skip).limit(p.limit)
+      .lean(),
+    User.countDocuments(filter)
+  ])
+
+  return {
+    items: rawItems.map((u) => ({
+      id: String(u._id),
+      mobile: u.mobile,
+      realName: u.realName,
+      idCard: u.idCard,
+      isActive: u.isActive,
+      isPlatformAdmin: u.isPlatformAdmin,
+      isBlocked: u.isBlocked,
+      requirePasswordChange: u.requirePasswordChange,
+      region: u.region ? { id: String(u.region._id), name: u.region.name } : null,
+      createdAt: u.createdAt
+    })),
+    total,
+    page: p.page,
+    pageSize: p.pageSize
+  }
+}
+
+/**
+ * 平台超管编辑游离用户。显式 allowlist 防越权, 不允许改 mobile / isPlatformAdmin / isBlocked / avatar / passwordHash。
+ */
+async function updateUnaffiliated(userId, payload) {
+  const allowed = ['realName', 'idCard', 'region', 'isActive']
+  const update = {}
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(payload, k)) update[k] = payload[k]
+  }
+  if (update.idCard) {
+    const dup = await User.findOne({ idCard: update.idCard, _id: { $ne: userId } })
+      .select('_id').lean()
+    if (dup) throw ApiError.conflict('身份证号已存在')
+  }
+  const u = await User.findByIdAndUpdate(userId, update, { new: true, runValidators: true })
+    .populate('region', 'name level')
+    .select('mobile realName idCard region isActive isPlatformAdmin isBlocked requirePasswordChange')
+    .lean()
+  if (!u) throw ApiError.notFound('用户不存在')
+  return {
+    ...u,
+    id: String(u._id),
+    region: u.region ? { id: String(u.region._id), name: u.region.name } : null
+  }
+}
+
 /**
  * 列出当前 org 的用户 (含职位名称)
  *
@@ -375,4 +444,4 @@ async function setBlocked(userId, isBlocked, reason) {
   return u
 }
 
-module.exports = { list, detail, create, update, remove, removableCheck, changePassword, resetPassword, setPositions, lookupByMobile, attachToOrg, setBlocked }
+module.exports = { list, listUnaffiliated, updateUnaffiliated, detail, create, update, remove, removableCheck, changePassword, resetPassword, setPositions, lookupByMobile, attachToOrg, setBlocked }

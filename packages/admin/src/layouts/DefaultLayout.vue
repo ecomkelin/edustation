@@ -130,6 +130,8 @@ const menuGroups = [
       { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true },
       // 地区字典 (2026-06): 从基础数据挪到系统管理 (平台超管维护)
       { path: '/regions', label: '地区字典', icon: Box, requirePlatform: true },
+      // 游离用户 (2026-06-19): 不属于任何机构的孤儿账号 (跨机构数据, 平台超管审/清)
+      { path: '/system/unaffiliated-users', label: '游离用户', icon: Connection, requirePlatform: true },
       // 法律协议 (2026-06): 平台级协议只读 + 站点配置 (备案号/运营主体)
       { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
       { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },

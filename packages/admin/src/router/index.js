@@ -52,6 +52,8 @@ const routes = [
       { path: 'system/site-config', component: () => import('@/views/system/SiteConfigEdit.vue'), meta: { platform: true } },
       // AI 管理 (2026-06-18): 平台超管, 当前含会话管理 tab
       { path: 'system/ai', component: () => import('@/views/system/AiAdmin.vue'), meta: { platform: true } },
+      // 游离用户 (2026-06-19): 不属于任何机构的孤儿账号管理, 仅平台超管
+      { path: 'system/unaffiliated-users', component: () => import('@/views/system/UnaffiliatedUsers.vue'), meta: { platform: true } },
       // 协议接受页 (强制拦截目标; 不可被 pendingConsents 守卫拦截, 否则死循环)
       { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },
       // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)

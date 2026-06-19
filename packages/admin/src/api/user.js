@@ -15,5 +15,10 @@ export const userApi = {
   setPositions: (id, positions) => http.put(`/users/${id}/positions`, { positions }),
   attachToOrg: (id, data) => http.post(`/users/${id}/org`, data),
   setBlocked: (id, isBlocked, reason = '') =>
-    http.put(`/users/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked: true, reason })
+    http.put(`/users/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked: true, reason }),
+  // 游离用户 (2026-06): 不属于任何机构的孤儿账号, 仅平台超管
+  listUnaffiliated: (params) => http.get('/users/unaffiliated', { params }),
+  updateUnaffiliated: (id, data) => http.put(`/users/unaffiliated/${id}`, data),
+  resetPasswordUnaffiliated: (id, newPassword) =>
+    http.post(`/users/unaffiliated/${id}/reset-password`, { newPassword })
 }

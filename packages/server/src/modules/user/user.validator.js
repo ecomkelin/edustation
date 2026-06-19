@@ -47,4 +47,12 @@ const setBlocked = [
   body('reason').optional().isString().isLength({ max: 500 })
 ]
 
-module.exports = { create, update, changePassword, resetPassword, setPositions, attachToOrg, setBlocked }
+// 游离用户编辑 (2026-06): 与 update 不同, 不允许改 avatar (孤儿无头像引用追踪)
+const updateUnaffiliated = [
+  body('realName').optional().isString().isLength({ max: 50 }),
+  body('idCard').optional({ values: 'falsy' }).isString().matches(/^\d{15}(\d{2}[\dXx])?$/).withMessage('身份证号格式不正确'),
+  body('region').optional({ values: 'falsy' }).isMongoId().withMessage('地区 id 格式错误'),
+  body('isActive').optional().isBoolean()
+]
+
+module.exports = { create, update, updateUnaffiliated, changePassword, resetPassword, setPositions, attachToOrg, setBlocked }

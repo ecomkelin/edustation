@@ -10,6 +10,11 @@ router.use(mws.authenticate, mws.requireOrg)
 
 router.get('/', mws.requirePermission('user.read'), asyncHandler(c.list))
 router.get('/lookup', mws.requirePermission('user.read'), asyncHandler(c.lookupByMobile))
+// 游离用户 (2026-06): 不在任何 UserOrgRel 的孤儿账号管理, 仅平台超管
+// 路由注册顺序: 必须在 GET/PUT /:id 之前, 防 Express 通配优先级坑
+router.get('/unaffiliated', mws.requirePlatformAdmin, asyncHandler(c.listUnaffiliated))
+router.put('/unaffiliated/:id', mws.requirePlatformAdmin, v.updateUnaffiliated, mws.validateRequest, asyncHandler(c.updateUnaffiliated))
+router.post('/unaffiliated/:id/reset-password', mws.requirePlatformAdmin, v.resetPassword, mws.validateRequest, asyncHandler(c.resetPasswordUnaffiliated))
 router.get('/:id', mws.requirePermission('user.read'), asyncHandler(c.detail))
 router.post('/', mws.requirePermission('user.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 router.put('/:id', mws.requirePermission('user.write'), v.update, mws.validateRequest, asyncHandler(c.update))

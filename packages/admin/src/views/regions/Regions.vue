@@ -221,11 +221,17 @@ function openCreate(parentNode) {
 }
 
 function openEdit(node) {
+  // 后端 /regions/tree 返回的 parent 是 ObjectId 字符串;
+  // /regions 和 /regions/:id 是已 populate 的对象;两种都要兼容
+  const parentRaw = node.parent
+  const parentId = parentRaw
+    ? (typeof parentRaw === 'string' ? parentRaw : parentRaw.id || parentRaw._id || null)
+    : null
   Object.assign(form, {
     id: node.id || node._id,
     name: node.name,
     code: node.code || '',
-    parent: node.parent ? node.parent.id || node.parent._id : null,
+    parent: parentId ? String(parentId) : null,
     sort: node.sort || 0,
     isActive: node.isActive !== false
   })

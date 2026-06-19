@@ -68,3 +68,19 @@ exports.setBlocked = async (req, res) => {
   const data = await service.setBlocked(req.params.id, req.body.isBlocked, req.body.reason)
   res.json(ApiResponse.ok(data))
 }
+
+// 游离用户（2026-06）: 不属于任何机构的孤儿账号管理, 仅平台超管
+exports.listUnaffiliated = async (req, res) => {
+  const data = await service.listUnaffiliated(req.query)
+  res.json(ApiResponse.ok(data))
+}
+
+exports.updateUnaffiliated = async (req, res) => {
+  const data = await service.updateUnaffiliated(req.params.id, req.body)
+  res.json(ApiResponse.ok(data))
+}
+
+exports.resetPasswordUnaffiliated = async (req, res) => {
+  await service.resetPassword(req.params.id, req.body.newPassword)
+  res.json(ApiResponse.ok())
+}
