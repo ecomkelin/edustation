@@ -32,8 +32,9 @@ exports.list = [
   query('ageMin').optional().isInt({ min: 0, max: 100 }),
   query('ageMax').optional().isInt({ min: 0, max: 100 }),
   // 2026-06-16: 已完成按"已报名/未报名"分桶
-  //   - 'true'  → 已报名 (result.isEnrolled === true)
-  //   - 'false' → 未报名 (result.isEnrolled === false 或 null)
+  //   - 'true'  → 已报名 (status=completed + result.isEnrolled === true)
+  //   - 'false' → 未报名 (status=completed + result.isEnrolled ∈ [false, null])
+  // 2026-06-20: 考虑期 (considering) 改走顶级 status, isEnrolled 列表参数不再接 'considering'
   query('isEnrolled').optional().isIn(['true', 'false']).withMessage('isEnrolled 需为 true/false'),
   query('page').optional().isInt({ min: 1 }),
   query('pageSize').optional().isInt({ min: 1, max: 200 })
@@ -84,10 +85,13 @@ exports.checkIn = [
 exports.complete = [
   body('actualEndTime').optional().isISO8601().withMessage('actualEndTime 需为 ISO 日期'),
   body('result').optional().isObject().withMessage('result 需为对象'),
-  body('result.isEnrolled').optional().isBoolean().withMessage('result.isEnrolled 需为布尔'),
+  // 2026-06-20: isEnrolled 退回 boolean (考虑期 considering 改走顶级 status 字段)
+  //   null 也允许 (前端 explicit 表达"未定夺")
+  body('result.isEnrolled').optional({ nullable: true }).isBoolean().withMessage('isEnrolled 需为 boolean'),
   body('result.negotiateTeacher').optional({ nullable: true }).isMongoId(),
   body('result.attractionPoint').optional({ nullable: true }).isString().isLength({ max: 500 }),
-  body('result.reasonNotEnrolled').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('result.reasonNotEnrolled').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  body('result.considerNote').optional({ nullable: true }).isString().isLength({ max: 500 })
 ]
 
 exports.reschedule = [

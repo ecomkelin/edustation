@@ -42,10 +42,11 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
     else if (arr.length === 1) filter.status = arr[0]
   }
   // 2026-06-16: 已完成按"已报名/未报名"分桶
-  //   - isEnrolled=true  → 已报名 (result.isEnrolled === true)
-  //   - isEnrolled=false → 未报名 (result.isEnrolled === false 或 null, 业务上"未填 = 未报名")
-  if (isEnrolled === 'true') filter['result.isEnrolled'] = true
-  else if (isEnrolled === 'false') filter['result.isEnrolled'] = { $in: [false, null] }
+  //   - isEnrolled=true  → 已报名 (status=completed + result.isEnrolled === true)
+  //   - isEnrolled=false → 未报名 (status=completed + result.isEnrolled ∈ [false, null])
+  // 2026-06-20: considering 改走顶级 status 字段; isEnrolled 不再接受 'considering'
+  if (isEnrolled === 'true') { filter.status = 'completed'; filter['result.isEnrolled'] = true }
+  else if (isEnrolled === 'false') { filter.status = 'completed'; filter['result.isEnrolled'] = { $in: [false, null] } }
   if (teacher) filter.teacher = teacher
   if (subject) filter.subject = subject
   // 2026-06-18: 按孩子年龄过滤 (年龄段筛选)
@@ -452,19 +453,33 @@ async function checkIn({ id, orgId, currentUser, body }) {
   return doc.toObject()
 }
 
-/* ─── 试听完成 (填 result) ──────────────────────── */
-
+/* ─── 试听完成 / 考虑期 (2026-06-20 改造) ────────────────────────
+ *  业务: 试听做完有 3 种结果
+ *    1. completed + isEnrolled=true   报名 (后续触发 convert 流程)
+ *    2. completed + isEnrolled=false  不报名
+ *    3. considering                   考虑期 (谈单老师后续跟进, 跟进后再走 1/2)
+ *
+ *  触发规则 (后端推断 status, 不让前端传):
+ *    - body.result.isEnrolled ∈ [true, false] → status='completed'
+ *    - body.result.isEnrolled === null/undefined 且 body.result.considerNote 非空 → status='considering'
+ *    - 已 considering, 二次调 complete 填 isEnrolled → status='completed' (跟进完成)
+ *
+ *  业务校验:
+ *    - scheduled/arrived 状态 → 允许触发 (新流程)
+ *    - considering 状态 → 允许触发 (跟进完成)
+ *    - completed → 不允许 (避免覆盖已转化记录)
+ *    - cancelled/awaiting_schedule → 不允许
+ */
 async function complete({ id, orgId, currentUser, body }) {
   if (!currentUser) throw ApiError.unauthorized()
   const doc = await TrialBooking.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('试听预约不存在')
-  if (!['arrived', 'scheduled'].includes(doc.status)) {
-    throw ApiError.badRequest(`仅 arrived / scheduled 可完成, 当前 ${doc.status}`)
+  if (!['arrived', 'scheduled', 'considering'].includes(doc.status)) {
+    throw ApiError.badRequest(`仅 arrived / scheduled / considering 可完成, 当前 ${doc.status}`)
   }
-  doc.status = 'completed'
+
   if (body.actualEndTime) doc.actualEndTime = new Date(body.actualEndTime)
   if (body.result) {
-    if (body.result.isEnrolled !== undefined) doc.result.isEnrolled = body.result.isEnrolled
     if (body.result.negotiateTeacher !== undefined) {
       doc.result.negotiateTeacher = body.result.negotiateTeacher
       // 同步到 consultant 字段 (2026-06 新增)
@@ -472,6 +487,27 @@ async function complete({ id, orgId, currentUser, body }) {
     }
     if (body.result.attractionPoint !== undefined) doc.result.attractionPoint = body.result.attractionPoint
     if (body.result.reasonNotEnrolled !== undefined) doc.result.reasonNotEnrolled = body.result.reasonNotEnrolled
+    if (body.result.considerNote !== undefined) doc.result.considerNote = body.result.considerNote
+
+    // 状态机: 根据入参决定翻 completed 还是 considering
+    //   2026-06-20: isEnrolled === true|false → "已定夺" → completed
+    //               isEnrolled === null      → 前端 explicitly 表达"未填/未定夺", 仅补 null, 不动 status
+    //               isEnrolled === undefined → 前端未带; 看 considerNote 决定
+    //   considering 状态: 用户"改态度备注"或"改谈单老师"时, 保持 considering
+    //                    用户"改成 是/否" 时, 翻 completed
+    if (body.result.isEnrolled === true || body.result.isEnrolled === false) {
+      // 已定夺: completed
+      doc.result.isEnrolled = body.result.isEnrolled
+      doc.status = 'completed'
+    } else if (body.result.isEnrolled === null) {
+      // 显式传 null: 仅更新 result.isEnrolled = null, 不改 status
+      doc.result.isEnrolled = null
+      // 业务上前端 explicit 传 null 时, 状态机意图是"维持原 status" (可能 arrived, 可能 considering)
+    } else if (doc.status !== 'considering' && body.result.considerNote && body.result.considerNote.trim()) {
+      // arrived → considering: 没填 isEnrolled, 但有态度备注, 进考虑期
+      doc.status = 'considering'
+    }
+    // 其他场景: arrived → 都不带, 维持原 status (待定夺)
   }
   await doc.save()
   // 翻 childLead.status='tried' (若已 converted 保持)

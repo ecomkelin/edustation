@@ -192,6 +192,14 @@
                   link
                   @click="openSignIn(row)"
                 >转化</el-button>
+                <!-- 2026-06-20: considering 顶级 status — 谈单老师后续跟进, 这里让用户能重新打开 dialog 跟进/定夺 -->
+                <el-button
+                  v-if="row.status === 'considering'"
+                  size="small"
+                  type="warning"
+                  link
+                  @click="openSignIn(row)"
+                >跟进</el-button>
                 <!-- 2026-06-16: 已约态精细调整 (替代"标记未到") -->
                 <el-button
                   v-if="row.status === 'scheduled'"
@@ -368,11 +376,12 @@ import BatchScheduleDialog from './BatchScheduleDialog.vue'
 import TrialBookingSignInDialog from './TrialBookingSignInDialog.vue'
 import TrialAttachedDialog from './TrialAttachedDialog.vue'
 
-// 2026-06-16 调整:
-//   - 删 "未到" tab (no_show 状态从状态机移除)
-//   - 排序按业务流顺序: 待约 → 已约 → 已到店 → 已取消 → 已完成(已报名/未报名) → 全部
+// 2026-06-20 调整:
+//   - 状态机加 'considering' 顶级 status, 在 [已到店] 和 [已报名] 之间独立 tab
+//   - 业务流: 待约 → 已约 → 已到店 → 考虑中 → 已报名/未报名
+//                    ↓        ↓        ↓
+//                已取消      (可退回)  (可被转化/被定夺)
 //   - "已完成" 拆 2 个: 已报名(isEnrolled=true) / 未报名(isEnrolled=false or null)
-//     业务上销售最关心"已报名/未报名"转化效果, 看板核心指标
 //   - 每个 tab 配置:
 //       - status / isEnrolled: 给后端 list 用 (除 'all' 外必填 status)
 //       - dateFiltered: 看板视角的 tab 受日期 picker 约束; 流程视角不受
@@ -380,6 +389,8 @@ const TABS = [
   { value: 'awaiting_schedule', label: '待约', status: 'awaiting_schedule', dateFiltered: false },
   { value: 'scheduled', label: '已约', status: 'scheduled', dateFiltered: false },
   { value: 'arrived', label: '已到店', status: 'arrived', dateFiltered: false },
+  // 2026-06-20: 考虑期独立 tab — 试听做完但家长没当场定夺, 谈单老师后续跟进
+  { value: 'considering', label: '考虑中', status: 'considering', dateFiltered: false },
   { value: 'cancelled', label: '已取消', status: 'cancelled', dateFiltered: false },
   { value: 'completed_enrolled', label: '已报名', status: 'completed', isEnrolled: 'true', dateFiltered: true },
   { value: 'completed_not_enrolled', label: '未报名', status: 'completed', isEnrolled: 'false', dateFiltered: true },
@@ -391,7 +402,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const counts = reactive({
-  awaiting_schedule: 0, scheduled: 0, arrived: 0, cancelled: 0,
+  awaiting_schedule: 0, scheduled: 0, arrived: 0, considering: 0, cancelled: 0,
   completed_enrolled: 0, completed_not_enrolled: 0,
   all: 0
 })

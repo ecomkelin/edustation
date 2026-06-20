@@ -20,11 +20,15 @@ const { Schema, model } = require('mongoose')
  *     (5 个孩子一起上同一节试听课)。这正是批量排课 (BatchScheduleDialog) 的核心。
  *   - 与 LessonAttendance 完全无关: 试听课不生成 LessonAttendance, 也不消耗 StudentProduct。
  *
- * 状态机 (2026-06-16 调整: 删除 no_show):
+ * 状态机 (2026-06-16 调整: 删除 no_show; 2026-06-20 加 considering):
  *   awaiting_schedule → scheduled → arrived → completed
- *                              ↓        ↓
- *                          cancelled
+ *                              ↓        ↓        ↓
+ *                          cancelled   considering (考虑期)
+ *                                            ↓
+ *                                       completed (跟进后定夺: 报名/不报名)
  *   - scheduled 状态可改预约时间 (rescheduleTime) 或退回到 awaiting_schedule (revertToUnscheduled)
+ *   - arrived → considering: 试听做完但家长没当场决定, 谈单老师后续跟进
+ *   - considering → completed: 谈单老师跟进后家长确定 (result.isEnrolled=true 触发转化; false 关闭)
  *   - 取消一律走 cancelled; 任何状态均可删除 (高危操作)
  *
  * 转化流程 (claim token 模式, 不依赖 mongoose 事务):
@@ -78,10 +82,12 @@ const TrialBookingSchema = new Schema(
     //   result.negotiateTeacher 保留作为 alias (向后兼容老数据)
     consultant: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
 
-    // ─── 状态机 (2026-06-16 调整: 删 no_show) ───
+    // ─── 状态机 (2026-06-16 删 no_show; 2026-06-20 加 considering) ───
+    // considering: 试听完成 (arrived) 但家长没当场定夺, 谈单老师后续跟进,
+    //   跟进完成时再翻回 completed 并填 result.isEnrolled (true 触发转化 / false 关闭)
     status: {
       type: String,
-      enum: ['awaiting_schedule', 'scheduled', 'arrived', 'completed', 'cancelled'],
+      enum: ['awaiting_schedule', 'scheduled', 'arrived', 'completed', 'considering', 'cancelled'],
       default: 'awaiting_schedule',
       required: true
     },
@@ -90,16 +96,21 @@ const TrialBookingSchema = new Schema(
     actualStartTime: { type: Date, default: null },
     actualEndTime: { type: Date, default: null },
 
-    // ─── 转化结果 (status=completed 时填) ───
+    // ─── 转化结果 (status=completed 时填; 2026-06-20 considering 拆出后回退 boolean) ───
     // isEnrolled: null=未填; true=已报名 (触发转化流程); false=不报名
+    //   considering 状态拆到顶级 status 字段 (2026-06-20); result 只承载"已定夺"信息
     result: {
       isEnrolled: { type: Boolean, default: null },
       // 谈单老师 (alias = consultant, 兼容老数据; 写入时同时填两个字段)
       negotiateTeacher: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-      // 吸引报名的点
+      // 吸引报名的点 (仅 isEnrolled=true 时填)
       attractionPoint: { type: String, default: '' },
       // 为什么不报名 (仅 isEnrolled=false 时填)
       reasonNotEnrolled: { type: String, default: '' },
+      // 2026-06-18 引入, 2026-06-20 改用途: 考虑期跟进日志
+      //   - considering 状态进入时: 记录家长当下态度/顾虑
+      //   - considering → completed 时: 保留历史态度作为参考 (业务上谈单老师看态度调整跟进策略)
+      considerNote: { type: String, default: '' },
       // 转化时间 (isEnrolled 翻为 true 的时间, 用于 5 分钟撤销窗口判断)
       enrolledAt: { type: Date, default: null },
       _id: false

@@ -78,12 +78,14 @@ export const CHILD_LEAD_STATUS_TAG_TYPE = {
 export const LEAD_STATUS_LABEL = CHILD_LEAD_STATUS_LABEL
 export const LEAD_STATUS_TAG_TYPE = CHILD_LEAD_STATUS_TAG_TYPE
 
-// TrialBooking 状态机标签 (2026-06-16 调整: 删 no_show)
+// TrialBooking 状态机标签 (2026-06-16 删 no_show; 2026-06-20 加 considering)
+//   considering: 试听做完但家长没当场定夺, 谈单老师后续跟进
 export const TRIAL_BOOKING_STATUS_LABEL = {
   awaiting_schedule: '待约',
   scheduled: '已约',
   arrived: '已到店',
   completed: '已完成',
+  considering: '考虑中',
   cancelled: '已取消'
 }
 export const TRIAL_BOOKING_STATUS_TAG_TYPE = {
@@ -91,6 +93,7 @@ export const TRIAL_BOOKING_STATUS_TAG_TYPE = {
   scheduled: 'warning',
   arrived: 'primary',
   completed: 'success',
+  considering: 'warning',
   cancelled: ''
 }
 

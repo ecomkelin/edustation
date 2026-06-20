@@ -59,10 +59,7 @@
 
       <!-- 完成结果 / 转化 -->
       <el-divider content-position="left">试听结果</el-divider>
-      <!-- 2026-06-16: 已保存的结果只读展示区
-           - 业务上: status=completed 后, 试听结果只读, 但 el-input disabled 容易看不出"这是保存值"
-           - 用 el-descriptions 显式列出 attractionPoint / reasonNotEnrolled / negotiateTeacher
-           - 避免依赖 el-input placeholder 区分"空值/已保存" -->
+      <!-- 2026-06-20: 已保存的结果只读展示区 (considering 改走顶级 status 字段) -->
       <el-descriptions
         v-if="booking.status === 'completed' && booking.result?.isEnrolled !== null"
         :column="1"
@@ -86,25 +83,49 @@
           {{ negotiateTeacherLabel }}
         </el-descriptions-item>
       </el-descriptions>
+      <!-- 2026-06-20: considering 状态也展示已保存的态度备注 (只读) -->
+      <el-descriptions
+        v-if="booking.status === 'considering'"
+        :column="1"
+        border
+        size="small"
+        class="mb saved-result"
+      >
+        <el-descriptions-item v-if="booking.result?.considerNote" label="家长当下态度/顾虑">
+          <span style="white-space: pre-wrap">{{ booking.result.considerNote }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="negotiateTeacherLabel" label="谈单老师">
+          {{ negotiateTeacherLabel }}
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <!--
+        2026-06-20: 试听结果表单显示条件
+          - arrived: 显示 (做完试听, 等填结果)
+          - considering: 显示 (谈单老师跟进中, 重新打开 dialog 可改成"是/否"或继续改态度)
+          - completed + isEnrolled === null: 显示 (补填结果)
+          - completed + isEnrolled !== null: 隐藏 (已定夺, 不可改)
+      -->
       <el-form
         ref="resultFormRef"
         :model="result"
         :rules="resultRules"
         label-width="100px"
         label-position="right"
-        v-show="booking.status === 'arrived' || (booking.status === 'completed' && booking.result?.isEnrolled === null)"
+        v-show="canEditResult"
       >
         <el-form-item label="是否报名" prop="isEnrolled">
           <el-radio-group v-model="result.isEnrolled">
-            <el-radio :value="true">是</el-radio>
-            <el-radio :value="false">否</el-radio>
+            <el-radio :value="true">是 (已报名)</el-radio>
+            <el-radio :value="false">否 (不报名)</el-radio>
+            <el-radio :value="null">考虑中</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="result.isEnrolled === true" label="吸引报名的点" prop="attractionPoint">
           <el-input v-model="result.attractionPoint" placeholder="如 老师好, 离家近" maxlength="500" />
         </el-form-item>
-        <el-form-item v-if="result.isEnrolled === true" label="谈单老师" prop="negotiateTeacher">
-          <el-select v-model="result.negotiateTeacher" filterable placeholder="默认邀约老师" style="width: 100%">
+        <el-form-item v-if="result.isEnrolled === true || result.isEnrolled === null" label="谈单老师" prop="negotiateTeacher">
+          <el-select v-model="result.negotiateTeacher" filterable :placeholder="result.isEnrolled === null ? '谁在跟单?' : '默认邀约老师'" style="width: 100%">
             <el-option
               v-for="u in teacherOptions"
               :key="u._id || u.id"
@@ -113,8 +134,27 @@
             />
           </el-select>
         </el-form-item>
+        <!--
+          2026-06-20: 考虑期
+            - arrived 状态选"考虑中" → 保存后 status 翻 considering
+            - considering 状态选"考虑中" → 仍是 considering, 但可改态度备注
+        -->
+        <el-form-item v-if="result.isEnrolled === null" label="家长态度" prop="considerNote">
+          <el-input
+            v-model="result.considerNote"
+            type="textarea"
+            :rows="3"
+            placeholder="如: 老师不错但价格想再比较 / 跟孩子爸商量下 / 周末再约一次试其他老师"
+            maxlength="500"
+          />
+        </el-form-item>
         <el-form-item v-if="result.isEnrolled === false" label="为什么不报名" prop="reasonNotEnrolled">
           <el-input v-model="result.reasonNotEnrolled" placeholder="如 离家太远" maxlength="500" />
+        </el-form-item>
+        <el-form-item v-if="booking.status === 'considering' && result.isEnrolled === null">
+          <el-alert type="warning" :closable="false" show-icon>
+            <template #title>考虑中 — 谈单老师后续跟进, 家长确定后回这里改成"是"或"否"</template>
+          </el-alert>
         </el-form-item>
         <el-form-item v-if="booking.status === 'completed' && booking.result?.isEnrolled === true">
           <el-alert type="success" :closable="false" show-icon>
@@ -122,8 +162,15 @@
           </el-alert>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="acting" @click="onSaveResult" :disabled="result.isEnrolled === null">
-            保存结果
+          <el-button type="primary" :loading="acting" @click="onSaveResult">
+            {{ saveButtonLabel }}
+          </el-button>
+          <el-button
+            v-if="booking.status === 'considering' && (result.isEnrolled === true || result.isEnrolled === false)"
+            plain
+            @click="resetToConsidering"
+          >
+            仍考虑中
           </el-button>
         </el-form-item>
       </el-form>
@@ -170,8 +217,9 @@ const resultFormRef = ref(null)
 const teacherOptions = ref([])
 
 const result = reactive({
-  isEnrolled: null,
+  isEnrolled: null,  // null=未填 / true=是 / false=否
   attractionPoint: '',
+  considerNote: '',
   reasonNotEnrolled: '',
   negotiateTeacher: null
 })
@@ -182,6 +230,18 @@ const resultRules = {
     {
       validator: (_, v, cb) => {
         if (result.isEnrolled === true && !v) return cb(new Error('请填写吸引报名的点'))
+        cb()
+      },
+      trigger: 'blur'
+    }
+  ],
+  // 2026-06-20: 考虑期 — 家长态度备注必填 (只在 considering 状态 + 用户没选是/否时校验)
+  considerNote: [
+    {
+      validator: (_, v, cb) => {
+        if (result.isEnrolled === null && booking.value?.status !== 'completed' && !v) {
+          return cb(new Error('请填写家长当下态度/顾虑'))
+        }
         cb()
       },
       trigger: 'blur'
@@ -211,6 +271,36 @@ const canConvert = computed(() => {
 })
 
 /**
+ * 2026-06-20: 表单可编辑判断
+ *   - arrived: 试听刚做完, 等填结果
+ *   - considering: 谈单老师跟进中, 可改 (改成"是/否"定夺, 或只改态度)
+ *   - completed + isEnrolled === null: 补填结果
+ *   - completed + isEnrolled !== null: 不可改 (避免覆盖已转化记录)
+ */
+const canEditResult = computed(() => {
+  if (!props.booking) return false
+  if (props.booking.status === 'arrived' || props.booking.status === 'considering') return true
+  if (props.booking.status === 'completed' && props.booking.result?.isEnrolled === null) return true
+  return false
+})
+
+/**
+ * 2026-06-20: 保存按钮文案
+ *   - arrived 状态选"是/否" → "保存结果"
+ *   - arrived 状态选"考虑中" → "进入考虑期"
+ *   - considering 状态选"是/否" → "定夺 (翻 completed)"
+ *   - considering 状态选"考虑中" → "更新态度"
+ */
+const saveButtonLabel = computed(() => {
+  if (!props.booking) return '保存'
+  if (props.booking.status === 'considering') {
+    return result.isEnrolled === null ? '更新态度' : '定夺'
+  }
+  if (props.booking.status === 'arrived' && result.isEnrolled === null) return '进入考虑期'
+  return '保存结果'
+})
+
+/**
  * 谈单老师显示名 (2026-06-16 修复)
  *   - 后端 detail / list 的 populate('result.negotiateTeacher', 'mobile realName') 会带回对象
  *   - 但 el-select 展示时优先从 teacherOptions (列表拉的) 匹配
@@ -236,8 +326,11 @@ watch(() => props.visible, async (v) => {
   if (v && props.booking) {
     // 同步 result 表单
     const r = props.booking.result || {}
+    // 2026-06-20: considering 状态打开 dialog 时, 表单默认 isEnrolled=null (保持"考虑中"选中)
+    //   用户可改成"是"或"否" (翻 completed), 或保持"考虑中" + 改态度 (仍是 considering)
     result.isEnrolled = r.isEnrolled ?? null
     result.attractionPoint = r.attractionPoint || ''
+    result.considerNote = r.considerNote || ''
     result.reasonNotEnrolled = r.reasonNotEnrolled || ''
     // 2026-06-16: negotiateTeacher 可能是 ObjectId 字符串 或 populate 后的 User 对象
     //   el-select v-model 需要 id 字符串才能在 options 中找到 label
@@ -327,6 +420,17 @@ async function onComplete() {
   }
 }
 
+/**
+ * 2026-06-20: considering 状态下, 用户选了"是/否"后又改回"考虑中" → 重置表单
+ *   - 业务上"跟进时想继续考虑, 不定夺", 让用户能撤回
+ *   - 触发: 点击 [仍考虑中] 按钮
+ *   - 行为: 重新打开 dialog 时 radio 默认"考虑中", 态度备注保留
+ */
+function resetToConsidering() {
+  result.isEnrolled = null
+  ElMessage.info('已切回「考虑中」, 修改后点保存')
+}
+
 async function onSaveResult(silent) {
   if (!resultFormRef.value) return false
   try {
@@ -336,13 +440,20 @@ async function onSaveResult(silent) {
   }
   acting.value = true
   try {
+    // 2026-06-20: 构造 payload
+    //   - isEnrolled === true|false → 带上 (翻 completed)
+    //   - isEnrolled === null      → 不带 (前端"保持当前状态", 让后端按 considerNote 推断)
+    const resultPayload = {
+      attractionPoint: result.attractionPoint || '',
+      considerNote: result.considerNote || '',
+      reasonNotEnrolled: result.reasonNotEnrolled || '',
+      negotiateTeacher: result.negotiateTeacher || null
+    }
+    if (result.isEnrolled === true || result.isEnrolled === false) {
+      resultPayload.isEnrolled = result.isEnrolled
+    }
     const r = await trialBookingApi.complete(props.booking._id, {
-      result: {
-        isEnrolled: result.isEnrolled,
-        attractionPoint: result.attractionPoint || '',
-        reasonNotEnrolled: result.reasonNotEnrolled || '',
-        negotiateTeacher: result.negotiateTeacher || null
-      }
+      result: resultPayload
     })
     if (!silent) ElMessage.success('已保存')
     // 2026-06-16: 同步本地 props.booking.result, 让 dialog 关闭再开仍能展示已保存值
