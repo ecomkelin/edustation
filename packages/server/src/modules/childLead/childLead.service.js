@@ -29,7 +29,7 @@ const { getDefaultChannelId } = require('@modules/parent/parent.service')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, consultant, inviteTeacher }) {
+async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, consultant, inviteTeacher, source, trialSubject }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   // 销售/教务分级
@@ -45,6 +45,19 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
   }
   if (parent) filter.parent = parent
   if (inviteTeacher) filter.inviteTeacher = inviteTeacher
+  // 2026-06-20: 补 source / trialSubject 过滤
+  //   ⚠️ 历史数据一致性:
+  //   - source 字段: schema 是 ObjectId, 老/新数据都是 ObjectId (单值字段 raw insertMany 不受影响)
+  //   - trialSubjects 数组: schema 是 [ObjectId], 但 initial.data.json 经 raw insertMany +
+  //     JSON.stringify 后, 数组里 ObjectId 被序列化成 String; 新数据是 [ObjectId]
+  //   - 用 $or 同时匹配两种类型, 兼容新老数据
+  //   - 见 memory: raw-insertmany-string-oid-pitfall.md
+  if (source) filter.source = source
+  if (trialSubject) {
+    filter.$or = filter.$or || []
+    filter.$or.push({ trialSubjects: trialSubject })        // 新数据: ObjectId 数组
+    filter.$or.push({ trialSubjects: String(trialSubject) }) // 老数据: String 数组
+  }
   if (keyword) {
     const kw = String(keyword).trim()
     if (kw) filter.name = { $regex: kw, $options: 'i' }
@@ -80,8 +93,32 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
     }
   }
 
-  const [items, total] = await Promise.all([
-    ChildLead.find(filter)
+  // 2026-06-21: 两阶段查询 — raw collection 走 filter+sort+skip+limit+count (无 mongoose cast),
+  //   然后 Model.find({_id: $in: pageIds}) 拿带 populate 数据
+  //   ⚠️ mongoose cast 行为陷阱:
+  //   - Model.find({org: "string"}) 会自动 cast 成 ObjectId, OK
+  //   - Model.find({$or: [{trialSubjects: ObjectId}, {trialSubjects: String}]}) 也会 cast,
+  //     但 ObjectId 那一支被错误地 cast 成 string, $or 失效
+  //   - raw mongo driver 完全不 cast, 我们需要手工把 string OID 字段转 ObjectId 才能命中
+  //   见 memory: raw-insertmany-string-oid-pitfall.md
+  const rawFilter = filter
+  const OID_FIELDS = ['org', 'parent', 'inviteTeacher', 'createdBy', 'source', 'school', 'convertedStudent', 'promoteBy', 'consultant']
+  const mongoose = require('mongoose')
+  for (const f of OID_FIELDS) {
+    if (typeof rawFilter[f] === 'string' && mongoose.Types.ObjectId.isValid(rawFilter[f])) {
+      rawFilter[f] = mongoose.Types.ObjectId.createFromHexString(rawFilter[f])
+    }
+  }
+  const [pageRows, total] = await Promise.all([
+    ChildLead.collection.find(rawFilter, { projection: { _id: 1 } })
+      .sort({ createdAt: -1 })
+      .skip(p.skip)
+      .limit(p.limit)
+      .toArray(),
+    ChildLead.collection.countDocuments(rawFilter)
+  ])
+  const items = pageRows.length > 0
+    ? await ChildLead.find({ _id: { $in: pageRows.map((d) => d._id) } })
       .populate('parent', 'phone lifecycle promoteBy consultant')
       .populate('school', 'name')
       .populate('trialSubject', 'name')
@@ -89,12 +126,11 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
       .populate('createdBy', 'mobile realName')
       .populate('convertedStudent', 'name')
       .populate('source', 'name model')
-      .sort({ createdAt: -1 })
-      .skip(p.skip)
-      .limit(p.limit)
-      .lean(),
-    ChildLead.countDocuments(filter)
-  ])
+      .lean()
+    : []
+  // 还原 sort 顺序 (pageIds 是 createdAt 倒序)
+  const orderMap = new Map(pageRows.map((d, i) => [String(d._id), i]))
+  items.sort((a, b) => orderMap.get(String(a._id)) - orderMap.get(String(b._id)))
 
   // 派生: 最近一笔 TrialBooking
   if (items.length > 0) {

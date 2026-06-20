@@ -45,22 +45,6 @@
           style="width: 240px"
           @change="onFilterChange"
         />
-        <!-- 渠道 -->
-        <el-select
-          v-model="filters.source"
-          placeholder="渠道"
-          clearable
-          filterable
-          style="width: 130px"
-          @change="onFilterChange"
-        >
-          <el-option
-            v-for="c in channelOptions"
-            :key="c._id"
-            :label="c.name"
-            :value="c._id"
-          />
-        </el-select>
         <!-- 试听科目类别 -->
         <el-select
           v-model="filters.trialSubject"
@@ -377,7 +361,6 @@ const hasPerm = (code) => hasPermInOrg(authStore, code)
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const channelOptions = ref([])
 const trialSubjectOptions = ref([])
 const staffOptions = ref([]) // 本机构员工 (排除'家长'职位), 给 推广人/试听老师/咨询师 3 个 select 共用
 
@@ -385,7 +368,6 @@ const filters = reactive({
   status: [],
   range: '3m',
   dateRange: [], // [YYYY-MM-DD, YYYY-MM-DD] - 设置后覆盖 range 预设
-  source: null,
   trialSubject: null,
   promoteBy: null,
   inviteTeacher: null,
@@ -432,16 +414,10 @@ function rangeToFrom(range) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadChannels(), loadSubjects(), loadStaff()])
+  await Promise.all([loadSubjects(), loadStaff()])
   load()
 })
 
-async function loadChannels() {
-  try {
-    const r = await categoryApi.list({ model: 'Channel', pageSize: 100 })
-    channelOptions.value = r.data?.items || (Array.isArray(r.data) ? r.data : [])
-  } catch (e) { channelOptions.value = [] }
-}
 async function loadSubjects() {
   try {
     const r = await categoryApi.list({ model: 'Subject', pageSize: 200 })
@@ -504,7 +480,6 @@ function onReset() {
   filters.status = []
   filters.range = '3m'
   filters.dateRange = []
-  filters.source = null
   filters.trialSubject = null
   filters.promoteBy = null
   filters.inviteTeacher = null

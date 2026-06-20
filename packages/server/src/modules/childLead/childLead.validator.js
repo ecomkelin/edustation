@@ -69,6 +69,9 @@ exports.list = [
   query('promoteBy').optional().isMongoId().withMessage('promoteBy 需为合法 id'),
   query('consultant').optional().isMongoId().withMessage('consultant 需为合法 id'),
   query('inviteTeacher').optional().isMongoId().withMessage('inviteTeacher 需为合法 id'),
+  // 2026-06-20: 补 source / trialSubject 校验 (前端筛选项一直无效, 后端缺这俩 query 校验 + 过滤分支)
+  query('source').optional().isMongoId().withMessage('source 需为 Channel 字典 id'),
+  query('trialSubject').optional().isMongoId().withMessage('trialSubject 需为 Subject 字典 id'),
   query('from').optional().isISO8601(),
   query('to').optional().isISO8601(),
   query('page').optional().isInt({ min: 1 }),
