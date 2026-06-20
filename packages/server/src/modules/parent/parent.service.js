@@ -462,6 +462,271 @@ async function addChild({ orgId, currentUser, id, body }) {
   return child.toObject()
 }
 
+/* ─── 批量导入潜客 (Excel 上传后, 前端调用) ───────────
+ * 设计 (2026-06-20 升级):
+ *   - 部分成功: 单行失败不抛错, 收集到 results
+ *   - 复用 withChild / addChild 避免重写业务逻辑
+ *   - 幂等: 同 phone+name 跳过 (不报错也不更新)
+ *   - 顺序处理, 避免瞬时连接池压力
+ *   - **新字段 name→id 批量解析** (避免 N+1):
+ *       school (School.name) / trialSubject (Category.model='Subject'.name)
+ *       inviteTeacher (User.realName OR User.mobile, 本 org 内)
+ *   - **age 兜底试听科目**: <6 → 大颗粒, 6-8 → Spike, 其他 → Scratch
+ *       用户填的名称在字典中查不到时触发, 仍写空 trialSubject (前端要看到 status)
+ *   - **inviteTeacher 兜底**: 查不到 User 时回退为上传人 (currentUser)
+ *   - school 找不到时**不报错**, 留空
+ *
+ * 单行处理流程:
+ *   1) 解析字段 (name→id + 兜底) → 组装 childBody
+ *   2) 查 Parent by (org, phone) → 不存在 → 调 withChild
+ *   3) 存在 → 查 ChildLead.findOne({parent, name}) → 存在 → 跳过 (skip)
+ *   4) 不存在 → 调 addChild (自动 recompute lifecycle)
+ *   5) 任一步 throw → 收集 error, 继续下一行
+ */
+async function bulkImport({ orgId, currentUser, rows }) {
+  if (!currentUser) throw ApiError.unauthorized()
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw ApiError.badRequest('rows 不能为空')
+  }
+
+  // ─── 1) 批量预解析 (避免 N+1) ──────────────────────
+  const School = require('@models/School.model')
+  const User = require('@models/User.model')
+
+  // 收集唯一值
+  const schoolNames = [...new Set(
+    rows.map((r) => String(r.school || '').trim()).filter(Boolean)
+  )]
+  const subjectNames = [...new Set(
+    rows.map((r) => String(r.trialSubject || '').trim()).filter(Boolean)
+  )]
+  const teacherKeys = [...new Set(
+    rows.map((r) => String(r.inviteTeacher || '').trim()).filter(Boolean)
+  )]
+
+  // 学校 name → id (按本 org)
+  /** @type {Map<string, any>} */
+  const schoolMap = new Map()
+  if (schoolNames.length > 0) {
+    const schools = await School.find({ org: orgId, name: { $in: schoolNames } })
+      .select('_id name').lean()
+    for (const s of schools) schoolMap.set(s.name, s._id)
+  }
+
+  // 试听科目 name → id (Category model='Subject', 按本 org)
+  /** @type {Map<string, any>} */
+  const subjectMap = new Map()
+  if (subjectNames.length > 0) {
+    const cats = await Category.find({
+      org: orgId,
+      model: 'Subject',
+      name: { $in: subjectNames }
+    }).select('_id name').lean()
+    for (const c of cats) subjectMap.set(c.name, c._id)
+  }
+
+  // 年龄兜底科目 (大颗粒 / Spike / Scratch) — 全局查 (Category 是 per-org, 但若本 org 没 seed 这些, fallback 也找不到)
+  //   业务上兜底项是平台通用, 用 name 全局匹配
+  /** @type {Map<string, any>} */
+  const defaultSubjectMap = new Map()
+  {
+    const ds = await Category.find({
+      model: 'Subject',
+      name: { $in: ['大颗粒', 'Spike', 'Scratch'] }
+    }).select('_id name').lean()
+    for (const s of ds) defaultSubjectMap.set(s.name, s._id)
+  }
+
+  // 老师 name/mobile → id (User, 限本 org)
+  /** @type {Map<string, any>} */
+  const teacherMap = new Map()
+  if (teacherKeys.length > 0) {
+    // 1) 先按 realName / mobile 找 User (不限 org)
+    const users = await User.find({
+      isActive: true,
+      $or: [
+        { realName: { $in: teacherKeys } },
+        { mobile: { $in: teacherKeys } }
+      ]
+    }).select('_id realName mobile').lean()
+
+    if (users.length > 0) {
+      // 2) 过滤出本 org 关联过的 (避免跨 org 误命中)
+      const userIds = users.map((u) => u._id)
+      const rels = await UserOrgRel.find({
+        org: orgId,
+        user: { $in: userIds }
+      }).select('user').lean()
+      const inOrgUserIds = new Set(rels.map((r) => String(r.user)))
+      for (const u of users) {
+        if (!inOrgUserIds.has(String(u._id))) continue
+        // 双键: realName 和 mobile 都可查
+        if (u.realName) teacherMap.set(u.realName, u._id)
+        if (u.mobile) teacherMap.set(u.mobile, u._id)
+      }
+    }
+  }
+
+  // ─── 2) 行循环 (复用 withChild / addChild) ──────────
+  const results = []
+  let created = 0         // 新建 Parent
+  let addedToExisting = 0 // 已有 Parent, 新加 ChildLead
+  let skipCount = 0       // 同 phone+name 跳过
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const phone = String(r.phone || '').trim()
+    const name = String(r.name || '').trim()
+    const baseRow = { rowNo: i + 1, phone, name }
+
+    // ── 2a) 字段解析 (含兜底) ──
+    const age = Number(r.age)
+    const schoolName = String(r.school || '').trim()
+    const subjectName = String(r.trialSubject || '').trim()
+    const teacherKey = String(r.inviteTeacher || '').trim()
+    const grade = String(r.grade || '').trim()
+    const className = String(r.className || '').trim()
+
+    // 试听科目: 用户填的有效名 → 用; 否则按 age 兜底
+    let subjectId = null
+    let subjectResolvedName = ''
+    let subjectSource = ''
+    if (subjectName && subjectMap.has(subjectName)) {
+      subjectId = subjectMap.get(subjectName)
+      subjectResolvedName = subjectName
+      subjectSource = 'matched'
+    } else {
+      // age 兜底
+      let defaultName
+      if (age < 6) defaultName = '大颗粒'
+      else if (age >= 6 && age <= 8) defaultName = 'Spike'
+      else defaultName = 'Scratch'
+      subjectId = defaultSubjectMap.get(defaultName) || null
+      subjectResolvedName = subjectId ? defaultName : ''
+      subjectSource = subjectId
+        ? (subjectName ? `age-default:${defaultName} (input:"${subjectName}"未找到)` : `age-default:${defaultName}`)
+        : 'unresolved'
+    }
+
+    // 学校: 找不到则空
+    const schoolId = schoolName ? (schoolMap.get(schoolName) || null) : null
+    const schoolSource = !schoolName
+      ? 'empty'
+      : (schoolId ? 'matched' : 'not-found-empty')
+
+    // 邀约老师: 找不到则用上传人
+    let teacherId = null
+    let teacherSource = ''
+    if (teacherKey) {
+      teacherId = teacherMap.get(teacherKey) || null
+      if (teacherId) {
+        teacherSource = 'matched'
+      } else {
+        teacherId = currentUser.id || currentUser._id
+        teacherSource = `fallback-uploader (input:"${teacherKey}"未找到)`
+      }
+    } else {
+      teacherId = currentUser.id || currentUser._id
+      teacherSource = 'empty-uploader'
+    }
+
+    // ── 2b) 写入 ──
+    const childBody = {
+      name,
+      age,
+      trialSubjects: subjectId ? [subjectId] : [],
+      school: schoolId,
+      grade,
+      className,
+      inviteTeacher: teacherId
+    }
+
+    try {
+      const parent = await Parent.findOne({ org: orgId, phone }).lean()
+      if (!parent) {
+        const result = await withChild({
+          orgId,
+          currentUser,
+          body: { phone, ...childBody }
+        })
+        created++
+        results.push({
+          ...baseRow, status: result.duplicate ? 'skipped' : 'created',
+          resolved: {
+            trialSubject: subjectResolvedName,
+            school: schoolName || '',
+            grade, className,
+            inviteTeacher: teacherKey || '',
+            trialSubjectSource: subjectSource,
+            schoolSource, teacherSource
+          }
+        })
+        continue
+      }
+
+      const existingChild = await ChildLead.findOne({ parent: parent._id, name }).lean()
+      if (existingChild) {
+        skipCount++
+        results.push({
+          ...baseRow, status: 'skipped',
+          resolved: {
+            trialSubject: subjectResolvedName,
+            school: schoolName || '',
+            grade, className,
+            inviteTeacher: teacherKey || '',
+            trialSubjectSource: subjectSource,
+            schoolSource, teacherSource
+          }
+        })
+        continue
+      }
+
+      await addChild({
+        orgId,
+        currentUser,
+        id: parent._id,
+        body: childBody
+      })
+      addedToExisting++
+      results.push({
+        ...baseRow, status: 'added',
+        resolved: {
+          trialSubject: subjectResolvedName,
+          school: schoolName || '',
+          grade, className,
+          inviteTeacher: teacherKey || '',
+          trialSubjectSource: subjectSource,
+          schoolSource, teacherSource
+        }
+      })
+    } catch (err) {
+      const msg = err && err.message ? err.message : '未知错误'
+      results.push({
+        ...baseRow, status: 'failed', error: msg,
+        resolved: {
+          trialSubject: subjectResolvedName,
+          school: schoolName || '',
+          grade, className,
+          inviteTeacher: teacherKey || '',
+          trialSubjectSource: subjectSource,
+          schoolSource, teacherSource
+        }
+      })
+    }
+  }
+
+  const failCount = results.filter((x) => x.status === 'failed').length
+  return {
+    total: rows.length,
+    successCount: created + addedToExisting + skipCount,
+    skipCount,
+    failCount,
+    created,
+    addedToExisting,
+    rows: results
+  }
+}
+
 /* ─── 更新 (基础信息) ─────────────────────────── */
 
 async function update(id, orgId, body) {
@@ -601,7 +866,7 @@ async function removableCheck({ id, orgId }) {
 }
 
 module.exports = {
-  list, detail, withChild, addChild, update, recompute,
+  list, detail, withChild, addChild, bulkImport, update, recompute,
   addTag, removeTag, listActivities,
   remove, removableCheck,
   recomputeLifecycle,    // 供 trialBooking/childLead 服务调用

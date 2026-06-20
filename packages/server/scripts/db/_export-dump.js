@@ -36,6 +36,8 @@ const COLLECTIONS = [
   'schools',
   'rooms',
   'course_products',
+  'parents',
+  'child_leads',
   'user_consents',
   'refresh_tokens'
 ]

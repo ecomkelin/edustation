@@ -66,6 +66,69 @@ exports.addChild = [
   body('sameAs.*').optional().isMongoId()
 ]
 
+/**
+ * 批量导入潜客 (2026-06-20 升级) — Excel 上传后, 前端调用
+ * Body: { rows: [{ phone, name, age, trialSubject, school, grade, className, inviteTeacher }] } — 1-1000 行
+ *
+ * 字段语义 (2026-06-20 升级):
+ *   - phone (必填)         - 11 位手机号, 同 org 内业务唯一
+ *   - name (必填)          - 孩子姓名 1-50 字
+ *   - age (必填)           - 年龄 2-25 整数, 试听科目兜底用
+ *   - trialSubject (选填)  - 试听科目**名称** (如 "Python" / "Scratch"), service 内查 Category(model='Subject')
+ *                            找不到时按 age 兜底: <6 → 大颗粒, 6-8 → Spike, 其他 → Scratch
+ *   - school (选填)        - 学校**名称**, service 内查 School
+ *                            找不到时留空 (不报错)
+ *   - grade / className (选填) - 自由文本
+ *   - inviteTeacher (选填) - 老师**姓名或手机号**, service 内查 User (本 org)
+ *                            找不到时回退为上传人 (currentUser)
+ *
+ * 校验策略: 全部字段是**字符串/整数**, 不传 ObjectId. ObjectId 由 service 批量解析.
+ * 部分成功模式: 业务失败在 rows[].status / error 里, 整批响应 200
+ */
+exports.bulkImport = [
+  body('rows').isArray({ min: 1, max: 1000 }).withMessage('rows 必须是 1-1000 行的数组'),
+  body('rows.*.phone')
+    .exists({ checkNull: true, checkFalsy: true })
+    .withMessage('phone 必填')
+    .bail()
+    .matches(phonePattern)
+    .withMessage('电话需为 11 位手机号'),
+  body('rows.*.name')
+    .exists({ checkNull: true, checkFalsy: true })
+    .withMessage('name 必填')
+    .bail()
+    .isString()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage('孩子姓名 1-50 字'),
+  body('rows.*.age')
+    .exists({ checkNull: true, checkFalsy: true })
+    .withMessage('age 必填')
+    .bail()
+    .isInt({ min: 2, max: 25 })
+    .withMessage('年龄需为 2-25 之间的整数'),
+  body('rows.*.trialSubject')
+    .optional({ values: 'falsy' })
+    .isString().trim().isLength({ max: 50 })
+    .withMessage('试听科目名称 ≤ 50 字'),
+  body('rows.*.school')
+    .optional({ values: 'falsy' })
+    .isString().trim().isLength({ max: 50 })
+    .withMessage('学校名称 ≤ 50 字'),
+  body('rows.*.grade')
+    .optional({ values: 'falsy' })
+    .isString().trim().isLength({ max: 20 })
+    .withMessage('年级 ≤ 20 字'),
+  body('rows.*.className')
+    .optional({ values: 'falsy' })
+    .isString().trim().isLength({ max: 20 })
+    .withMessage('班级 ≤ 20 字'),
+  body('rows.*.inviteTeacher')
+    .optional({ values: 'falsy' })
+    .isString().trim().isLength({ max: 30 })
+    .withMessage('邀约老师 (姓名/手机号) ≤ 30 字')
+]
+
 exports.update = [
   // source 改为 Channel 字典的 ObjectId
   body('source').optional({ nullable: true }).isMongoId().withMessage('source 需为 Channel 字典 id'),

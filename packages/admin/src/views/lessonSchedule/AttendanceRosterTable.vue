@@ -76,10 +76,10 @@
             :disabled="readOnly || isConsumedRow(row)"
             size="small"
           >
-            <el-radio-button label="present">正常</el-radio-button>
-            <el-radio-button label="late">迟到</el-radio-button>
-            <el-radio-button label="leave">请假</el-radio-button>
-            <el-radio-button label="no_show">未到</el-radio-button>
+            <el-radio-button value="present">正常</el-radio-button>
+            <el-radio-button value="late">迟到</el-radio-button>
+            <el-radio-button value="leave">请假</el-radio-button>
+            <el-radio-button value="no_show">未到</el-radio-button>
           </el-radio-group>
         </template>
       </el-table-column>

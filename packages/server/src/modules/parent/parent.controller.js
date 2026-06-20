@@ -27,6 +27,15 @@ exports.addChild = async (req, res) => {
   res.status(201).json(ApiResponse.created(data))
 }
 
+/**
+ * 批量导入潜客 (2026-06-20) — Excel 解析后, 前端调用
+ * 部分成功模式: 单行失败不抛错, 整批响应 200; 业务失败在 rows[].status / error
+ */
+exports.bulkImport = async (req, res) => {
+  const data = await s.bulkImport({ orgId: req.orgId, currentUser: req.user, rows: req.body.rows })
+  res.json(ApiResponse.ok(data))
+}
+
 exports.update = async (req, res) => {
   const data = await s.update(req.params.id, req.orgId, req.body)
   res.json(ApiResponse.ok(data))

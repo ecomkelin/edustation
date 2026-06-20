@@ -12,9 +12,9 @@
         <el-form-item class="agree">
           <el-checkbox v-model="form.agreed" :disabled="locked">
             我已阅读并同意
-            <el-link type="primary" :underline="false" @click="openAgreement('user-agreement')">《用户协议》</el-link>
+            <el-link type="primary" underline="never" @click="openAgreement('user-agreement')">《用户协议》</el-link>
             和
-            <el-link type="primary" :underline="false" @click="openAgreement('privacy-policy')">《隐私政策》</el-link>
+            <el-link type="primary" underline="never" @click="openAgreement('privacy-policy')">《隐私政策》</el-link>
           </el-checkbox>
         </el-form-item>
 

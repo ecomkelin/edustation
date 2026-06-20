@@ -29,6 +29,8 @@ router.get('/:id/activities', mws.requirePermission('recruit.read'), v.idParam, 
 
 // 创建家长 + 第一个孩子 (1 API 核心)
 router.post('/with-child', mws.requirePermission('recruit.write'), v.withChild, mws.validateRequest, asyncHandler(c.withChild))
+// 批量导入潜客 (2026-06-20) — Excel 上传后, 前端调用; 部分成功模式
+router.post('/bulk-import', mws.requirePermission('recruit.write'), v.bulkImport, mws.validateRequest, asyncHandler(c.bulkImport))
 // 同家长加孩
 router.post('/:id/children', mws.requirePermission('recruit.write'), v.idParam, v.addChild, mws.validateRequest, asyncHandler(c.addChild))
 // 编辑基础信息 (phone/lifecycle/tags 走专门端点)

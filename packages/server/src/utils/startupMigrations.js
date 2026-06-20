@@ -90,50 +90,25 @@ async function addLegalPermsToExistingPositions() {
   return `added:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
 }
 
-/* ─── 迁移 4: 清空老 trialSubject(s)/subject 引用 (2026-06-18) ─────
+/* ─── 迁移 4: 已下线 (2026-06-20) ────────────────────────────────────
  * 背景:
- *   2026-06-18 trialSubject(s) 从 Subject 改为 Category (model='Subject')。
- *   老数据里 ChildLead.trialSubject(s) 和 TrialBooking.subject 存的是 Subject id,
- *   在新 schema 下指向 Category 模型不存在, populate 拿不到 name → 显示 "-"。
+ *   原 clearLegacyTrialSubjectRefs 把 child_leads.trialSubject(s) / trial_bookings.subject
+ *   无差别清空, 但 2026-06-20 之后写入的 seed 数据 (梓潼 per-org 字典 + 新录入的 47 个 child_lead)
+ *   trialSubjects 字段值是**新 Category id** (model='Subject'), 是合法数据, 不该被清。
  *
- *   业务上"试听意向类别"是新建维度, 老 Subject 引用无业务价值 (Subject 命名跟
- *   Category 不一定一致), 不做 name→name 映射, 直接清空。
- *
- * 动作:
- *   1. child_leads.trialSubject = null
- *   2. child_leads.trialSubjects = []
- *   3. trial_bookings.subject = null
- *
- * 幂等: 字段无值时 modifiedCount=0, no-op.
+ *   老数据 (2026-06-18 之前的 Subject id 引用) 在上次启动时已被清空; 该 migration 任务已完成,
+ *   继续保留只会把新数据擦掉。下线。
  */
-async function clearLegacyTrialSubjectRefs() {
-  const db = mongoose.connection.db
-  const results = []
-  const cl1 = await db.collection('child_leads').updateMany(
-    { trialSubject: { $exists: true, $ne: null } },
-    [{ $set: { trialSubject: null } }]
-  )
-  results.push(`cl.trialSubject:${cl1.modifiedCount || 0}`)
-  const cl2 = await db.collection('child_leads').updateMany(
-    { trialSubjects: { $exists: true, $type: 'array' } },
-    [{ $set: { trialSubjects: [] } }]
-  )
-  results.push(`cl.trialSubjects:${cl2.modifiedCount || 0}`)
-  const tb = await db.collection('trial_bookings').updateMany(
-    { subject: { $exists: true, $ne: null } },
-    [{ $set: { subject: null } }]
-  )
-  results.push(`tb.subject:${tb.modifiedCount || 0}`)
-  const total = (cl1.modifiedCount || 0) + (cl2.modifiedCount || 0) + (tb.modifiedCount || 0)
-  return total === 0 ? 'no-op' : `cleared:${results.join('|')}`
-}
+// (no-op stub 保留以避免 lint 报错; 见下 migrations 数组的注释)
+/* eslint-disable-next-line no-unused-vars */
+function clearLegacyTrialSubjectRefs() { return 'disabled' }
 
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
   { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections },
   { name: 'pull-hidden-perms-from-positions', run: pullHiddenPermsFromPositions },
-  { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions },
-  { name: 'clear-legacy-trial-subject-refs', run: clearLegacyTrialSubjectRefs }
+  { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions }
+  // clear-legacy-trial-subject-refs (2026-06-20 下线)
 ]
 
 /**

@@ -205,8 +205,8 @@
         <el-divider content-position="left">排课计划</el-divider>
         <el-form-item label="模式" required>
           <el-radio-group v-model="form.schedulePlan.mode" :disabled="locked" @change="onModeChange">
-            <el-radio-button label="weekly">每周 N 节</el-radio-button>
-            <el-radio-button label="cycle">上 X 休 Y</el-radio-button>
+            <el-radio-button value="weekly">每周 N 节</el-radio-button>
+            <el-radio-button value="cycle">上 X 休 Y</el-radio-button>
           </el-radio-group>
           <div class="form-hint">
             <template v-if="form.schedulePlan.mode === 'weekly'">

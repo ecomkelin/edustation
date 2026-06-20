@@ -29,6 +29,15 @@ export const parentApi = {
 
   // 同家长加孩
   addChild: (id, data) => http.post(`/parents/${id}/children`, data),
+
+  /**
+   * 批量导入潜客 (Excel 解析后, 前端调用, 2026-06-20)
+   * rows: [{ phone, name }] — 已前端预过滤
+   * 返回: { total, successCount, skipCount, failCount, created, addedToExisting, rows: [{ rowNo, phone, name, status, error? }] }
+   * status: 'created' | 'added' | 'skipped' | 'failed'
+   * 接口永远 200; 业务失败在 rows[].status / error 里
+   */
+  bulkImport: (rows) => http.post('/parents/bulk-import', { rows }),
   // 手动重算 lifecycle
   recomputeLifecycle: (id) => http.post(`/parents/${id}/recompute-lifecycle`),
 

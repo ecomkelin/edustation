@@ -145,6 +145,17 @@
         </el-radio-group>
         <el-button :icon="Refresh" @click="onReset">重置</el-button>
         <div class="spacer" />
+        <el-button
+          v-if="hasPerm('recruit.write')"
+          :icon="Download"
+          @click="onDownloadTemplate"
+        >下载模板</el-button>
+        <el-button
+          v-if="hasPerm('recruit.write')"
+          type="primary"
+          :icon="Upload"
+          @click="importDialog.visible = true"
+        >批量导入</el-button>
         <el-button type="primary" @click="openCreate">
           + 新建孩子
         </el-button>
@@ -328,13 +339,19 @@
       :child-name="activityDialog.childName"
       @saved="onActivitySaved"
     />
+
+    <!-- 批量导入 (2026-06-20) -->
+    <ChildLeadImportDialog
+      v-model:visible="importDialog.visible"
+      @imported="onImportDone"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Download, Upload } from '@element-plus/icons-vue'
 import { childLeadApi } from '@/api/childLead'
 import { categoryApi } from '@/api/category'
 import { userApi } from '@/api/user'
@@ -350,6 +367,8 @@ import ChildLeadEditDialog from './ChildLeadEditDialog.vue'
 import ChildLeadDetailDialog from './ChildLeadDetailDialog.vue'
 import ParentDetailDialog from './ParentDetailDialog.vue'
 import ActivityCreateDialog from './ActivityCreateDialog.vue'
+import ChildLeadImportDialog from './ChildLeadImportDialog.vue'
+import { downloadTemplate as downloadLeadTemplate } from '@/utils/leadImport'
 
 const authStore = useAuthStore()
 const isPlatformAdmin = computed(() => !!authStore.user?.isPlatformAdmin)
@@ -382,6 +401,21 @@ const editDialog = reactive({ visible: false, childLead: null, parent: null })
 const detailDialog = reactive({ visible: false, childLeadId: null })
 const parentDialog = reactive({ visible: false, parentId: null })
 const activityDialog = reactive({ visible: false, childLeadId: null, childName: '' })
+// 批量导入 (2026-06-20)
+const importDialog = reactive({ visible: false })
+
+// 2026-06-20: 批量导入"下载模板" — 走 utils 共用
+function onDownloadTemplate() {
+  downloadLeadTemplate()
+}
+
+// 批量导入完成 — 弹 toast + 刷新列表
+function onImportDone(result) {
+  ElMessage.success(
+    `导入完成: 成功 ${result.successCount} (新建 ${result.created} / 加孩 ${result.addedToExisting}), 跳过 ${result.skipCount}, 失败 ${result.failCount}`
+  )
+  load()
+}
 
 // 2026-06-19: 把 range 预设 ('7d' / '1m' / '3m' / 'all') 翻译成 from (ISO Date 字符串)
 //   'all' → null (后端不过滤时间)

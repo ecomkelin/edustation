@@ -1,10 +1,10 @@
 <template>
   <div class="range-selector">
     <el-radio-group v-model="local.range" size="default" @change="emitChange">
-      <el-radio-button label="today">今日</el-radio-button>
-      <el-radio-button label="week">本周</el-radio-button>
-      <el-radio-button label="month">本月</el-radio-button>
-      <el-radio-button label="custom">自定义</el-radio-button>
+      <el-radio-button value="today">今日</el-radio-button>
+      <el-radio-button value="week">本周</el-radio-button>
+      <el-radio-button value="month">本月</el-radio-button>
+      <el-radio-button value="custom">自定义</el-radio-button>
     </el-radio-group>
     <template v-if="local.range === 'custom'">
       <el-date-picker

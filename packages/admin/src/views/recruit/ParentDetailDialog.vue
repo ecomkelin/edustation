@@ -391,7 +391,8 @@ import { hasPermInOrg } from '@/utils/permissionHelper'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  parentId: { type: String, required: true }
+  // 允许 null: dialog 未打开时, parentId 为 null, watch 内部 v && props.parentId 短路校验
+  parentId: { type: String, default: null }
 })
 const emit = defineEmits(['update:visible', 'updated', 'open-child-detail', 'open-existing'])
 
