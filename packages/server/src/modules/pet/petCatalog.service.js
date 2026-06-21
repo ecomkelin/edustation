@@ -1,13 +1,17 @@
 'use strict'
 
 /**
- * Pet Catalog Read Service（2026-06-21 pet-system-v2-ext）
+ * Pet Catalog Read Service（2026-06-21 pet-system-v2-ext / 2026-06-22 重构）
  *
  * 给 pet.service / pet.controller / petAdmin.service 用的"读 DB"层。
  * 取代 v1 直接 require('@shared/petSpecies.js') / petItems.js。
  *
+ * 2026-06-22 改造：catalog 完全平台级共享（去除 per-org override）。
+ *   - 所有 org 看到同一份图鉴
+ *   - orgId 参数保留（兼容现有 pet.service 调用），但**不再**用于过滤
+ *
  * 设计目标：
- *   - DB 优先（per-org + org=null 平台默认合并）
+ *   - DB 优先
  *   - 缓存 5min TTL（写操作 invalidateCatalogCache）
  *   - DB 完全无数据时 fallback 到 shared/pet*.js（仅 dev 兜底；log warn）
  *   - 兼容 v1：PetAccount.species/unlocked/equipped 仍是 key 字符串
@@ -27,57 +31,49 @@ const sharedPetSpecies = require('@shared/petSpecies')
 const sharedPetItems = require('@shared/petItems')
 const { PET_TIERS } = require('@shared/enums')
 
+/* ─── 通用 list（平台级，无 org 维度） ─── */
 /**
- * 通用 list 工具：per-org + org=null 合并
+ * 缓存 key 设计（参照 [[report-cache-key-bucket-bug]]）：
+ *   - 第一段（bucket 名）= catalog 类型（species/items/consumables），供 invalidate 精准清
  */
-async function _listMerged({ orgId, Model, baseFilter = {}, keyword }) {
-  if (!orgId) throw new Error('petCatalog._listMerged: orgId required')
-  const ownKeys = await Model.distinct('key', { org: orgId, ...baseFilter })
-  const filter = {
-    $and: [
-      { ...baseFilter },
-      { $or: [{ org: orgId }, { org: null, key: { $nin: ownKeys } }] }
-    ]
-  }
+async function _listGlobal({ Model, baseFilter = {}, keyword }) {
+  const filter = { ...baseFilter }
   if (keyword && String(keyword).trim()) {
-    filter.$and.push({ name: { $regex: String(keyword).trim(), $options: 'i' } })
+    filter.name = { $regex: String(keyword).trim(), $options: 'i' }
   }
   return Model.find(filter)
     .populate('imageFile', 'url mime originalName')
-    .sort({ tier: 1, slot: 1, key: 1 })
+    .sort({ tier: 1, slot: 1, kind: 1, key: 1 })
     .lean()
 }
 
 /* ─── Species ─────────────────────────────────── */
 
-async function listSpecies({ orgId, tier, isActive, keyword }) {
+async function listSpecies({ tier, isActive, keyword }) {
   const filterKey = JSON.stringify({ tier, isActive, keyword })
-  return withCache(`petCatalog:species:${orgId}:${filterKey}`, async () => {
+  return withCache(`species:global:${filterKey}`, async () => {
     const base = {}
     if (tier) base.tier = tier
     if (isActive !== undefined) base.isActive = isActive
-    let items = await _listMerged({ orgId, Model: PetSpecies, baseFilter: base, keyword })
+    let items = await _listGlobal({ Model: PetSpecies, baseFilter: base, keyword })
     if (items.length === 0) {
       // eslint-disable-next-line no-console
       console.warn('[petCatalog.listSpecies] DB 空，fallback shared/petSpecies')
       items = sharedPetSpecies.PET_SPECIES
         .filter(s => !tier || s.tier === tier)
-        .map(s => ({ ...s, org: null, imageFile: null, visualType: 'image', isActive: true }))
+        .map(s => ({ ...s, imageFile: null, visualType: 'image', isActive: true }))
     }
     return items
   }, 300_000)
 }
 
-async function getSpecies({ orgId, key }) {
-  if (!orgId || !key) return null
-  let doc = await PetSpecies.findOne({ org: orgId, key }).populate('imageFile', 'url mime').lean()
-  if (!doc) {
-    doc = await PetSpecies.findOne({ org: null, key }).populate('imageFile', 'url mime').lean()
-  }
+async function getSpecies({ key }) {
+  if (!key) return null
+  let doc = await PetSpecies.findOne({ key }).populate('imageFile', 'url mime').lean()
   if (doc) return doc
   const shared = sharedPetSpecies.getSpecies(key)
   if (shared) {
-    return { ...shared, org: null, imageFile: null, visualType: 'image', isActive: true, _fallback: true }
+    return { ...shared, imageFile: null, visualType: 'image', isActive: true, _fallback: true }
   }
   return null
 }
@@ -85,8 +81,8 @@ async function getSpecies({ orgId, key }) {
 /**
  * 加权随机抽一个 species（破壳时用）。
  */
-async function rollSpecies({ orgId, tier }) {
-  const pool = await listSpecies({ orgId, tier, isActive: true })
+async function rollSpecies({ tier }) {
+  const pool = await listSpecies({ tier, isActive: true })
   if (pool.length === 0) return null
   const total = pool.reduce((sum, s) => sum + Math.max(0, s.weight || 0), 0)
   if (total <= 0) return pool[Math.floor(Math.random() * pool.length)]
@@ -100,15 +96,15 @@ async function rollSpecies({ orgId, tier }) {
 
 /* ─── Items ─────────────────────────────────── */
 
-async function listItems({ orgId, slot, isActive, unlockType, tier, level, keyword }) {
+async function listItems({ slot, isActive, unlockType, tier, level, keyword }) {
   const filterKey = JSON.stringify({ slot, isActive, unlockType, tier, level, keyword })
-  return withCache(`petCatalog:items:${orgId}:${filterKey}`, async () => {
+  return withCache(`items:global:${filterKey}`, async () => {
     const base = {}
     if (slot) base.slot = slot
     if (isActive !== undefined) base.isActive = isActive
     if (unlockType) base.unlockType = unlockType
     if (tier) base.unlockTier = tier
-    let items = await _listMerged({ orgId, Model: PetItem, baseFilter: base, keyword })
+    let items = await _listGlobal({ Model: PetItem, baseFilter: base, keyword })
     if (items.length === 0) {
       // eslint-disable-next-line no-console
       console.warn('[petCatalog.listItems] DB 空，fallback shared/petItems')
@@ -119,22 +115,19 @@ async function listItems({ orgId, slot, isActive, unlockType, tier, level, keywo
           if (level !== undefined && it.unlockLevel > level) return false
           return true
         })
-        .map(it => ({ ...it, org: null, imageFile: null, slot: it.type, isActive: true }))
+        .map(it => ({ ...it, imageFile: null, slot: it.type, isActive: true }))
     }
     return items
   }, 300_000)
 }
 
-async function getItem({ orgId, key }) {
-  if (!orgId || !key) return null
-  let doc = await PetItem.findOne({ org: orgId, key }).populate('imageFile', 'url mime').lean()
-  if (!doc) {
-    doc = await PetItem.findOne({ org: null, key }).populate('imageFile', 'url mime').lean()
-  }
+async function getItem({ key }) {
+  if (!key) return null
+  let doc = await PetItem.findOne({ key }).populate('imageFile', 'url mime').lean()
   if (doc) return doc
   const shared = sharedPetItems.getItem(key)
   if (shared) {
-    return { ...shared, org: null, imageFile: null, slot: shared.type, isActive: true, _fallback: true }
+    return { ...shared, imageFile: null, slot: shared.type, isActive: true, _fallback: true }
   }
   return null
 }
@@ -143,10 +136,10 @@ async function getItem({ orgId, key }) {
  * 升级解锁：返回当前等级下应解锁的 item keys（仅 level 解锁型）。
  * 沿用 v1 逻辑：unlockTier ≤ petTier 且 unlockLevel ≤ petLevel 的都解锁。
  */
-async function listItemsUnlockedAtLevel({ orgId, tier, level }) {
+async function listItemsUnlockedAtLevel({ tier, level }) {
   const tierOrder = PET_TIERS
   const tierIdx = tierOrder.indexOf(tier)
-  const candidates = await listItems({ orgId, unlockType: 'level', isActive: true })
+  const candidates = await listItems({ unlockType: 'level', isActive: true })
   return candidates
     .filter(it => {
       const itemTierIdx = tierOrder.indexOf(it.unlockTier)
@@ -159,8 +152,8 @@ async function listItemsUnlockedAtLevel({ orgId, tier, level }) {
 /**
  * 升阶解锁：返回新阶下应解锁的 halo + background item keys（tier 解锁型）。
  */
-async function listItemsUnlockedAtTier({ orgId, tier }) {
-  const candidates = await listItems({ orgId, unlockType: 'tier', isActive: true })
+async function listItemsUnlockedAtTier({ tier }) {
+  const candidates = await listItems({ unlockType: 'tier', isActive: true })
   return candidates
     .filter(it => it.unlockTier === tier && ['halo', 'background'].includes(it.slot))
     .map(it => it.key)
@@ -168,14 +161,14 @@ async function listItemsUnlockedAtTier({ orgId, tier }) {
 
 /* ─── Consumables ─────────────────────────────────── */
 
-async function listConsumables({ orgId, kind, isActive, applicableTier, keyword }) {
+async function listConsumables({ kind, isActive, applicableTier, keyword }) {
   const filterKey = JSON.stringify({ kind, isActive, applicableTier, keyword })
-  return withCache(`petCatalog:consumables:${orgId}:${filterKey}`, async () => {
+  return withCache(`consumables:global:${filterKey}`, async () => {
     const base = {}
     if (kind) base.kind = kind
     if (isActive !== undefined) base.isActive = isActive
     if (applicableTier) base.applicableTier = { $in: [applicableTier, 'all'] }
-    return _listMerged({ orgId, Model: PetConsumable, baseFilter: base, keyword })
+    return _listGlobal({ Model: PetConsumable, baseFilter: base, keyword })
   }, 300_000)
 }
 
@@ -183,12 +176,9 @@ async function listConsumables({ orgId, kind, isActive, applicableTier, keyword 
  * 按 key + tier 查 consumable 适用配置。
  * 返回 { consumable, perTierConfig } 或 null。
  */
-async function findConsumable({ orgId, key, tier }) {
-  if (!orgId || !key) return null
-  let doc = await PetConsumable.findOne({ org: orgId, key, isActive: true }).lean()
-  if (!doc) {
-    doc = await PetConsumable.findOne({ org: null, key, isActive: true }).lean()
-  }
+async function findConsumable({ key, tier }) {
+  if (!key) return null
+  const doc = await PetConsumable.findOne({ key, isActive: true }).lean()
   if (!doc) return null
   if (doc.applicableTier !== 'all' && doc.applicableTier !== tier) return null
   const cfg = doc.perTier && (doc.perTier[tier] || doc.perTier.all)
@@ -199,14 +189,24 @@ async function findConsumable({ orgId, key, tier }) {
 /**
  * 列出当前 petTier 可用的 food/toy。
  */
-async function listConsumablesApplicableTo({ orgId, tier, kind }) {
-  return listConsumables({ orgId, kind, applicableTier: tier, isActive: true })
+async function listConsumablesApplicableTo({ tier, kind }) {
+  return listConsumables({ kind, applicableTier: tier, isActive: true })
 }
 
 /* ─── 缓存失效 ─────────────────────────────────── */
 
-function invalidateCatalogCache(orgId) {
-  invalidateCache(orgId)
+/**
+ * 写操作后调用。
+ * @param {string} [type] 'species' / 'items' / 'consumables' / undefined（= 清全部 catalog）
+ */
+function invalidateCatalogCache(type) {
+  if (type) {
+    invalidateCache(type)
+  } else {
+    invalidateCache('species')
+    invalidateCache('items')
+    invalidateCache('consumables')
+  }
 }
 
 module.exports = {

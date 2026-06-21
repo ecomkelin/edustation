@@ -44,10 +44,24 @@
                 <el-icon><component :is="group.icon" /></el-icon>
                 <span>{{ group.title }}</span>
               </template>
-              <el-menu-item v-for="child in group.children" :key="child.path" :index="child.path">
-                <el-icon><component :is="child.icon" /></el-icon>
-                <span>{{ child.label }}</span>
-              </el-menu-item>
+              <!-- D 方案 (2026-06-22): 支持二级子组 (例如系统管理下的"宠物管理"),
+                   子组里再嵌套叶子菜单项 -->
+              <template v-for="child in group.children" :key="child.path || child.label">
+                <el-sub-menu v-if="child.children" :index="subGroupIndex(group.key, child.label)">
+                  <template #title>
+                    <el-icon><component :is="child.icon" /></el-icon>
+                    <span>{{ child.label }}</span>
+                  </template>
+                  <el-menu-item v-for="leaf in child.children" :key="leaf.path" :index="leaf.path">
+                    <el-icon><component :is="leaf.icon" /></el-icon>
+                    <span>{{ leaf.label }}</span>
+                  </el-menu-item>
+                </el-sub-menu>
+                <el-menu-item v-else :index="child.path">
+                  <el-icon><component :is="child.icon" /></el-icon>
+                  <span>{{ child.label }}</span>
+                </el-menu-item>
+              </template>
             </el-sub-menu>
           </template>
         </el-menu>
@@ -127,57 +141,90 @@ const menuGroups = [
     title: '系统管理',
     icon: Platform,
     children: [
+      // 顺序 (2026-06-22 用户决策): 1 机构档案 2 游离用户 3 AI管理 4 宠物管理 5 地区管理 6 平台配置
       // 原 /orgs 改名为 机构档案; 与新一级菜单'机构管理'(本机构内部运营) 消歧
       { path: '/orgs', label: '机构档案', icon: Box, requirePlatform: true },
-      // AI 管理 (2026-06-18): 会话/知识库/审计; 当前先做会话管理
-      { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true },
-      // 地区字典 (2026-06): 从基础数据挪到系统管理 (平台超管维护)
-      { path: '/regions', label: '地区字典', icon: Box, requirePlatform: true },
       // 游离用户 (2026-06-19): 不属于任何机构的孤儿账号 (跨机构数据, 平台超管审/清)
       { path: '/system/unaffiliated-users', label: '游离用户', icon: Connection, requirePlatform: true },
-      // 法律协议 (2026-06): 平台级协议只读 + 站点配置 (备案号/运营主体)
-      { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
-      { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
-      // 流程/说明类放最下面: 一次性的阅读材料, 不常看
-      { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
-      { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true }
+      // AI 管理 (2026-06-18): 会话/知识库/审计; 当前先做会话管理
+      { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true },
+      // D 方案 (2026-06-22) → 重构 (2026-06-22 用户决策):
+      // 物种/装饰/食物图鉴由平台超管统一管理，全机构共用一份图鉴
+      // requirePlatform: true，仅平台超管可见 + 可写；机构 admin 看得到页面但写操作后端 403
+      {
+        label: '宠物管理',
+        icon: MagicStick,
+        requirePlatform: true,
+        children: [
+          { path: '/pet/species', label: '宠物图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
+          { path: '/pet/items', label: '装饰图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
+          { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write', requirePlatform: true }
+        ]
+      },
+      // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典
+      { path: '/regions', label: '地区管理', icon: Box, requirePlatform: true },
+      // 平台配置 (2026-06-22): 4 个平台级配置项合并子组
+      // 子组里都是 requirePlatform: true (纯平台超管配置), 机构用户看不到
+      {
+        label: '平台配置',
+        icon: Setting,
+        children: [
+          // 站点配置: 备案号/运营主体 (2026-06)
+          { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
+          // 平台协议 (2026-06): 平台级协议只读
+          { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
+          // 流程/说明类放最下面: 一次性的阅读材料, 不常看
+          { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
+          { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true }
+        ]
+      }
     ]
   },
   {
-    // 本机构内部运营: 机构推广 (机构 admin 维护) + 用户/职位 (本机构成员)
+    // 本机构内部运营 (2026-06-22):
+    // - 用户管理: 高频操作, 直挂二级 (admin 常看'我的人')
+    // - 运营子组: 职位/推广/机构协议
+    // - 基础数据子组: 文件/字典/教室/学科/学校档案
     key: 'org-mgmt',
     title: '机构管理',
     icon: Setting,
     children: [
-      // 用户管理 + 职位管理从系统管理挪过来, 与推广信息合并成一组'本机构运营'
+      // 用户管理 (2026-06-22): 从运营子组提到机构管理直挂二级 (高频操作)
       { path: '/users', label: '用户管理', icon: User, perm: 'user.read' },
-      // 2026-06: 职位管理提到机构推广前 (机构 admin 进首页常看'我的人权限对不对')
-      { path: '/positions', label: '职位管理', icon: Lock, perm: 'position.read' },
-      // 原 /org/promotion 改名为 机构推广
-      { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
-      // 法律协议 (2026-06): 机构 admin 维护本机构购买协议/退费规则/FAQ 等
-      { path: '/legal/org-docs', label: '机构协议', icon: Notebook, perm: 'legal.read' }
+      // 运营子组: 职位/推广/机构协议
+      {
+        label: '运营',
+        icon: User,
+        children: [
+          // 2026-06: 职位管理提到机构推广前 (机构 admin 进首页常看'我的人权限对不对')
+          { path: '/positions', label: '职位管理', icon: Lock, perm: 'position.read' },
+          // 原 /org/promotion 改名为 机构推广
+          { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
+          // 机构协议 (2026-06-22): 从独立子组并入运营最下 (制度文档, 与推广同属机构运营)
+          { path: '/legal/org-docs', label: '机构协议', icon: Notebook, perm: 'legal.read' }
+        ]
+      },
+      // 基础数据子组: 文件/字典/教室/学科/学校档案
+      {
+        label: '基础数据',
+        icon: Files,
+        children: [
+          // 文件管理 (2026-06-22): 从基础数据分离出来, 归位到机构管理
+          { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' },
+          // 类别字典 (2026-06 整改): per-org, 机构 admin 可维护本机构字典
+          { path: '/categories', label: '类别字典', icon: Files },
+          { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
+          { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
+          { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
+        ]
+      }
     ]
   },
   {
-    key: 'basic',
-    title: '基础数据',
-    icon: Files,
-    children: [
-      // 文件管理从系统管理挪过来, 与其他字典/基础实体同组
-      { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' },
-      // 类别字典 (2026-06 整改): per-org, 机构 admin 可维护本机构字典
-      { path: '/categories', label: '类别字典', icon: Files },
-      { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
-      { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
-      { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
-    ]
-  },
-  {
-    // 招生试听 (2026-06): 招生漏斗入口, 地推/教务共用
+    // 招生 (2026-06 方案 A): 招生漏斗入口, 地推/教务共用
     // 2026-06 图标换为 TrendCharts (上升趋势图), 与机构推广的 Promotion (小喇叭) 区分
     key: 'recruit',
-    title: '招生试听',
+    title: '招生',
     icon: TrendCharts,
     children: [
       // 顺序按数据收敛方向: 家长 (按手机号) → 孩子 (按孩子) → 预约 (按单次试听)
@@ -188,19 +235,28 @@ const menuGroups = [
   },
   {
     key: 'teach',
-    title: '教务管理',
+    title: '教务',
     icon: School,
     children: [
       { path: '/course-products', label: '课程产品', icon: Files, perm: 'courseProduct.read' },
       { path: '/course-instances', label: '开班', icon: Reading, perm: 'courseInstance.read' },
       { path: '/course-enrollments', label: '课程报名', icon: Notebook, perm: 'courseEnrollment.read' },
       { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
-      { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' }
+      { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' },
+      // 教学工具 (2026-06 方案 A): 原"课堂展示"一级菜单降级到子组, 预留扩展
+      {
+        label: '教学工具',
+        icon: VideoPlay,
+        children: [
+          // 宠物课堂展示 (2026-06-21 pet-system-v2-ext): 全屏宠物展示页 (老师投影给全班看)
+          { path: '/class/pet-display', label: '宠物课堂展示', icon: VideoCamera, perm: 'pet.read' }
+        ]
+      }
     ]
   },
   {
     key: 'biz',
-    title: '学员与订单',
+    title: '学员',
     icon: User,
     children: [
       { path: '/students', label: '学生管理', icon: Reading, perm: 'student.read' },
@@ -209,23 +265,12 @@ const menuGroups = [
       { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
       // 积分管理 (2026-06-21): 学员积分账户列表 + 流水 + 手动调整积分
       { path: '/points', label: '积分管理', icon: Present, perm: 'points.read' },
-      // 宠物管理 (2026-06-21 pet-system-v2): 机构全量宠物 + 事件流 + 调整
-      { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' },
-      // 宠物图鉴 CRUD (2026-06-21 pet-system-v2-ext): species / items / consumables
-      { path: '/pet/species', label: '宠物图鉴', icon: MagicStick, perm: 'pet.write' },
-      { path: '/pet/items', label: '装饰图鉴', icon: MagicStick, perm: 'pet.write' },
-      { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write' }
+      // 宠物实例 (2026-06-21 pet-system-v2): 机构全量宠物 + 事件流 + 调整
+      // D 方案 (2026-06-22): 实例留在学员与订单 (per-org 强隔离, 学员侧资产)
+      { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' }
     ]
   },
-  // 课堂展示 (2026-06-21 pet-system-v2-ext): 全屏宠物展示页 (老师投影给全班看)
-  {
-    key: 'classroom-display',
-    title: '课堂展示',
-    icon: VideoPlay,
-    children: [
-      { path: '/class/pet-display', label: '宠物课堂展示', icon: VideoCamera, perm: 'pet.read' }
-    ]
-  },
+  // 课堂展示 (2026-06 方案 A): 降级到 教务 > 教学工具 子组, 不再作为一级菜单
   {
     key: 'analytics',
     title: '经营分析',
@@ -252,17 +297,44 @@ function isAllowed(item) {
   )
 }
 
+// D 方案 (2026-06-22): 二级子组在 el-menu 里的 index, 用 groupKey.label 拼一个唯一的, 避免与 group.key 冲突
+function subGroupIndex(groupKey, label) {
+  return `${groupKey}:${label}`
+}
+
+// 递归过滤 children:
+// - 叶子项走 isAllowed
+// - 子组 (有 children 字段) 递归过滤, 过滤后空数组则子组整体隐藏
+function filterChildren(children) {
+  return children
+    .map((c) => {
+      if (c.children) {
+        const sub = filterChildren(c.children)
+        return sub.length > 0 ? { ...c, children: sub } : null
+      }
+      return isAllowed(c) ? c : null
+    })
+    .filter(Boolean)
+}
+
 const visibleGroups = computed(() =>
   menuGroups
-    .map((g) => ({ ...g, children: g.children.filter(isAllowed) }))
+    .map((g) => ({ ...g, children: filterChildren(g.children) }))
     .filter((g) => g.children.length > 0)
 )
 
-// 当前活跃子项所属分组，初始化时自动展开
+// 当前活跃子项所属分组 (含二级嵌套), 初始化时自动展开 group + sub-group
 const defaultOpeneds = computed(() => {
   const active = route.path
-  const matched = menuGroups.find((g) => g.children.some((c) => c.path === active))
-  return matched ? [matched.key] : []
+  for (const g of menuGroups) {
+    for (const c of g.children) {
+      if (c.path === active) return [g.key]
+      if (c.children && c.children.some((leaf) => leaf.path === active)) {
+        return [g.key, subGroupIndex(g.key, c.label)]
+      }
+    }
+  }
+  return []
 })
 
 async function onCommand(cmd) {

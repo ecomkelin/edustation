@@ -45,7 +45,7 @@ async function listCatalog({ orgId, studentId }) {
   const equipped = pet.equipped || {}
 
   // 按 slot 分组：从 DB 读全部 items
-  const allItems = await petCatalog.listItems({ orgId, isActive: true })
+  const allItems = await petCatalog.listItems({ isActive: true })
   const bySlot = {}
   for (const slot of PET_ITEM_SLOTS) {
     bySlot[slot] = {
@@ -108,7 +108,7 @@ async function equip({ orgId, studentId, slot, itemKey }) {
   }
 
   // 装备：校验
-  const item = await petCatalog.getItem({ orgId, key: itemKey })
+  const item = await petCatalog.getItem({ key: itemKey })
   if (!item) throw ApiError.badRequest('itemKey 不存在')
   const itemSlot = item.slot || item.type
   if (itemSlot !== slot) {
@@ -143,7 +143,7 @@ async function equip({ orgId, studentId, slot, itemKey }) {
  * 不需要 PetAccount；返回所有 item + 分 slot 列表。
  */
 async function listAllCatalog({ orgId }) {
-  const items = await petCatalog.listItems({ orgId, isActive: true })
+  const items = await petCatalog.listItems({ isActive: true })
   const bySlot = {}
   for (const slot of PET_ITEM_SLOTS) {
     bySlot[slot] = {

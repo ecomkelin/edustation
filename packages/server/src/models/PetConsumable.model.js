@@ -4,9 +4,12 @@ const { Schema, model } = require('mongoose')
 const { PET_CONSUMABLE_KINDS, PET_CONSUMABLE_APPLICABLE_TIERS } = require('@shared/enums')
 
 /**
- * 宠物消耗品图鉴（PetConsumable，2026-06-21 pet-system-v2-ext）
+ * 宠物消耗品图鉴（PetConsumable，2026-06-21 pet-system-v2-ext / 2026-06-22 重构）
  *
  * 合并食物 + 玩具（同机制：pointCost + hungerRestore + expGain 三字段）
+ *
+ * 平台级共享（2026-06-22 改造：去除 per-org override）：
+ *   - 全部由平台超管统一管理
  *
  * applicableTier：
  *   - 'C'/'B'/'A'/'S': 仅适用该阶宠物
@@ -33,11 +36,8 @@ const PerTierValueSchema = new Schema(
 
 const PetConsumableSchema = new Schema(
   {
-    // 多租户；null = 平台默认
-    org: { type: Schema.Types.ObjectId, ref: 'Org', default: null, index: true },
-
-    // 唯一 key
-    key: { type: String, required: true, trim: true },
+    // 唯一 key（全局唯一，无 org 维度）
+    key: { type: String, required: true, trim: true, unique: true },
 
     // 玩家可见名
     name: { type: String, required: true, trim: true, maxlength: 64 },
@@ -82,10 +82,7 @@ const PetConsumableSchema = new Schema(
   }
 )
 
-// 唯一索引：同 org（可 null）下 key 不重
-PetConsumableSchema.index({ org: 1, key: 1 }, { unique: true })
-
-// 列表查询索引：按 org + kind + isActive 过滤
-PetConsumableSchema.index({ org: 1, kind: 1, isActive: 1 })
+// 列表查询索引：按 kind + isActive 过滤
+PetConsumableSchema.index({ kind: 1, isActive: 1 })
 
 module.exports = model('PetConsumable', PetConsumableSchema)

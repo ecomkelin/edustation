@@ -259,62 +259,56 @@ async function addPetWritePermToExistingPositions() {
   return `added:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
 }
 
-/* ─── 迁移 10: 种子宠物图鉴 (species/items/consumables) (2026-06-21 pet-system-v2-ext) ─────
+/* ─── 迁移 10: 硬清 pet catalog 三表 + 重新 seed (2026-06-22 重构) ─────
  * 背景:
- *   pet-system-v2-ext 把 species/items/food 从 shared/pet*.js 静态文件迁到 DB。
- *   新装或升级时, 每个 org 都需要一份 per-org 种子记录 + 一份 org=null 平台默认种子记录,
- *   否则 PetAccount.species 字符串无法 resolve 出 speciesRecord, 客户端渲染 fallback。
+ *   pet-system-v2-ext 把 species/items/food 从 shared/pet*.js 静态文件迁到 DB，
+ *   当时的实现保留了 per-org override (org=orgId) + 平台默认 (org=null) 两层。
  *
- * 动作:
- *   - 对每个 isActive=true 的 org, 若 pet_species/pet_items/pet_consumables 三表全空 → 写一份 per-org 种子 (org=<id>)
- *   - 若三表 org=null 平台默认全空 → 写一份 (org=null)
- *   幂等: count>0 跳过 (即使 seed 文件改了也不会覆盖现有记录, 后续手改 admin 优先).
+ *   2026-06-22 用户决策：catalog 完全平台化，去除 per-org override，3 个表无 org 字段。
+ *   用户明确要求 "不要兼容 全部清空"。
  *
- * 来源: shared/_petCatalogSeed.js (从 v1 静态 shared/pet*.js 抽出来)。
+ *   旧 v1 数据形态：
+ *     - pet_species: 16 (org=null) + 32 (org=orgId, 每 org 16 个)
+ *     - pet_items:   35 (org=null) + 70 (org=orgId, 每 org 35 个)
+ *     - pet_consumables: 6 (org=null) + 12 (org=orgId, 每 org 6 个)
+ *   现状 PetAccount=0, 无历史宠物实例引用 catalog key, 可放心硬清。
+ *
+ *   动作:
+ *     - deleteMany 清空三表（drop collection 会丢索引；deleteMany 更安全）
+ *     - 重新 insertMany 一份平台级种子（无 org 字段）
+ *   幂等: 每次启动都跑（deleteMany 是 no-op 空表时；insertMany 重建种子保证 schema 始终一致）
+ *
+ *   风险:
+ *     - 已有 PetAccount.species/unlocked/equipped 字符串若引用被硬清的 key, 渲染 fallback
+ *       → 当前 PetAccount=0, 风险为 0
+ *     - 上线后用户用 admin 加的图鉴会丢 → 现阶段图鉴管理权收归平台, 不再有大改动场景
+ *     - 若未来需要保留 admin 修改, 改为"按 schema diff 判定", 现状不实现
+ *
+ *   来源: shared/_petCatalogSeed.js (从 v1 静态 shared/pet*.js 抽出来)。
  */
-async function seedPetCatalog() {
-  const Org = require('@models/Org.model')
+async function hardResetPetCatalog() {
   const PetSpecies = require('@models/PetSpecies.model')
   const PetItem = require('@models/PetItem.model')
   const PetConsumable = require('@models/PetConsumable.model')
   const seed = require('@shared/_petCatalogSeed')
 
-  const orgs = await Org.find({ isActive: true }).select('_id').lean()
+  const sBefore = await PetSpecies.countDocuments({})
+  const iBefore = await PetItem.countDocuments({})
+  const cBefore = await PetConsumable.countDocuments({})
 
-  let perOrgSeeded = 0
-  for (const org of orgs) {
-    const orgScope = org._id
-    const sCount = await PetSpecies.countDocuments({ org: orgScope })
-    const iCount = await PetItem.countDocuments({ org: orgScope })
-    const cCount = await PetConsumable.countDocuments({ org: orgScope })
-    if (sCount === 0 && iCount === 0 && cCount === 0) {
-      // 全空 → 写 per-org 种子
-      const now = new Date()
-      const speciesDocs = seed.PET_SPECIES_SEED.map(s => ({ ...s, org: orgScope, createdAt: now, updatedAt: now }))
-      const itemDocs = seed.PET_ITEMS_SEED.map(it => ({ ...it, org: orgScope, createdAt: now, updatedAt: now }))
-      const consumableDocs = seed.PET_CONSUMABLES_SEED.map(c => ({ ...c, org: orgScope, createdAt: now, updatedAt: now }))
-      await PetSpecies.insertMany(speciesDocs)
-      await PetItem.insertMany(itemDocs)
-      await PetConsumable.insertMany(consumableDocs)
-      perOrgSeeded++
-    }
-  }
+  await PetSpecies.deleteMany({})
+  await PetItem.deleteMany({})
+  await PetConsumable.deleteMany({})
 
-  // 平台默认 (org=null)
-  const platSCount = await PetSpecies.countDocuments({ org: null })
-  const platICount = await PetItem.countDocuments({ org: null })
-  const platCCount = await PetConsumable.countDocuments({ org: null })
-  let platSeeded = false
-  if (platSCount === 0 && platICount === 0 && platCCount === 0) {
-    const now = new Date()
-    await PetSpecies.insertMany(seed.PET_SPECIES_SEED.map(s => ({ ...s, org: null, createdAt: now, updatedAt: now })))
-    await PetItem.insertMany(seed.PET_ITEMS_SEED.map(it => ({ ...it, org: null, createdAt: now, updatedAt: now })))
-    await PetConsumable.insertMany(seed.PET_CONSUMABLES_SEED.map(c => ({ ...c, org: null, createdAt: now, updatedAt: now })))
-    platSeeded = true
-  }
+  const now = new Date()
+  const seededSpecies = seed.PET_SPECIES_SEED.length
+  const seededItems = seed.PET_ITEMS_SEED.length
+  const seededConsumables = seed.PET_CONSUMABLES_SEED.length
+  await PetSpecies.insertMany(seed.PET_SPECIES_SEED.map(s => ({ ...s, createdAt: now, updatedAt: now })))
+  await PetItem.insertMany(seed.PET_ITEMS_SEED.map(it => ({ ...it, createdAt: now, updatedAt: now })))
+  await PetConsumable.insertMany(seed.PET_CONSUMABLES_SEED.map(c => ({ ...c, createdAt: now, updatedAt: now })))
 
-  if (perOrgSeeded === 0 && !platSeeded) return 'no-op'
-  return `perOrg=${perOrgSeeded}|platformDefault=${platSeeded ? 'yes' : 'no'}`
+  return `cleared:species=${sBefore},items=${iBefore},consumables=${cBefore}|seeded:species=${seededSpecies},items=${seededItems},consumables=${seededConsumables}`
 }
 
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
@@ -327,8 +321,9 @@ const migrations = [
   { name: 'cast-rel-positions-to-objectid', run: castRelPositionsToObjectId },
   { name: 'drop-legacy-pets-collection', run: dropLegacyPetsCollection },
   { name: 'add-pet-write-perm-to-existing-positions', run: addPetWritePermToExistingPositions },
-  { name: 'seed-pet-catalog', run: seedPetCatalog }
+  { name: 'hard-reset-pet-catalog', run: hardResetPetCatalog }
   // clear-legacy-trial-subject-refs (2026-06-20 下线)
+  // seed-pet-catalog (2026-06-21 v1) 已合并到 hard-reset-pet-catalog (2026-06-22)
 ]
 
 /**

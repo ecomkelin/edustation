@@ -1,5 +1,9 @@
 <template>
   <div class="page">
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
+      <template #title>平台级共享图鉴（2026-06-22 重构）</template>
+      本表所有记录由<b>平台超管</b>统一管理，全机构共用一份。机构 admin 仅可查看，写操作会被后端拒绝。
+    </el-alert>
     <div class="filter-bar">
       <el-select v-model="filter.kind" placeholder="类型" clearable style="width:120px" @change="load">
         <el-option v-for="k in PET_CONSUMABLE_KINDS" :key="k" :label="PET_CONSUMABLE_KIND_LABELS[k]" :value="k" />

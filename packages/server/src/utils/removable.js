@@ -110,4 +110,23 @@ async function assertUnused(orgId, checks) {
   }
 }
 
-module.exports = { checkOne, check, assertUnused }
+/* ─── 2026-06-22 pet-system-v2-ext 重构：全局（去 org 维度）互锁 ─── */
+/**
+ * checkGlobal / assertUnusedGlobal：用于 platform-level 实体（无 org 维度）的互锁检查。
+ *
+ * 与 check / assertUnused 的区别：
+ *   - 调用形态完全一致（同样接收 checks 数组）
+ *   - 仅签名去掉 orgId（参数保留为空位以兼容现有调用，但不再使用）
+ *   - 实现复用 checkOne，无 orgId 注入逻辑
+ *
+ * 用例：PetSpecies / PetItem / PetConsumable（2026-06-22 改造后为平台级共享）。
+ */
+async function checkGlobal(checks) {
+  return check(null, checks)
+}
+
+async function assertUnusedGlobal(checks) {
+  return assertUnused(null, checks)
+}
+
+module.exports = { checkOne, check, assertUnused, checkGlobal, assertUnusedGlobal }

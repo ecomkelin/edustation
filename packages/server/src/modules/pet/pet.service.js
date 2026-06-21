@@ -144,13 +144,13 @@ async function hatch({ orgId, studentId }) {
   // D2: 若 species 已锁定（升阶遗留），直接复用；否则按当前 eggTier 加权随机
   let species = pet.species
   if (!species) {
-    const rolled = await petCatalog.rollSpecies({ orgId, tier: eggTier })
+    const rolled = await petCatalog.rollSpecies({ tier: eggTier })
     if (!rolled) throw ApiError.unprocessable('当前阶下没有可选种类')
     species = rolled.key
   }
 
   // 验证 species 存在
-  const speciesDoc = await petCatalog.getSpecies({ orgId, key: species })
+  const speciesDoc = await petCatalog.getSpecies({ key: species })
   if (!speciesDoc) {
     throw ApiError.unprocessable('种类数据异常')
   }
@@ -159,12 +159,12 @@ async function hatch({ orgId, studentId }) {
   const cfg = petConfig.PET_TIER_CONFIG[eggTier]
 
   // 计算新解锁：按当前等级 1（破壳后 level=1）
-  const newLevelUnlocks = await petCatalog.listItemsUnlockedAtLevel({ orgId, tier: eggTier, level: 1 })
+  const newLevelUnlocks = await petCatalog.listItemsUnlockedAtLevel({ tier: eggTier, level: 1 })
   // 蛋→活不触发 halo/background（仅 alive 升阶时解锁）
 
   // 合并 unlocked（去重）—— 按 item.slot 分类
   const unlocked = pet.unlocked || {}
-  const itemsByKey = await Promise.all(newLevelUnlocks.map(k => petCatalog.getItem({ orgId, key: k })))
+  const itemsByKey = await Promise.all(newLevelUnlocks.map(k => petCatalog.getItem({ key: k })))
   const slotOf = (k) => {
     const it = itemsByKey[newLevelUnlocks.indexOf(k)]
     return it && (it.slot || it.type)
@@ -268,7 +268,7 @@ async function feed({ orgId, studentId, consumableKey, foodType, by = 'parent' }
   if (!cfg) throw ApiError.unprocessable('宠物阶数据异常')
 
   // 2. 查 consumable 配置（DB 优先 + 校验 applicableTier）
-  const found = await petCatalog.findConsumable({ orgId, key: resolvedKey, tier })
+  const found = await petCatalog.findConsumable({ key: resolvedKey, tier })
   if (!found) throw ApiError.notFound(`消耗品 ${resolvedKey} 在 ${tier} 阶不可用`)
   const { consumable, perTierConfig } = found
   const cost = perTierConfig.pointCost
@@ -328,8 +328,8 @@ async function feed({ orgId, studentId, consumableKey, foodType, by = 'parent' }
   if (tierUpTriggered) {
     const nextTier = petConfig.nextTier(tier)
     // 解锁新阶 halo + background（D4 不自动装备，仅加入 unlocked）
-    const newTierUnlocks = await petCatalog.listItemsUnlockedAtTier({ orgId, tier: nextTier })
-    const tierUnlockItems = await Promise.all(newTierUnlocks.map(k => petCatalog.getItem({ orgId, key: k })))
+    const newTierUnlocks = await petCatalog.listItemsUnlockedAtTier({ tier: nextTier })
+    const tierUnlockItems = await Promise.all(newTierUnlocks.map(k => petCatalog.getItem({ key: k })))
     const slotOfT = (k) => {
       const it = tierUnlockItems[newTierUnlocks.indexOf(k)]
       return it && (it.slot || it.type)
@@ -359,9 +359,9 @@ async function feed({ orgId, studentId, consumableKey, foodType, by = 'parent' }
   } else if (levelUpCount > 0) {
     setFields.level = newLevel
     // 解锁新 Lv 带来的升级型装饰
-    const newLvUnlocks = await petCatalog.listItemsUnlockedAtLevel({ orgId, tier, level: newLevel })
+    const newLvUnlocks = await petCatalog.listItemsUnlockedAtLevel({ tier, level: newLevel })
     if (newLvUnlocks.length > 0) {
-      const lvUnlockItems = await Promise.all(newLvUnlocks.map(k => petCatalog.getItem({ orgId, key: k })))
+      const lvUnlockItems = await Promise.all(newLvUnlocks.map(k => petCatalog.getItem({ key: k })))
       const slotOfLv = (k) => {
         const it = lvUnlockItems[newLvUnlocks.indexOf(k)]
         return it && (it.slot || it.type)
@@ -582,7 +582,7 @@ async function tierDown({ orgId, studentId, targetTier }) {
   const equippedItemMap = {}
   for (const slot of ['hat', 'scarf', 'clothes', 'accessory', 'halo', 'background']) {
     if (equipped[slot]) {
-      const item = await petCatalog.getItem({ orgId, key: equipped[slot] })
+      const item = await petCatalog.getItem({ key: equipped[slot] })
       equippedItemMap[slot] = item
     }
   }
@@ -689,7 +689,7 @@ async function decoratePet(pet) {
   if (!pet) return null
   const result = { ...pet }
   if (pet.species && pet.org) {
-    result.speciesRecord = await petCatalog.getSpecies({ orgId: pet.org, key: pet.species }) || null
+    result.speciesRecord = await petCatalog.getSpecies({ key: pet.species }) || null
   }
   if (pet.state === 'alive' && pet.tier) {
     const cfg = petConfig.PET_TIER_CONFIG[pet.tier]
