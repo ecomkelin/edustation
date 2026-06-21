@@ -33,7 +33,11 @@ const REF_ENTITY = {
   COURSE_PRODUCT: 'CourseProduct',
   LESSON_SCHEDULE: 'LessonSchedule',
   SUBJECT: 'Subject',
-  COURSE_INSTANCE: 'CourseInstance'
+  COURSE_INSTANCE: 'CourseInstance',
+  // 2026-06-21 pet-system-v2-ext: 宠物图鉴三表的 imageFile 字段
+  PET_SPECIES: 'PetSpecies',
+  PET_ITEM: 'PetItem',
+  PET_CONSUMABLE: 'PetConsumable'
 }
 
 const SCOPE = {
@@ -50,7 +54,15 @@ const SCOPE = {
   // - courseInstanceLessonMaterial: CourseInstance 上快照的 + 特例补充的课件
   SUBJECT_SYLLABUS: 'subjectSyllabus',
   SUBJECT_LESSON_MATERIAL: 'subjectLessonMaterial',
-  COURSE_INSTANCE_LESSON_MATERIAL: 'courseInstanceLessonMaterial'
+  COURSE_INSTANCE_LESSON_MATERIAL: 'courseInstanceLessonMaterial',
+  // 人脸识别门禁 (2026-06 立项)：
+  // - faceAccessEnrollment:      录入人脸时的清晰照（保留 30 天作审计）
+  // - faceAccessSnapshot:        进出抓拍图 — 授权人识别通过
+  // - faceAccessStrangerSnapshot:进出抓拍图 — 陌生人（独立保留策略）
+  // 强约束: 上述 3 个 scope 必须走 local driver 存储（人脸照片不得上公有云）
+  FACE_ACCESS_ENROLLMENT: 'faceAccessEnrollment',
+  FACE_ACCESS_SNAPSHOT: 'faceAccessSnapshot',
+  FACE_ACCESS_STRANGER_SNAPSHOT: 'faceAccessStrangerSnapshot'
 }
 
 const FileSchema = new Schema(

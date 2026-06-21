@@ -23,6 +23,10 @@ const pointsRoutes = require('@modules/points/points.routes')
 // 积分管理 (2026-06-21): admin 端手动调整积分 + 流水/原因只读
 const pointsAdminRoutes = require('@modules/pointsAdmin/pointsAdmin.routes')
 const petRoutes = require('@modules/pet/pet.routes')
+// Pet admin (2026-06-21 pet-system-v2)
+const petAdminRoutes = require('@modules/petAdmin/petAdmin.routes')
+// Pet catalog admin (2026-06-21 pet-system-v2-ext): species/items/consumables CRUD
+const petCatalogAdminRoutes = require('@modules/pet/petCatalog.admin.routes')
 const healthRoutes = require('@modules/health/health.routes')
 const categoryRoutes = require('@modules/category/category.routes')
 const regionRoutes = require('@modules/region/region.routes')
@@ -38,6 +42,10 @@ const captchaRoutes = require('@modules/captcha/captcha.routes')
 const parentRoutes = require('@modules/parent/parent.routes')
 const childLeadRoutes = require('@modules/childLead/childLead.routes')
 const trialBookingRoutes = require('@modules/trialBooking/trialBooking.routes')
+// 人脸识别门禁 (2026-06 立项)
+//   webhook 入口走 accessControl.webhookRoutes, 在 app.js 中先于 express.json 挂载
+//   这里挂载主路由 (admin 端 + client 端)
+const accessControlRoutes = require('@modules/accessControl/accessControl.routes')
 
 router.use('/auth', authRoutes)
 router.use('/orgs', orgRoutes)
@@ -57,6 +65,10 @@ router.use('/student-works', studentWorkRoutes)
 router.use('/points', pointsRoutes)
 router.use('/points-admin', pointsAdminRoutes)
 router.use('/pet', petRoutes)
+// Pet admin (2026-06-21): 挂在 /admin/pet 下
+router.use('/admin/pet', petAdminRoutes)
+// Pet catalog admin (2026-06-21 pet-system-v2-ext): 挂在 /admin/pet 下 (species/items/consumables CRUD)
+router.use('/admin/pet', petCatalogAdminRoutes)
 router.use('/health', healthRoutes)
 router.use('/categories', categoryRoutes)
 router.use('/regions', regionRoutes)
@@ -71,5 +83,7 @@ router.use('/captcha', captchaRoutes)
 router.use('/parents', parentRoutes)
 router.use('/child-leads', childLeadRoutes)
 router.use('/trial-bookings', trialBookingRoutes)
+// 人脸识别门禁 (2026-06): webhook 已在 app.js 挂载, 这里挂主路由
+router.use('/access-control', accessControlRoutes)
 
 module.exports = router

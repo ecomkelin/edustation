@@ -98,7 +98,10 @@ import {
   Promotion,
   UserFilled,
   // AI 助手 (2026-06) — 魔棒图标
-  MagicStick
+  MagicStick,
+  // 课堂展示 (2026-06-21 pet-system-v2-ext) — 全屏展示
+  VideoPlay,
+  VideoCamera
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -205,7 +208,22 @@ const menuGroups = [
       { path: '/student-works', label: '学生作品', icon: Goods, perm: 'studentWork.read' },
       { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
       // 积分管理 (2026-06-21): 学员积分账户列表 + 流水 + 手动调整积分
-      { path: '/points', label: '积分管理', icon: Present, perm: 'points.read' }
+      { path: '/points', label: '积分管理', icon: Present, perm: 'points.read' },
+      // 宠物管理 (2026-06-21 pet-system-v2): 机构全量宠物 + 事件流 + 调整
+      { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' },
+      // 宠物图鉴 CRUD (2026-06-21 pet-system-v2-ext): species / items / consumables
+      { path: '/pet/species', label: '宠物图鉴', icon: MagicStick, perm: 'pet.write' },
+      { path: '/pet/items', label: '装饰图鉴', icon: MagicStick, perm: 'pet.write' },
+      { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write' }
+    ]
+  },
+  // 课堂展示 (2026-06-21 pet-system-v2-ext): 全屏宠物展示页 (老师投影给全班看)
+  {
+    key: 'classroom-display',
+    title: '课堂展示',
+    icon: VideoPlay,
+    children: [
+      { path: '/class/pet-display', label: '宠物课堂展示', icon: VideoCamera, perm: 'pet.read' }
     ]
   },
   {

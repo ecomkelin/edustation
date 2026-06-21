@@ -289,12 +289,14 @@
     {
       "key": "pet",
       "label": "宠物",
-      "description": "查看学员的虚拟宠物（等级、经验、外观）。C 端家长端可喂养。",
+      "description": "管理学员的虚拟宠物系统（2026-06-21 pet-system-v2）：等级、经验、外观、饥饿度、装饰、事件流水。C 端家长端可喂养/换装/破壳/降阶，无需业务权限码（仅 auth + activeStudent）。",
       "permissions": [
-        "pet.read"
+        "pet.read",
+        "pet.write"
       ],
       "permissionLabels": {
-        "pet.read": { "label": "查看宠物", "description": "查看学员的宠物等级与经验" }
+        "pet.read": { "label": "查看宠物", "description": "查看学员的宠物（等级/经验/饱腹度/装备/事件流水）" },
+        "pet.write": { "label": "管理宠物", "description": "员工调整/重置/补饱腹度/强制孵化等 admin 兜底操作" }
       }
     },
     {
@@ -323,6 +325,21 @@
       "permissionLabels": {
         "agent.read": { "label": "访问 AI 助手", "description": "打开管理后台 AI 助手页面, 进行查询类对话" },
         "agent.write": { "label": "AI 助手执行写操作", "description": "允许 AI 助手代为执行业务写操作 (创建/修改), 仍受具体模块权限与高风险二次确认约束" }
+      }
+    },
+    {
+      "key": "access-control",
+      "label": "门禁管理",
+      "description": "管理人脸识别门禁设备、人脸档案、进出流水、家长接送授权 (2026-06 立项)。学员到校识别 + 家长接送核验场景。算法走一体机本地 (汉王/熵基 7 寸一体机), 不依赖云 API。",
+      "permissions": [
+        "accessControl.read",
+        "accessControl.write",
+        "accessControl.pickup"
+      ],
+      "permissionLabels": {
+        "accessControl.read": { "label": "查看门禁", "description": "查看门禁设备、人脸档案、进出流水、家长接送授权" },
+        "accessControl.write": { "label": "管理门禁", "description": "注册/编辑门禁设备、录入/撤销人脸档案、切换门锁状态" },
+        "accessControl.pickup": { "label": "接送授权", "description": "为学员配置/撤销接送授权人 (含家长与第三方)" }
       }
     }
   ]

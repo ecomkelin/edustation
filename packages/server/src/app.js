@@ -19,6 +19,12 @@ function createApp() {
 
   // body / cookie / cors
   app.use(cors(buildCorsOptions()))
+
+  // 一体机 webhook 需要 raw body (HMAC 验签 sha256(rawBody)), 必须在 express.json 之前挂载
+  // 仅 access-control 的 webhook 走 raw, 其他路径仍走 json
+  const accessControlWebhook = require('@modules/accessControl/accessControl.webhookRoutes')
+  app.use('/api/v1/access-control', accessControlWebhook)
+
   app.use(express.json({ limit: '2mb' }))
   app.use(express.urlencoded({ extended: true }))
   app.use(cookieParser())

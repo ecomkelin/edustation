@@ -8,6 +8,7 @@ module.exports = {
   requirePlatformAdmin: require('./requirePlatformAdmin'),
   requirePlatformPassword: require('./requirePlatformPassword'),
   activeStudent: require('./activeStudent'),
+  requireEnrolledStudent: require('./requireEnrolledStudent'),
   validateRequest: require('./validateRequest'),
   loginRateLimit: require('./loginRateLimit'),
   notFound: require('./notFound'),

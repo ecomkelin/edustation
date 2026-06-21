@@ -22,7 +22,7 @@
 const mongoose = require('mongoose')
 const PointsAccount = require('@models/PointsAccount.model')
 const PointsTransaction = require('@models/PointsTransaction.model')
-const Pet = require('@models/Pet.model')
+const Pet = require('@models/PetAccount.model')
 const { withCache } = require('./reportCache')
 const {
   REPORT_TTL_MS,
@@ -92,14 +92,25 @@ async function pointsActivityRaw({ orgId }) {
   const activeMap = { '7d': 0, '30d': 0 }
   for (const row of activeAgg) activeMap[row.range] = row.count
 
-  // ---- 宠物等级分布 ----
+  // ---- 宠物分布（2026-06-21 pet-system-v2: 按 state + tier 聚合，旧 stub 的 level-only 维度被替换） ----
   const petAgg = await Pet.aggregate([
     { $match: { org: orgObjectId } },
-    { $group: { _id: '$level', count: { $sum: 1 } } },
-    { $sort: { _id: 1 } }
+    {
+      $group: {
+        _id: { state: '$state', tier: '$tier' },
+        count: { $sum: 1 }
+      }
+    },
+    { $sort: { '_id.tier': 1 } }
   ])
-  const petLevelDistribution = petAgg.map((p) => ({ level: p._id || 0, count: p.count }))
-  const totalPets = petLevelDistribution.reduce((s, p) => s + p.count, 0)
+  // 按 state 分组（egg / alive / dead），alive 内再按 tier
+  const petStateDistribution = {}
+  for (const row of petAgg) {
+    const s = row._id.state || 'unknown'
+    if (!petStateDistribution[s]) petStateDistribution[s] = []
+    petStateDistribution[s].push({ tier: row._id.tier || null, count: row.count })
+  }
+  const totalPets = petAgg.reduce((s, p) => s + p.count, 0)
 
   return {
     points: {
@@ -114,7 +125,7 @@ async function pointsActivityRaw({ orgId }) {
     },
     petLevelDistribution: {
       total: totalPets,
-      list: petLevelDistribution
+      byState: petStateDistribution
     },
     generatedAt: now.toISOString()
   }

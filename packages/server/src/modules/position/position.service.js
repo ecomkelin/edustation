@@ -33,12 +33,13 @@ const DEFAULT_POSITIONS = [
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read',
+      'points.read', 'pet.read', 'pet.write',
       'recruit.read', 'recruit.write', 'recruit.convert',
       'org-promotion.read', 'org-promotion.write',
       'legal.read', 'legal.write',
       'report.read',
-      'agent.read', 'agent.write'
+      'agent.read', 'agent.write',
+      'accessControl.read', 'accessControl.write', 'accessControl.pickup'
     ]
   },
   {
@@ -55,12 +56,13 @@ const DEFAULT_POSITIONS = [
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read',
       'studentWork.read',
-      'points.read', 'pet.read',
+      'points.read', 'pet.read', 'pet.write',
       'recruit.read', 'recruit.write', 'recruit.convert',
       'org-promotion.read', 'org-promotion.write',
       'legal.read', 'legal.write',
       'report.read',
-      'agent.read', 'agent.write'
+      'agent.read', 'agent.write',
+      'accessControl.read', 'accessControl.write', 'accessControl.pickup'
     ]
   },
   {
@@ -74,7 +76,8 @@ const DEFAULT_POSITIONS = [
       'lessonSchedule.read',
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
-      'report.read'
+      'report.read',
+      'accessControl.read'
     ]
   },
   {
@@ -95,7 +98,8 @@ const DEFAULT_POSITIONS = [
     permissions: [
       'order.read', 'order.write', 'order.pay',
       'student.read', 'studentProduct.read',
-      'report.read'
+      'report.read',
+      'accessControl.read'
     ]
   }
 ]

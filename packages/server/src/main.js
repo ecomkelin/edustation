@@ -25,6 +25,10 @@ async function bootstrap() {
   // 必须在 createApp/listen 之前跑完, 避免"server 已 ready 但索引还没修"的窗口
   await require('@utils/startupMigrations').runStartupMigrations()
 
+  // 1.6 注册 pet-system-v2 饥饿衰减 + 死亡 cron (2026-06-21)
+  // require 即触发 setInterval(...).unref()，参照 captcha.service 模式
+  require('@modules/pet/petCron')
+
   // 2. Express
   const app = createApp()
 

@@ -212,6 +212,111 @@ async function castRelPositionsToObjectId() {
   return `cast:stringRels=${stringRels.length}|updated=${updated}`
 }
 
+/* ─── 迁移 8: 清理旧 pets collection (2026-06-21 pet-system-v2) ─────────
+ * 背景:
+ *   pet-system-v2 把 Pet.model stub (单 level/exp 线性养成) 替换为 PetAccount
+ *   (state 机 + 4 阶 + 饥饿 + 装饰). 旧 `pets` collection 字段与新 model 不兼容,
+ *   启动时主动 drop. 业务上旧 pet 没真数据 (MVP stub 阶段), 直接清空可接受.
+ *
+ *   参照 [[startup-mig-killed-trial-subjects]] 教训: 严格只 drop pets collection,
+ *   不动其他 (不批量 updateMany, 不改子字段).
+ *
+ * 幂等: 库无该 collection → no-op; 库有 → drop 一次.
+ */
+async function dropLegacyPetsCollection() {
+  const name = 'pets'
+  try {
+    const collections = await mongoose.connection.db
+      .listCollections({ name })
+      .toArray()
+    if (collections.length === 0) return 'no-op'
+    // eslint-disable-next-line no-console
+    console.log(`[startup-migrations] dropping legacy collection: ${name}`)
+    await mongoose.connection.db.collection(name).drop()
+    return `dropped:${name}`
+  } catch (e) {
+    if (e && (e.codeName === 'NamespaceNotFound' || e.code === 26)) return 'no-op'
+    throw e
+  }
+}
+
+/* ─── 迁移 9: 给已有机构的「管理员」「教务」补 pet.write 权限码 (2026-06-21) ─────
+ * 背景:
+ *   pet-system-v2 上线, 默认权限码 pet.write 加进了 DEFAULT_POSITIONS 的"管理员"和"教务"。
+ *   已落地的历史机构 Position 还没有, 导致他们登录后看不到"宠物管理"菜单 / 调 admin API 403。
+ *
+ * 动作: 对所有 name ∈ {管理员, 教务} 的 Position 做 $addToSet, 一次性补码. 幂等.
+ *   参照 [[report-permission-rollout]] / [[position-dual-hardcode-pitfall]] 教训:
+ *   4 处同步: permissions.json + DEFAULT_POSITIONS + 已有机构 updateMany.
+ */
+async function addPetWritePermToExistingPositions() {
+  const Position = require('@models/Position.model')
+  const codes = ['pet.write']
+  const filter = { name: { $in: ['管理员', '教务'] }, permissions: { $nin: codes } }
+  const before = await Position.countDocuments(filter)
+  if (before === 0) return 'no-op'
+  const r = await Position.updateMany(filter, { $addToSet: { permissions: { $each: codes } } })
+  return `added:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
+}
+
+/* ─── 迁移 10: 种子宠物图鉴 (species/items/consumables) (2026-06-21 pet-system-v2-ext) ─────
+ * 背景:
+ *   pet-system-v2-ext 把 species/items/food 从 shared/pet*.js 静态文件迁到 DB。
+ *   新装或升级时, 每个 org 都需要一份 per-org 种子记录 + 一份 org=null 平台默认种子记录,
+ *   否则 PetAccount.species 字符串无法 resolve 出 speciesRecord, 客户端渲染 fallback。
+ *
+ * 动作:
+ *   - 对每个 isActive=true 的 org, 若 pet_species/pet_items/pet_consumables 三表全空 → 写一份 per-org 种子 (org=<id>)
+ *   - 若三表 org=null 平台默认全空 → 写一份 (org=null)
+ *   幂等: count>0 跳过 (即使 seed 文件改了也不会覆盖现有记录, 后续手改 admin 优先).
+ *
+ * 来源: shared/_petCatalogSeed.js (从 v1 静态 shared/pet*.js 抽出来)。
+ */
+async function seedPetCatalog() {
+  const Org = require('@models/Org.model')
+  const PetSpecies = require('@models/PetSpecies.model')
+  const PetItem = require('@models/PetItem.model')
+  const PetConsumable = require('@models/PetConsumable.model')
+  const seed = require('@shared/_petCatalogSeed')
+
+  const orgs = await Org.find({ isActive: true }).select('_id').lean()
+
+  let perOrgSeeded = 0
+  for (const org of orgs) {
+    const orgScope = org._id
+    const sCount = await PetSpecies.countDocuments({ org: orgScope })
+    const iCount = await PetItem.countDocuments({ org: orgScope })
+    const cCount = await PetConsumable.countDocuments({ org: orgScope })
+    if (sCount === 0 && iCount === 0 && cCount === 0) {
+      // 全空 → 写 per-org 种子
+      const now = new Date()
+      const speciesDocs = seed.PET_SPECIES_SEED.map(s => ({ ...s, org: orgScope, createdAt: now, updatedAt: now }))
+      const itemDocs = seed.PET_ITEMS_SEED.map(it => ({ ...it, org: orgScope, createdAt: now, updatedAt: now }))
+      const consumableDocs = seed.PET_CONSUMABLES_SEED.map(c => ({ ...c, org: orgScope, createdAt: now, updatedAt: now }))
+      await PetSpecies.insertMany(speciesDocs)
+      await PetItem.insertMany(itemDocs)
+      await PetConsumable.insertMany(consumableDocs)
+      perOrgSeeded++
+    }
+  }
+
+  // 平台默认 (org=null)
+  const platSCount = await PetSpecies.countDocuments({ org: null })
+  const platICount = await PetItem.countDocuments({ org: null })
+  const platCCount = await PetConsumable.countDocuments({ org: null })
+  let platSeeded = false
+  if (platSCount === 0 && platICount === 0 && platCCount === 0) {
+    const now = new Date()
+    await PetSpecies.insertMany(seed.PET_SPECIES_SEED.map(s => ({ ...s, org: null, createdAt: now, updatedAt: now })))
+    await PetItem.insertMany(seed.PET_ITEMS_SEED.map(it => ({ ...it, org: null, createdAt: now, updatedAt: now })))
+    await PetConsumable.insertMany(seed.PET_CONSUMABLES_SEED.map(c => ({ ...c, org: null, createdAt: now, updatedAt: now })))
+    platSeeded = true
+  }
+
+  if (perOrgSeeded === 0 && !platSeeded) return 'no-op'
+  return `perOrg=${perOrgSeeded}|platformDefault=${platSeeded ? 'yes' : 'no'}`
+}
+
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
   { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections },
@@ -219,7 +324,10 @@ const migrations = [
   { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions },
   { name: 'add-points-write-perm-to-existing-positions', run: addPointsWritePermToExistingPositions },
   { name: 'drop-legacy-trial-booking-fields', run: dropLegacyTrialBookingFields },
-  { name: 'cast-rel-positions-to-objectid', run: castRelPositionsToObjectId }
+  { name: 'cast-rel-positions-to-objectid', run: castRelPositionsToObjectId },
+  { name: 'drop-legacy-pets-collection', run: dropLegacyPetsCollection },
+  { name: 'add-pet-write-perm-to-existing-positions', run: addPetWritePermToExistingPositions },
+  { name: 'seed-pet-catalog', run: seedPetCatalog }
   // clear-legacy-trial-subject-refs (2026-06-20 下线)
 ]
 

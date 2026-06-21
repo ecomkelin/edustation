@@ -121,6 +121,51 @@ export const PetEmoji = Object.freeze({
   rabbit: '🐰'
 })
 
+// === pet-system-v2 (2026-06-21) ===
+export const PetTier = Object.freeze({ C: 'C', B: 'B', A: 'A', S: 'S' })
+export const PET_TIERS = Object.values(PetTier)
+export const PET_TIER_LABELS = Object.freeze({
+  C: 'C 级',
+  B: 'B 级',
+  A: 'A 级',
+  S: 'S 级'
+})
+
+export const PetState = Object.freeze({ EGG: 'egg', ALIVE: 'alive', DEAD: 'dead' })
+export const PET_STATE_LABELS = Object.freeze({
+  egg: '蛋',
+  alive: '存活',
+  dead: '死亡'
+})
+
+export const FoodType = Object.freeze({ NORMAL: 'normal', PREMIUM: 'premium', SUPER: 'super' })
+export const FOOD_TYPE_LABELS = Object.freeze({
+  normal: '普通',
+  premium: '高级',
+  super: '特级'
+})
+
+export const PetSlot = Object.freeze({
+  HAT: 'hat', SCARF: 'scarf', CLOTHES: 'clothes',
+  ACCESSORY: 'accessory', HALO: 'halo', BACKGROUND: 'background'
+})
+export const PET_SLOT_LABELS = Object.freeze({
+  hat: '帽子',
+  scarf: '围巾',
+  clothes: '衣服',
+  accessory: '饰品',
+  halo: '光环',
+  background: '背景'
+})
+
+// 种类 → emoji（与 shared/petSpecies.js 对齐）
+export const PET_SPECIES_EMOJI = Object.freeze({
+  cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
+  fox_red: '🦊', panda_baby: '🐼', penguin_baby: '🐧', owl_horned: '🦉',
+  wolf_arctic: '🐺', deer_white: '🦌', hawk_red: '🦅', dolphin_blue: '🐬',
+  dragon_emperor: '🐉', phoenix_fire: '🔥', unicorn_rainbow: '🦄', griffin_gold: '🦅'
+})
+
 export const StudentProductSource = Object.freeze({
   ORDER: 'order',
   GIFT: 'gift'

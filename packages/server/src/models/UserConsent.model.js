@@ -45,6 +45,29 @@ const UserConsentSchema = new Schema(
     ip: { type: String, default: '' },
     userAgent: { type: String, default: '' },
 
+    // ─── 主体扩展 (2026-06 立项, accessControl 模块) ─────────────
+    // 用于人脸同意书等 polymorphic 场景 (例: 家长代学员签 face-consent-student)
+    // 老数据 subjectType='user', subject=null 维持原语义
+    // subjectType ∈ ['user', 'student', 'authorized_pickup', 'staff']
+    subjectType: {
+      type: String,
+      enum: ['user', 'student', 'authorized_pickup', 'staff'],
+      default: 'user',
+      index: true
+    },
+    // 主体 ObjectId (user 字段是签署人; subject 是协议所约束的对象, 可能不同)
+    subject: {
+      type: Schema.Types.ObjectId,
+      refPath: 'subjectType',
+      default: null,
+      index: true
+    },
+
+    // 撤回标记 (PIPL 强制留痕: 不物理删 UserConsent, 仅标记撤回)
+    withdrawAt: { type: Date, default: null, index: true },
+    withdrawBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    withdrawIp: { type: String, default: '' },
+
     meta: { type: Schema.Types.Mixed, default: {} }
   },
   {
@@ -54,11 +77,17 @@ const UserConsentSchema = new Schema(
 )
 
 // (user, docKey, version) 唯一: 同一用户对同一协议同一版本只能同意一次
+// partialFilterExpression: 只对未撤回的记录去重 (撤回后可重签新版)
 UserConsentSchema.index(
   { user: 1, docKey: 1, version: 1 },
-  { unique: true }
+  {
+    unique: true,
+    partialFilterExpression: { withdrawAt: null }
+  }
 )
 // 查"该用户最近一次同意某协议": user + docKey + createdAt 倒序
 UserConsentSchema.index({ user: 1, docKey: 1, createdAt: -1 })
+// 查"该主体在哪些协议上签了字": subjectType + subject + docKey
+UserConsentSchema.index({ subjectType: 1, subject: 1, docKey: 1, createdAt: -1 })
 
 module.exports = model('UserConsent', UserConsentSchema)

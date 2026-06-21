@@ -39,6 +39,12 @@ const routes = [
       { path: 'student-works', component: () => import('@/views/studentWorks/StudentWorks.vue') },
       // 积分管理 (2026-06-21): 学员积分账户列表 + 流水 + 手动调整
       { path: 'points', component: () => import('@/views/points/Points.vue') },
+      // 宠物管理 (2026-06-21 pet-system-v2)
+      { path: 'pet', component: () => import('@/views/pet/PetAdmin.vue') },
+      // 宠物图鉴 CRUD (2026-06-21 pet-system-v2-ext): species/items/consumables
+      { path: 'pet/species', component: () => import('@/views/pet/PetSpeciesAdmin.vue') },
+      { path: 'pet/items', component: () => import('@/views/pet/PetItemAdmin.vue') },
+      { path: 'pet/consumables', component: () => import('@/views/pet/PetConsumableAdmin.vue') },
       // 经营分析:5 块看板对应后端 /api/v1/reports/* ；二级菜单入口见 DefaultLayout
       { path: 'reports/overview', component: () => import('@/views/reports/OverviewReport.vue') },
       { path: 'reports/lesson-consumption', component: () => import('@/views/reports/LessonConsumptionReport.vue') },
@@ -67,6 +73,15 @@ const routes = [
       { path: 'reports/recruit', component: () => import('@/views/reports/RecruitReport.vue') },
       // 首登强改密 (2026-06): 路由守卫拦截, 改密成功后清标志
       { path: 'reset-password', component: () => import('@/views/ResetPassword.vue'), meta: { auth: true } }
+    ]
+  },
+  // 课堂展示 (2026-06-21 pet-system-v2-ext): 独立 layout (ClassroomLayout), 全屏深色背景
+  {
+    path: '/class',
+    component: () => import('@/layouts/ClassroomLayout.vue'),
+    meta: { auth: true },
+    children: [
+      { path: 'pet-display', component: () => import('@/views/classroom/PetClassroomDisplay.vue') }
     ]
   },
   { path: '/:pathMatch(.*)*', component: () => import('@/views/NotFound.vue') }

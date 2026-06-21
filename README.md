@@ -54,7 +54,7 @@ cp .env.example packages/server/.env
 pnpm db:seeds
 ```
 
-将创建 1 个示范机构、9 个用户（含 1 个平台超管）、5 个职位、6 个学生、20 个排课、5 个订单等（详见 [CLAUDE.md §7](./CLAUDE.md)）。
+将创建 1 个示范机构、9 个用户（含 1 个平台超管）、5 个职位、6 个学生、20 个排课、5 个订单等（详见 [docs/claude/](docs/claude/) 数据模型索引）。
 
 ### 4. 启动开发服务
 

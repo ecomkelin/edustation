@@ -1,0 +1,77 @@
+'use strict'
+
+const { Schema, model } = require('mongoose')
+const { PET_ITEM_SLOTS, PET_ITEM_UNLOCK_TYPES, PET_TIERS } = require('@shared/enums')
+
+/**
+ * 宠物装饰图鉴（PetItem，2026-06-21 pet-system-v2-ext）
+ *
+ * 6 个 slot：hat / scarf / clothes / accessory / halo / background
+ *   - hat/scarf/clothes/accessory：升级解锁（unlockType='level', unlockLevel 阈值）
+ *   - halo/background：升阶解锁（unlockType='tier', unlockTier 阈值；累积：B 解锁 C+B）
+ *
+ * 平台级共享 + per-org override 模式（同 PetSpecies）。
+ *
+ * 字段：
+ *   - org / key / name / slot
+ *   - unlockType / unlockTier / unlockLevel
+ *   - imageFile (装饰贴图)
+ *   - compatibleSpecies []  (宽松 UI 提示，不强制)
+ *   - isActive / description / meta
+ */
+const PetItemSchema = new Schema(
+  {
+    // 多租户；null = 平台默认
+    org: { type: Schema.Types.ObjectId, ref: 'Org', default: null, index: true },
+
+    // 唯一 key
+    key: { type: String, required: true, trim: true },
+
+    // 玩家可见名
+    name: { type: String, required: true, trim: true, maxlength: 64 },
+
+    // slot
+    slot: { type: String, enum: PET_ITEM_SLOTS, required: true, index: true },
+
+    // 解锁类型
+    unlockType: { type: String, enum: PET_ITEM_UNLOCK_TYPES, required: true },
+
+    // 升级解锁时：unlockTier + unlockLevel
+    unlockTier: { type: String, enum: PET_TIERS, default: null },
+    unlockLevel: { type: Number, default: null, min: 1, max: 100 },
+
+    // 装饰贴图
+    imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
+
+    // 宽松 UI 提示（equip 不强制校验；adoptedBy admin 选择"建议用于哪些物种"）
+    compatibleSpecies: { type: [String], default: [] },
+
+    // 软启用
+    isActive: { type: Boolean, default: true, index: true },
+
+    // 描述（前端 tooltip）
+    description: { type: String, default: null, maxlength: 500 },
+
+    // 扩展位
+    meta: { type: Schema.Types.Mixed, default: {} },
+
+    // 审计
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }
+  },
+  {
+    timestamps: true,
+    collection: 'pet_items'
+  }
+)
+
+// 唯一索引：同 org（可 null）下 key 不重
+PetItemSchema.index({ org: 1, key: 1 }, { unique: true })
+
+// 列表查询索引：按 org + slot + isActive 过滤
+PetItemSchema.index({ org: 1, slot: 1, isActive: 1 })
+
+// 解锁查询索引：按 org + unlockType + unlockTier 过滤（升阶时批量取 halo/background）
+PetItemSchema.index({ org: 1, unlockType: 1, unlockTier: 1 })
+
+module.exports = model('PetItem', PetItemSchema)
