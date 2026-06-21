@@ -42,9 +42,9 @@ async function callMiniMax({
   stream = false,
   tools = null
 }) {
-  if (!apiKey) throw ApiError.internal('MINIMAX_API_KEY 未配置')
-  if (!baseUrl) throw ApiError.internal('MINIMAX_BASE_URL 未配置')
-  if (!model) throw ApiError.internal('MINIMAX_MODEL 未配置')
+  if (!apiKey) throw ApiError.internal('AI_API_KEY 未配置')
+  if (!baseUrl) throw ApiError.internal('AI_BASE_URL 未配置')
+  if (!model) throw ApiError.internal('AI_MODEL 未配置')
   if (!Array.isArray(messages) || messages.length === 0) {
     throw ApiError.badRequest('messages 不能为空')
   }
@@ -186,7 +186,7 @@ async function chat({
 }) {
   const ai = config.ai || {}
   if (!ai.enabled) {
-    throw ApiError.internal('AI 客服未启用, 请先在 .env 中配置 MINIMAX_API_KEY 并设置 AI_ENABLED=true')
+    throw ApiError.internal('AI 客服未启用, 请先在 .env 中配置 AI_API_KEY 并设置 AI_ENABLED=true')
   }
   const finalMessages = buildMessages({ messages, systemPrompt, knowledgeContext })
   const result = await callMiniMax({
@@ -237,7 +237,7 @@ async function* chatStream({
 }) {
   const ai = config.ai || {}
   if (!ai.enabled) {
-    yield { event: 'error', data: { code: 500, message: 'AI 客服未启用, 请配置 MINIMAX_API_KEY 与 AI_ENABLED=true' } }
+    yield { event: 'error', data: { code: 500, message: 'AI 客服未启用, 请配置 AI_API_KEY 与 AI_ENABLED=true' } }
     return
   }
 
@@ -493,8 +493,8 @@ function parseToolArgs(s) {
 
 async function ping() {
   const ai = config.ai || {}
-  if (!ai.enabled) return { ok: false, reason: 'AI 客服未启用, 请在 .env 中设置 AI_ENABLED=true 并填入 MINIMAX_API_KEY' }
-  if (!ai.apiKey) return { ok: false, reason: 'MINIMAX_API_KEY 未配置 (请检查 .env)' }
+  if (!ai.enabled) return { ok: false, reason: 'AI 客服未启用, 请在 .env 中设置 AI_ENABLED=true 并填入 AI_API_KEY' }
+  if (!ai.apiKey) return { ok: false, reason: 'AI_API_KEY 未配置 (请检查 .env)' }
   try {
     const res = await chat({
       messages: [{ role: 'user', content: '你好, 请用一句话介绍你自己。' }],
@@ -511,7 +511,7 @@ async function ping() {
   } catch (e) {
     const reason = e.message || String(e)
     const hint = /ENOTFOUND|EAI_AGAIN/.test(reason)
-      ? `(请检查 MINIMAX_BASE_URL 是否正确、当前网络能否访问该域名)`
+      ? `(请检查 AI_BASE_URL 是否正确、当前网络能否访问该域名)`
       : ''
     return { ok: false, reason: reason + hint }
   }

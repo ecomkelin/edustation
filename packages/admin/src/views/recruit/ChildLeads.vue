@@ -93,22 +93,7 @@
             :value="u._id || u.id"
           />
         </el-select>
-        <!-- 咨询师 (Parent.consultant) -->
-        <el-select
-          v-model="filters.consultant"
-          placeholder="咨询师"
-          clearable
-          filterable
-          style="width: 130px"
-          @change="onFilterChange"
-        >
-          <el-option
-            v-for="u in staffOptions"
-            :key="u._id || u.id"
-            :label="staffLabel(u)"
-            :value="u._id || u.id"
-          />
-        </el-select>
+        <!-- 2026-06-21: 删"咨询师"筛选 (Parent.consultant 字段下线, 谈单老师挂到 TrialBooking) -->
         <!-- 关键词: 孩子姓名 -->
         <el-input
           v-model="filters.keyword"
@@ -371,7 +356,7 @@ const filters = reactive({
   trialSubject: null,
   promoteBy: null,
   inviteTeacher: null,
-  consultant: null,
+  // 2026-06-21: 删 consultant 筛选 (Parent.consultant 字段下线)
   keyword: '',
   // 默认 'all' 让前端意图清晰; 后端 childLead.service 非超管仍会强制 mine, 此处传 all 不影响结果
   scope: 'all'
@@ -483,7 +468,7 @@ function onReset() {
   filters.trialSubject = null
   filters.promoteBy = null
   filters.inviteTeacher = null
-  filters.consultant = null
+  // 2026-06-21: 删 consultant 重置
   filters.keyword = ''
   filters.scope = 'all'
   pagination.page = 1

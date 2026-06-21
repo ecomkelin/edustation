@@ -67,9 +67,7 @@
         <el-descriptions-item label="推广人">
           {{ parent.promoteBy?.realName || parent.promoteBy?.mobile || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="咨询师">
-          {{ parent.consultant?.realName || parent.consultant?.mobile || '-' }}
-        </el-descriptions-item>
+        <!-- 2026-06-21: 删"咨询师"展示 — Parent.consultant 字段下线 -->
         <el-descriptions-item label="家长账号" v-if="parent.user">
           {{ parent.user.mobile }} (realName: {{ parent.user.realName }})
           <el-tag v-if="parent.user.requirePasswordChange" type="warning" size="small" class="ml">未改密</el-tag>

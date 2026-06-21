@@ -10,7 +10,8 @@ const { Schema, model } = require('mongoose')
  *     - 创建 Parent 时不需要 User 存在
  *     - 首个 ChildLead 转化时才 upsert User 并回填 Parent.user
  *     - 同 phone 下 1 家长带多孩 (1 Parent : N ChildLead)
- *   - 业务归因: 推广人员 (录入销售) / 咨询老师 (转化负责) / 渠道 (source)
+ *   - 业务归因: 推广人员 (录入销售) / 渠道 (source)
+ *   - 2026-06-21: 删 consultant 字段 (谈单老师挂到 TrialBooking.consultant, 不在 Parent 上)
  *   - 家长 lifecycle 状态机: new / partial / full / lost / dormant
  *     - new     刚登记, 还没孩子报名
  *     - partial 部分孩子报名 (1 家长多孩, 1 个已签)
@@ -58,8 +59,6 @@ const ParentSchema = new Schema(
     sourceDetail: { type: String, trim: true, default: '' },
     // 推广人员 (录入家长账户的销售)
     promoteBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    // 咨询老师 (转化负责, 与 promoteBy 业务上常不同)
-    consultant: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // 推荐人 (老带新场景, 指向另一个 Parent)
     referrer: { type: Schema.Types.ObjectId, ref: 'Parent', default: null },
 
@@ -118,8 +117,6 @@ ParentSchema.index({ org: 1, phone: 1 }, { unique: true })
 ParentSchema.index({ org: 1, lifecycle: 1, lastContactedAt: -1 })
 // 推广人员归因
 ParentSchema.index({ org: 1, promoteBy: 1, createdAt: -1 })
-// 咨询师归因
-ParentSchema.index({ org: 1, consultant: 1, createdAt: -1 })
 // 渠道 ROI
 ParentSchema.index({ org: 1, source: 1, lifecycle: 1 })
 // 跟进列表

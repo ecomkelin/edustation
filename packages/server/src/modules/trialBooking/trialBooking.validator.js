@@ -8,7 +8,7 @@ const { body, query, param } = require('express-validator')
  * 端点矩阵:
  *   GET  /                  - 列表 (看板)
  *   GET  /:id               - 详情
- *   POST /                  - 创建 (仅跟班 attached 模式; solo 走 batch-schedule)
+ *   POST /for-child         - 为已有 childLead 建一笔 awaiting_schedule 预约 (solo 模式)
  *   POST /batch-schedule    - 批量排课 (核心流程)
  *   PUT  /:id               - 编辑 (cancelled / remark)
  *   POST /:id/check-in      - 到店打卡
@@ -18,6 +18,10 @@ const { body, query, param } = require('express-validator')
  *   POST /:id/reschedule-time      - 改预约时间 (scheduled→scheduled, 替代 markNoShow+reschedule)
  *   POST /:id/revert-to-unscheduled - 退回未约 (scheduled→awaiting_schedule)
  *   DELETE /:id             - 物理删除 (requirePlatformPassword)
+ *
+ * 2026-06-21 调整:
+ *   - 删 POST / (attached 跟班创建): 试听课**完全独立**于排课系统, 不再 attach 到 LessonSchedule
+ *   - 删 result.negotiateTeacher 字段; 谈单老师统一走顶级 consultant
  */
 
 exports.list = [
@@ -38,13 +42,6 @@ exports.list = [
   query('isEnrolled').optional().isIn(['true', 'false']).withMessage('isEnrolled 需为 true/false'),
   query('page').optional().isInt({ min: 1 }),
   query('pageSize').optional().isInt({ min: 1, max: 200 })
-]
-
-exports.create = [
-  body('preStudent').isMongoId().withMessage('preStudent 需为合法 id'),
-  body('joinMode').isIn(['attached']).withMessage('create 接口仅支持跟班 (attached) 模式; solo 走 batch-schedule'),
-  body('lessonSchedule').isMongoId().withMessage('lessonSchedule 需为合法 id'),
-  body('remark').optional({ nullable: true }).isString().isLength({ max: 500 })
 ]
 
 exports.update = [
@@ -88,10 +85,14 @@ exports.complete = [
   // 2026-06-20: isEnrolled 退回 boolean (考虑期 considering 改走顶级 status 字段)
   //   null 也允许 (前端 explicit 表达"未定夺")
   body('result.isEnrolled').optional({ nullable: true }).isBoolean().withMessage('isEnrolled 需为 boolean'),
-  body('result.negotiateTeacher').optional({ nullable: true }).isMongoId(),
   body('result.attractionPoint').optional({ nullable: true }).isString().isLength({ max: 500 }),
   body('result.reasonNotEnrolled').optional({ nullable: true }).isString().isLength({ max: 500 }),
-  body('result.considerNote').optional({ nullable: true }).isString().isLength({ max: 500 })
+  body('result.considerNote').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  // 2026-06-21 新增: 考虑期家长 + 孩子 + 话术 3 字段
+  body('result.childNote').optional({ nullable: true }).isString().isLength({ max: 500 }),
+  body('result.followUpScript').optional({ nullable: true }).isString().isLength({ max: 1000 }),
+  // 2026-06-21: 谈单老师统一走顶级 consultant 字段 (result.negotiateTeacher 已删)
+  body('consultant').optional({ nullable: true }).isMongoId().withMessage('consultant 需为合法 id')
 ]
 
 exports.reschedule = [

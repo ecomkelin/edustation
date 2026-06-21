@@ -218,7 +218,8 @@
             </el-table-column>
             <el-table-column label="谈单老师" min-width="90">
               <template #default="{ row }">
-                {{ row.consultant?.realName || row.result?.negotiateTeacher?.realName || '-' }}
+                <!-- 2026-06-21: 谈单老师统一走顶级 consultant 字段 (result.negotiateTeacher 已删) -->
+                {{ row.consultant?.realName || row.consultant?.mobile || '-' }}
               </template>
             </el-table-column>
             <el-table-column label="操作" width="200" fixed="right">

@@ -98,13 +98,17 @@ async function updateUnaffiliated(userId, payload) {
  *   region    ObjectId，按 User.region 精确匹配
  *   isActive  bool，是否启用
  */
-async function list({ orgId, keyword, userType, position, region, isActive, page, pageSize }) {
+async function list({ orgId, keyword, userType, position, region, isActive, roleScope, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
 
   // 1. 客户端职位 id 列表（用于 userType 过滤）：clientLevel > 0
   const clientPosFilter = { org: orgId, clientLevel: { $gt: 0 } }
   const clientPosIds = (await Position.find(clientPosFilter).select('_id').lean()).map((d) => d._id)
   const hasClient = clientPosIds.length > 0
+  // 2026-06-21: 新增 staff 职位 id 列表 (clientLevel = 0), roleScope=staff 用 $in 正确处理混合岗
+  //   2026-06-21 cast-rel-positions-to-objectid migration 后 rel.positions 是 ObjectId, 这里直接用 ObjectId $in
+  const staffPosFilter = { org: orgId, clientLevel: 0 }
+  const staffPosIds = (await Position.find(staffPosFilter).select('_id').lean()).map((d) => d._id)
 
   // 2. relFilter：org + 职位归属
   const relFilter = { org: orgId }
@@ -112,6 +116,14 @@ async function list({ orgId, keyword, userType, position, region, isActive, page
     relFilter.positions = position
   } else if (userType === 'client' && hasClient) {
     relFilter.positions = { $in: clientPosIds }
+  } else if (roleScope === 'staff' && hasClient) {
+    // 2026-06-21: roleScope=staff 用 $in: staffPosIds 正确处理"既是家长又是老师"的混合岗
+    //   保留至少持有一个 clientLevel=0 职位的 user (员工 + 混合岗)
+    //   纯家长 (所有 position 都是 clientLevel>0) 被排除
+    if (staffPosIds.length === 0) {
+      return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
+    }
+    relFilter.positions = { $in: staffPosIds }
   } else if (userType === 'staff') {
     if (hasClient) {
       // 持有任何职位，但不含客户端职位

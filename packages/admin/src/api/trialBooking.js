@@ -4,17 +4,20 @@ import http from './http'
  * 招生试听 - 试听预约 (TrialBooking) API
  *
  * 核心流程:
- *   1. batch-schedule: 教务在"待约"tab 多选 booking → 选时间/老师/教室 → 一次性创建 1 个 LessonSchedule
- *   2. check-in: 销售/教务到店打卡 (status=arrived)
- *   3. complete: 填 result (是否报名 + 原因 + 谈单老师 + 吸引点)
- *   4. convert-preview → convert: 转化 (claim token + upsert 链)
- *   5. (2026-06-16) 已约态的精细调整: reschedule-time 改时间 / revert-to-unscheduled 退回未约
+ *   1. for-child: 为已有 childLead 建一笔 awaiting_schedule 预约
+ *   2. batch-schedule: 教务在"待约"tab 多选 booking → 选时间/老师/教室
+ *   3. check-in: 销售/教务到店打卡 (status=arrived)
+ *   4. complete: 填 result (是否报名 + 原因 + 谈单老师 + 吸引点)
+ *   5. convert-preview → convert: 转化 (claim token + upsert 链)
+ *   6. (2026-06-16) 已约态的精细调整: reschedule-time 改时间 / revert-to-unscheduled 退回未约
+ *
+ * 2026-06-21 调整:
+ *   - 删 create (attached 跟班): 试听课完全独立于排课系统
+ *   - 谈单老师走顶级 consultant 字段 (替代 result.negotiateTeacher)
  */
 export const trialBookingApi = {
   list: (params) => http.get('/trial-bookings', { params }),
   detail: (id) => http.get(`/trial-bookings/${id}`),
-  // 单笔跟班 (attached)
-  create: (data) => http.post('/trial-bookings', data),
 
   // 2026-06-20: 为已有 childLead 单独创建一笔 awaiting_schedule 预约 (solo, 不排时间)
   //   场景: 取消后再约 / 已转化想再试另一门 / 录入时漏了某个科目

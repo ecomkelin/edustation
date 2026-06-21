@@ -136,14 +136,14 @@
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
-            <!-- 2026-06-16: 谈单老师列 — 之前只在 SignInDialog 显示
-                 - 后端 list 已 populate 'result.negotiateTeacher, mobile realName'
+            <!-- 2026-06-21: 谈单老师列 — 走顶级 consultant 字段 (替代 result.negotiateTeacher)
+                 - 后端 list 已 populate 'consultant, mobile realName'
                  - 只在 completed 状态有意义 (isEnrolled=true 时才填), 流程 tab 显示 "-"
                  - 业务上"已报名" tab 销售最关注"谁谈的单" -->
             <el-table-column label="谈单老师" min-width="100">
               <template #default="{ row }">
-                <span v-if="row.result?.negotiateTeacher?.realName">
-                  {{ row.result.negotiateTeacher.realName }}
+                <span v-if="row.consultant?.realName">
+                  {{ row.consultant.realName }}
                 </span>
                 <span v-else class="muted">-</span>
               </template>
@@ -215,12 +215,6 @@
                   @click="onRevertToUnscheduled(row)"
                 >退回未约</el-button>
                 <el-button
-                  v-if="row.status === 'awaiting_schedule'"
-                  size="small"
-                  link
-                  @click="onAttached(row)"
-                >跟班</el-button>
-                <el-button
                   v-if="row.status === 'awaiting_schedule' || row.status === 'scheduled'"
                   size="small"
                   type="danger"
@@ -275,13 +269,6 @@
       v-model:visible="signInDialog.visible"
       :booking="signInDialog.booking"
       @updated="onSignInUpdated"
-    />
-
-    <!-- 跟班试听 dialog -->
-    <TrialAttachedDialog
-      v-model:visible="attachedDialog.visible"
-      :booking="attachedDialog.booking"
-      @scheduled="load"
     />
 
     <!-- 2026-06-16: 改预约时间 / 再约一次 共用 dialog (mode 区分行为) -->
@@ -374,7 +361,7 @@ import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import BatchScheduleDialog from './BatchScheduleDialog.vue'
 import TrialBookingSignInDialog from './TrialBookingSignInDialog.vue'
-import TrialAttachedDialog from './TrialAttachedDialog.vue'
+// 2026-06-21: 删 TrialAttachedDialog import (attached 跟班模式下线)
 
 // 2026-06-20 调整:
 //   - 状态机加 'considering' 顶级 status, 在 [已到店] 和 [已报名] 之间独立 tab
@@ -447,7 +434,7 @@ function defaultDateRange() {
 
 const batchDialog = reactive({ visible: false })
 const signInDialog = reactive({ visible: false, booking: null })
-const attachedDialog = reactive({ visible: false, booking: null })
+// 2026-06-21: 删 attachedDialog (attached 跟班模式下线)
 // 2026-06-16: 改预约时间 / 再约一次 共用 dialog, mode 区分行为:
 //   - 'time'      → scheduled 改时间 (调 rescheduleTime)
 //   - 'cancelled' → cancelled 后再约一次 (调 rescheduleFromCancelled)
@@ -770,11 +757,6 @@ async function onRemove(row, { password }) {
   } catch (e) {
     await handleRemoveError(e, '无法删除试听预约', `预约 ${row.preStudent?.name} 第 ${row.attemptNo} 次`)
   }
-}
-
-function onAttached(row) {
-  attachedDialog.booking = row
-  attachedDialog.visible = true
 }
 
 function onBatchScheduled() {

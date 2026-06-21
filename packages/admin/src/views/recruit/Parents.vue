@@ -175,11 +175,7 @@
             {{ row.promoteBy?.realName || row.promoteBy?.mobile || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="咨询师" min-width="90">
-          <template #default="{ row }">
-            {{ row.consultant?.realName || row.consultant?.mobile || '-' }}
-          </template>
-        </el-table-column>
+        <!-- 2026-06-21: 删"咨询师"列 — Parent.consultant 字段下线, 谈单老师挂到 TrialBooking -->
         <el-table-column label="最近联系" width="160">
           <template #default="{ row }">{{ formatTime(row.lastContactedAt) }}</template>
         </el-table-column>

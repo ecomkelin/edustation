@@ -251,8 +251,8 @@ const META = {
     description:
       '试听完成 (status → completed)。同时填 result 子文档: ' +
       'isEnrolled (true 表示家长确认报名, 此时才允许走 convert_trial); ' +
-      'negotiateTeacher (谈单老师 User._id, 同时同步到 consultant 字段); ' +
       'attractionPoint (吸引点); reasonNotEnrolled (未报名原因)。' +
+      '谈单老师通过顶级 consultant 字段 (User._id) 传入, 2026-06-21 起 result.negotiateTeacher 已下线。' +
       '完成后 ChildLead.status 翻 tried。',
     parameters: {
       type: 'object',
@@ -260,12 +260,12 @@ const META = {
       properties: {
         bookingId: { type: 'string', description: 'TrialBooking._id' },
         actualEndTime: { type: 'string', description: '实际下课时间 ISO' },
+        consultant: { type: 'string', description: '谈单老师 User._id (顶级字段, 2026-06-21)' },
         result: {
           type: 'object',
           description: '试听结果, 至少需要 isEnrolled 字段',
           properties: {
             isEnrolled: { type: 'boolean', description: 'true=确认报名, false=未报名' },
-            negotiateTeacher: { type: 'string', description: '谈单老师 User._id' },
             attractionPoint: { type: 'string', description: '吸引点 / 报名动机' },
             reasonNotEnrolled: { type: 'string', description: '未报名原因 (isEnrolled=false 时填)' }
           }

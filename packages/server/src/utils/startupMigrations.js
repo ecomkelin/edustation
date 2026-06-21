@@ -121,12 +121,105 @@ async function addPointsWritePermToExistingPositions() {
   return `added:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
 }
 
+/* ─── 迁移 6: 清 TrialBooking / Parent 老字段 (2026-06-21) ───────────
+ * 背景:
+ *   试听课完全独立于排课系统, attached 模式 (joinMode / lessonSchedule) 下线;
+ *   result.negotiateTeacher 合并到顶级 consultant; Parent.consultant 字段删了
+ *   (谈单老师挂到 TrialBooking)。
+ *
+ * 动作: 把残留老字段清掉, 避免 populate 找不到 / 读出 undefined。
+ *   - TrialBooking.joinMode / lessonSchedule 字段已从 schema 删; 老文档保留无害 (写操作 $set 不带就忽略)
+ *   - TrialBooking.result.negotiateTeacher: 保留字段定义已删, 残留字段被 mongoose 严格模式静默忽略
+ *   - Parent.consultant: 保留字段定义已删, 残留字段被忽略
+ *   本次清理只是把"明确遗留"清掉, 防止调试时混淆。
+ *   幂等: 已 null 的不动; 没字段的 no-op。
+ */
+async function dropLegacyTrialBookingFields() {
+  const db = mongoose.connection.db
+  const tb = await db.collection('trial_bookings')
+  const parent = await db.collection('parents')
+
+  // TrialBooking.joinMode = null (老 attached 模式记录保留, 但 joinMode 字段清空避免歧义)
+  const r1 = await tb.updateMany(
+    { joinMode: { $exists: true, $ne: null } },
+    { $set: { joinMode: null } }
+  )
+  // TrialBooking.lessonSchedule = null
+  const r2 = await tb.updateMany(
+    { lessonSchedule: { $exists: true, $ne: null } },
+    { $set: { lessonSchedule: null } }
+  )
+  // TrialBooking.result.negotiateTeacher = null
+  const r3 = await tb.updateMany(
+    { 'result.negotiateTeacher': { $exists: true, $ne: null } },
+    { $set: { 'result.negotiateTeacher': null } }
+  )
+  // Parent.consultant = null
+  const r4 = await parent.updateMany(
+    { consultant: { $exists: true, $ne: null } },
+    { $set: { consultant: null } }
+  )
+
+  const total = (r1.modifiedCount || 0) + (r2.modifiedCount || 0)
+    + (r3.modifiedCount || 0) + (r4.modifiedCount || 0)
+  if (total === 0) return 'no-op'
+  return `cleaned:joinMode=${r1.modifiedCount || 0}|lessonSchedule=${r2.modifiedCount || 0}|result.negotiateTeacher=${r3.modifiedCount || 0}|parent.consultant=${r4.modifiedCount || 0}`
+}
+
+/* ─── 迁移 7: 把 user_org_rels.positions 从 string 转 ObjectId (2026-06-21) ─────────
+ * 背景:
+ *   历史 raw insert (mongosh dump / 老导入脚本) 让 rel.positions 存的是 string 形式的 ObjectId,
+ *   而 schema 定义的是 ObjectId. Mongoose 读时会自动 cast 回来, 但 $in / $nin 这种数组查询
+ *   mongoose 会按 schema cast, 把查询参数也转成 ObjectId, 结果跟存的 string 对不上, 命中 0 条.
+ *
+ *   这导致 user.service.js#list 的 roleScope='staff' 永远返回 0 (修不了纯家长过滤).
+ *
+ * 动作: 把所有 rel.positions 的 string 元素转回 ObjectId. 幂等: 已经 ObjectId 的跳过.
+ *   用 $type='string' 过滤, 不会误伤 ObjectId 元素.
+ *   用 findOneAndUpdate 逐条改 (用 aggregation pipeline $set + $map 数组转换).
+ */
+async function castRelPositionsToObjectId() {
+  const mongoose = require('mongoose')
+  const rels = mongoose.connection.db.collection('user_org_rels')
+
+  // 找出还有 string 元素的 rels
+  const stringRels = await rels.find({
+    positions: { $exists: true, $type: 'array' },
+    'positions.0': { $type: 'string' }
+  }).project({ _id: 1 }).toArray()
+
+  if (stringRels.length === 0) return 'no-op'
+
+  // 用 aggregation pipeline $set 把数组每个 string 转 ObjectId (mongosh 5.0+ / MongoDB 4.2+ 支持)
+  let updated = 0
+  for (const r of stringRels) {
+    const res = await rels.updateOne(
+      { _id: r._id },
+      [{
+        $set: {
+          positions: {
+            $map: {
+              input: '$positions',
+              as: 'p',
+              in: { $toObjectId: '$$p' }
+            }
+          }
+        }
+      }]
+    )
+    if (res.modifiedCount > 0) updated++
+  }
+  return `cast:stringRels=${stringRels.length}|updated=${updated}`
+}
+
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
   { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections },
   { name: 'pull-hidden-perms-from-positions', run: pullHiddenPermsFromPositions },
   { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions },
-  { name: 'add-points-write-perm-to-existing-positions', run: addPointsWritePermToExistingPositions }
+  { name: 'add-points-write-perm-to-existing-positions', run: addPointsWritePermToExistingPositions },
+  { name: 'drop-legacy-trial-booking-fields', run: dropLegacyTrialBookingFields },
+  { name: 'cast-rel-positions-to-objectid', run: castRelPositionsToObjectId }
   // clear-legacy-trial-subject-refs (2026-06-20 下线)
 ]
 

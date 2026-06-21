@@ -4,7 +4,7 @@
     <p class="hint">
       本页用于测试 AI 智能客服。当前后端使用 <b>MiniMax</b> 大模型（OpenAI 兼容 chat
       completions 协议）。点击右上角"测试连通性"可验证后端是否已正确配置
-      <code>MINIMAX_API_KEY</code> / <code>MINIMAX_BASE_URL</code> / <code>MINIMAX_MODEL</code>。
+      <code>AI_API_KEY</code> / <code>AI_BASE_URL</code> / <code>AI_MODEL</code>。
     </p>
 
     <!-- 顶部状态条 -->
@@ -155,7 +155,7 @@
             <span>使用说明</span>
           </template>
           <ol class="help-list">
-            <li>确保 <code>packages/server/.env</code> 中已设置 <code>AI_ENABLED=true</code> 与 <code>MINIMAX_API_KEY</code>。</li>
+            <li>确保 <code>packages/server/.env</code> 中已设置 <code>AI_ENABLED=true</code> 与 <code>AI_API_KEY</code>。</li>
             <li>先点 <b>测试连通性</b> 验证后端能调到 MiniMax（绿勾=可用）。</li>
             <li>左下输入框发消息，对话会保留上下文（多轮）。</li>
             <li>右侧可临时改 system prompt / RAG 上下文 / temperature / maxTokens。</li>

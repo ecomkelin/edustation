@@ -43,7 +43,8 @@
         />
       </el-form-item>
 
-      <!-- 推广人 / 咨询师: v-model=user 对象 + value-key, 不依赖 userApi.list 拉全 -->
+      <!-- 推广人: v-model=user 对象 + value-key, 不依赖 userApi.list 拉全 -->
+      <!-- 2026-06-21: 删"咨询师"字段 — Parent.consultant 字段下线, 谈单老师挂到 TrialBooking -->
       <el-form-item label="推广人" prop="promoteBy">
         <el-select
           v-model="form.promoteBy"
@@ -55,24 +56,6 @@
         >
           <el-option
             v-for="u in promoterOptions"
-            :key="u._id || u.id"
-            :label="`${u.realName || ''} (${u.mobile || ''})`.trim()"
-            :value="u"
-          />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item label="咨询师" prop="consultant">
-        <el-select
-          v-model="form.consultant"
-          value-key="_id"
-          filterable
-          clearable
-          placeholder="可空"
-          style="width: 100%"
-        >
-          <el-option
-            v-for="u in consultantOptions"
             :key="u._id || u.id"
             :label="`${u.realName || ''} (${u.mobile || ''})`.trim()"
             :value="u"
@@ -146,16 +129,15 @@ const formRef = ref(null)
 const submitting = ref(false)
 const recomputing = ref(false)
 const promoterOptions = ref([])
-const consultantOptions = ref([])
 const channelOptions = ref([])
 
 const form = reactive({
   source: '',
   sourceDetail: '',
-  // promoteBy / consultant 现在存"完整 user 对象" (populate 后的)
+  // promoteBy 现在存"完整 user 对象" (populate 后的)
   // el-select 的 value-key="_id" 帮我们匹配 options
+  // 2026-06-21: 删 consultant 字段 (Parent.consultant 下线)
   promoteBy: null,
-  consultant: null,
   remark: '',
   lifecycle: ''
 })
@@ -185,10 +167,10 @@ watch(
     // 渠道: id 模式 (option 一定能找到, Channel 字典不大)
     form.source = props.parent.source?._id || props.parent.source || null
     form.sourceDetail = props.parent.sourceDetail || ''
-    // promoteBy / consultant: 直接存 populate 后的对象, 不需要等 options 加载
+    // promoteBy: 直接存 populate 后的对象, 不需要等 options 加载
     // (el-select value-key="_id" 帮我们做匹配, 初始显示就用对象自己的字段)
+    // 2026-06-21: 删 consultant
     form.promoteBy = props.parent.promoteBy || null
-    form.consultant = props.parent.consultant || null
     form.remark = props.parent.remark || ''
     form.lifecycle = props.parent.lifecycle || ''
   },
@@ -206,7 +188,7 @@ function normalizeUser(u) {
 
 async function loadOptions() {
   try {
-    // 推广人 / 咨询师 = 全员里非"家长"岗位
+    // 推广人 = 全员里非"家长"岗位
     const [uRes, cRes] = await Promise.all([
       userApi.list({ pageSize: 200 }),
       categoryApi.list({ model: 'Channel', pageSize: 100 })
@@ -214,27 +196,18 @@ async function loadOptions() {
     const all = (uRes.data?.items || (Array.isArray(uRes.data) ? uRes.data : []))
       .map(normalizeUser)
       .filter((u) => !(u.positions || []).some((p) => p.name === '家长'))
-    // 兜底: 如果当前 promoteBy/consultant 已被 populate 但不在拉到的列表里 (pageSize=200 上限)
+    // 兜底: 如果当前 promoteBy 已被 populate 但不在拉到的列表里 (pageSize=200 上限)
     // 把它加到 options 头部, 避免 select 拿不到 option 导致显示原始 ID
     const promoteByObj = normalizeUser(props.parent?.promoteBy)
-    const consultantObj = normalizeUser(props.parent?.consultant)
     const promoteById = promoteByObj?._id
-    const consultantId = consultantObj?._id
     if (promoteById && !all.some((u) => String(u._id) === String(promoteById))
         && promoteByObj && typeof promoteByObj === 'object') {
       all.unshift(promoteByObj)
     }
-    if (consultantId && consultantObj && typeof consultantObj === 'object'
-        && !all.some((u) => String(u._id) === String(consultantId))) {
-      // 注: 同一个对象引用会同时塞到两个数组; 没问题, label 相同
-      all.unshift(consultantObj)
-    }
     promoterOptions.value = all
-    consultantOptions.value = [...all]
     channelOptions.value = cRes.data?.items || (Array.isArray(cRes.data) ? cRes.data : [])
   } catch (e) {
     promoterOptions.value = []
-    consultantOptions.value = []
     channelOptions.value = []
   }
 }
@@ -272,8 +245,8 @@ async function submit() {
       source: form.source,
       sourceDetail: form.sourceDetail,
       // v-model=object 模式, 提交时取 ._id
+      // 2026-06-21: 删 consultant
       promoteBy: form.promoteBy?._id || null,
-      consultant: form.consultant?._id || null,
       remark: form.remark
     }
     // lifecycle 真的改了才发 (避免无意义 PUT)

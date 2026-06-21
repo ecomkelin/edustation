@@ -152,9 +152,9 @@ module.exports = {
   ai: {
     enabled: process.env.AI_ENABLED === 'true',
     provider: process.env.AI_PROVIDER || 'MiniMax',
-    apiKey: process.env.MINIMAX_API_KEY || '',
-    baseUrl: process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1',
-    model: process.env.MINIMAX_MODEL || 'MiniMax-M3',
+    apiKey: process.env.AI_API_KEY || '',
+    baseUrl: process.env.AI_BASE_URL || 'https://api.minimaxi.com/v1',
+    model: process.env.AI_MODEL || 'MiniMax-M3',
     temperature: process.env.AI_TEMPERATURE ? Number(process.env.AI_TEMPERATURE) : 0.7,
     maxTokens: process.env.AI_MAX_TOKENS ? Number(process.env.AI_MAX_TOKENS) : 1024,
     timeoutMs: process.env.AI_TIMEOUT_MS ? Number(process.env.AI_TIMEOUT_MS) : 60_000,

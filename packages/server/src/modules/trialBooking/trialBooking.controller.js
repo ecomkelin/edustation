@@ -13,13 +13,8 @@ exports.detail = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
-exports.create = async (req, res) => {
-  const data = await s.create({ orgId: req.orgId, currentUser: req.user, body: req.body })
-  res.status(201).json(ApiResponse.created(data))
-}
-
 // 2026-06-20: 为已有 childLead 单独创建一笔 awaiting_schedule 预约
-//   与 create (attached 跟班) 并列, 但语义不同 — 这里走 solo 路径, 不排时间
+// 2026-06-21: 删 create (attached 跟班) — 试听课完全独立于排课系统
 exports.createForChild = async (req, res) => {
   const data = await s.createForChild({ orgId: req.orgId, currentUser: req.user, body: req.body })
   res.status(201).json(ApiResponse.created(data))

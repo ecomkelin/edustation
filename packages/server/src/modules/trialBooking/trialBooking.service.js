@@ -5,7 +5,6 @@ const TrialBooking = require('@models/TrialBooking.model')
 const ChildLead = require('@models/ChildLead.model')
 const Parent = require('@models/Parent.model')
 const LeadActivity = require('@models/LeadActivity.model')
-const LessonSchedule = require('@models/LessonSchedule.model')
 const User = require('@models/User.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
 const Student = require('@models/Student.model')
@@ -102,9 +101,7 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
       .populate('parent', 'phone lifecycle')
       .populate('subject', 'name')
       .populate('teacher', 'mobile realName')  // 2026-06-16: 修复 — 列表试听老师列一直显示 "-"
-      .populate('lessonSchedule', 'plannedStartTime plannedEndTime room title isTrialLesson status')
       .populate('consultant', 'mobile realName')
-      .populate('result.negotiateTeacher', 'mobile realName')
       .sort({ createdAt: -1 })
       .skip(p.skip)
       .limit(p.limit)
@@ -117,60 +114,14 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
 async function detail(id, orgId) {
   const b = await TrialBooking.findOne({ _id: id, org: orgId })
     .populate('preStudent', 'name age gender grade className school trialSubject inviteTeacher source status')
-    .populate('parent', 'phone lifecycle promoteBy consultant')
+    .populate('parent', 'phone lifecycle promoteBy')
     .populate('teacher', 'mobile realName')
     .populate('subject', 'name')
-    .populate('lessonSchedule', 'plannedStartTime plannedEndTime room title notes isTrialLesson status')
     .populate('consultant', 'mobile realName')
-    .populate('result.negotiateTeacher', 'mobile realName')
     .populate('createdBy', 'mobile realName')
     .lean()
   if (!b) throw ApiError.notFound('试听预约不存在')
   return b
-}
-
-/* ─── 单笔跟班 (attached) ─────────────────────────── */
-
-async function create({ orgId, currentUser, body }) {
-  if (!currentUser) throw ApiError.unauthorized()
-  const child = await ChildLead.findOne({ _id: body.preStudent, org: orgId }).lean()
-  if (!child) throw ApiError.badRequest('孩子潜客不存在')
-  const schedule = await LessonSchedule.findOne({ _id: body.lessonSchedule, org: orgId })
-    .select('isTrialLesson plannedStartTime plannedEndTime teacher room courseInstance subject')
-    .lean()
-  if (!schedule) throw ApiError.badRequest('排课不存在')
-  if (schedule.isTrialLesson) {
-    throw ApiError.badRequest('不能蹭试听课 (isTrialLesson=true), 跟班仅支持正常课')
-  }
-  // 算 attemptNo
-  const maxAttempt = await TrialBooking.findOne({ preStudent: child._id, org: orgId })
-    .sort({ attemptNo: -1 })
-    .select('attemptNo')
-    .lean()
-  const attemptNo = (maxAttempt?.attemptNo || 0) + 1
-  const doc = await TrialBooking.create({
-    org: orgId,
-    preStudent: child._id,
-    parent: child.parent,
-    attemptNo,
-    joinMode: 'attached',
-    lessonSchedule: schedule._id,
-    scheduledAt: schedule.plannedStartTime,
-    scheduledDuration: schedule.plannedEndTime && schedule.plannedStartTime
-      ? Math.round((new Date(schedule.plannedEndTime) - new Date(schedule.plannedStartTime)) / 60000)
-      : 60,
-    teacher: schedule.teacher,
-    room: schedule.room || null,
-    subject: schedule.subject || child.trialSubject || null,
-    status: 'scheduled',
-    remark: body.remark || '',
-    createdBy: currentUser.id
-  })
-  // 翻 childLead.status='scheduled'
-  if (child.status === 'pending' || child.status === 'contacted') {
-    await ChildLead.updateOne({ _id: child._id }, { $set: { status: 'scheduled' } })
-  }
-  return detail(doc._id, orgId)
 }
 
 /* ─── 更新 (cancelled / remark) ───────────────────── */
@@ -199,10 +150,12 @@ async function update(id, orgId, body) {
  *
  * 行为:
  *   - 算 attemptNo = max + 1
- *   - joinMode = 'solo' (非跟班), status = 'awaiting_schedule'
+ *   - status = 'awaiting_schedule'
  *   - subject: 优先 body.subject → 回落 kid.trialSubject[0] → null
  *   - 不动 ChildLead.status (由后续 batchSchedule 翻到 scheduled)
  *   - 不写 LeadActivity (与 childLead.create 自动建 N 笔的口径一致; 业务上不算"触点", 是"新增预约")
+ *
+ * 2026-06-21: 删 joinMode 字段 (attached 模式下线, 试听课不再走排课系统)
  */
 async function createForChild({ orgId, currentUser, body }) {
   if (!currentUser) throw ApiError.unauthorized()
@@ -232,7 +185,6 @@ async function createForChild({ orgId, currentUser, body }) {
     preStudent: child._id,
     parent: child.parent,
     attemptNo,
-    joinMode: 'solo',
     subject: subjectId,
     status: 'awaiting_schedule',
     remark: body.remark || '',
@@ -274,6 +226,7 @@ async function batchSchedule({ orgId, currentUser, body }) {
   const durationMinutes = Math.max(1, Math.round((end - start) / 60000))
 
   // 5) 批量更新 bookings
+  // 2026-06-21: 删 joinMode 字段; 试听课时间/老师/教室直接存本 booking
   const updateResult = await TrialBooking.updateMany(
     { _id: { $in: body.bookingIds }, status: 'awaiting_schedule' },
     {
@@ -282,7 +235,6 @@ async function batchSchedule({ orgId, currentUser, body }) {
         scheduledDuration: durationMinutes,
         teacher: body.teacher,
         room: body.room || null,
-        joinMode: 'solo',
         status: 'scheduled',
         // 2026-06-16: 修老 bug — 之前前端填的备注被丢
         //   - 接受 notes (BatchScheduleDialog 字段名) 或 remark (统一别名), 任一即可
@@ -361,7 +313,6 @@ async function revertToUnscheduled({ id, orgId, currentUser }) {
     throw ApiError.badRequest(`仅 scheduled 状态可退回未约, 当前 ${doc.status}`)
   }
   doc.status = 'awaiting_schedule'
-  doc.lessonSchedule = null
   // 不清 scheduledAt / teacher / room, 销售退回时保留原 hint;
   // 重新走 batchSchedule 时会被覆盖; 跟"从未排过" 不严格区分, 业务上没问题
   await doc.save()
@@ -417,7 +368,6 @@ async function rescheduleFromCancelled({ id, orgId, currentUser, body }) {
     preStudent: oldBooking.preStudent,
     parent: oldBooking.parent,
     attemptNo: newAttempt,
-    joinMode: 'solo',
     subject: oldBooking.subject,
     status: 'awaiting_schedule',
     createdBy: currentUser.id,
@@ -479,35 +429,38 @@ async function complete({ id, orgId, currentUser, body }) {
   }
 
   if (body.actualEndTime) doc.actualEndTime = new Date(body.actualEndTime)
+  // 2026-06-21: 谈单老师统一走顶级 consultant 字段 (result.negotiateTeacher 已删)
+  if (body.consultant !== undefined) doc.consultant = body.consultant
   if (body.result) {
-    if (body.result.negotiateTeacher !== undefined) {
-      doc.result.negotiateTeacher = body.result.negotiateTeacher
-      // 同步到 consultant 字段 (2026-06 新增)
-      doc.consultant = body.result.negotiateTeacher
-    }
     if (body.result.attractionPoint !== undefined) doc.result.attractionPoint = body.result.attractionPoint
     if (body.result.reasonNotEnrolled !== undefined) doc.result.reasonNotEnrolled = body.result.reasonNotEnrolled
     if (body.result.considerNote !== undefined) doc.result.considerNote = body.result.considerNote
+    // 2026-06-21 新增: 考虑期 3 字段 (家长态度 + 孩子表现 + 话术准备)
+    if (body.result.childNote !== undefined) doc.result.childNote = body.result.childNote
+    if (body.result.followUpScript !== undefined) doc.result.followUpScript = body.result.followUpScript
 
-    // 状态机: 根据入参决定翻 completed 还是 considering
-    //   2026-06-20: isEnrolled === true|false → "已定夺" → completed
-    //               isEnrolled === null      → 前端 explicitly 表达"未填/未定夺", 仅补 null, 不动 status
-    //               isEnrolled === undefined → 前端未带; 看 considerNote 决定
-    //   considering 状态: 用户"改态度备注"或"改谈单老师"时, 保持 considering
-    //                    用户"改成 是/否" 时, 翻 completed
+    // 状态机: 根据入参决定翻 completed / considering / arrived (2026-06-21 修复)
+    //   - isEnrolled === true|false  → "已定夺" → status=completed
+    //   - isEnrolled === null + 当前 arrived   → 翻 considering (明确表达"未决, 进考虑期")
+    //   - isEnrolled === null + 当前 considering → 保持 considering (改备注)
+    //   - isEnrolled === undefined + considerNote 非空 → 翻 considering (arrived→considering 兼容老流程)
+    //   - 其他 (arrived + 啥都没带) → 维持 arrived
     if (body.result.isEnrolled === true || body.result.isEnrolled === false) {
       // 已定夺: completed
       doc.result.isEnrolled = body.result.isEnrolled
       doc.status = 'completed'
     } else if (body.result.isEnrolled === null) {
-      // 显式传 null: 仅更新 result.isEnrolled = null, 不改 status
+      // 选"考虑中": arrived → considering; considering → 保持 considering
       doc.result.isEnrolled = null
-      // 业务上前端 explicit 传 null 时, 状态机意图是"维持原 status" (可能 arrived, 可能 considering)
+      if (doc.status === 'arrived' || doc.status === 'scheduled') {
+        doc.status = 'considering'
+      }
+      // 已 considering 则维持 (改备注/谈单老师, 不动 status)
     } else if (doc.status !== 'considering' && body.result.considerNote && body.result.considerNote.trim()) {
-      // arrived → considering: 没填 isEnrolled, 但有态度备注, 进考虑期
+      // 兼容老流程: arrived → considering 仅靠 considerNote (没填 isEnrolled)
       doc.status = 'considering'
     }
-    // 其他场景: arrived → 都不带, 维持原 status (待定夺)
+    // 其他场景: arrived + 啥都没带 → 维持 arrived (待定夺)
   }
   await doc.save()
   // 翻 childLead.status='tried' (若已 converted 保持)
@@ -723,11 +676,12 @@ async function removableCheck({ id, orgId }) {
 }
 
 module.exports = {
-  list, detail, create, update, remove, removableCheck,
+  list, detail, update, remove, removableCheck,
   createForChild, // 2026-06-20: 为已有 childLead 建一笔 awaiting_schedule booking
   batchSchedule, checkIn, complete,
   convertPreview, convert,
   // 2026-06-16: 删 reschedule (旧 no_show 路径); 加 rescheduleTime / revertToUnscheduled / rescheduleFromCancelled
   rescheduleTime, revertToUnscheduled, rescheduleFromCancelled,
+  // 2026-06-21: 删 create (attached 跟班模式); 试听课完全独立于排课系统
   trialBookingUsageChecks
 }

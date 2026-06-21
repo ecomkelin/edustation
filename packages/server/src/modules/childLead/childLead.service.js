@@ -29,7 +29,7 @@ const { getDefaultChannelId } = require('@modules/parent/parent.service')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, consultant, inviteTeacher, source, trialSubject }) {
+async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, inviteTeacher, source, trialSubject }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   // 销售/教务分级
@@ -68,14 +68,13 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
     if (to) filter.createdAt.$lte = new Date(to)
   }
 
-  // 2026-06-19: promoteBy / consultant 是 Parent 字段, 走两步 — 先查匹配 Parent ids, 再过滤 ChildLeads
-  //   - 都为 null 时跳过
+  // 2026-06-19: promoteBy 是 Parent 字段, 走两步 — 先查匹配 Parent ids, 再过滤 ChildLeads
+  //   - 为 null 时跳过
   //   - 找不到匹配 Parent → 直接返回空 (避免下方再查一遍)
-  //   - 跟 parent 过滤相交 (parent 精确 + promoteBy/consultant 范围)
-  if (promoteBy || consultant) {
-    const pf = { org: orgId }
-    if (promoteBy) pf.promoteBy = promoteBy
-    if (consultant) pf.consultant = consultant
+  //   - 跟 parent 过滤相交 (parent 精确 + promoteBy 范围)
+  // 2026-06-21: 删 consultant 过滤 (Parent.consultant 字段已删)
+  if (promoteBy) {
+    const pf = { org: orgId, promoteBy }
     const matchedParents = await Parent.find(pf).select('_id').lean()
     if (matchedParents.length === 0) {
       return { items: [], total: 0, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
@@ -102,7 +101,7 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
   //   - raw mongo driver 完全不 cast, 我们需要手工把 string OID 字段转 ObjectId 才能命中
   //   见 memory: raw-insertmany-string-oid-pitfall.md
   const rawFilter = filter
-  const OID_FIELDS = ['org', 'parent', 'inviteTeacher', 'createdBy', 'source', 'school', 'convertedStudent', 'promoteBy', 'consultant']
+  const OID_FIELDS = ['org', 'parent', 'inviteTeacher', 'createdBy', 'source', 'school', 'convertedStudent', 'promoteBy']
   const mongoose = require('mongoose')
   for (const f of OID_FIELDS) {
     if (typeof rawFilter[f] === 'string' && mongoose.Types.ObjectId.isValid(rawFilter[f])) {
@@ -119,7 +118,7 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
   ])
   const items = pageRows.length > 0
     ? await ChildLead.find({ _id: { $in: pageRows.map((d) => d._id) } })
-      .populate('parent', 'phone lifecycle promoteBy consultant')
+      .populate('parent', 'phone lifecycle promoteBy')
       .populate('school', 'name')
       .populate('trialSubject', 'name')
       .populate('inviteTeacher', 'mobile realName')
@@ -182,7 +181,7 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
 
 async function detail(id, orgId) {
   const child = await ChildLead.findOne({ _id: id, org: orgId })
-    .populate('parent', 'phone lifecycle promoteBy consultant user tags')
+    .populate('parent', 'phone lifecycle promoteBy user tags')
     .populate('school', 'name')
     .populate('trialSubject', 'name')
     .populate('inviteTeacher', 'mobile realName')
@@ -271,6 +270,7 @@ async function create({ orgId, currentUser, body }) {
   })
 
   // 自动建 N 笔 TrialBooking
+  // 2026-06-21: 删 joinMode 字段 (attached 模式下线, 试听课不再走排课系统)
   const bookingCount = Math.max(subjectIds.length, 1)
   const bookings = []
   for (let i = 0; i < bookingCount; i++) {
@@ -279,7 +279,6 @@ async function create({ orgId, currentUser, body }) {
       preStudent: child._id,
       parent: parent._id,
       attemptNo: i + 1,
-      joinMode: 'solo',
       status: 'awaiting_schedule',
       subject: subjectIds[i] || null,
       createdBy: currentUser.id
@@ -528,10 +527,10 @@ async function unconvert({ id, orgId, currentUser }) {
     await Parent.updateOne({ _id: child.parent, user: userId }, { $set: { user: null } })
   }
   // 3) TrialBooking result 重置
+  // 2026-06-21: 删 negotiateTeacher 字段 (谈单老师统一走顶级 consultant, 不在 result 内)
   for (const b of bookings) {
     b.result = {
       isEnrolled: null,
-      negotiateTeacher: null,
       attractionPoint: '',
       reasonNotEnrolled: '',
       enrolledAt: null

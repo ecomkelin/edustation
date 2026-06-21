@@ -107,7 +107,7 @@ async function isParentLostTagged(tags) {
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag, source, promoteBy, consultant, from, to, page, pageSize }) {
+async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag, source, promoteBy, from, to, page, pageSize }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId (前端未传 x-org-id header)')
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
@@ -127,7 +127,7 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
   if (tag) filter.tags = tag
   if (source) filter.source = source
   if (promoteBy) filter.promoteBy = promoteBy
-  if (consultant) filter.consultant = consultant
+  // 2026-06-21: 删 consultant 过滤 (Parent.consultant 字段已删; 谈单老师挂到 TrialBooking)
   if (keyword) {
     const kw = String(keyword).trim()
     if (kw) filter.remark = { $regex: kw, $options: 'i' }
@@ -143,7 +143,6 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
   const [items, total] = await Promise.all([
     Parent.find(filter)
       .populate('promoteBy', 'mobile realName')
-      .populate('consultant', 'mobile realName')
       .populate('tags', 'name model')
       .populate('source', 'name model')
       // 2026-06-16: 排序改 updatedAt desc (时间越晚越靠上)
@@ -251,7 +250,6 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
 async function detail(id, orgId) {
   const parent = await Parent.findOne({ _id: id, org: orgId })
     .populate('promoteBy', 'mobile realName')
-    .populate('consultant', 'mobile realName')
     .populate('user', 'mobile realName requirePasswordChange')
     .populate('tags', 'name model')
     .populate('source', 'name model')
@@ -329,8 +327,8 @@ async function withChild({ orgId, currentUser, body }) {
   }
 
   // 1) 建 Parent
-  // consultant 默认空: 新登记时还没有咨询师, 到店 (TrialBooking.signIn/arrived) 后由接待教务填
   // source 默认 = 地推 (Channel 字典 _id); admin 未跑 channel.seed 时为 null
+  // 2026-06-21: 删 consultant (谈单老师挂到 TrialBooking.consultant, 不在 Parent 上)
   const defaultChannelId = await getDefaultChannelId()
   const parent = await Parent.create({
     org: orgId,
@@ -338,7 +336,6 @@ async function withChild({ orgId, currentUser, body }) {
     source: body.source || defaultChannelId || null,
     sourceDetail: body.sourceDetail || '',
     promoteBy: body.promoteBy || currentUser.id,
-    consultant: body.consultant || null,
     referrer: body.referrer || null,
     remark: body.remark || '',
     createdBy: currentUser.id,
@@ -370,6 +367,7 @@ async function withChild({ orgId, currentUser, body }) {
   })
 
   // 3) 按 subjectIds 长度自动建 N 笔 TrialBooking
+  // 2026-06-21: 删 joinMode 字段 (attached 模式下线, 试听课不再走排课系统)
   const bookingCount = Math.max(subjectIds.length, 1)
   const bookings = []
   for (let i = 0; i < bookingCount; i++) {
@@ -378,7 +376,6 @@ async function withChild({ orgId, currentUser, body }) {
       preStudent: child._id,
       parent: parent._id,
       attemptNo: i + 1,
-      joinMode: 'solo',
       status: 'awaiting_schedule',
       subject: subjectIds[i] || null,
       createdBy: currentUser.id
@@ -440,6 +437,7 @@ async function addChild({ orgId, currentUser, id, body }) {
   })
 
   // 2) 自动建 N 笔 TrialBooking
+  // 2026-06-21: 删 joinMode 字段 (attached 模式下线, 试听课不再走排课系统)
   const bookingCount = Math.max(subjectIds.length, 1)
   const bookings = []
   for (let i = 0; i < bookingCount; i++) {
@@ -448,7 +446,6 @@ async function addChild({ orgId, currentUser, id, body }) {
       preStudent: child._id,
       parent: parent._id,
       attemptNo: i + 1,
-      joinMode: 'solo',
       status: 'awaiting_schedule',
       subject: subjectIds[i] || null,
       createdBy: currentUser.id
