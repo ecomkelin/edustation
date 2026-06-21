@@ -276,12 +276,14 @@
     {
       "key": "points",
       "label": "积分",
-      "description": "查看学员积分账户及流水（仅查看，流水由系统 / 分享任务自动产生）。",
+      "description": "积分账户与流水管理：查看学员积分余额/流水，以及员工手动加分 / 扣分；维护积分原因字典（订单积分/考勤积分/迟到扣分 等）。流水由系统自动产生（订单/考勤/宠物/送课 [future hooks]）+ 员工手动触发。",
       "permissions": [
-        "points.read"
+        "points.read",
+        "points.write"
       ],
       "permissionLabels": {
-        "points.read": { "label": "查看积分", "description": "查看学员积分余额与流水" }
+        "points.read": { "label": "查看积分", "description": "查看学员积分余额与流水" },
+        "points.write": { "label": "管理积分", "description": "员工手动调整学员积分（加/扣分）；维护积分原因字典" }
       }
     },
     {

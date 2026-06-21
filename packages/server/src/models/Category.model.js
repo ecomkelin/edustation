@@ -9,19 +9,22 @@ const { Schema, model } = require('mongoose')
  *  - 统一维护系统中"枚举型"业务字段（例如：学员类型、学科分类、家长标签、招生渠道等），
  *    避免把可选项硬编码到代码里，方便运营/教务在后台维护。
  *  - 通过 `model` 字段区分业务域：
- *      'Student' → 学员分类字典（被本机构 Student 引用）
- *      'Subject' → 学科分类字典（被 Subject.category 引用；Subject 本身 per-org）
- *      'LeadTag' → 家长标签字典（被 Parent.tags 引用）
- *      'Channel' → 招生渠道字典（被 Parent.source / ChildLead.source 引用）
+ *      'Student'     → 学员分类字典（被本机构 Student 引用）
+ *      'Subject'     → 学科分类字典（被 Subject.category 引用；Subject 本身 per-org）
+ *      'LeadTag'     → 家长标签字典（被 Parent.tags 引用）
+ *      'Channel'     → 招生渠道字典（被 Parent.source / ChildLead.source 引用）
+ *      'PointsReason'→ 积分原因字典（2026-06-21 新增；被 PointsTransaction.reason 引用）
+ *                      - meta.defaultValue: 整数（正=建议加分 / 负=建议扣分）
+ *                      - meta.direction:    'in' | 'out'（前端 UI 友好显示）
  *  - 支持多层级：level 越大越深，parentCategory 指向父级。
  *    例如 学科分类可以做到 "艺术 > 美术 > 国画"。
  *
  * 2026-06 整改：
  *  - 移除 'Org'（机构类型已改为 Org.type 的硬编码 enum，不走字典）。
- *  - 新增 `org` 字段（租户隔离）：4 个 model 都是 per-org 业务数据，
+ *  - 新增 `org` 字段（租户隔离）：所有 model 都是 per-org 业务数据，
  *    由机构管理员维护，跨 org 不可见。
  *    - 2026-06-19 起 `org` 改为**必填**：所有 Category 必须归属某机构，平台级共享字典
- *      已完全下线（4 个 model 都不再用）。任何遗漏 `org` 的 Category 创建/更新都会被 schema 校验拒绝。
+ *      已完全下线（任何 model 都不再用）。任何遗漏 `org` 的 Category 创建/更新都会被 schema 校验拒绝。
  *    - 创建时由 controller/service 强制 `org = req.orgId`；非平台超管不允许创建跨 org 字典。
  *
  * 唯一性约束：
@@ -31,11 +34,12 @@ const { Schema, model } = require('mongoose')
 const CategorySchema = new Schema(
   {
     // 字典所属业务域，决定本条记录是给哪个实体用的
-    //   'Student' → 学员分类字典
-    //   'Subject' → 学科分类字典
-    //   'LeadTag' → 家长标签字典 (被 Parent.tags 引用)
-    //   'Channel' → 招生渠道字典 (被 Parent.source / ChildLead.source 引用)
-    model: { type: String, enum: ['Student', 'Subject', 'LeadTag', 'Channel'], required: true, index: true },
+    //   'Student'      → 学员分类字典
+    //   'Subject'      → 学科分类字典
+    //   'LeadTag'      → 家长标签字典 (被 Parent.tags 引用)
+    //   'Channel'      → 招生渠道字典 (被 Parent.source / ChildLead.source 引用)
+    //   'PointsReason' → 积分原因字典 (被 PointsTransaction.reason 引用; 2026-06-21 新增)
+    model: { type: String, enum: ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason'], required: true, index: true },
     // 租户隔离 (2026-06): 4 个 model 全是 per-org 业务字典
     //   - 机构内管理员/教务可读写自己 org 的字典
     //   - 跨 org 查询自动隔离 (list / tree 按 req.orgId 过滤)

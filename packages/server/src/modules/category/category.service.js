@@ -6,6 +6,7 @@ const Org = require('@models/Org.model')
 const Student = require('@models/Student.model')
 const Subject = require('@models/Subject.model')
 const Parent = require('@models/Parent.model')
+const PointsTransaction = require('@models/PointsTransaction.model')
 const ApiError = require('@utils/ApiError')
 
 /**
@@ -55,6 +56,15 @@ const MODEL_USAGE_CHECKS = {
       label: '家长渠道引用',
       hint: '该渠道正在被本机构家长引用, 请先把家长渠道改到其他渠道后再删'
     }
+  ],
+  // 2026-06-21: 积分原因被 PointsTransaction.reason 引用, 删前需查 transaction 数
+  PointsReason: [
+    {
+      model: PointsTransaction,
+      filter: { reason: '__ID__' },  // 调用方在 categoryUsageChecks 里覆盖
+      label: '积分流水引用',
+      hint: '已有积分流水引用该原因, 请先把流水原因改到其他分类或归档后删'
+    }
   ]
 }
 
@@ -84,6 +94,13 @@ function categoryUsageChecks(orgId, doc, id) {
       } else if (doc.model === 'Channel') {
         checks.push({ ...ex, filter: { org: orgId, source: id } })
       }
+    } else if (ex.model === PointsTransaction) {
+      // PointsTransaction.reason 直接替换 __ID__ 占位符
+      const f = { ...ex.filter }
+      for (const k of Object.keys(f)) {
+        if (f[k] === '__ID__') f[k] = id
+      }
+      checks.push({ ...ex, filter: { org: orgId, ...f } })
     }
   }
   return checks
@@ -101,7 +118,9 @@ const MODEL_WRITE_PERM = {
   Student: 'student.write',
   Subject: 'subject.write',
   LeadTag: 'recruit.write',
-  Channel: 'recruit.write'
+  Channel: 'recruit.write',
+  // 2026-06-21: 积分原因走 points.write (管理员/教务手动调整积分时维护原因字典)
+  PointsReason: 'points.write'
 }
 
 function writePermFor(model) {

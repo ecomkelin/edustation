@@ -76,6 +76,7 @@ function loadDump() {
 //   - schools/rooms/course_products: 引用 orgs (+ categories for courseProducts)
 //   - parents: 引用 orgs + users (createdBy); child_leads 引用 parents
 //   - child_leads: 引用 parents + categories (Subject字典 trialSubjects) + schools + users (createdBy)
+//   - trial_bookings: 引用 child_leads + parents + categories (subject) + users (teacher/consultant/createdBy)
 const LOAD_ORDER = [
   'regions',
   'categories',
@@ -89,6 +90,7 @@ const LOAD_ORDER = [
   'course_products',
   'parents',
   'child_leads',
+  'trial_bookings',
   'user_consents',
   'refresh_tokens'
 ]
@@ -106,6 +108,7 @@ const COLLECTION_TO_MODEL = {
   course_products: CourseProduct,
   parents: Parent,
   child_leads: ChildLead,
+  trial_bookings: require('@models/TrialBooking.model'),
   user_consents: UserConsent,
   refresh_tokens: RefreshToken
 }

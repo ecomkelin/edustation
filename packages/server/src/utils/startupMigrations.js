@@ -103,11 +103,30 @@ async function addLegalPermsToExistingPositions() {
 /* eslint-disable-next-line no-unused-vars */
 function clearLegacyTrialSubjectRefs() { return 'disabled' }
 
+/* ─── 迁移 5: 给已有机构的「管理员」「教务」补 points.write 权限码 (2026-06-21) ─────
+ * 背景:
+ *   积分管理 (PointsAdmin) 模块上线, 默认权限码 points.write 加进了
+ *   DEFAULT_POSITIONS 的"管理员"和"教务"。但已落地的历史机构 Position 还没有,
+ *   导致他们登录后看不到"积分管理"菜单 / 调 API 403。
+ *
+ * 动作: 对所有 name ∈ {管理员, 教务} 的 Position 做 $addToSet, 一次性补码. 幂等.
+ */
+async function addPointsWritePermToExistingPositions() {
+  const Position = require('@models/Position.model')
+  const codes = ['points.write']
+  const filter = { name: { $in: ['管理员', '教务'] }, permissions: { $nin: codes } }
+  const before = await Position.countDocuments(filter)
+  if (before === 0) return 'no-op'
+  const r = await Position.updateMany(filter, { $addToSet: { permissions: { $each: codes } } })
+  return `added:${codes.join(',')}|matched=${before}|modified=${r.modifiedCount || 0}`
+}
+
 /* ─── 注册: 按顺序跑 ─────────────────────────────────── */
 const migrations = [
   { name: 'drop-legacy-lead-collections', run: dropLegacyLeadCollections },
   { name: 'pull-hidden-perms-from-positions', run: pullHiddenPermsFromPositions },
-  { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions }
+  { name: 'add-legal-perms-to-existing-positions', run: addLegalPermsToExistingPositions },
+  { name: 'add-points-write-perm-to-existing-positions', run: addPointsWritePermToExistingPositions }
   // clear-legacy-trial-subject-refs (2026-06-20 下线)
 ]
 

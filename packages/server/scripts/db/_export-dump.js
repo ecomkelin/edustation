@@ -38,6 +38,7 @@ const COLLECTIONS = [
   'course_products',
   'parents',
   'child_leads',
+  'trial_bookings',
   'user_consents',
   'refresh_tokens'
 ]

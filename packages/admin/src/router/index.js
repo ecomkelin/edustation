@@ -37,6 +37,8 @@ const routes = [
       { path: 'ai-assistant', component: () => import('@/views/agent/AiAssistant.vue') },
       { path: 'student-products', component: () => import('@/views/studentProducts/StudentProducts.vue') },
       { path: 'student-works', component: () => import('@/views/studentWorks/StudentWorks.vue') },
+      // 积分管理 (2026-06-21): 学员积分账户列表 + 流水 + 手动调整
+      { path: 'points', component: () => import('@/views/points/Points.vue') },
       // 经营分析:5 块看板对应后端 /api/v1/reports/* ；二级菜单入口见 DefaultLayout
       { path: 'reports/overview', component: () => import('@/views/reports/OverviewReport.vue') },
       { path: 'reports/lesson-consumption', component: () => import('@/views/reports/LessonConsumptionReport.vue') },

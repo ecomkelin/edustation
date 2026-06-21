@@ -20,7 +20,7 @@ const DEFINITIONS = [
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
-      'points.read', 'pet.read'
+      'points.read', 'points.write', 'pet.read'
     ]
   },
   {
@@ -37,7 +37,7 @@ const DEFINITIONS = [
       'order.read', 'order.write', 'order.pay',
       'lessonAttendance.read',
       'studentWork.read',
-      'points.read', 'pet.read'
+      'points.read', 'points.write', 'pet.read'
     ]
   },
   {

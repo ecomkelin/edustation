@@ -15,6 +15,14 @@
       <span v-if="student.school?.name" class="header-school">{{ student.school.name }}</span>
     </div>
 
+    <!-- 积分摘要 (2026-06-21 新增): 嵌入到画像顶部, 不影响下方表单结构 -->
+    <StudentPointsSummary
+      v-if="student"
+      :visible="visible"
+      :student="student"
+      @updated="onPointsUpdated"
+    />
+
     <el-alert
       v-if="student?.notes"
       type="warning"
@@ -108,6 +116,7 @@
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { studentApi } from '@/api/student'
+import StudentPointsSummary from './StudentPointsSummary.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -187,6 +196,11 @@ function formatTime(t) {
   const d = new Date(t)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// 积分摘要调整后无需特殊动作（StudentPointsSummary 自己重新 fetch），但保留 emit 方便父级联动
+function onPointsUpdated() {
+  // 未来: 如果 students 列表显示了积分列, 这里可 emit 让父级 reload
 }
 </script>
 

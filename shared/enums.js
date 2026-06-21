@@ -125,6 +125,61 @@ const PaymentMethod = Object.freeze({
 })
 const PAYMENT_METHODS = Object.values(PaymentMethod)
 
+/**
+ * PointsTransaction.trigger 业务触发来源（2026-06 重设）
+ *
+ * 方向语义（与 PointsTransaction.amount 符号对齐）：
+ *   - 加分类（amount > 0）：order_earn / attendance_earn / streak_earn / share_earn / birthday_earn / manual_earn
+ *   - 扣分类（amount < 0）：manual_deduct / pet / redemption
+ *   - 反转  （amount 任意）：refund
+ *
+ * 设计要点（避免 trigger 无限膨胀）：
+ *   - 'redemption' 是一个泛化的"兑换"类 trigger；具体兑换品类
+ *     （送课 gift_lesson / 商城 mall_item / 抽奖 lottery 等）用 meta.redemptionType 区分。
+ *     未来加商城/抽奖/表情包礼物都归 redemption 一类,trigger 不会膨胀。
+ *   - 'pet' 是宠物互动（meta.action 区分 feed/play/level_up），与 redemption 不同在于
+ *     没有"下游产物"（不创建 StudentProduct 等实体），只是 Pet 状态变化。
+ *
+ * ★ 本期（2026-06-21）实际实现：manual_earn / manual_deduct
+ * ★ future hook 占位（schema 接受、service 未实现）：其余所有值
+ */
+const PointsTrigger = Object.freeze({
+  // 加分类
+  MANUAL_EARN: 'manual_earn',         // 员工手动加（reason + operator 必填）
+  ORDER_EARN: 'order_earn',            // 下单成功 [future hook]
+  ATTENDANCE_EARN: 'attendance_earn',  // 出勤奖励 [future]
+  STREAK_EARN: 'streak_earn',          // 连续出勤奖励 [future]
+  SHARE_EARN: 'share_earn',            // 分享得积分 [future]
+  BIRTHDAY_EARN: 'birthday_earn',      // 生日奖励 [future]
+  // 扣分类
+  MANUAL_DEDUCT: 'manual_deduct',      // 员工手动扣（reason + operator 必填）
+  PET: 'pet',                          // 宠物互动（meta.action 区分） [future]
+  REDEMPTION: 'redemption',            // 兑换类（meta.redemptionType 区分） [future]
+  // 反转
+  REFUND: 'refund'                     // 冲正 [future]
+})
+const POINTS_TRIGGERS = Object.values(PointsTrigger)
+
+/**
+ * POINTS_TRIGGER_DIRECTION — trigger → 期望 amount 符号（service 层校验）
+ *   1 = in (amount > 0)
+ *  -1 = out (amount < 0)
+ *   0 = 不限（refund 任意符号）
+ */
+const POINTS_TRIGGER_DIRECTION = Object.freeze({
+  manual_earn: 1,
+  order_earn: 1,
+  attendance_earn: 1,
+  streak_earn: 1,
+  share_earn: 1,
+  birthday_earn: 1,
+  manual_deduct: -1,
+  pet: -1,
+  redemption: -1,
+  refund: 0
+})
+
+// 旧的 PointsType (earn/spend/refund) 保留以向后兼容旧 model/seed 引用; 不再用于 PointsTransaction
 const PointsType = Object.freeze({
   EARN: 'earn',
   SPEND: 'spend',
@@ -238,6 +293,9 @@ exports.OrderStatus = OrderStatus
 exports.ORDER_STATUSES = ORDER_STATUSES
 exports.PaymentMethod = PaymentMethod
 exports.PAYMENT_METHODS = PAYMENT_METHODS
+exports.PointsTrigger = PointsTrigger
+exports.POINTS_TRIGGERS = POINTS_TRIGGERS
+exports.POINTS_TRIGGER_DIRECTION = POINTS_TRIGGER_DIRECTION
 exports.PointsType = PointsType
 exports.POINTS_TYPES = POINTS_TYPES
 exports.PetType = PetType

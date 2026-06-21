@@ -4,7 +4,7 @@ const { body, param } = require('express-validator')
 
 // 2026-06 整改: model enum 移除 'Org' (Org.type 已改 String enum);
 // 4 个 model 全是 per-org 业务字典.
-const ALLOWED_MODELS = ['Student', 'Subject', 'LeadTag', 'Channel']
+const ALLOWED_MODELS = ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason']
 
 const create = [
   body('model').isIn(ALLOWED_MODELS).withMessage('model 不合法'),
