@@ -34,7 +34,23 @@
           >
             <template #default="{ node, data }">
               <span class="tree-node">
-                <span>{{ node.label }}</span>
+                <span class="tree-label">{{ node.label }}</span>
+                <!-- 积分原因 (2026-06-21): 节点上直接显示 defaultValue + 方向 tag -->
+                <template v-if="model === 'PointsReason'">
+                  <span
+                    class="tree-meta"
+                    :style="{ color: Number(data.meta?.defaultValue) < 0 ? '#f56c6c' : '#67c23a' }"
+                  >
+                    {{ data.meta?.defaultValue ?? 0 }}
+                  </span>
+                  <el-tag
+                    :type="data.meta?.direction === 'out' ? 'danger' : 'success'"
+                    size="small"
+                    effect="plain"
+                  >
+                    {{ data.meta?.direction === 'out' ? '扣分' : '加分' }}
+                  </el-tag>
+                </template>
                 <span class="tree-actions">
                   <el-button link size="small" @click.stop="openCreate(data)">+ 子级</el-button>
                   <el-button link size="small" type="primary" @click.stop="openEdit(data)">编辑</el-button>
@@ -67,6 +83,20 @@
           </template>
           <el-table :data="children" v-loading="loading" border>
             <el-table-column prop="name" label="名称" min-width="160" />
+            <el-table-column v-if="model === 'PointsReason'" label="默认积分" width="120">
+              <template #default="{ row }">
+                <span :style="{ color: (row.meta?.defaultValue ?? 0) < 0 ? '#f56c6c' : '#67c23a' }">
+                  {{ row.meta?.defaultValue ?? 0 }}
+                </span>
+                <el-tag
+                  :type="row.meta?.direction === 'out' ? 'danger' : 'success'"
+                  size="small"
+                  style="margin-left: 6px"
+                >
+                  {{ row.meta?.direction === 'out' ? '扣分' : '加分' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="code" label="编码" width="120" />
             <el-table-column prop="level" label="层级" width="80">
               <template #default="{ row }">L{{ row.level }}</template>
@@ -130,6 +160,26 @@
         <el-form-item v-if="form.id" label="启用">
           <el-switch v-model="form.isActive" />
         </el-form-item>
+        <!-- 积分原因专用字段 (2026-06-21): 默认积分 + 方向 -->
+        <template v-if="form.model === 'PointsReason'">
+          <el-form-item label="默认积分">
+            <el-input-number
+              v-model="form.meta.defaultValue"
+              :step="1"
+              :precision="0"
+              controls-position="right"
+              style="width: 180px"
+            />
+            <span class="form-tip">正数=默认加分, 负数=默认扣分; 员工手动调整时自动预填</span>
+          </el-form-item>
+          <el-form-item label="方向">
+            <el-radio-group v-model="form.meta.direction">
+              <el-radio-button value="in">加分 (+)</el-radio-button>
+              <el-radio-button value="out">扣分 (-)</el-radio-button>
+            </el-radio-group>
+            <span class="form-tip">不选时按 defaultValue 符号自动推断</span>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
@@ -149,8 +199,14 @@ import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 
-const MODELS = ['Student', 'Subject', 'LeadTag', 'Channel']
-const MODEL_LABELS = { Student: '学员', Subject: '学科', LeadTag: '家长标签', Channel: '招生渠道' }
+const MODELS = ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason']
+const MODEL_LABELS = {
+  Student: '学员',
+  Subject: '学科',
+  LeadTag: '家长标签',
+  Channel: '招生渠道',
+  PointsReason: '积分原因'
+}
 
 // 默认显示学科 (2026-06-19): 学科字典最常用, 进首页直接看到 5 个学科分类
 const model = ref('Subject')
@@ -168,7 +224,17 @@ const form = reactive(emptyForm())
 const parentOptions = ref([])
 
 function emptyForm() {
-  return { id: '', model: 'Student', name: '', parentCategory: null, code: '', sort: 0, isActive: true }
+  return {
+    id: '',
+    model: 'Student',
+    name: '',
+    parentCategory: null,
+    code: '',
+    sort: 0,
+    isActive: true,
+    // 积分原因专用 (2026-06-21): 其他 model 不会用到
+    meta: { defaultValue: 0, direction: 'in' }
+  }
 }
 
 const rules = {
@@ -258,7 +324,11 @@ function openEdit(node) {
     parentCategory: node.parentCategory ? node.parentCategory.id || node.parentCategory._id : null,
     code: node.code || '',
     sort: node.sort || 0,
-    isActive: node.isActive !== false
+    isActive: node.isActive !== false,
+    meta: {
+      defaultValue: Number(node.meta?.defaultValue) || 0,
+      direction: node.meta?.direction || (Number(node.meta?.defaultValue) < 0 ? 'out' : 'in')
+    }
   })
   dialog.value = true
   loadParents(form.id)
@@ -280,6 +350,13 @@ async function submit() {
       code: form.code,
       sort: form.sort,
       isActive: form.isActive
+    }
+    // 积分原因专用 (2026-06-21): meta 字段同步到后端
+    if (form.model === 'PointsReason') {
+      payload.meta = {
+        defaultValue: Number(form.meta.defaultValue) || 0,
+        direction: form.meta.direction || (Number(form.meta.defaultValue) < 0 ? 'out' : 'in')
+      }
     }
     if (form.id) {
       await categoryApi.update(form.id, payload)
@@ -343,10 +420,20 @@ onMounted(loadTree)
   justify-content: space-between;
   width: 100%;
   padding-right: 8px;
+  gap: 6px;
+}
+.tree-label {
+  flex: 0 0 auto;
+}
+.tree-meta {
+  font-weight: 600;
+  font-size: 12px;
+  margin-right: 2px;
 }
 .tree-actions {
   opacity: 0;
   transition: opacity 0.2s;
+  margin-left: auto;
 }
 .tree-node:hover .tree-actions {
   opacity: 1;

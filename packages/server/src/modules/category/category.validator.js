@@ -3,7 +3,7 @@
 const { body, param } = require('express-validator')
 
 // 2026-06 整改: model enum 移除 'Org' (Org.type 已改 String enum);
-// 4 个 model 全是 per-org 业务字典.
+// 5 个 model 全是 per-org 业务字典 (2026-06-21 加 PointsReason).
 const ALLOWED_MODELS = ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason']
 
 const create = [
@@ -12,7 +12,16 @@ const create = [
   body('parentCategory').optional({ nullable: true }).isMongoId(),
   body('code').optional().isString().isLength({ max: 50 }),
   body('sort').optional().isInt(),
-  body('isActive').optional().isBoolean()
+  body('isActive').optional().isBoolean(),
+  // 积分原因 (2026-06-21): meta.defaultValue + meta.direction
+  body('meta').optional().isObject().withMessage('meta 必须是对象'),
+  body('meta.defaultValue')
+    .optional()
+    .custom((v) => {
+      if (!Number.isFinite(Number(v))) throw new Error('defaultValue 必须是数字')
+      return true
+    }),
+  body('meta.direction').optional().isIn(['in', 'out']).withMessage('direction 必须是 in 或 out')
 ]
 
 const update = [
@@ -20,7 +29,15 @@ const update = [
   body('parentCategory').optional({ nullable: true }).isMongoId(),
   body('code').optional().isString().isLength({ max: 50 }),
   body('sort').optional().isInt(),
-  body('isActive').optional().isBoolean()
+  body('isActive').optional().isBoolean(),
+  body('meta').optional().isObject(),
+  body('meta.defaultValue')
+    .optional()
+    .custom((v) => {
+      if (!Number.isFinite(Number(v))) throw new Error('defaultValue 必须是数字')
+      return true
+    }),
+  body('meta.direction').optional().isIn(['in', 'out'])
 ]
 
 const idParam = [param('id').isMongoId()]

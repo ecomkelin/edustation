@@ -20,6 +20,11 @@
           </el-select>
           <el-button @click="loadAccounts">搜索</el-button>
           <el-button @click="resetAccounts">重置</el-button>
+          <el-button
+            v-if="canWrite"
+            type="primary"
+            @click="openGlobalAdjust"
+          >手动调整积分</el-button>
         </el-space>
 
         <el-table :data="accountList" v-loading="accountsLoading" style="margin-top: 16px">
@@ -177,7 +182,6 @@
     </el-tabs>
 
     <PointsAdjustDialog
-      v-if="adjustDialog.student"
       v-model:visible="adjustDialog.visible"
       :student="adjustDialog.student"
       @saved="onAdjustSaved"
@@ -347,6 +351,16 @@ function openAdjust(row) {
     return
   }
   adjustDialog.student = { ...row, id: row._id }
+  adjustDialog.visible = true
+}
+
+// 2026-06-21: 顶部"手动调整积分"按钮 — 不预设学生, dialog 内 picker 选任意学员
+function openGlobalAdjust() {
+  if (!canWrite.value) {
+    ElMessage.warning('无 points.write 权限')
+    return
+  }
+  adjustDialog.student = null
   adjustDialog.visible = true
 }
 

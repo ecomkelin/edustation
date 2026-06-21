@@ -2,12 +2,37 @@
   <el-dialog
     :model-value="visible"
     :title="title"
-    width="520px"
+    width="560px"
     :close-on-click-modal="false"
     @update:model-value="onClose"
   >
-    <el-form v-if="student" ref="formRef" :model="form" :rules="rules" label-width="100px">
-      <el-form-item label="学生">
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+      <!-- 学生选择器 (2026-06-21): student 为 null 时显示可搜索 picker -->
+      <el-form-item v-if="!student" label="学生" prop="studentId">
+        <el-select
+          v-model="form.studentId"
+          placeholder="搜索学生姓名 / 手机号"
+          filterable
+          remote
+          :remote-method="searchStudents"
+          :loading="studentSearchLoading"
+          style="width: 100%"
+          @change="onStudentChange"
+        >
+          <el-option
+            v-for="s in studentOptions"
+            :key="s.id"
+            :label="studentOptionLabel(s)"
+            :value="s.id"
+          />
+        </el-select>
+        <div v-if="currentBalance !== null" class="hint">
+          当前余额: <strong>{{ currentBalance }}</strong> 分（无账户则为 0, 提交后自动创建）
+        </div>
+      </el-form-item>
+
+      <!-- 已指定 student 的场景 (从行点击 / 学生画像 进来) -->
+      <el-form-item v-else label="学生">
         <span class="student-name">{{ student.name || '—' }}</span>
         <span v-if="currentBalance !== null" class="muted" style="margin-left: 12px">
           当前余额: {{ currentBalance }} 分
@@ -83,7 +108,9 @@
  * 手动调整积分 dialog (2026-06-21)
  *
  * 用法:
- *   <PointsAdjustDialog v-model:visible="dialog.visible" :student="row" @saved="onSaved" />
+ *   1. 行点击 / 学生画像: <PointsAdjustDialog :student="row" />
+ *   2. 顶部按钮 (任意学生): <PointsAdjustDialog :student="null" />
+ *      dialog 内显示可搜索学生 picker
  *
  * 交互:
  *   - 选原因后, 金额预填 |defaultValue|, 方向锁为 sign(defaultValue)
@@ -95,6 +122,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { pointsAdminApi } from '@/api/pointsAdmin'
+import { studentApi } from '@/api/student'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -107,8 +135,11 @@ const formRef = ref()
 const saving = ref(false)
 const reasons = ref([])
 const currentBalance = ref(null)
+const studentOptions = ref([])
+const studentSearchLoading = ref(false)
 
 const form = reactive({
+  studentId: '',
   reasonId: '',
   direction: 'in',
   amount: null,
@@ -116,6 +147,7 @@ const form = reactive({
 })
 
 const rules = {
+  studentId: [{ required: true, message: '请选择学生', trigger: 'change' }],
   reasonId: [],
   direction: [{ required: true, message: '请选择方向', trigger: 'change' }],
   amount: [
@@ -136,7 +168,7 @@ const rules = {
 const reasonLocked = computed(() => !!form.reasonId)
 const canSubmit = computed(() => {
   const n = Number(form.amount)
-  return Number.isFinite(n) && n >= 1 && Number.isInteger(n) && form.direction
+  return Number.isFinite(n) && n >= 1 && Number.isInteger(n) && form.direction && (!!props.student || !!form.studentId)
 })
 
 const signedAmount = computed(() => {
@@ -153,10 +185,16 @@ const previewBalance = computed(() => {
 const willOverdraft = computed(() => previewBalance.value !== null && previewBalance.value < 0)
 
 const title = computed(() => {
-  if (!props.student) return '调整积分'
   const action = form.direction === 'in' ? '加分' : '扣分'
-  return `${action}: ${props.student.name || ''}`
+  const name = props.student?.name || studentOptions.value.find((s) => s.id === form.studentId)?.name
+  return name ? `${action}: ${name}` : `手动${action}`
 })
+
+function studentOptionLabel(s) {
+  const g = (s.guardians || [])[0]
+  const phoneTail = g?.mobile ? ` (${String(g.mobile).slice(-4)})` : ''
+  return `${s.name}${phoneTail}`
+}
 
 function formatReasonLabel(r) {
   const sign = r.defaultValue > 0 ? '+' : r.defaultValue < 0 ? '' : '±'
@@ -173,35 +211,62 @@ async function loadReasons() {
   }
 }
 
-async function loadCurrentBalance() {
-  if (!props.student || !props.student.id) return
+async function loadCurrentBalance(studentId) {
+  const id = studentId || props.student?.id
+  if (!id) {
+    currentBalance.value = null
+    return
+  }
   try {
-    const r = await pointsAdminApi.getAccount(props.student.id)
+    const r = await pointsAdminApi.getAccount(id)
     currentBalance.value = r.data.account?.balance ?? 0
   } catch (e) {
+    // 学员无账户 (balance=0) 或加载失败: 视为 0, 提交时 ensureAccount 自动创建
     currentBalance.value = 0
   }
 }
 
-function onReasonChange(reasonId) {
-  if (!reasonId) {
-    // 清空原因: 不重置 direction/amount, 让用户继续手动输入
-    return
+async function searchStudents(q) {
+  studentSearchLoading.value = true
+  try {
+    const r = await studentApi.list({ keyword: q || '', pageSize: 20, isActive: 'true' })
+    studentOptions.value = (r.data.items || []).map((s) => ({
+      id: s._id,
+      name: s.name,
+      guardians: s.guardians || []
+    }))
+  } catch (e) {
+    studentOptions.value = []
+  } finally {
+    studentSearchLoading.value = false
   }
+}
+
+async function onStudentChange(studentId) {
+  if (studentId) {
+    await loadCurrentBalance(studentId)
+  } else {
+    currentBalance.value = null
+  }
+}
+
+function onReasonChange(reasonId) {
+  if (!reasonId) return
   const r = reasons.value.find((x) => x.id === reasonId)
   if (!r) return
-  // 锁定方向 + 预填金额
   form.direction = r.direction === 'out' ? 'out' : 'in'
   form.amount = Math.abs(r.defaultValue) || 1
   form.remark = r.name
 }
 
 function resetForm() {
+  form.studentId = ''
   form.reasonId = ''
   form.direction = props.defaultDirection || 'in'
   form.amount = null
   form.remark = ''
   currentBalance.value = null
+  studentOptions.value = []
 }
 
 function onClose(v) {
@@ -213,8 +278,9 @@ function onClose(v) {
 }
 
 async function onSubmit() {
-  if (!props.student || !props.student.id) {
-    ElMessage.error('缺少学员信息')
+  const targetStudentId = props.student?.id || form.studentId
+  if (!targetStudentId) {
+    ElMessage.error('请先选择学生')
     return
   }
   if (!form.reasonId) {
@@ -229,7 +295,7 @@ async function onSubmit() {
   try {
     await formRef.value.validate()
     const amount = signedAmount.value
-    await pointsAdminApi.adjust(props.student.id, {
+    await pointsAdminApi.adjust(targetStudentId, {
       amount,
       reasonId: form.reasonId,
       customReason: form.remark || undefined,
@@ -252,6 +318,12 @@ watch(
     if (vis && id) {
       resetForm()
       await Promise.all([loadReasons(), loadCurrentBalance()])
+    } else if (vis && !id) {
+      // 无 student 场景 (顶部按钮打开)
+      resetForm()
+      await loadReasons()
+      // 触发一次空查询, 让 picker 有初始占位
+      await searchStudents('')
     }
   },
   { immediate: true }
