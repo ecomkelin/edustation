@@ -32,7 +32,6 @@
 **落地**：
 - 复用 `UserConsent` collection（加 `subjectType` + `subject` 字段）
 - 复用 `LegalDoc` 存 3 条 docKey（`face-consent-student` / `-pickup` / `-staff`）
-- 新机构创建时由 `startupMigrations.seedFaceConsentDocs` 兜底 seed
 - 历史机构跑 `scripts/seed-face-consent-docs.js` 补
 
 ### 决策 #3：不联动 LessonAttendance
@@ -203,8 +202,6 @@ X-Nonce:     <设备原生 eventId>     // 与 body 内 recordId/eventId 一致
 |---|------|------|
 | 1 | `shared/permissions.json` | 加 `access-control` group |
 | 2 | `packages/server/src/modules/position/position.service.js#DEFAULT_POSITIONS` | 5 个系统职位挂载 |
-| 3 | `packages/server/scripts/migrate-add-access-control-perms.js` | 历史机构 updateMany |
-| 4 | `packages/server/src/utils/startupMigrations.js` | 新机构创建后兜底 |
 
 > 漏一处就完蛋：典型坑是新权限码在 JSON + DEFAULT_POSITIONS 都加了但忘跑迁移，老机构依然 403。
 

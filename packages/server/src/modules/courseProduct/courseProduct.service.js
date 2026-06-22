@@ -10,8 +10,7 @@ const ApiError = require('@utils/ApiError')
 const removable = require('@utils/removable')
 
 /**
- * 把入参里的 subjects 字段规整成 ObjectId 数组。
- * 兼容旧版本：入参字段名仍允许是单值 `subject`，内部统一转成数组。
+ * 把入参里的 subjects 字段规整成 ObjectId 数组（去重 + 校验合法性）。
  */
 function normalizeSubjects(input) {
   if (input === undefined) return undefined
@@ -45,10 +44,9 @@ async function assertSubjectsInOrg(orgId, subjects) {
   }
 }
 
-async function list({ orgId, subject, isActive, keyword }) {
+async function list({ orgId, subjects, isActive, keyword }) {
   const filter = { org: orgId }
-  // 兼容旧参数名 `subject`（单值）和新参数名 `subject`（仍接受，但按数组里包含匹配）
-  if (subject) filter.subjects = subject
+  if (subjects) filter.subjects = subjects
   if (isActive === 'true' || isActive === true) filter.isActive = true
   if (isActive === 'false' || isActive === false) filter.isActive = false
   if (keyword) filter.name = { $regex: keyword, $options: 'i' }
@@ -69,7 +67,6 @@ async function detail(id, orgId) {
 async function create({
   orgId,
   subjects,
-  subject,
   name,
   totalLessons,
   minutesPerLesson,
@@ -81,9 +78,7 @@ async function create({
   attachments,
   isActive
 }) {
-  // 兼容旧字段名 `subject`（单值）— 若前端仍以单值提交，service 自动归并
-  const raw = subjects !== undefined ? subjects : subject
-  const normalized = normalizeSubjects(raw) || []
+  const normalized = normalizeSubjects(subjects) || []
   await assertSubjectsInOrg(orgId, normalized)
 
   // 三档价格不变式校验（不依赖 Mongoose 的 schema-level validate，便于统一报错）
@@ -130,22 +125,9 @@ async function create({
 }
 
 async function update(id, orgId, payload) {
-  // 兼容旧字段名：旧版用 `subject`（单值），新版用 `subjects`（数组）
-  if (payload.subjects === undefined && payload.subject !== undefined) {
-    payload.subjects = payload.subject
-    delete payload.subject
-  }
   if (payload.subjects !== undefined) {
     payload.subjects = normalizeSubjects(payload.subjects)
     await assertSubjectsInOrg(orgId, payload.subjects)
-  }
-  // 移除旧字段名 `price`（已拆为三档）
-  if (payload.price !== undefined) {
-    // 兼容旧前端：若只传 price，把它当作 discountPrice
-    if (payload.discountPrice === undefined) {
-      payload.discountPrice = payload.price
-    }
-    delete payload.price
   }
   // 三档价格更新校验（基于更新后的最终值）
   if (
@@ -325,15 +307,15 @@ async function syncProducts({ targetOrgId, sourceOrgId, productIds, operatorId }
 
   const [sourceProducts, existing] = await Promise.all([
     CourseProduct.find({ _id: { $in: validIds }, org: sourceOrgId })
-      .select('name subject subjects totalLessons minutesPerLesson originalPrice discountPrice promotionPrice promotionActive validDays isActive')
+      .select('name subjects totalLessons minutesPerLesson originalPrice discountPrice promotionPrice promotionActive validDays isActive')
       .lean(),
     CourseProduct.find({ org: targetOrgId }).select('name').lean()
   ])
 
-  // 收集源端 product 引用的所有 subject id（兼容旧字段名 `subject` 单值）
+  // 收集源端 product 引用的所有 subject id
   const allSubjectIds = new Set()
   for (const p of sourceProducts) {
-    const arr = Array.isArray(p.subjects) ? p.subjects : (p.subject ? [p.subject] : [])
+    const arr = Array.isArray(p.subjects) ? p.subjects : []
     for (const id of arr) {
       if (mongoose.isValidObjectId(id)) allSubjectIds.add(String(id))
     }
@@ -362,8 +344,8 @@ async function syncProducts({ targetOrgId, sourceOrgId, productIds, operatorId }
       skipped.push({ sourceId: String(p._id), name: p.name, reason: 'already-exists-in-target' })
       continue
     }
-    // 解析源端 subjects（兼容旧字段）
-    const srcSubjects = Array.isArray(p.subjects) ? p.subjects : (p.subject ? [p.subject] : [])
+    // 解析源端 subjects
+    const srcSubjects = Array.isArray(p.subjects) ? p.subjects : []
     // 任一 subject id 在目标机构缺失 → 跳过（避免悬空引用）
     const missing = srcSubjects.find((id) => !mongoose.isValidObjectId(id) || !targetSubjectIds.has(String(id)))
     if (missing) {

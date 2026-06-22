@@ -532,7 +532,7 @@ C 端家长通过 uni-app（微信小程序 / H5 / App）访问：
 - `api/pet.js` — REST 客户端
 - `utils/constants.js` — PetTier/PetState/FoodType/PetSlot + species emoji fallback map
 
-**feed 接口兼容**：`POST /pet/feed` body 接受 `consumableKey`（新）或 `foodType`（v1 兼容，自动映射为 `food_<type>`）
+**feed 接口**：`POST /pet/feed` body 接受 `consumableKey`（DB-driven 的 PetConsumable.key）
 
 **视觉渲染**：
 - `speciesRecord.visualType === 'image'` → `<img :src="imageFile.url">`
@@ -643,11 +643,10 @@ C 端家长通过 uni-app（微信小程序 / H5 / App）访问：
 - `packages/server/src/models/PetItem.model.js`
 - `packages/server/src/models/PetConsumable.model.js`
 
-**Shared 静态**（deprecated，仅作 seed 源 + dev 兜底）：
+**Shared 静态**（平台硬编码阶表/枚举）：
 - `shared/petConfig.js` — 阶表 + 喂食回报（D5 平台硬编码）
-- `shared/petSpecies.js` — 物种图鉴（16 个）— DEPRECATED
-- `shared/petItems.js` — 装饰图鉴（35 个）— DEPRECATED
-- `shared/_petCatalogSeed.js` — seed 数据（从 deprecated 抽出来）
+- `shared/petSpecies.js` — 物种图鉴兜底（运行时以 DB 为准）
+- `shared/petItems.js` — 装饰图鉴兜底（运行时以 DB 为准）
 - `shared/enums.js` — PetTier / PetState / PetEventType / PetVisualType / PetItemUnlockType / PetConsumableKind / PetConsumableApplicableTier / PetItemSlot
 
 **Service**：

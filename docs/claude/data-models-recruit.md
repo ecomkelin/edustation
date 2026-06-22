@@ -19,7 +19,7 @@
 
 ---
 
-## 核心实体（4 个 + 1 兼容字段，2026-06）
+## 核心实体（4 个 + 1 派生字段，2026-06）
 
 ### Parent（家长业务档案，collection `parents`）
 
@@ -50,7 +50,6 @@
 - `preStudent: ObjectId<ChildLead>`（替代原 Lead）
 - `parent: ObjectId<Parent>`（冗余，加速"该家长所有试听"查询）
 - `consultant: ObjectId<User>`（谈单老师，与 teacher 上课老师分离）
-- `result.negotiateTeacher` 是 consultant 的 alias（兼容老数据）
 - 其余字段与原 Lead 模型一致（`joinMode` / `lessonSchedule` / `room` / `scheduledAt` / `status` / `result` 等）
 
 ### LeadActivity（触点日志，collection `lead_activities`）
@@ -60,9 +59,9 @@
 - 触点类型 `call/wechat/visit/sms/note`
 - 创建时同步刷 ChildLead + Parent 触点快照
 
-### LessonSchedule.isTrialLesson（2026-06 deprecated）
+### LessonSchedule.isTrialLesson
 
-保留字段（兼容历史数据），排课 UI 默认过滤 `isTrialLesson=false`；新流程不再创建 `isTrialLesson=true` 的排课。
+试听专用排课标记；排课 UI 默认过滤 `isTrialLesson=false`；新流程不再创建 `isTrialLesson=true` 的排课。
 
 ## Category 字典（2026-06 扩展）
 
@@ -124,8 +123,6 @@
 
 **`converted` 数法**：`ChildLead.countDocuments({parent, convertedStudent: { $ne: null }})`（数真建了 Student 的，避免虚高）
 
-历史（2026-06 初次重构）数 `status='converted'`，会把 auto-mark 的兄弟也算进去；2026-06-16 删 auto-mark 后改用此条件。
-
 ## 转化两步式（claim token 模式，2026-06 改造；2026-06-16 去 auto-mark）
 
 - 试听完成后（`status=completed`，`result.isEnrolled=true`）触发转化
@@ -168,7 +165,6 @@
 - `recruit.convert` — 转化预览/转化执行/撤销转化
 - 共享给 Parent + ChildLead + TrialBooking 三个模块，减少权限码数
 - 加到 `管理员` 和 `教务` 系统职位（默认）；不加到 `老师`/`家长`/`财务`
-- 历史机构通过 `migrate-add-recruit-perms.js` 一次性补（$addToSet + $nin 前置过滤，幂等）
 - 销售/教务分级：服务端在 `parent.service.list` 时，若用户无"看全部"权限强制 `promoteBy=me`（`scope=mine`）；教务可看全部
 
 ## 删除保护（与 CLAUDE.md §8.1 互锁）
@@ -178,7 +174,7 @@
 - `childLeadUsageChecks`（ChildLead 删）：`TrialBooking` + `LeadActivity` 引用都阻挡
 - 物理删除走 `requirePlatformPassword`（高风险）
 
-## 招生看板（2026-06 新增）
+
 
 - `GET /api/v1/reports/recruit-promoter` — 推广人员 ROI（按 Parent.promoteBy 聚合：家长数/孩子数/转化数/转化率）
 - `GET /api/v1/reports/recruit-teacher-conversion` — 试听老师转化率（按 TrialBooking.teacher 聚合：试听过/到店/完成/已报名/转化率）
@@ -191,9 +187,3 @@
 
 老师"我的日程"原本只看 LessonSchedule；2026-06 起，还要 union 查 `TrialBooking.teacher=me, status ∈ {scheduled, arrived}`。
 当前排课日历只显示 LessonSchedule，老师若要查"今天我有几节试听"，需进 `/recruit/trial-bookings` 看板按"试听老师=me"过滤（TODO：阶段 2 加统一日程聚合）。
-
-## 迁移 & 启动清理
-
-- 旧 Lead 模型（collection `leads`）/ LeadActivity（collection `lead_activities`）**完全下线**（2026-06 重构）
-- `../packages/server/src/utils/startupMigrations.js#dropLegacyLeadCollections` 在 server 启动时主动 drop 这两个 collection（开发期兜底）
-- 业务上是假数据，不需要数据迁移脚本

@@ -225,9 +225,7 @@ X-Nonce:     <设备原生 eventId>     // 与 body 内 recordId/eventId 一致
 
 ## 3. 升级流程
 
-1. **新机构创建**：`org.service.create` 完成后，`startupMigrations.seedFaceConsentDocs` 兜底为该 org 写入 3 条 `LegalDoc`（docKey = `face-consent-*`，版本 v1.0）
 2. **历史机构补 docKey**：跑 `node packages/server/scripts/seed-face-consent-docs.js`（一次性）
-3. **历史机构补权限码**：跑 `node packages/server/scripts/migrate-add-access-control-perms.js`（一次性，幂等）
 4. **新机构自动生效**：`position.service.ensureDefaultPositions` 已挂 accessControl.* 三个权限码
 
 ---

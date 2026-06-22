@@ -16,7 +16,7 @@ const { PET_EVENT_TYPES } = require('@shared/enums')
  * payload shape 约定（写时严格按此结构，方便 admin 端结构化渲染）：
  *   - adopt          { initialTier: 'C' }
  *   - hatch          { tier, species }
- *   - feed           { foodType, expGain, hungerBefore, hungerAfter, expBefore, expAfter, tier, level }
+ *   - feed           { consumableKey, expGain, hungerBefore, hungerAfter, expBefore, expAfter, tier, level }
  *   - levelup        { fromLevel, toLevel, tier }
  *   - tierup         { fromTier, toTier }                       // 升阶免费
  *   - tierdown       { fromTier, toTier, reason: 'manual' }     // D2: species 保留

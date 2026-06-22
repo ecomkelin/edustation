@@ -43,9 +43,6 @@ const CourseProductSchema = new Schema(
     org: { type: Schema.Types.ObjectId, ref: 'Org', required: true },
     // 关联学科（数组，可空，可多个）
     //  - 业务上"建议性"：给学生报名/购课时作为"该产品适合的学科"参考
-    //  - 旧版本为单个 ObjectId 且必填；为兼容已有数据保留字段名 `subjects`，
-    //    不做迁移（MVP 阶段可接受历史文档中该字段为缺失/单值的情况，service
-    //    层读取时统一以数组形态处理）
     subjects: { type: [Schema.Types.ObjectId], ref: 'Subject', default: [] },
     // 产品名称，例如"国画 48 课时包"
     name: { type: String, required: true, trim: true, maxlength: 100 },

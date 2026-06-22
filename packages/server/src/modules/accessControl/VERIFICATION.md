@@ -351,7 +351,6 @@ curl http://localhost:3000/api/v1/access-control/client/pickups \
 |---------|---------|------|
 | `Cannot find module '@modules/accessControl/...'` | `module-alias` 未注册 | 在脚本顶部 `require('module-alias/register')` |
 | `MONGODB_URI not set` | 没 `.env` | `cp packages/server/.env.example packages/server/.env` |
-| `permission denied: accessControl.read` | 跑迁移 | `node packages/server/scripts/migrate-add-access-control-perms.js` |
 | `E11000 duplicate key` in AccessEvent | 正常（防重放命中）| 看响应 `deduplicated: true` |
 | `X-Timestamp 越界` | 设备时钟漂移 | 调一体机 NTP；或放宽窗口到 600s（v2） |
 | snapshot 上传失败 | STORAGE_DRIVER=local 没配 | `STORAGE_DRIVER=local UPLOAD_DIR=uploads` |

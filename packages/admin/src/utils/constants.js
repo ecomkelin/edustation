@@ -56,8 +56,7 @@ export const PARENT_LIFECYCLE_TAG_TYPE = {
   dormant: ''
 }
 
-// ChildLead 状态机标签 (原 LEAD_STATUS_LABEL 改名为 CHILD_LEAD_STATUS_LABEL, 字段相同)
-// 保留旧 LEAD_STATUS_* 别名以兼容 3-6 月内可能未改完的代码
+// ChildLead 状态机标签
 export const CHILD_LEAD_STATUS_LABEL = {
   pending: '已登记',
   contacted: '已联系',
@@ -74,9 +73,6 @@ export const CHILD_LEAD_STATUS_TAG_TYPE = {
   converted: 'success',
   lost: 'danger'
 }
-// 旧名 (deprecated)
-export const LEAD_STATUS_LABEL = CHILD_LEAD_STATUS_LABEL
-export const LEAD_STATUS_TAG_TYPE = CHILD_LEAD_STATUS_TAG_TYPE
 
 // TrialBooking 状态机标签 (2026-06-16 删 no_show; 2026-06-20 加 considering)
 //   considering: 试听做完但家长没当场定夺, 谈单老师后续跟进

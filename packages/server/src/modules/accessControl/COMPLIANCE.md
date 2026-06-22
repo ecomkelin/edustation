@@ -87,7 +87,6 @@ for (const ev of expired) {
 }
 ```
 
-**v2 cron**：写在 `startupMigrations.js` 或独立 `cleanupCron.js`，每日凌晨 3 点跑。
 
 ### 约束 4：人脸照片必须本地化（hard rule）
 

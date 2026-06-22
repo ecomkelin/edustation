@@ -48,7 +48,7 @@ async function getDefaultChannelId() {
   return _defaultChannelIdCache
 }
 
-// 暴露给 startupMigrations / 其他模块 (渠道字典被修改时, 清缓存)
+// 暴露给其他模块 (渠道字典被修改时, 清缓存)
 function _resetDefaultChannelCache() { _defaultChannelIdCache = null }
 
 /**
@@ -868,6 +868,6 @@ module.exports = {
   remove, removableCheck,
   recomputeLifecycle,    // 供 trialBooking/childLead 服务调用
   parentUsageChecks,
-  getDefaultChannelId,   // 默认渠道解析 (供 startupMigrations 等)
+  getDefaultChannelId,   // 默认渠道解析
   _resetDefaultChannelCache
 }

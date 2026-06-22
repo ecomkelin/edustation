@@ -443,7 +443,6 @@ async function complete({ id, orgId, currentUser, body }) {
     //   - isEnrolled === true|false  → "已定夺" → status=completed
     //   - isEnrolled === null + 当前 arrived   → 翻 considering (明确表达"未决, 进考虑期")
     //   - isEnrolled === null + 当前 considering → 保持 considering (改备注)
-    //   - isEnrolled === undefined + considerNote 非空 → 翻 considering (arrived→considering 兼容老流程)
     //   - 其他 (arrived + 啥都没带) → 维持 arrived
     if (body.result.isEnrolled === true || body.result.isEnrolled === false) {
       // 已定夺: completed
@@ -456,9 +455,6 @@ async function complete({ id, orgId, currentUser, body }) {
         doc.status = 'considering'
       }
       // 已 considering 则维持 (改备注/谈单老师, 不动 status)
-    } else if (doc.status !== 'considering' && body.result.considerNote && body.result.considerNote.trim()) {
-      // 兼容老流程: arrived → considering 仅靠 considerNote (没填 isEnrolled)
-      doc.status = 'considering'
     }
     // 其他场景: arrived + 啥都没带 → 维持 arrived (待定夺)
   }

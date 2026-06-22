@@ -54,9 +54,7 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
   //   - 见 memory: raw-insertmany-string-oid-pitfall.md
   if (source) filter.source = source
   if (trialSubject) {
-    filter.$or = filter.$or || []
-    filter.$or.push({ trialSubjects: trialSubject })        // 新数据: ObjectId 数组
-    filter.$or.push({ trialSubjects: String(trialSubject) }) // 老数据: String 数组
+    filter.trialSubjects = trialSubject
   }
   if (keyword) {
     const kw = String(keyword).trim()

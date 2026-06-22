@@ -23,7 +23,7 @@ const { PET_CONSUMABLE_KINDS, PET_CONSUMABLE_APPLICABLE_TIERS } = require('@shar
  * 与 PetAccount 的关系：
  *   - PetAccount 自身不存 consumable 引用
  *   - 喂食扣分走 points.recordTransaction({trigger:'pet', meta:{action:'feed', consumableKey}})
- *   - 历史消费由 PetEvent 'feed' payload 含 foodType（旧）/ consumableKey（新）审计
+ *   - 历史消费由 PetEvent 'feed' payload 含 consumableKey 审计
  */
 const PerTierValueSchema = new Schema(
   {

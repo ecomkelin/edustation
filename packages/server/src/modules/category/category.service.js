@@ -194,9 +194,8 @@ async function detail(id, orgId) {
  * 创建类别。
  * @param {Object} payload     body 数据 (含 model / name / parentCategory / code / sort / isActive)
  * @param {String} orgId       本机构 id (controller 从 req.orgId 注入)
- * @param {Boolean} _isPlatformAdmin  已废弃: 2026-06-19 起 Category.org 改为必填, 不再允许 org=null
  */
-async function create(payload, orgId, _isPlatformAdmin) {
+async function create(payload, orgId) {
   if (!orgId) {
     // 平台级 Category 已完全下线 (2026-06-19): 4 个 model 都必须是 per-org
     throw ApiError.badRequest('类别字典必须归属某个机构')

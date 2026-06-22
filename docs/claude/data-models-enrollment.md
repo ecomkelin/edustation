@@ -45,7 +45,7 @@
 - `room`（可与 CourseInstance 默认值不同 — 临时换场地）
 - `status`
 - `materials`（[ObjectId<Ref:File>] — 备课资料附件）
-- `isTrialLesson`（2026-06 deprecated — 保留字段兼容历史数据；新流程不再创建 `isTrialLesson=true` 的排课，排课 UI 默认过滤 `isTrialLesson=false`）
+- `isTrialLesson: Boolean` — 试听专用排课标记；排课 UI 默认过滤 `isTrialLesson=false`
 
 ## LessonAttendance（考勤）
 

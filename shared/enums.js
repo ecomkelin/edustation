@@ -35,6 +35,7 @@ const ORG_TYPES = Object.values(OrgType)
 const ORG_TYPE_LABELS = Object.freeze({
   academic: '学科类',
   arts: '艺术类',
+  arts: '艺术类',
   sports: '体育类',
   stem: '科技类',
   comprehensive: '综合素质',
@@ -43,13 +44,6 @@ const ORG_TYPE_LABELS = Object.freeze({
   preschool: '学前/托育',
   tutoring_arts: '艺考集训',
   other: '其他'
-})
-
-// 历史 org.type 兼容映射 (3 老值 → 新 enum), 走 migrate-org-type-to-string.js
-const ORG_TYPE_LEGACY_MAP = Object.freeze({
-  training: 'academic',  // 老 "培训" → 新 "学科类"
-  art: 'arts',
-  comprehensive: 'comprehensive'
 })
 
 const Gender = Object.freeze({
@@ -650,7 +644,6 @@ const CONSENT_SUBJECT_TYPES = Object.values(ConsentSubjectType)
 exports.OrgType = OrgType
 exports.ORG_TYPES = ORG_TYPES
 exports.ORG_TYPE_LABELS = ORG_TYPE_LABELS
-exports.ORG_TYPE_LEGACY_MAP = ORG_TYPE_LEGACY_MAP
 exports.Gender = Gender
 exports.GENDERS = GENDERS
 exports.CourseInstanceStatus = CourseInstanceStatus

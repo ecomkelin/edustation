@@ -3,10 +3,7 @@
 const { body } = require('express-validator')
 
 /**
- * 课程产品的学科字段已从单个 `subject`（必填）改为 `subjects`（数组、可空、可多）。
- * 校验器同时兼容：
- *  - `subjects`: string[] | string
- *  - 旧字段名 `subject`: string | string[]
+ * 课程产品的学科字段: `subjects`（数组、可空、可多）。
  *  - 都未传：允许（产品可以不挂学科）
  */
 const subjectsChain = (location) => body(location)
@@ -26,11 +23,9 @@ const subjectsChain = (location) => body(location)
  *  - promotionPrice（活动价）：可选（默认 0），>= 0
  *  - promotionActive：可选（默认 false）
  *  - 单调性校验由 service 层在写入前做（originalPrice > discountPrice > promotionPrice 当启用活动）
- *  - 兼容旧字段 `price`：仍可作为 discountPrice 提交（service 自动归并）
  */
 const create = [
   subjectsChain('subjects'),
-  subjectsChain('subject'),
   body('name').isString().trim().isLength({ min: 1, max: 100 }),
   body('totalLessons').isInt({ min: 1 }),
   body('minutesPerLesson').optional().isInt({ min: 1 }),
@@ -38,8 +33,6 @@ const create = [
   body('discountPrice').optional().isFloat({ min: 0 }),
   body('promotionPrice').optional().isFloat({ min: 0 }),
   body('promotionActive').optional().isBoolean(),
-  // 兼容旧字段 price（service 把它当作 discountPrice）
-  body('price').optional().isFloat({ min: 0 }),
   body('validDays').isInt({ min: 1 }),
   // syllabus 已剥离到 Subject 上；CourseProduct 不再接收
   body('isActive').optional().isBoolean()
@@ -47,7 +40,6 @@ const create = [
 
 const update = [
   subjectsChain('subjects'),
-  subjectsChain('subject'),
   body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
   body('totalLessons').optional().isInt({ min: 1 }),
   body('minutesPerLesson').optional().isInt({ min: 1 }),
@@ -55,8 +47,6 @@ const update = [
   body('discountPrice').optional().isFloat({ min: 0 }),
   body('promotionPrice').optional().isFloat({ min: 0 }),
   body('promotionActive').optional().isBoolean(),
-  // 兼容旧字段 price
-  body('price').optional().isFloat({ min: 0 }),
   body('validDays').optional().isInt({ min: 1 }),
   // syllabus 已剥离到 Subject 上；CourseProduct 不再接收
   body('isActive').optional().isBoolean()

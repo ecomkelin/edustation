@@ -570,10 +570,7 @@ async function onSourceOrgChange(orgId) {
   try {
     const r = await courseProductApi.listByOrg(orgId)
     const items = (r.data.items || []).map((p) => {
-      // 兼容旧字段 `subject`（单值）和新字段 `subjects`（数组）
-      const subjList = Array.isArray(p.subjects) && p.subjects.length
-        ? p.subjects
-        : (p.subject ? [p.subject] : [])
+      const subjList = Array.isArray(p.subjects) ? p.subjects : []
       const subjIds = subjList.map((s) => String(s._id || s.id || s))
       let skipReason = null
       if (existingNamesInCurrentOrg.value.has(p.name)) {

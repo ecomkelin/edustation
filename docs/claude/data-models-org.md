@@ -1,7 +1,7 @@
 # 数据模型 - Org / OrgPromotion / Category
 
-> **何时读这个文件**：改机构、Org schema、推广信息（OrgPromotion）、业态分类（Org.type）、Category 字典、per-org 隔离整改时读。
-> **一行摘要**：SaaS 多租户根实体 Org + 1:1 推广子表 OrgPromotion + per-org 共享字典 Category 的 schema / 字段权限 / 整改历史。
+> **何时读这个文件**：改机构、Org schema、推广信息（OrgPromotion）、业态分类（Org.type）、Category 字典时读。
+> **一行摘要**：SaaS 多租户根实体 Org + 1:1 推广子表 OrgPromotion + per-org 共享字典 Category 的 schema / 字段权限。
 
 ---
 
@@ -49,11 +49,9 @@
 | shared | `contactPerson` / `contactPhone` / `address` / `logo` | 都可写 |
 | 启用切换 | `isActive` | 走 toggle-active |
 
-## 业态分类（`Org.type`，2026-06 整改）
+## 业态分类（`Org.type`）
 
-**整改前**：`Org.type` 是 ObjectId，引用 `Category(model='Org')` 字典文档。
-
-**整改后**：String enum，10 种平台层统一枚举：
+String enum，10 种平台层统一枚举：
 
 | 值 | 含义 |
 |---|---|
@@ -70,7 +68,6 @@
 
 - 定义位置：`@shared/enums#ORG_TYPES` / `ORG_TYPE_LABELS`（前后端硬编码共享）
 - Category 字典 `model` enum 移除 `'Org'`
-- 老的 `Category(model='Org')` 文档全部 drop（迁移脚本 `scripts/migrate-org-type-to-string.js`）
 
 ## OrgPromotion（推广信息，2026-06 新增，1:1 with Org）
 
@@ -136,29 +133,15 @@
 - `org-promotion.read` / `org-promotion.write`
 - 挂在「管理员」「教务」系统职位，不挂「老师」「家长」「财务」
 
-## Category 字典（2026-06 整改）
+## Category 字典（per-org 隔离）
 
-### 整改前状况
+平台级共享字典已下线，Category 必须归属某个机构。
 
-- Category 是平台级共享字典（无 org 字段），写权限仅平台超管
-- `model` enum 含 5 个：`Org / Student / Subject / LeadTag / Channel`
-- `Org.type` 引用 `Category(model='Org')`，其余 4 个 model 被本机构业务（Parent.tags / Subject.category / 等）引用
-
-### 问题
-
-- LeadTag/Channel/Student/Subject 都是 per-org 业务数据，但全局共享导致不同机构互相干扰（"高意向"标签含义可能不同 / "VIP 客户"渠道名冲突）
-- Org.type 用 ObjectId 引用 Category 太重——机构业态是平台层统一枚举，不该走 per-org 字典
-
-### 整改后
-
-**Org.type**：从 ObjectId 改成 String enum（10 种，详见上方"业态分类"段）
-
-**Category 加 `org` 字段**（ObjectId, ref Org, **required: true**, indexed）：
-
-- 4 个 model（`Student / Subject / LeadTag / Channel`）全 per-org
-- **2026-06-19 起 `org` 改为必填**：所有 Category 必须归属某机构，平台级共享字典完全下线。开发阶段已清理 21 条 `org=null` 的历史 platform-level 类别（python/C++/Scratch/Spike/大颗粒 等 Subject 分类）
-- list / tree / detail 默认按 `req.orgId` 过滤
-- create 时 controller 强制 `org = req.orgId`；schema 校验拒绝任何缺 org 的 Category
+- **Org.type** 改用 String enum（10 种，详见上方"业态分类"段）
+- **Category 加 `org` 字段**（ObjectId, ref Org, **required: true**, indexed）：
+  - 4 个 model（`Student / Subject / LeadTag / Channel`）全 per-org
+  - list / tree / detail 默认按 `req.orgId` 过滤
+  - create 时 controller 强制 `org = req.orgId`；schema 校验拒绝任何缺 org 的 Category
 
 ### 写权限下放机构（复用各引用方写权限，不新增）
 
@@ -193,11 +176,9 @@
 
 ## 种子清理
 
-- `scripts/db/seeds/category.seed.js` → noop（保留为兼容文件）
 - `scripts/db/seeds/org.seed.js` → `type: 'arts'` 硬编码
 - `scripts/db/seeds/initial.data.json` → 删 2 个 Org Category；梓潼/绵阳的 org.type 从 ObjectId 改成 `"stem"`
 
-## 迁移顺序
+## 字典初始化
 
-1. `node scripts/migrate-org-type-to-string.js`（老 ObjectId → 新 String enum + drop 老 Org Category）
-2. （可选）`node scripts/db/seeds/leadTag.seed.js` / `channel.seed.js` 给本机构 LeadTag/Channel seed 基础项
+跑 `node scripts/db/seeds/leadTag.seed.js` / `channel.seed.js` 给本机构 LeadTag/Channel seed 基础项。

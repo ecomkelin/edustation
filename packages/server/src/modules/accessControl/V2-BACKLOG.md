@@ -22,7 +22,6 @@
 
 - **现状**：PoC 走手动 SQL 清理
 - **目标**：每日凌晨 3 点自动清
-- **实现**：`packages/server/src/jobs/cleanupAccessSnapshots.js`（新增）+ `startupMigrations.js` 注册
 - **工作量**：0.5 天
 - **触发条件**：上线后 1 个月内必须有
 

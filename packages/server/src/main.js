@@ -21,11 +21,7 @@ async function bootstrap() {
   // 1.3 站点配置单例 (备案号 / 运营主体 / 版权年份). 已存在则 no-op
   await require('@modules/siteConfig/siteConfig.service').ensureSingleton()
 
-  // 1.5 启动迁移 (幂等, 业务无感; 任一失败 log warn 不阻塞 server)
-  // 必须在 createApp/listen 之前跑完, 避免"server 已 ready 但索引还没修"的窗口
-  await require('@utils/startupMigrations').runStartupMigrations()
-
-  // 1.6 注册 pet-system-v2 饥饿衰减 + 死亡 cron (2026-06-21)
+  // 1.5 注册 pet-system-v2 饥饿衰减 + 死亡 cron (2026-06-21)
   // require 即触发 setInterval(...).unref()，参照 captcha.service 模式
   require('@modules/pet/petCron')
 

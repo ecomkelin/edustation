@@ -67,40 +67,15 @@ function normalizeLessonMaterialsItems(raw) {
   return out
 }
 
-/**
- * 清理 items 中的脏 category 字段（旧版 seed 把非 ObjectId 字符串写进了 category，
- * populate 失败走 fallback 时这些字段会保留原样；这里只对「字符串且非合法 ObjectId」
- * 的情况清成 null，对 populate 成功后的对象/null 不动）。
- */
-function sanitizeCategories(items) {
-  for (const s of items) {
-    if (typeof s.category === 'string' && !mongoose.isValidObjectId(s.category)) {
-      s.category = null
-    }
-  }
-  return items
-}
-
 async function list({ orgId, keyword }) {
   const filter = { org: orgId }
   if (keyword) filter.name = { $regex: keyword, $options: 'i' }
-  try {
-    return await Subject.find(filter)
-      .populate('category', 'name code level')
-      .populate('posterFileId', 'url originalName mime')
-      .populate('videoFileId', 'url originalName mime')
-      .sort({ createdAt: -1 })
-      .lean()
-  } catch (e) {
-    // 防御：旧版 seed 曾把非 ObjectId 字符串写入 category，导致 populate 在查询
-    // Category._id 时抛 CastError（参数类型错误: _id）。降级为不 populate 的列表，
-    // 前端 row.category=null 会显示「未分类」。请跑 migrate-subject-category.js 永久修复。
-    if (!e || e.name !== 'CastError') throw e
-    // eslint-disable-next-line no-console
-    console.warn(`[subject.list] populate failed (path=${e.path}), falling back: ${e.message}`)
-    const items = await Subject.find(filter).sort({ createdAt: -1 }).lean()
-    return sanitizeCategories(items)
-  }
+  return Subject.find(filter)
+    .populate('category', 'name code level')
+    .populate('posterFileId', 'url originalName mime')
+    .populate('videoFileId', 'url originalName mime')
+    .sort({ createdAt: -1 })
+    .lean()
 }
 
 async function detail(id, orgId) {
@@ -358,24 +333,11 @@ async function listSourceOrgs({ keyword, targetOrgId }) {
  */
 async function listByOrg(orgId) {
   if (!mongoose.isValidObjectId(orgId)) throw ApiError.badRequest('机构 id 不合法')
-  try {
-    const items = await Subject.find({ org: orgId })
-      .populate('category', 'name code level')
-      .sort({ createdAt: -1 })
-      .lean()
-    return { items }
-  } catch (e) {
-    // 防御：旧版 seed 曾把非 ObjectId 字符串写入 category，导致 populate 在查询
-    // Category._id 时抛 CastError。降级为不 populate 的列表，前端 row.category=null
-    // 会显示「未分类」。请跑 migrate-subject-category.js 永久修复。
-    if (!e || e.name !== 'CastError') throw e
-    // eslint-disable-next-line no-console
-    console.warn(`[subject.listByOrg] populate failed (path=${e.path}), falling back: ${e.message}`)
-    const items = await Subject.find({ org: orgId })
-      .sort({ createdAt: -1 })
-      .lean()
-    return { items: sanitizeCategories(items) }
-  }
+  const items = await Subject.find({ org: orgId })
+    .populate('category', 'name code level')
+    .sort({ createdAt: -1 })
+    .lean()
+  return { items }
 }
 
 /**

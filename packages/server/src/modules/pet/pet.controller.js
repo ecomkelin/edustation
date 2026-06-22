@@ -58,12 +58,12 @@ exports.hatch = async (req, res) => {
   res.json(ApiResponse.ok(result))
 }
 
-// POST /api/v1/pet/feed — { foodType }
+// POST /api/v1/pet/feed — { consumableKey }
 exports.feed = async (req, res) => {
   const studentId = studentIdOf(req)
-  const { foodType } = req.body || {}
-  if (!foodType) throw ApiError.badRequest('缺少 foodType')
-  const result = await s.feed({ orgId: req.orgId, studentId, foodType })
+  const { consumableKey } = req.body || {}
+  if (!consumableKey) throw ApiError.badRequest('缺少 consumableKey')
+  const result = await s.feed({ orgId: req.orgId, studentId, consumableKey })
   res.json(ApiResponse.ok(result))
 }
 

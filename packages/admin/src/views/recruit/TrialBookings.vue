@@ -394,7 +394,6 @@ const counts = reactive({
   all: 0
 })
 const selectedRows = ref([])
-const subjectOptions = ref([])  // 2026-06-18 暂留兼容, 但实际不再用
 const trialSubjectCategoryOptions = ref([])
 // 2026-06-18: 年龄段下拉 — 业务上培训行业常用分段
 //   - 学龄前/低年级 (3-5)
@@ -497,10 +496,8 @@ async function loadSubjectOptions() {
     const r = await categoryApi.list({ model: 'Subject', pageSize: 200 })
     const items = r.data?.items || (Array.isArray(r.data) ? r.data : [])
     trialSubjectCategoryOptions.value = items
-    subjectOptions.value = items  // 兼容
   } catch (e) {
     trialSubjectCategoryOptions.value = []
-    subjectOptions.value = []
   }
 }
 

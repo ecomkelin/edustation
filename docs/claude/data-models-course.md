@@ -82,8 +82,8 @@
 
 `teacher` 与 `room` 仅作为开班默认值，**单节课**（LessonSchedule）可临时指定不同老师/教室（代课、临时换场地）。
 
-## 试听专用 CourseInstance（2026-06 deprecated）
+## 试听专用 CourseInstance
 
-- `ensureTrialCourseInstance(orgId)` 保留（历史数据兼容），新流程不调
-- 试听专用 CI 上的 `isTrialLesson=true` 的 LessonSchedule 仅供历史展示
-- `courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班，排课接口可显式 `?includeTrial=true`
+新流程不再创建试听专用开班；历史 `isTrialLesson=true` 的 LessonSchedule 仅供历史展示。
+
+`courseInstance.service.list` 默认 `filter.isTrial={$ne:true}` 隐藏试听专用开班，排课接口可显式 `?includeTrial=true`。

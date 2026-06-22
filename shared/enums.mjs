@@ -30,7 +30,6 @@ const enums = enumsNs.default || enumsNs
 export const OrgType = enums.OrgType
 export const ORG_TYPES = enums.ORG_TYPES
 export const ORG_TYPE_LABELS = enums.ORG_TYPE_LABELS
-export const ORG_TYPE_LEGACY_MAP = enums.ORG_TYPE_LEGACY_MAP
 
 export const Gender = enums.Gender
 export const GENDERS = enums.GENDERS

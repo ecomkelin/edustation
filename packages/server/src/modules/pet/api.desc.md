@@ -103,7 +103,7 @@
 ### 7. 喂食
 
 - **POST** `/api/v1/pet/feed`
-- **Body**：`{ foodType: 'normal' | 'premium' | 'super' }`
+- **Body**：`{ consumableKey: 'food_normal_c' | 'toy_ball' | ... }`（PetConsumable.key 任意）
 - 扣积分（按当前 tier 定价），加经验/饱腹度，可能触发 levelup / tierup
 - 满级时若经验达到 `tierUpThreshold` 触发升阶：state→egg, eggTier→nextTier, level=1, exp=0, species 保留
 - **响应**：`{ data: { petAccount, levelUp, tierUp, pointsCost, pointsAfter, events: [...] } }`
@@ -218,7 +218,7 @@
 |------|---------|--------|
 | `adopt` | `{ initialTier, by }` | ensurePetAccount 创建时 |
 | `hatch` | `{ tier, species, level, unlocked }` | 破壳成功 |
-| `feed` | `{ foodType, expGain, hungerBefore, hungerAfter, expBefore, expAfter, tier, level }` | 每次喂食 |
+| `feed` | `{ consumableKey, expGain, hungerBefore, hungerAfter, expBefore, expAfter, tier, level }` | 每次喂食 |
 | `levelup` | `{ fromLevel, toLevel, tier }` | 喂食触发的升级（feed 内部循环，可能多条） |
 | `tierup` | `{ fromTier, toTier, species }` | 满级升阶 |
 | `tierdown` | `{ fromTier, toTier, reason, autoUnequipped }` | 玩家主动降阶 |
@@ -369,7 +369,7 @@ GET    /class/pet-display?studentId=xxx       独立 layout（ClassroomLayout）
 
 | 状态码 | 场景 |
 | ------ | ---- |
-| 400 | 缺 `foodType` / `consumableKey` / `targetTier` / `slot` / `itemKey` / `visualType` 等参数；perTier 缺值 |
+| 400 | 缺 `consumableKey` / `targetTier` / `slot` / `itemKey` / `visualType` 等参数；perTier 缺值 |
 | 401 | 未登录 |
 | 403 | admin 端权限码不足 / C 端家长非该学员监护人 |
 | 404 | 宠物不存在 / consumable 不在该 tier 适用 / 物种/装饰/消耗品不存在 |

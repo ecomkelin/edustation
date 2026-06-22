@@ -10,13 +10,11 @@
 - ✅ 4 个新 model（AccessDevice / FaceProfile / AccessEvent / AuthorizedPickup）
 - ✅ 12 个新 enum（shared/enums.js）
 - ✅ 3 个权限码（accessControl.read/write/pickup）
-- ✅ 4 处权限码同步（permissions.json + DEFAULT_POSITIONS + migrate + startupMigrations）
 - ✅ 5 个 driver 文件（base / hanwang 完整 / hikvision / dahua / index 工厂）
 - ✅ webhookAuth 中间件（HMAC + timestamp + eventId + IP 软防御）
 - ✅ 34 函数 service + 20 校验器 + 34 handler
 - ✅ 33 端点路由（webhook 2 + admin 22 + client 9）
 - ✅ app.js 先于 express.json 挂载 webhook
-- ✅ 迁移脚本 `scripts/migrate-add-access-control-perms.js`（幂等）
 - ✅ API 文档 `api.desc.md`
 - ✅ 模块加载验证（语法 + 全部 33 端点注册）
 
@@ -73,7 +71,6 @@
 |---|------|--------|------|
 | D1 | CLAUDE.md §17 增补（17.1-17.8 八节） | P0 | ⏳ |
 | D2 | `scripts/seed-face-consent-docs.js`（新机构 seed 三条 docKey） | P0 | ⏳ |
-| D3 | `startupMigrations.js` 注册 `seedFaceConsentDocs` 兜底 | P0 | ⏳ |
 | D4 | `packages/server/README.md` 增补"硬件接入"小节 | P1 | ⏳ |
 | D5 | 同意书正文（3 份 LegalDoc 模板） | P0 | ⏳ |
 

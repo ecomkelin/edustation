@@ -489,7 +489,6 @@ const codeIndex = [
   { topic: '排课 archive', path: 'lessonSchedule.service.js · archive()', note: 'completed→archived；2026-06：仅「已消课/已补」未写课评阻塞归档' },
   { topic: '排课 generate', path: 'lessonSchedule.service.js · generate()', note: '批量按 schedulePlan 排课，先 preview 再 generate' },
   { topic: '补课接口', path: 'lessonAttendance.service.js · makeup()', note: '就地把 orig.status 翻成 madeup（不建新行），StudentProduct 扣 1 课时；meta 写 originalStatus/makeupAt' },
-  { topic: '补课迁移脚本', path: 'scripts/migrate-makeup-to-status-transition.js', note: '把旧版"建新行"留下的重复 madeup 合并回原考勤 + 退回多余扣课时；幂等可重跑' },
   { topic: '管理后台入口', path: 'packages/admin/src/views/courseInstances/CourseInstances.vue', note: '"加学生" 仅 enrolling 可见；"改状态"按钮走 setStatus 弹窗' }
 ]
 </script>

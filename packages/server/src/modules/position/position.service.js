@@ -254,7 +254,7 @@ async function setPermissions(id, orgId, permissions) {
   // 不允许任何机构职位持有。这是服务端最后一道防线, 防止:
   //   - 前端 stale 缓存把旧码塞回来
   //   - 用户直接 curl 调本接口
-  // 旧数据由 startupMigrations.pullHiddenPerms 一次性清, 见 utils/startupMigrations.js
+  // 历史数据由 ensureDefaultPositions 创建时正确携带 hidden perms（无需后清理）
   const cleaned = (permissions || []).filter(isAssignablePermission)
   const dropped = (permissions || []).filter((p) => !isAssignablePermission(p))
   if (dropped.length) {

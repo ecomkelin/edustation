@@ -27,9 +27,8 @@ const UserOrgRelSchema = new Schema(
     positions: [{ type: Schema.Types.ObjectId, ref: 'Position' }],
     // 是否主机构：true 表示登录后默认进入这家；同一用户多个机构时仅一个 isMain=true
     isMain: { type: Boolean, default: false }
-    // 注: 家长沟通画像字段 (commStyle/familyBg/childFocus/followUp 等) 2026-06-16 搬到 Parent 表
+    // 注: 家长沟通画像字段 (commStyle/familyBg/childFocus/followUp 等) 已搬到 Parent 表
     //   原因: Parent 自身就按 org 隔离, 潜客阶段 (parent.user=null) 也能写, 不依赖 user 绑定
-    //   老 rel 数据已由 scripts/migrate-parent-profile-to-parent.js 迁移并 $unset
   },
   { timestamps: true, collection: 'user_org_rels' }
 )

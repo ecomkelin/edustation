@@ -104,7 +104,6 @@ modules/accessControl/
 cd packages/server && npm install
 
 # 2. 跑迁移（幂等，可重跑）
-node packages/server/scripts/migrate-add-access-control-perms.js
 
 # 3. 启动 dev server
 cd packages/server && npm run dev

@@ -89,7 +89,7 @@
 | `User.avatar` | String（跨租户） | diffSingle |
 | `Org.logo` | String（按 org） | diffSingle |
 | `Pet.avatar` | String（按 org） | diffSingle |
-| `StudentWork.fileUrls` | [String] | diffArray（保留 schema 兼容） |
+| `StudentWork.fileUrls` | [String] | diffArray |
 | `CourseProduct.attachments` | [ObjectId<Ref:File>] | diffArrayById |
 | `LessonSchedule.materials` | [ObjectId<Ref:File>] | diffArrayById |
 

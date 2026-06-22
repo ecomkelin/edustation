@@ -294,16 +294,15 @@ async function load() {
 }
 
 /**
- * 取主监护人手机号 (2026-06-16 加)
+ * 取主监护人手机号
  *   - 业务上 guardians[0] = 主监护人 (Student.guardianUser 也是它)
  *   - 后端 list() 已 .populate('guardians', 'mobile realName avatar')
- *   - 兼容 guardians 是 [ObjectId] 数组(没 populate)的情况
  *   - 用于"家长电话"列展示 + tel: 拨号
  */
 function primaryGuardianMobile(row) {
   const g = (row.guardians || [])[0]
   if (!g) return ''
-  return typeof g === 'object' ? (g.mobile || '') : ''
+  return g.mobile || ''
 }
 
 /**

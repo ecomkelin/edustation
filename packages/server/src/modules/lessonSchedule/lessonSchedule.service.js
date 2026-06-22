@@ -73,7 +73,7 @@ function conflictResponsePayload(conflict) {
   return Array.from(map.values())
 }
 
-async function list({ orgId, from, to, courseInstance, teacher, room, status, statuses, page, pageSize, isTrialLesson }) {
+async function list({ orgId, from, to, courseInstance, teacher, room, statuses, page, pageSize, isTrialLesson }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (courseInstance) filter.courseInstance = courseInstance
@@ -82,16 +82,13 @@ async function list({ orgId, from, to, courseInstance, teacher, room, status, st
   // 招生试听 (2026-06): 按是否试听课过滤; 'true'/'false'/'undefined'(不传=全部)
   if (isTrialLesson === 'true' || isTrialLesson === true) filter.isTrialLesson = true
   else if (isTrialLesson === 'false' || isTrialLesson === false) filter.isTrialLesson = { $ne: true }
-  // 状态筛选：兼容 数组 statuses / 单值 status / 逗号分隔字符串
+  // 状态筛选: 数组 / 逗号分隔字符串
   //  - statuses: 数组 (axios paramsSerializer 把 ?statuses=a&statuses=b 展成数组)
   //  - statuses: 字符串 'a,b,c' (前端 join 后的扁平串)
-  //  - status:   旧版单值/逗号串（兼容老路由）
   let rawStatuses = []
   if (Array.isArray(statuses)) rawStatuses = statuses
   else if (typeof statuses === 'string' && statuses.length) {
     rawStatuses = statuses.split(',').map((s) => s.trim()).filter(Boolean)
-  } else if (status) {
-    rawStatuses = String(status).split(',').map((s) => s.trim()).filter(Boolean)
   }
   if (rawStatuses.length === 1) filter.status = rawStatuses[0]
   else if (rawStatuses.length > 1) filter.status = { $in: rawStatuses }
@@ -214,14 +211,6 @@ async function detail(id, orgId) {
     // 解析失败不影响主返回
     s.resolvedContent = null
   }
-  // 招生试听 (2026-06): 统计本排课下的试听预约数
-  //   - 给前端"试听名单"按钮的徽标用
-  //   - isTrialLesson=true 时这就是 TrialBooking.lessonSchedule=this 数量
-  //   - isTrialLesson=false 时 (跟班试听 attached 模式) 也有, 让 UI 一致显示
-  s.attachedTrialBookingCount = await TrialBooking.countDocuments({
-    org: orgId,
-    lessonSchedule: s._id
-  })
   return s
 }
 
@@ -924,18 +913,6 @@ function lessonScheduleUsageChecks(orgId, scheduleId) {
     {
       model: StudentWork, filter: { lessonSchedule: scheduleId, org: orgId },
       label: '学员作品', hint: '本排课下已有作品上传,请先清理作品后再删'
-    },
-    {
-      // 招生试听 (2026-06): 该排课被排为试听课 (solo 模式: isTrialLesson=true;
-      // attached 跟班模式: 其他 TrialBooking 也指向这个 schedule); 任何还有效的
-      // 预约都阻挡删除, 让销售先把 TrialBooking 转 cancelled / no_show
-      model: TrialBooking,
-      filter: {
-        org: orgId,
-        lessonSchedule: scheduleId,
-        status: { $in: ['awaiting_schedule', 'scheduled', 'arrived', 'completed'] }
-      },
-      label: '试听课关联', hint: '本排课已被排为试听课, 请先处理该潜客的试听记录'
     }
   ]
 }

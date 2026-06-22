@@ -237,26 +237,19 @@ async function hatch({ orgId, studentId }) {
  * 扣分失败（积分不足）→ 整个操作回滚（经验/饱腹度不变）
  * 写失败 → CAS 守卫失败时 retry 1 次；再失败抛 409
  *
- * 2026-06-21 pet-system-v2-ext 升级：支持 consumableKey 优先；foodType 仅作 v1 兼容。
- *   - 旧：foodType='normal'/'premium'/'super' → 自动映射为 consumableKey='food_normal'/'food_premium'/'food_super'
- *   - 新：consumableKey='food_normal_c'/'toy_ball'/'...' → 直接用（DB-driven 食物/玩具）
+ * 2026-06-21 pet-system-v2-ext：consumableKey 直接走 DB-driven 的 PetConsumable.key
  *
  * @param {String} orgId
  * @param {String} studentId
- * @param {String} [consumableKey] - 优先用；DB-driven 的 PetConsumable.key
- * @param {String} [foodType] - v1 兼容；自动映射为 food_<type>
+ * @param {String} consumableKey - DB-driven 的 PetConsumable.key
  * @returns {Promise<{petAccount, levelUp, tierUp, pointsCost, pointsAfter, events}>}
  */
-async function feed({ orgId, studentId, consumableKey, foodType, by = 'parent' }) {
+async function feed({ orgId, studentId, consumableKey, by = 'parent' }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
 
-  // 解析 consumableKey
-  let resolvedKey = consumableKey
-  if (!resolvedKey && foodType) {
-    if (!petConfig.FOOD_TYPES.includes(foodType)) throw ApiError.badRequest('foodType 不合法')
-    resolvedKey = `food_${foodType}` // v1 默认 consumable 命名
-  }
-  if (!resolvedKey) throw ApiError.badRequest('缺少 consumableKey 或 foodType')
+  // 解析 consumableKey（必须显式传）
+  const resolvedKey = consumableKey
+  if (!resolvedKey) throw ApiError.badRequest('缺少 consumableKey')
 
   // 1. 读 pet
   const pet = await PetAccount.findOne({ org: orgId, student: studentId })
@@ -413,7 +406,6 @@ async function feed({ orgId, studentId, consumableKey, foodType, by = 'parent' }
     type: by === 'admin' ? 'admin_feed' : 'feed',
     payload: {
       consumableKey: resolvedKey,
-      foodType: foodType || null, // 旧字段保留向后兼容
       expGain,
       hungerBefore: pet.currentHunger,
       hungerAfter: newHunger,
