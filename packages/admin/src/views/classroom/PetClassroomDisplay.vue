@@ -24,6 +24,16 @@
     <!-- 主体：左大图 + 右数据 -->
     <div class="main">
       <div class="pet-display">
+        <!-- 2026-06-23: 背景层提到 pet-display 容器 — 铺满整个红框区域，而非只贴在宠物图后面 -->
+        <div
+          v-if="pet?.equipped?.background && itemMap[pet.equipped.background]"
+          class="pet-display-bg"
+          :class="`bg-${pet.equipped.background}`"
+        >
+          <span v-if="itemMap[pet.equipped.background].visualType === 'svg'" v-html="itemMap[pet.equipped.background].svgContent" />
+          <img v-else-if="itemMap[pet.equipped.background].imageFile?.url" :src="itemMap[pet.equipped.background].imageFile.url" />
+        </div>
+
         <!-- 2026-06-22: 蛋态 — 与 PetEquipmentOverlay 同尺寸结构 (max-width 80% / 内部 frame)，
              保持位置 / 大小与破壳后宠物一致；去掉「蛋」文字；破壳时加 shake + glow + 破裂闪光 -->
         <div v-if="pet?.state === 'egg'" class="pet-img">
@@ -46,8 +56,15 @@
             mode="classroom"
             :fallback-emoji="speciesEmoji"
           />
-          <!-- 存活态：底部中央放「置换」（与蛋态代破壳共用同一位置 pattern） -->
-          <el-button v-if="canWrite" type="warning" size="large" class="pet-bottom-btn" @click="onSwap" :loading="actioning">置换</el-button>
+          <!-- 存活态：底部中央按钮（满级时可升阶；非满级时显示置换） -->
+          <template v-if="canWrite">
+            <!-- 满级 + 经验达标 → 升阶按钮（橙色突出） -->
+            <el-button v-if="canTierUpNow" type="danger" size="large" class="pet-bottom-btn tier-up-btn" @click="onTierUp" :loading="actioning">
+              升 {{ nextTierLabel }} 阶 ⬆
+            </el-button>
+            <!-- 否则显示置换 -->
+            <el-button v-else type="warning" size="large" class="pet-bottom-btn" @click="onSwap" :loading="actioning">置换</el-button>
+          </template>
         </template>
         <div v-else class="pet-empty">
           <el-icon :size="120"><Picture /></el-icon>
@@ -65,7 +82,12 @@
             :status="expPercent >= 100 ? 'success' : ''"
           />
           <div v-if="pet?.tierUpThreshold && pet?.level >= 10" class="tierup-hint">
-            满级！累计经验 ≥ {{ pet.tierUpThreshold }} 触发升阶
+            <template v-if="canTierUpNow">
+              满级 + 经验达标（{{ pet.experience || 0 }}/{{ pet.tierUpThreshold }})，点下方「升阶」按钮
+            </template>
+            <template v-else>
+              满级！累计经验需 ≥ {{ pet.tierUpThreshold }} 才能升阶（当前 {{ pet.experience || 0 }}）
+            </template>
           </div>
         </div>
 
@@ -423,6 +445,46 @@ export default {
     async function onSwap() {
       await doAction('代置换蛋（扣积分）', () => petAdminApi.swapEggOnBehalf(pet.value._id))
     }
+    // 2026-06-22: 手动升阶（满级 + 经验达标时主动触发）
+    async function onTierUp() {
+      const nextLabel = nextTierLabel.value
+      try {
+        await ElMessageBox.confirm(
+          `确认将 ${pet.value?.tier} 阶宠物升到 ${nextLabel} 阶？升阶后当前种类保留，变为新阶蛋。`,
+          '升阶',
+          { type: 'warning', confirmButtonText: '升阶', cancelButtonText: '取消' }
+        )
+      } catch (_) { return }
+      actioning.value = true
+      try {
+        await petAdminApi.tierUpOnBehalf(pet.value._id)
+        ElMessage.success(`已升到 ${nextLabel} 阶`)
+        await refresh()
+      } catch (e) {
+        ElMessage.error(e?.response?.data?.message || e?.message || '升阶失败')
+      } finally {
+        actioning.value = false
+      }
+    }
+
+    // 2026-06-22: 是否可以手动升阶
+    const canTierUpNow = computed(() => {
+      if (!pet.value || pet.value.state !== 'alive') return false
+      if (!pet.value.tierUpThreshold || !pet.value.level) return false
+      if (pet.value.level < 10) return false  // 简化为 Lv.10 满级
+      if ((pet.value.experience || 0) < pet.value.tierUpThreshold) return false
+      // S 阶不能再升
+      if (pet.value.tier === 'S') return false
+      return true
+    })
+
+    // 下一阶 label（B/A/S 之一或 'S'）
+    const nextTierLabel = computed(() => {
+      const order = ['C', 'B', 'A', 'S']
+      const idx = order.indexOf(pet.value?.tier)
+      if (idx < 0 || idx >= order.length - 1) return ''
+      return order[idx + 1]
+    })
 
     function onClose() {
       if (window.opener) {
@@ -450,6 +512,8 @@ export default {
       tierLabel, tierClass, expPercent, hungerPercent, speciesEmoji,
       PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS,
       Picture, ShoppingCart, Coin,
+      // 2026-06-22: 手动升阶
+      canTierUpNow, nextTierLabel, onTierUp,
       refresh, onHatch, onSwap, onClose, formatDate,
       onToggleEquip, onBuyConsumable, onConsumableBought
     }
@@ -526,6 +590,7 @@ export default {
   overflow: hidden;
 }
 .pet-display {
+  position: relative;  /* 2026-06-23: 背景层绝对定位铺满 */
   background: rgba(255, 255, 255, 0.05);
   border-radius: 16px;
   display: flex;
@@ -534,6 +599,31 @@ export default {
   flex-direction: column;
   gap: 16px;
   padding: 24px;
+  overflow: hidden;  /* 2026-06-23: 背景 SVG 超出红框部分裁掉 */
+}
+/* 2026-06-23: 背景层 — 铺满整个左侧红框区，pointer-events:none 不挡背后交互 */
+.pet-display-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.pet-display-bg span,
+.pet-display-bg img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* 红框里其他元素（蛋/宠物/按钮）要在背景之上 */
+.pet-display > *:not(.pet-display-bg) {
+  position: relative;
+  z-index: 1;
 }
 .pet-display .species-name {
   font-size: 36px;
@@ -794,5 +884,13 @@ export default {
 .pet-bottom-btn {
   margin-top: 16px;
   min-width: 160px;
+}
+/* 2026-06-22: 升阶按钮（满级时显示） */
+.tier-up-btn {
+  animation: pulse-tier-up 1.5s ease-in-out infinite;
+}
+@keyframes pulse-tier-up {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 108, 108, 0.7); }
+  50% { box-shadow: 0 0 0 12px rgba(245, 108, 108, 0); }
 }
 </style>

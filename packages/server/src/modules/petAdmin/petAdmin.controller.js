@@ -78,6 +78,15 @@ exports.swapEggOnBehalf = async (req, res) => {
   })))
 }
 
+// 2026-06-22: 手动升阶（不扣积分，绕开 feed 自动触发）
+exports.tierUpOnBehalf = async (req, res) => {
+  res.json(ApiResponse.ok(await s.tierUpOnBehalf({
+    orgId: req.orgId,
+    petAccountId: req.params.id,
+    operatorId: req.user?.id
+  })))
+}
+
 exports.tierDownOnBehalf = async (req, res) => {
   res.json(ApiResponse.ok(await s.tierDownOnBehalf({
     orgId: req.orgId,

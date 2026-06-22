@@ -62,6 +62,9 @@ export default {
       const out = []
       const equipped = this.equipped || {}
       for (const slot of PET_ITEM_SLOTS) {
+        // 2026-06-23: 跳过 background slot — 背景由外层 PetClassroomDisplay 的大背景层铺满红框，
+        //             这里只渲染帽子/围巾/衣服/饰品/光环 5 个贴在宠物上的装饰
+        if (slot === 'background') continue
         const key = equipped[slot]
         if (!key) continue
         const it = this.itemMap[key]
@@ -160,11 +163,6 @@ export default {
        scarf 放在脖子 (y 45~58%),并确保 z-index > clothes 让围巾不被压
        hat   放头顶(小奶狗/熊猫)或耳尖(兔子) — 折中 y 8~30%
        accessory (眼镜)放脸正中 y 38~52% */
-.slot-background {
-  top: 0; left: 0; width: 100%; height: 100%;
-  opacity: 0.35;
-  z-index: 0;
-}
 .slot-halo      { top: -2%; left: 50%; transform: translateX(-50%); width: 70%; height: 22%; opacity: 0.85; z-index: 2; }
 .slot-hat       { top: 8%;  left: 50%; transform: translateX(-50%); width: 55%; height: 28%; z-index: 3; }
 .slot-accessory { top: 36%; left: 50%; transform: translateX(-50%); width: 50%; height: 18%; z-index: 4; }

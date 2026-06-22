@@ -378,6 +378,36 @@ async function swapEggOnBehalf({ orgId, petAccountId, operatorId }) {
 }
 
 /**
+ * 代主动升阶（2026-06-22）
+ *
+ * 与 feed 级联升阶的区别：纯走 manualTierUp，不扣积分，不加经验。
+ * 前置：state=alive + level>=maxLv + experience>=threshold + 当前阶!=S
+ */
+async function tierUpOnBehalf({ orgId, petAccountId, operatorId }) {
+  if (!orgId || !petAccountId) throw ApiError.badRequest('缺少 orgId/petAccountId')
+  if (!operatorId) throw ApiError.badRequest('缺少 operatorId')
+
+  const pet = await PetAccount.findOne({ _id: petAccountId, org: orgId }).lean()
+  if (!pet) throw ApiError.notFound('宠物不存在')
+  const studentId = pet.student
+
+  const result = await petService.manualTierUp({ orgId, studentId })
+  // 写一条 admin_tierup 审计
+  await petEvent.recordEvent({
+    orgId, studentId, petAccountId,
+    type: 'admin_tierup',
+    payload: {
+      operator: operatorId,
+      by: 'admin',
+      fromTier: result.fromTier,
+      toTier: result.toTier,
+      trigger: 'manual'
+    }
+  })
+  return result
+}
+
+/**
  * 代主动降阶。
  */
 async function tierDownOnBehalf({ orgId, petAccountId, targetTier, operatorId }) {
@@ -453,6 +483,7 @@ module.exports = {
   feedOnBehalf,
   hatchOnBehalf,
   swapEggOnBehalf,
+  tierUpOnBehalf,
   tierDownOnBehalf,
   equipOnBehalf,
   getByStudent,

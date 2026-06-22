@@ -36,6 +36,8 @@ router.post('/accounts/:id/hatch', mws.requirePermission('pet.write'), asyncHand
 router.post('/accounts/:id/swap-egg', mws.requirePermission('pet.write'), asyncHandler(c.swapEggOnBehalf))
 // R-2368 POST /admin/pet/accounts/:id/tier-down
 router.post('/accounts/:id/tier-down', mws.requirePermission('pet.write'), asyncHandler(c.tierDownOnBehalf))
+// 2026-06-22: 手动升阶（满级后主动点击，绕开 feed 触发）
+router.post('/accounts/:id/tier-up', mws.requirePermission('pet.write'), asyncHandler(c.tierUpOnBehalf))
 // R-2366 POST /admin/pet/accounts/:id/equip
 router.post('/accounts/:id/equip', mws.requirePermission('pet.write'), asyncHandler(c.equipOnBehalf))
 

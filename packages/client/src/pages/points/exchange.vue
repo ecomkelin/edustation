@@ -105,6 +105,27 @@
       </view>
     </view>
 
+    <!-- 2026-06-22: 下一阶预览（满级升阶后可买的装饰） -->
+    <view v-if="nextTierPreview.length > 0" class="card next-tier-card">
+      <view class="row between">
+        <text class="text-14 text-strong">下一阶 ({{ nextTier }}阶) 预览</text>
+        <text class="text-12 text-muted">满级升阶后解锁</text>
+      </view>
+      <view class="next-tier-grid">
+        <view v-for="it in nextTierPreview" :key="it.key" class="next-tier-item">
+          <view class="next-tier-thumb">
+            <image v-if="it.visualType === 'image' && it.imageFile" :src="it.imageFile.url" mode="aspectFit" class="icon-img" />
+            <view v-else-if="it.svgContent" class="svg-wrap">
+              <view class="svg-inner" v-html="it.svgContent"></view>
+            </view>
+            <text v-else class="emoji">🎁</text>
+          </view>
+          <text class="text-12 text-strong">{{ it.name }}</text>
+          <text class="text-12 text-muted">{{ it.pointCost }} 积分</text>
+        </view>
+      </view>
+    </view>
+
     <!-- 购买确认弹窗 -->
     <view v-if="confirmDialog" class="modal-mask" @tap="confirmDialog = null">
       <view class="modal" @tap.stop>
@@ -134,6 +155,8 @@ export default {
       tab: 'item',
       items: [],
       consumables: [],
+      nextTier: null,
+      nextTierPreview: [],
       myPoints: 0,
       loading: false,
       confirmDialog: null,
@@ -152,6 +175,9 @@ export default {
         const data = shopRes.data || {}
         this.items = data.items || []
         this.consumables = data.consumables || []
+        // 2026-06-22: 下一阶预览
+        this.nextTier = data.nextTier || null
+        this.nextTierPreview = data.nextTierPreview || []
 
         // 拉积分余额
         try {

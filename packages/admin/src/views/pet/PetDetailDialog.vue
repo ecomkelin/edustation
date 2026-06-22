@@ -98,6 +98,10 @@
         <el-tooltip :disabled="pet.state === 'egg'" content="仅蛋状态可破壳" placement="top">
           <el-button type="success" :disabled="pet.state !== 'egg'" @click="onHatch">代破壳</el-button>
         </el-tooltip>
+        <!-- 2026-06-22: 手动升阶按钮（满级 + 经验达标时才显示） -->
+        <el-tooltip :disabled="canTierUpNow" :content="canTierUpNow ? `升到 ${nextTierLabel} 阶（不扣积分）` : '需满级且经验达标'" placement="top">
+          <el-button type="danger" :disabled="!canTierUpNow" @click="onTierUp">代升阶</el-button>
+        </el-tooltip>
         <!-- 2026-06-22: 代喂食 已移至列表行 (PetAdmin.vue) -->
         <el-tooltip :disabled="pet.state === 'alive'" content="仅存活状态可置换" placement="top">
           <el-button type="warning" :disabled="pet.state !== 'alive'" @click="onSwap">代置换</el-button>
@@ -171,6 +175,15 @@
       :student-tier="pet?.tier || pet?.eggTier || null"
       @success="onActionSuccess"
     />
+
+    <!-- 2026-06-22: 破壳特效覆盖层 -->
+    <HatchAnimation
+      v-model:visible="hatchAnimVisible"
+      :species-record="hatchResultSpecies"
+      :equipped="hatchResultEquipped"
+      :item-map="hatchResultItemMap"
+      @close="onHatchAnimClose"
+    />
   </el-dialog>
 </template>
 
@@ -181,12 +194,13 @@ import { petAdminApi } from '@/api/pet'
 import { petCatalogApi } from '@/api/petCatalog'
 import GrantOnBehalfDialog from '@/components/Pet/GrantOnBehalfDialog.vue'
 import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
+import HatchAnimation from '@/components/Pet/HatchAnimation.vue'
 import { formatDate } from '@/utils/format'
 import { PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS } from '@/utils/constants'
 
 export default {
   name: 'PetDetailDialog',
-  components: { GrantOnBehalfDialog, PetEquipmentOverlay, ShoppingCart },
+  components: { GrantOnBehalfDialog, PetEquipmentOverlay, HatchAnimation, ShoppingCart },
   props: {
     modelValue: { type: Boolean, default: false },
     petId: { type: String, default: null }
@@ -204,6 +218,11 @@ export default {
       actioning: false,
       // 2026-06-22: 背包 lookup（key → name/slot）；一次拉取，多次复用
       itemMap: {},
+      // 2026-06-22: 破壳特效
+      hatchAnimVisible: false,
+      hatchResultSpecies: null,
+      hatchResultEquipped: {},
+      hatchResultItemMap: {},
       PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS
     }
   },
@@ -212,6 +231,21 @@ export default {
       if (!this.pet?.tier) return false
       const idx = PET_TIERS.indexOf(this.pet.tier)
       return idx > 0
+    },
+    // 2026-06-22: 手动升阶前置条件
+    canTierUpNow() {
+      if (!this.pet || this.pet.state !== 'alive') return false
+      if (!this.pet.tierUpThreshold || !this.pet.level) return false
+      if (this.pet.level < 10) return false
+      if ((this.pet.experience || 0) < this.pet.tierUpThreshold) return false
+      if (this.pet.tier === 'S') return false
+      return true
+    },
+    nextTierLabel() {
+      const order = ['C', 'B', 'A', 'S']
+      const idx = order.indexOf(this.pet?.tier)
+      if (idx < 0 || idx >= order.length - 1) return ''
+      return order[idx + 1]
     },
     lowerTiers() {
       if (!this.pet?.tier) return []
@@ -312,9 +346,48 @@ export default {
       }
     },
     async onHatch() {
-      await this.confirmAction('代破壳', async () => {
-        await petAdminApi.hatchOnBehalf(this.petId)
-      })
+      try {
+        await ElMessageBox.confirm(
+          `确认执行 代破壳？蛋会随机孵化出 ${this.pet?.eggTier || '当前阶'} 阶宠物。`,
+          '提示',
+          { type: 'success', confirmButtonText: '开始破壳', cancelButtonText: '取消' }
+        )
+      } catch (_) { return }
+      this.actioning = true
+      try {
+        // 先调接口拿到新 species，再播动画（让蹦出来的宠物是真实结果）
+        const r = await petAdminApi.hatchOnBehalf(this.petId)
+        // 兼容 http 拦截器两种状态
+        const payload = r?.data?.petAccount ? r.data : r
+        const newPet = payload?.petAccount || null
+        if (!newPet) throw new Error('接口返回无 petAccount')
+
+        // 准备 speciesRecord：从 _petCatalog 静态数据查（或后端返回带 speciesRecord 字段）
+        // hatch 返回里通常只有 species key，需要查一次 species 详情
+        // 简单方案：调一次 detail 拿完整 speciesRecord
+        const detail = await petAdminApi.get(this.petId)
+        const detailPayload = detail?.data?.pet ? detail.data : detail
+        const decoratedPet = detailPayload?.pet || newPet
+
+        // 准备动画所需：speciesRecord + equipped + itemMap
+        this.hatchResultSpecies = decoratedPet.speciesRecord || null
+        this.hatchResultEquipped = decoratedPet.equipped || {}
+        this.hatchResultItemMap = this.itemMap || {}
+
+        // 播放特效
+        this.hatchAnimVisible = true
+      } catch (e) {
+        if (e === 'cancel') return
+        ElMessage.error(e?.response?.data?.message || e?.message || '破壳失败')
+      } finally {
+        this.actioning = false
+      }
+    },
+    onHatchAnimClose() {
+      // 动画结束：刷新详情 + 通知父组件
+      this.hatchResultSpecies = null
+      this.hatchResultEquipped = {}
+      this.onActionSuccess()
     },
     async onSwap() {
       await this.confirmAction('代置换蛋（扣积分）', async () => {
@@ -329,6 +402,13 @@ export default {
         await petAdminApi.tierDownOnBehalf(this.petId, { targetTier: target })
       })
       this.tierDownTarget = ''
+    },
+    // 2026-06-22: 手动升阶（满级 + 经验达标时主动触发；不扣积分）
+    async onTierUp() {
+      const nextLabel = PET_TIER_LABELS[this.nextTierLabel] || this.nextTierLabel
+      await this.confirmAction(`代升阶到 ${nextLabel}（0 积分，种类保留）`, async () => {
+        await petAdminApi.tierUpOnBehalf(this.petId)
+      })
     },
     async confirmAction(title, fn) {
       try {

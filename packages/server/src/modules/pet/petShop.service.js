@@ -168,10 +168,40 @@ async function listShop({ orgId, petAccountId, tier }) {
     }
   })
 
+  // 2026-06-22: 下一阶预览（halo + background）
+  //   - C → B / B → A / A → S
+  //   - 给学员"升阶后能解锁什么"的预期
+  //   - 注意：升阶后 halo/background 是自动解锁（不需 pointCost），所以不过滤 pointCost
+  //   - S 阶时返回空数组
+  let nextTierPreview = []
+  if (currentTier && currentTier !== 'S') {
+    const nextTierRank = PET_TIERS.indexOf(currentTier) + 1
+    const nextTier = PET_TIERS[nextTierRank]
+    if (nextTier) {
+      const nextTierItems = await PetItem.find({
+        unlockType: 'tier',
+        unlockTier: nextTier,
+        isActive: true
+      }).lean()
+      nextTierPreview = nextTierItems.map((it) => ({
+        key: it.key,
+        name: it.name,
+        slot: it.slot,
+        pointCost: it.pointCost,
+        visualType: it.visualType,
+        imageFile: it.imageFile,
+        svgContent: it.svgContent,
+        description: it.description
+      }))
+    }
+  }
+
   return {
     items,
     consumables,
-    pet: pet ? await petService.decoratePet(pet) : null
+    pet: pet ? await petService.decoratePet(pet) : null,
+    nextTier: currentTier && currentTier !== 'S' ? PET_TIERS[PET_TIERS.indexOf(currentTier) + 1] : null,
+    nextTierPreview
   }
 }
 

@@ -25,6 +25,8 @@ export const petAdminApi = {
   hatchOnBehalf: (petAccountId) => http.post(`/admin/pet/accounts/${petAccountId}/hatch`),
   swapEggOnBehalf: (petAccountId) => http.post(`/admin/pet/accounts/${petAccountId}/swap-egg`),
   tierDownOnBehalf: (petAccountId, { targetTier }) => http.post(`/admin/pet/accounts/${petAccountId}/tier-down`, { targetTier }),
+  // 2026-06-22: 手动升阶（满级 + 经验达标时主动触发；不扣积分）
+  tierUpOnBehalf: (petAccountId) => http.post(`/admin/pet/accounts/${petAccountId}/tier-up`, {}),
   equipOnBehalf: (petAccountId, { slot, itemKey }) => http.post(`/admin/pet/accounts/${petAccountId}/equip`, { slot, itemKey }),
 
   // ─── 课堂展示 ───

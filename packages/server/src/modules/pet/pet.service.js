@@ -651,6 +651,111 @@ async function tierDown({ orgId, studentId, targetTier }) {
   return { petAccount: updated, event, autoUnequipped }
 }
 
+/**
+ * 手动升阶（2026-06-22）
+ *
+ * 与 feed 级联升阶的区别：不扣积分、不加经验；纯把当前存活宠物升到下一阶。
+ * 前置条件：
+ *   - state === 'alive'
+ *   - level >= 当前阶 maxLv
+ *   - experience >= tierUpThreshold
+ *   - 当前阶不是 S（S 是最高阶）
+ *
+ * 升阶后：
+ *   - state → 'egg'（新阶蛋，待破壳出 B/A/S 阶新种类）
+ *   - species 保留（沿用当前种类，不重随机）
+ *   - level=1, experience=0, currentHunger=maxHunger
+ *   - 解锁新阶 halo + background
+ *   - 写 tierup 事件（by='admin' 时由调用方决定是否再写 admin_tierup）
+ *
+ * @returns {Promise<{petAccount, event, fromTier, toTier}>}
+ */
+async function manualTierUp({ orgId, studentId }) {
+  if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
+
+  const pet = await PetAccount.findOne({ org: orgId, student: studentId })
+  if (!pet) throw ApiError.notFound('未领养宠物')
+  if (pet.state !== 'alive') throw ApiError.unprocessable('当前不是存活状态，无法升阶')
+
+  const cfg = petConfig.PET_TIER_CONFIG[pet.tier]
+  if (!cfg) throw ApiError.unprocessable('宠物阶数据异常')
+  if (pet.level < cfg.maxLv) {
+    throw ApiError.unprocessable(`需要先满级（${pet.tier} 阶 maxLv=${cfg.maxLv}），当前 Lv.${pet.level}`)
+  }
+  const threshold = petConfig.tierUpExpThreshold(pet.tier)
+  if (pet.experience < threshold) {
+    throw ApiError.unprocessable(`累计经验需 ≥ ${threshold} 才能升阶，当前 ${pet.experience}`)
+  }
+  const nextTier = petConfig.nextTier(pet.tier)
+  if (!nextTier) throw ApiError.unprocessable('已是最高阶 S，无法升阶')
+
+  const fromTier = pet.tier
+  const now = new Date()
+
+  // 解锁新阶 halo + background（与 feed 一致）
+  const newTierUnlocks = await petCatalog.listItemsUnlockedAtTier({ tier: nextTier })
+  const tierUnlockItems = await Promise.all(newTierUnlocks.map(k => petCatalog.getItem({ key: k })))
+  const slotOfT = (k) => {
+    const it = tierUnlockItems[newTierUnlocks.indexOf(k)]
+    return it && (it.slot || it.type)
+  }
+  const unlocked = pet.unlocked || {}
+
+  const setFields = {
+    state: 'egg',
+    stateChangedAt: now,
+    eggTier: nextTier,
+    eggAdoptedAt: now,
+    tier: nextTier,
+    level: 1,
+    experience: 0,
+    currentHunger: pet.maxHunger,
+    lastHungerDecayAt: now,
+    deathThresholdDays: petConfig.PET_TIER_CONFIG[nextTier].deathThresholdDays,
+    species: pet.species, // D2 保留
+    unlocked: {
+      hat:        unlocked.hat || [],
+      scarf:      unlocked.scarf || [],
+      clothes:    unlocked.clothes || [],
+      accessory:  unlocked.accessory || [],
+      halo:       Array.from(new Set([...(unlocked.halo || []), ...newTierUnlocks.filter(k => slotOfT(k) === 'halo')])),
+      background: Array.from(new Set([...(unlocked.background || []), ...newTierUnlocks.filter(k => slotOfT(k) === 'background')]))
+    }
+  }
+
+  // CAS update
+  const casFilter = {
+    _id: pet._id,
+    state: 'alive',
+    level: pet.level,
+    experience: pet.experience
+  }
+  let updated = await PetAccount.findOneAndUpdate(casFilter, { $set: setFields }, { new: true }).lean()
+  if (!updated) {
+    // retry
+    const fresh = await PetAccount.findById(pet._id).lean()
+    if (!fresh) throw ApiError.notFound('宠物不存在')
+    if (fresh.state !== 'alive') throw ApiError.conflict('宠物状态已变更，请刷新')
+    updated = await PetAccount.findOneAndUpdate(
+      { _id: pet._id, state: 'alive' },
+      { $set: setFields },
+      { new: true }
+    ).lean()
+    if (!updated) throw ApiError.conflict('宠物状态并发变更，请刷新后重试')
+  }
+
+  // 写 PetEvent
+  const event = await petEvent.recordEvent({
+    orgId,
+    studentId,
+    petAccountId: pet._id,
+    type: 'tierup',
+    payload: { fromTier, toTier: nextTier, trigger: 'manual', unlocked: newTierUnlocks }
+  })
+
+  return { petAccount: updated, event, fromTier, toTier: nextTier }
+}
+
 function tierOrderIdx(t) {
   return ['C', 'B', 'A', 'S'].indexOf(t)
 }
@@ -723,6 +828,7 @@ module.exports = {
   feed,
   swapEgg,
   tierDown,
+  manualTierUp,
   getMine,
   decoratePet,
   listEvents
