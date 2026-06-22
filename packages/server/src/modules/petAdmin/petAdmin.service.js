@@ -125,9 +125,16 @@ async function list({ orgId, page = 1, pageSize = 20, state, tier, keyword }) {
 async function get({ orgId, petAccountId }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId')
   if (!petAccountId) throw ApiError.badRequest('缺少 petAccountId')
-  const pet = await PetAccount.findOne({ _id: petAccountId, org: orgId }).lean()
+  const pet = await PetAccount.findOne({ _id: petAccountId, org: orgId })
+    .populate('student', 'name gender')
+    .lean()
   if (!pet) throw ApiError.notFound('宠物不存在')
   const decorated = await petService.decoratePet(pet)
+  // 冗余 studentName / studentGender 字段，与 list 接口对齐
+  if (pet.student && typeof pet.student === 'object') {
+    decorated.studentName = pet.student.name
+    decorated.studentGender = pet.student.gender
+  }
   const recentEvents = await PetEvent.find({ petAccount: pet._id })
     .sort({ createdAt: -1 })
     .limit(20)
@@ -250,14 +257,10 @@ async function adoptOnBehalf({ orgId, studentId, operatorId }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
   if (!operatorId) throw ApiError.badRequest('缺少 operatorId')
 
+  // 2026-06-22: 不再额外写 admin_adopt 事件
+  // 原因：ensurePetAccount 已写 type:'adopt'，payload.by='admin' 标识操作者
+  // 冗余 admin_adopt 事件会让时间线出现两条相同记录，干扰审计
   const pet = await petService.adopt({ orgId, studentId, by: 'admin' })
-  await petEvent.recordEvent({
-    orgId,
-    studentId,
-    petAccountId: pet._id,
-    type: 'admin_adopt',
-    payload: { operator: operatorId, by: 'admin', initialTier: pet.eggTier || 'C' }
-  })
   return await petService.decoratePet(pet)
 }
 

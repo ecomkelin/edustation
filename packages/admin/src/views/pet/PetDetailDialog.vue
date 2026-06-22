@@ -7,7 +7,7 @@
   >
     <div v-if="pet" class="detail-content">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="学员">{{ pet.student?.name || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="学员">{{ pet.studentName || '—' }}</el-descriptions-item>
         <el-descriptions-item label="昵称">
           {{ pet.nickname || '—' }}
         </el-descriptions-item>
@@ -35,12 +35,32 @@
       </el-table>
 
       <el-divider content-position="left">代操作 (pet.write · 老师/admin 用)</el-divider>
+      <div v-if="pet.state === 'egg'" style="margin-bottom:8px">
+        <el-alert type="warning" :closable="false" show-icon>
+          <template #title>宠物当前为蛋状态，仅「代破壳」可用。破壳后才会随机出一个种类并解锁「喂食/置换/降阶」。</template>
+        </el-alert>
+      </div>
+      <div v-else-if="pet.state === 'dead'" style="margin-bottom:8px">
+        <el-alert type="error" :closable="false" show-icon>
+          <template #title>宠物已死亡，所有代操作不可用（仅查看）</template>
+        </el-alert>
+      </div>
       <div class="action-bar">
-        <el-button type="success" :disabled="pet.state !== 'egg'" @click="onHatch">代破壳</el-button>
-        <el-button type="primary" :disabled="pet.state !== 'alive'" @click="feedDialog = true">代喂食</el-button>
-        <el-button type="warning" :disabled="pet.state !== 'alive'" @click="onSwap">代置换</el-button>
-        <el-button type="info" :disabled="pet.state !== 'alive' || !canTierDown" @click="tierDownDialog = true">代降阶</el-button>
-        <el-button type="primary" plain @click="openClassroom">课堂展示</el-button>
+        <el-tooltip :disabled="pet.state === 'egg'" content="仅蛋状态可破壳" placement="top">
+          <el-button type="success" :disabled="pet.state !== 'egg'" @click="onHatch">代破壳</el-button>
+        </el-tooltip>
+        <el-tooltip :disabled="pet.state === 'alive'" content="仅存活状态可喂食" placement="top">
+          <el-button type="primary" :disabled="pet.state !== 'alive'" @click="feedDialog = true">代喂食</el-button>
+        </el-tooltip>
+        <el-tooltip :disabled="pet.state === 'alive'" content="仅存活状态可置换" placement="top">
+          <el-button type="warning" :disabled="pet.state !== 'alive'" @click="onSwap">代置换</el-button>
+        </el-tooltip>
+        <el-tooltip :disabled="pet.state === 'alive'" content="仅存活状态可降阶（仅 B/A/S 可降）" placement="top">
+          <el-button type="info" :disabled="pet.state !== 'alive' || !canTierDown" @click="tierDownDialog = true">代降阶</el-button>
+        </el-tooltip>
+        <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看）" placement="top">
+          <el-button type="primary" plain @click="openClassroom">课堂展示</el-button>
+        </el-tooltip>
       </div>
 
       <el-divider content-position="left">字段调整 (pet.write)</el-divider>
@@ -64,7 +84,7 @@
     </div>
 
     <!-- 代喂食 dialog -->
-    <FeedOnBehalfDialog v-model="feedDialog" :pet="pet" :student-name="pet.student?.name" @success="onActionSuccess" />
+    <FeedOnBehalfDialog v-model="feedDialog" :pet="pet || null" :student-name="(pet && pet.studentName) || ''" @success="onActionSuccess" />
 
     <!-- 代降阶 dialog -->
     <el-dialog v-model="tierDownDialog" title="代降阶" width="420px">
@@ -135,8 +155,10 @@ export default {
     async fetchDetail() {
       try {
         const r = await petAdminApi.get(this.petId)
-        this.pet = r.data?.pet
-        this.recentEvents = r.data?.recentEvents || []
+        // 兼容 http 拦截器两种状态：return body（不 unpack）/ return body.data（unpack）
+        const payload = r?.data?.pet ? r.data : r
+        this.pet = payload?.pet || null
+        this.recentEvents = payload?.recentEvents || []
         this.editForm = {
           currentHunger: this.pet?.currentHunger ?? 100,
           nickname: this.pet?.nickname || '',
@@ -205,8 +227,10 @@ export default {
       await this.fetchDetail()
     },
     openClassroom() {
-      if (!this.pet?.student) return
-      const studentId = typeof this.pet.student === 'object' ? this.pet.student._id : this.pet.student
+      if (!this.pet) return
+      const stu = this.pet.student
+      const studentId = typeof stu === 'object' && stu ? (stu._id || stu.id) : stu
+      if (!studentId) return
       const url = `/class/pet-display?studentId=${studentId}`
       window.open(url, '_blank')
     },

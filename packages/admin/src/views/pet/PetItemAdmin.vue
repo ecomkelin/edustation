@@ -17,7 +17,10 @@
     <el-table :data="items" v-loading="loading" stripe>
       <el-table-column label="贴图" width="80">
         <template #default="{ row }">
-          <el-image v-if="row.imageFile" :src="row.imageFile.url" fit="cover" style="width:48px;height:48px;border-radius:6px" />
+          <div v-if="row.visualType === 'image' && row.imageFile" class="thumb svg-thumb clickable" @click="openPreview(row)">
+            <el-image :src="row.imageFile.url" :alt="row.name" fit="cover" style="width:48px;height:48px;border-radius:6px" />
+          </div>
+          <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
           <el-icon v-else :size="32" color="#ccc"><Picture /></el-icon>
         </template>
       </el-table-column>
@@ -89,7 +92,13 @@
             <el-radio v-for="t in PET_TIERS" :key="t" :label="t">{{ PET_TIER_LABELS[t] }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="贴图">
+        <el-form-item label="视觉类型" prop="visualType">
+          <el-radio-group v-model="form.visualType" :disabled="!!form._id">
+            <el-radio label="image">图片</el-radio>
+            <el-radio label="svg">SVG</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.visualType === 'image'" label="贴图">
           <FilePicker v-model="imagePicker" scope="pet" mime-prefix="image/" title="选择装饰贴图" @select="onPickImage" />
           <div v-if="form.imageFile" class="preview">
             <el-image :src="form.imageFile.url" fit="cover" style="width:96px;height:96px;border-radius:6px" />
@@ -98,6 +107,10 @@
           <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadImage" accept="image/*">
             <el-button :icon="Upload" size="small">上传新图</el-button>
           </el-upload>
+        </el-form-item>
+        <el-form-item v-else label="SVG 内容" prop="svgContent">
+          <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
+          <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
         </el-form-item>
         <el-form-item label="适用物种">
           <el-select v-model="form.compatibleSpecies" multiple filterable placeholder="留空 = 通用；选具体 species = UI 推荐提示" style="width:100%">
@@ -116,6 +129,18 @@
         <el-button @click="dialog = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 形象大图预览（点击列表缩略图触发） -->
+    <el-dialog v-model="previewOpen" :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '贴图预览'" width="480px" :show-close="true" align-center>
+      <div v-if="previewRow" class="preview-large-wrap">
+        <el-image v-if="previewRow.visualType === 'image' && previewRow.imageFile" :src="previewRow.imageFile.url" :alt="previewRow.name" fit="contain" style="width:100%;max-height:60vh" />
+        <div v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
+        <div v-else class="preview-large-empty">
+          <el-icon :size="64" color="#ccc"><Picture /></el-icon>
+          <span>暂无贴图</span>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -143,17 +168,21 @@ export default {
     const saving = ref(false)
     const imagePicker = ref(false)
     const formRef = ref(null)
+    const previewOpen = ref(false)
+    const previewRow = ref(null)
     const form = reactive({
       _id: null,
       key: '', name: '', slot: 'hat', unlockType: 'level',
       unlockTier: 'C', unlockLevel: 1,
-      imageFile: null, compatibleSpecies: [], isActive: true, description: ''
+      visualType: 'image', imageFile: null, svgContent: '',
+      compatibleSpecies: [], isActive: true, description: ''
     })
     const rules = {
       key: [{ required: true, message: 'key 必填', trigger: 'blur' }],
       name: [{ required: true, message: '名称 必填', trigger: 'blur' }],
       slot: [{ required: true, message: '槽位 必填', trigger: 'change' }],
-      unlockType: [{ required: true, message: '解锁类型 必填', trigger: 'change' }]
+      unlockType: [{ required: true, message: '解锁类型 必填', trigger: 'change' }],
+      visualType: [{ required: true, message: '视觉类型 必填', trigger: 'change' }]
     }
 
     async function load() {
@@ -186,7 +215,8 @@ export default {
       Object.assign(form, {
         _id: null, key: '', name: '', slot: 'hat', unlockType: 'level',
         unlockTier: 'C', unlockLevel: 1,
-        imageFile: null, compatibleSpecies: [], isActive: true, description: ''
+        visualType: 'image', imageFile: null, svgContent: '',
+        compatibleSpecies: [], isActive: true, description: ''
       })
       formRef.value?.clearValidate()
     }
@@ -202,7 +232,9 @@ export default {
         _id: row._id, key: row.key, name: row.name,
         slot: row.slot, unlockType: row.unlockType,
         unlockTier: row.unlockTier || 'C', unlockLevel: row.unlockLevel || 1,
+        visualType: row.visualType || 'image',
         imageFile: row.imageFile || null,
+        svgContent: row.svgContent || '',
         compatibleSpecies: row.compatibleSpecies || [],
         isActive: row.isActive, description: row.description || ''
       })
@@ -232,7 +264,9 @@ export default {
           slot: form.slot, unlockType: form.unlockType,
           unlockTier: form.unlockType === 'tier' ? form.unlockTier : 'C',
           unlockLevel: form.unlockType === 'level' ? form.unlockLevel : 1,
-          imageFile: form.imageFile?.id || null,
+          visualType: form.visualType,
+          imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
+          svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
           compatibleSpecies: form.compatibleSpecies,
           isActive: !!form.isActive,
           description: form.description || null
@@ -263,14 +297,19 @@ export default {
       }
     }
 
+    function openPreview(row) {
+      previewRow.value = row
+      previewOpen.value = true
+    }
+
     onMounted(() => { loadSpeciesOptions(); load() })
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      speciesOptions, imagePicker,
+      speciesOptions, imagePicker, previewOpen, previewRow,
       PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS, PET_ITEM_UNLOCK_TYPES, PET_ITEM_UNLOCK_TYPE_LABELS,
       Plus, Upload, Picture,
-      load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm
+      load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm, openPreview
     }
   }
 }
@@ -281,4 +320,15 @@ export default {
 .hint { margin-left: 12px; color: #999; font-size: 12px; }
 .preview { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .muted { color: #999; font-size: 12px; }
+.thumb { display: flex; align-items: center; justify-content: center; }
+.svg-thumb { width: 48px; height: 48px; }
+.svg-thumb svg { width: 100%; height: 100%; }
+.svg-preview { width: 96px; height: 96px; border: 1px dashed #ccc; border-radius: 6px; padding: 4px; }
+.svg-preview svg { width: 100%; height: 100%; }
+.clickable { cursor: zoom-in; transition: transform 0.15s ease; }
+.clickable:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.12); border-radius: 6px; }
+.preview-large-wrap { display: flex; align-items: center; justify-content: center; padding: 16px; }
+.preview-large-svg { width: 100%; max-width: 400px; max-height: 60vh; display: flex; align-items: center; justify-content: center; }
+.preview-large-svg svg { width: 100%; height: auto; max-height: 60vh; display: block; }
+.preview-large-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #999; padding: 32px; }
 </style>

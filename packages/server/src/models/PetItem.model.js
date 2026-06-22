@@ -38,8 +38,16 @@ const PetItemSchema = new Schema(
     unlockTier: { type: String, enum: PET_TIERS, default: null },
     unlockLevel: { type: Number, default: null, min: 1, max: 100 },
 
-    // 装饰贴图
+    // 视觉类型（2026-06-22 user SVG 决策）
+    // image: 上传图片，存 imageFile
+    // svg:   内联 SVG，存 svgContent
+    visualType: { type: String, enum: ['image', 'svg'], default: 'image' },
+
+    // image 时存 File ref
     imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
+
+    // svg 时存内联字符串
+    svgContent: { type: String, default: null, maxlength: 50000 },
 
     // 宽松 UI 提示（equip 不强制校验；admin 选填"建议用于哪些物种"）
     compatibleSpecies: { type: [String], default: [] },

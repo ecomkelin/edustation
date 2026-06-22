@@ -6,7 +6,7 @@
         <OrgSwitcher />
         <el-dropdown @command="onCommand">
           <span class="user-trigger">
-            <el-avatar :size="28" :src="auth.user?.avatar || ''" class="user-avatar">
+            <el-avatar :size="28" :src="auth.user?.avatar && avatarOk ? auth.user.avatar : ''" class="user-avatar" @error="avatarOk = false">
               {{ avatarInitial }}
             </el-avatar>
             <span class="user-name">{{ auth.user?.realName || auth.user?.mobile }}</span>
@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import OrgSwitcher from '@/components/OrgSwitcher.vue'
@@ -121,6 +121,8 @@ import {
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+// 头像 src 404 时自动降级到 initial 文字头像（避免 console 报 Image 加载错误）
+const avatarOk = ref(true)
 
 // AI 助手 (2026-06): 顶层菜单项, 需 agent.write 权限
 // 平台超管直通; 否则查当前 org 的职位权限码

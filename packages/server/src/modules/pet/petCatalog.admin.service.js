@@ -217,6 +217,7 @@ async function createItem({ payload, operatorId }) {
   const exists = await PetItem.findOne({ key: payload.key }).lean()
   if (exists) throw ApiError.conflict(`装饰 key=${payload.key} 已存在`)
 
+  const visualType = payload.visualType || 'image'
   const doc = {
     key: payload.key.trim(),
     name: payload.name.trim(),
@@ -224,7 +225,9 @@ async function createItem({ payload, operatorId }) {
     unlockType: payload.unlockType,
     unlockTier: payload.unlockTier || 'C',
     unlockLevel: payload.unlockType === 'level' ? (Number(payload.unlockLevel) || 1) : 1,
-    imageFile: payload.imageFile || null,
+    visualType,
+    imageFile: visualType === 'image' ? (payload.imageFile || null) : null,
+    svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     compatibleSpecies: Array.isArray(payload.compatibleSpecies) ? payload.compatibleSpecies.filter(Boolean) : [],
     isActive: payload.isActive !== false,
     description: payload.description || null,
@@ -256,7 +259,13 @@ async function updateItem({ id, payload, operatorId }) {
   if (payload.compatibleSpecies !== undefined) updates.compatibleSpecies = Array.isArray(payload.compatibleSpecies) ? payload.compatibleSpecies.filter(Boolean) : []
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
   if (payload.description !== undefined) updates.description = payload.description
-  if (payload.imageFile !== undefined) updates.imageFile = payload.imageFile || null
+  if (payload.visualType !== undefined) updates.visualType = payload.visualType
+  if (payload.imageFile !== undefined && doc.visualType === 'image') {
+    updates.imageFile = payload.imageFile || null
+  }
+  if (payload.svgContent !== undefined && doc.visualType === 'svg') {
+    updates.svgContent = sanitizeSvg(payload.svgContent)
+  }
   updates.updatedBy = operatorId
 
   const oldImageFile = doc.imageFile ? doc.imageFile.toString() : null
@@ -330,6 +339,7 @@ async function createConsumable({ payload, operatorId }) {
   if (exists) throw ApiError.conflict(`消耗品 key=${payload.key} 已存在`)
 
   const perTier = buildPerTierPayload(payload.perTier || {}, payload.applicableTier)
+  const visualType = payload.visualType || 'image'
 
   const doc = {
     key: payload.key.trim(),
@@ -337,7 +347,9 @@ async function createConsumable({ payload, operatorId }) {
     kind: payload.kind,
     applicableTier: payload.applicableTier,
     perTier,
-    imageFile: payload.imageFile || null,
+    visualType,
+    imageFile: visualType === 'image' ? (payload.imageFile || null) : null,
+    svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     isActive: payload.isActive !== false,
     description: payload.description || null,
     createdBy: operatorId,
@@ -392,7 +404,13 @@ async function updateConsumable({ id, payload, operatorId }) {
   if (payload.perTier !== undefined) updates.perTier = buildPerTierPayload(payload.perTier, payload.applicableTier || doc.applicableTier)
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
   if (payload.description !== undefined) updates.description = payload.description
-  if (payload.imageFile !== undefined) updates.imageFile = payload.imageFile || null
+  if (payload.visualType !== undefined) updates.visualType = payload.visualType
+  if (payload.imageFile !== undefined && doc.visualType === 'image') {
+    updates.imageFile = payload.imageFile || null
+  }
+  if (payload.svgContent !== undefined && doc.visualType === 'svg') {
+    updates.svgContent = sanitizeSvg(payload.svgContent)
+  }
   updates.updatedBy = operatorId
 
   const oldImageFile = doc.imageFile ? doc.imageFile.toString() : null

@@ -7,6 +7,7 @@ const Position = require('@models/Position.model')
 const CourseEnrollment = require('@models/CourseEnrollment.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const Parent = require('@models/Parent.model')
+const PetAccount = require('@models/PetAccount.model')
 const parentProfile = require('@modules/parent/parent.profile')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
@@ -47,6 +48,19 @@ async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSiz
       (it.strengths && it.strengths !== '') ||
       (it.followUp && it.followUp !== '')
     )
+  }
+
+  // 2026-06-22: 增补 hasPet (PetAccount 是否有该学员的记录)
+  //   用于 admin "代领养" 弹窗判断"是否已有宠物"
+  const studentIds = items.map(i => i._id)
+  if (studentIds.length > 0) {
+    const petStudentIds = await PetAccount.distinct('student', { student: { $in: studentIds } })
+    const petSet = new Set(petStudentIds.map(String))
+    for (const it of items) {
+      it.hasPet = petSet.has(String(it._id))
+    }
+  } else {
+    for (const it of items) it.hasPet = false
   }
 
   // 2026-06-16: 增补家长沟通画像标记 (续课/谈判前看"沟通偏好"的核心场景)

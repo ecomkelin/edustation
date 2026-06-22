@@ -17,10 +17,10 @@
     <el-table :data="items" v-loading="loading" stripe>
       <el-table-column label="形象" width="80">
         <template #default="{ row }">
-          <div v-if="row.visualType === 'image' && row.imageFile" class="thumb">
+          <div v-if="row.visualType === 'image' && row.imageFile" class="thumb svg-thumb clickable" @click="openPreview(row)">
             <el-image :src="row.imageFile.url" :alt="row.name" fit="cover" style="width:48px;height:48px;border-radius:6px" />
           </div>
-          <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb" v-html="row.svgContent.slice(0, 200)" />
+          <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
           <el-icon v-else :size="32" color="#ccc"><Picture /></el-icon>
         </template>
       </el-table-column>
@@ -110,6 +110,18 @@
         <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 形象大图预览（点击列表缩略图触发） -->
+    <el-dialog v-model="previewOpen" :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '形象预览'" width="480px" :show-close="true" align-center>
+      <div v-if="previewRow" class="preview-large-wrap">
+        <el-image v-if="previewRow.visualType === 'image' && previewRow.imageFile" :src="previewRow.imageFile.url" :alt="previewRow.name" fit="contain" style="width:100%;max-height:60vh" />
+        <div v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
+        <div v-else class="preview-large-empty">
+          <el-icon :size="64" color="#ccc"><Picture /></el-icon>
+          <span>暂无形象</span>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -138,6 +150,8 @@ export default {
     const saving = ref(false)
     const imagePicker = ref(false)
     const formRef = ref(null)
+    const previewOpen = ref(false)
+    const previewRow = ref(null)
     const form = reactive({
       _id: null,
       key: '',
@@ -264,14 +278,20 @@ export default {
       return { C: '', B: 'success', A: 'warning', S: 'danger' }[t] || ''
     }
 
+    function openPreview(row) {
+      previewRow.value = row
+      previewOpen.value = true
+    }
+
     onMounted(load)
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      imagePicker, PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
+      imagePicker, previewOpen, previewRow,
+      PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
       Plus, Upload, Picture,
       load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm,
-      tierTagType, formatDate
+      openPreview, tierTagType, formatDate
     }
   }
 }
@@ -283,4 +303,12 @@ export default {
 .preview { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .svg-preview { max-width: 200px; max-height: 200px; border: 1px solid #eee; border-radius: 6px; padding: 8px; overflow: hidden; }
 .thumb { display: flex; align-items: center; justify-content: center; }
+.svg-thumb { width: 48px; height: 48px; }
+.svg-thumb svg { width: 100%; height: 100%; display: block; }
+.clickable { cursor: zoom-in; transition: transform 0.15s ease; }
+.clickable:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.12); border-radius: 6px; }
+.preview-large-wrap { display: flex; align-items: center; justify-content: center; padding: 16px; }
+.preview-large-svg { width: 100%; max-width: 400px; max-height: 60vh; display: flex; align-items: center; justify-content: center; }
+.preview-large-svg svg { width: 100%; height: auto; max-height: 60vh; display: block; }
+.preview-large-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #999; padding: 32px; }
 </style>

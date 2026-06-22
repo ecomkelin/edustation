@@ -57,11 +57,14 @@ const PetConsumableSchema = new Schema(
         S:   { type: PerTierValueSchema, default: null },
         all: { type: PerTierValueSchema, default: null }
       },
-      default: () => ({})
+      default: () => ({}),
+      _id: false
     },
 
-    // 图标
+    // 图标（2026-06-22 user SVG 决策）
+    visualType: { type: String, enum: ['image', 'svg'], default: 'image' },
     imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
+    svgContent: { type: String, default: null, maxlength: 50000 },
 
     // 软启用
     isActive: { type: Boolean, default: true, index: true },

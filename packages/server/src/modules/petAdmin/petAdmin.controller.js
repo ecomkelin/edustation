@@ -38,7 +38,7 @@ exports.update = async (req, res) => {
   res.json(ApiResponse.ok(await s.update({
     orgId: req.orgId,
     petAccountId: req.params.id,
-    operatorId: req.user?._id,
+    operatorId: req.user?.id,
     payload: req.body || {}
   })))
 }
@@ -49,7 +49,7 @@ exports.adoptOnBehalf = async (req, res) => {
   res.status(201).json(ApiResponse.created(await s.adoptOnBehalf({
     orgId: req.orgId,
     studentId: req.body.studentId,
-    operatorId: req.user?._id
+    operatorId: req.user?.id
   })))
 }
 
@@ -58,7 +58,7 @@ exports.feedOnBehalf = async (req, res) => {
     orgId: req.orgId,
     petAccountId: req.params.id,
     consumableKey: req.body.consumableKey,
-    operatorId: req.user?._id
+    operatorId: req.user?.id
   })))
 }
 
@@ -66,7 +66,7 @@ exports.hatchOnBehalf = async (req, res) => {
   res.json(ApiResponse.ok(await s.hatchOnBehalf({
     orgId: req.orgId,
     petAccountId: req.params.id,
-    operatorId: req.user?._id
+    operatorId: req.user?.id
   })))
 }
 
@@ -74,7 +74,7 @@ exports.swapEggOnBehalf = async (req, res) => {
   res.json(ApiResponse.ok(await s.swapEggOnBehalf({
     orgId: req.orgId,
     petAccountId: req.params.id,
-    operatorId: req.user?._id
+    operatorId: req.user?.id
   })))
 }
 
@@ -83,7 +83,7 @@ exports.tierDownOnBehalf = async (req, res) => {
     orgId: req.orgId,
     petAccountId: req.params.id,
     targetTier: req.body.targetTier,
-    operatorId: req.user?._id
+    operatorId: req.user?.id
   })))
 }
 
@@ -93,7 +93,7 @@ exports.equipOnBehalf = async (req, res) => {
     petAccountId: req.params.id,
     slot: req.body.slot,
     itemKey: req.body.itemKey,
-    operatorId: req.user?._id
+    operatorId: req.user?.id
   })))
 }
 

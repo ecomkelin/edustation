@@ -25,6 +25,11 @@ async function bootstrap() {
   // require 即触发 setInterval(...).unref()，参照 captcha.service 模式
   require('@modules/pet/petCron')
 
+  // 1.6 Pet catalog 种子 (2026-06-22 user SVG 决策)
+  // 启动时硬清三表 + 灌入内联 SVG 种子（platform 级共享）
+  // 遵循 [[dev-stage-no-backcompat]] 开发期硬迁移原则
+  await require('@utils/petCatalogSeed').runPetCatalogSeed()
+
   // 2. Express
   const app = createApp()
 
