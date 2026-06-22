@@ -144,11 +144,16 @@ async function get({ orgId, petAccountId }) {
 
 /**
  * 列表事件（按 petAccount / 按 org + student 两种 scope）
+ *
+ * 2026-06-22 cursor 分页改造：去掉 page/pageSize，改 cursor + limit。
+ *   - 排序键 (createdAt desc, _id desc) 必须稳定，否则同 ts 的兄弟行会丢/重
+ *   - 游标 base64url("<ISO createdAt>|<hex _id>")，解码后做 (createdAt, _id) < cursor 复合过滤
+ *   - 返回 nextCursor（null 表示已到末页）；前端 append，不替换
+ *   - 开发阶段直接换掉 page 分页，不写兼容 shim
  */
-async function listEvents({ orgId, page = 1, pageSize = 30, petAccountId, studentId, type }) {
+async function listEvents({ orgId, petAccountId, studentId, type, cursor, limit = 30 }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId')
-  const safePage = Math.max(1, parseInt(page, 10) || 1)
-  const safeSize = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 30))
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 30))
   const filter = { org: orgId }
   if (petAccountId) filter.petAccount = petAccountId
   if (studentId) filter.student = studentId
@@ -157,15 +162,48 @@ async function listEvents({ orgId, page = 1, pageSize = 30, petAccountId, studen
     if (types.length === 1) filter.type = types[0]
     else if (types.length > 1) filter.type = { $in: types }
   }
-  const [items, total] = await Promise.all([
-    PetEvent.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((safePage - 1) * safeSize)
-      .limit(safeSize)
-      .lean(),
-    PetEvent.countDocuments(filter)
-  ])
-  return { items, total, page: safePage, pageSize: safeSize }
+  // 解码游标：base64url("<ISO>|<hexId>") → { ts: Date, id: string-hex }
+  if (cursor) {
+    const decoded = decodeCursor(cursor)
+    if (decoded) {
+      // (createdAt, _id) < (cursor.ts, cursor.id) — 复合严格小于
+      filter.$or = [
+        { createdAt: { $lt: decoded.ts } },
+        { createdAt: decoded.ts, _id: { $lt: decoded.id } }
+      ]
+    }
+  }
+  // 多取 1 条用来判断是否还有下一页
+  const rows = await PetEvent.find(filter)
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(safeLimit + 1)
+    .lean()
+  const hasMore = rows.length > safeLimit
+  const items = hasMore ? rows.slice(0, safeLimit) : rows
+  const last = items[items.length - 1]
+  const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last._id) : null
+  return { items, nextCursor, hasMore }
+}
+
+function encodeCursor(ts, id) {
+  const tsIso = ts instanceof Date ? ts.toISOString() : new Date(ts).toISOString()
+  const idHex = typeof id === 'object' && id.toHexString ? id.toHexString() : String(id)
+  return Buffer.from(`${tsIso}|${idHex}`).toString('base64url')
+}
+
+function decodeCursor(s) {
+  try {
+    const raw = Buffer.from(String(s), 'base64url').toString('utf8')
+    const idx = raw.indexOf('|')
+    if (idx <= 0) return null
+    const ts = new Date(raw.slice(0, idx))
+    const id = raw.slice(idx + 1)
+    if (isNaN(ts.getTime()) || !/^[a-f0-9]{24}$/i.test(id)) return null
+    // 返回字符串 id 给 mongoose schema 做 cast（避免再 toObjectId）
+    return { ts, id }
+  } catch (_) {
+    return null
+  }
 }
 
 /**
@@ -256,6 +294,12 @@ async function update({ orgId, petAccountId, operatorId, payload }) {
 async function adoptOnBehalf({ orgId, studentId, operatorId }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
   if (!operatorId) throw ApiError.badRequest('缺少 operatorId')
+
+  // 2026-06-22: 校验学员是否已有 PetAccount；已有则拒绝（避免数据脏 + UI 误操作）
+  const existing = await PetAccount.findOne({ org: orgId, student: studentId }).select('_id').lean()
+  if (existing) {
+    throw ApiError.unprocessable('该学员已有宠物，不能重复领养')
+  }
 
   // 2026-06-22: 不再额外写 admin_adopt 事件
   // 原因：ensurePetAccount 已写 type:'adopt'，payload.by='admin' 标识操作者
@@ -380,9 +424,18 @@ async function equipOnBehalf({ orgId, petAccountId, slot, itemKey, operatorId })
  */
 async function getByStudent({ orgId, studentId }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
-  const pet = await PetAccount.findOne({ org: orgId, student: studentId }).lean()
+  // 2026-06-22: 一次性 populate student.name/gender，前端可直接 pet.studentName
+  // 之前只 findOne().lean() 不 populate，前端 pet.student.name 一直 undefined → 永远显示「加载中...」
+  const pet = await PetAccount.findOne({ org: orgId, student: studentId })
+    .populate('student', 'name gender')
+    .lean()
   if (!pet) return { pet: null, recentEvents: [] }
   const decorated = await petService.decoratePet(pet)
+  // 冗余 studentName / studentGender 字段，与 list / get 接口对齐
+  if (pet.student && typeof pet.student === 'object') {
+    decorated.studentName = pet.student.name
+    decorated.studentGender = pet.student.gender
+  }
   const recentEvents = await PetEvent.find({ petAccount: pet._id })
     .sort({ createdAt: -1 })
     .limit(10)

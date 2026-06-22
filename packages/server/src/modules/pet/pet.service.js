@@ -179,6 +179,7 @@ async function hatch({ orgId, studentId }) {
   }
 
   // CAS update：以 (state='egg', _id) 为守卫
+  // 2026-06-22: equipped 重置为全 null（蛋态逻辑上不该有装备；swapEgg 后保留旧装备是 bug）
   const updated = await PetAccount.findOneAndUpdate(
     { _id: pet._id, state: 'egg' },
     {
@@ -195,7 +196,8 @@ async function hatch({ orgId, studentId }) {
         lastFedAt: now, // 破壳即满饱 + 立即记录
         lastHungerDecayAt: now,
         deathThresholdDays: cfg.deathThresholdDays,
-        unlocked: mergedUnlocked
+        unlocked: mergedUnlocked,
+        equipped: { hat: null, scarf: null, clothes: null, accessory: null, halo: null, background: null }
       }
     },
     { new: true }

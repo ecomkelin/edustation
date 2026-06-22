@@ -3,11 +3,16 @@
     <!-- 顶栏 -->
     <div class="top-bar">
       <div class="title">
-        <span class="student-name">{{ pet?.student?.name || '加载中...' }}</span>
+        <span class="student-name">{{ pet?.studentName || '加载中...' }}</span>
         <span class="tier-badge" :class="tierClass">{{ tierLabel }}</span>
         <span class="level">Lv.{{ pet?.level || 0 }}</span>
         <el-tag v-if="pet?.state === 'egg'" type="warning" size="large">蛋</el-tag>
         <el-tag v-if="pet?.state === 'alive'" type="success" size="large">存活</el-tag>
+        <!-- 2026-06-22: 学生剩余积分 — 代买食物/装饰前必看 -->
+        <el-tag type="warning" size="large" effect="dark" v-if="studentPoints != null">
+          <el-icon style="margin-right:2px;vertical-align:-2px"><Coin /></el-icon>
+          {{ studentPoints }} 积分
+        </el-tag>
       </div>
       <div class="online-indicator">
         <span class="dot" :class="{ online: !!pollTimer }"></span>
@@ -19,17 +24,31 @@
     <!-- 主体：左大图 + 右数据 -->
     <div class="main">
       <div class="pet-display">
-        <div v-if="pet?.state === 'egg'" class="pet-egg">
-          🥚
-          <div class="hint">蛋</div>
-          <el-button v-if="canWrite" type="success" size="large" @click="onHatch" :loading="actioning">代破壳</el-button>
+        <!-- 2026-06-22: 蛋态 — 与 PetEquipmentOverlay 同尺寸结构 (max-width 80% / 内部 frame)，
+             保持位置 / 大小与破壳后宠物一致；去掉「蛋」文字；破壳时加 shake + glow + 破裂闪光 -->
+        <div v-if="pet?.state === 'egg'" class="pet-img">
+          <div class="pet-frame egg-frame" :class="{ hatching: actioning }">
+            <div class="egg-emoji">🥚</div>
+            <!-- 破壳时径向闪光 -->
+            <div class="hatch-burst" v-if="actioning"></div>
+          </div>
+          <!-- 蛋态：底部中央放「代破壳」 -->
+          <el-button v-if="canWrite" type="success" size="large" class="pet-bottom-btn" :loading="actioning" @click="onHatch">
+            代破壳
+          </el-button>
         </div>
-        <div v-else-if="pet?.speciesRecord" class="pet-img">
-          <img v-if="pet.speciesRecord.visualType === 'image' && pet.speciesRecord.imageFile" :src="pet.speciesRecord.imageFile.url" :alt="pet.speciesRecord.name" />
-          <div v-else-if="pet.speciesRecord.visualType === 'svg'" class="svg-wrap" v-html="pet.speciesRecord.svgContent" />
-          <div v-else class="emoji-fallback">{{ speciesEmoji }}</div>
-          <div class="species-name">{{ pet.speciesRecord.name }}</div>
-        </div>
+        <!-- 2026-06-22: 宠物图 + 装备叠加层 抽到 PetEquipmentOverlay 组件复用 -->
+        <template v-else-if="pet?.speciesRecord">
+          <PetEquipmentOverlay
+            :species-record="pet.speciesRecord"
+            :equipped="pet.equipped || {}"
+            :item-map="itemMap"
+            mode="classroom"
+            :fallback-emoji="speciesEmoji"
+          />
+          <!-- 存活态：底部中央放「置换」（与蛋态代破壳共用同一位置 pattern） -->
+          <el-button v-if="canWrite" type="warning" size="large" class="pet-bottom-btn" @click="onSwap" :loading="actioning">置换</el-button>
+        </template>
         <div v-else class="pet-empty">
           <el-icon :size="120"><Picture /></el-icon>
           <div class="hint">{{ pet?.species || '无' }}</div>
@@ -60,58 +79,74 @@
           />
         </div>
 
-        <div class="stat-card">
-          <div class="label">已装备</div>
-          <div class="equipped-grid">
-            <div v-for="slot in PET_ITEM_SLOTS" :key="slot" class="slot-box">
-              <div class="slot-label">{{ PET_ITEM_SLOT_LABELS[slot] }}</div>
-              <div class="slot-value">{{ pet?.equipped?.[slot] || '—' }}</div>
+        <!-- 2026-06-22: 装饰区 — SVG chip 点击 toggle 装备
+             有框 = 已装备；无框 = 已解锁但未装备；点 chip 在 equip / unequip 间切
+             蛋态不显示（蛋在概念上没有装饰）-->
+        <div class="stat-card" v-if="pet?.state === 'alive'">
+          <div class="label">装饰 · 点 SVG 切换装备</div>
+          <div class="equip-categories">
+            <div v-for="slot in PET_ITEM_SLOTS" :key="slot" class="cat-row">
+              <div class="cat-label">{{ PET_ITEM_SLOT_LABELS[slot] }}</div>
+              <div class="cat-chips">
+                <div
+                  v-for="entry in unlockedEntriesBySlot[slot]"
+                  :key="slot + ':' + entry.key"
+                  class="equip-chip"
+                  :class="{ framed: pet?.equipped?.[slot] === entry.key }"
+                  :title="entry.name + (pet?.equipped?.[slot] === entry.key ? ' (已装备，点击卸下)' : ' (点击装备)')"
+                  @click="onToggleEquip(slot, entry.key)"
+                >
+                  <img v-if="entry.visualType === 'image' && entry.imageFile?.url" :src="entry.imageFile.url" :alt="entry.name" />
+                  <span v-else-if="entry.visualType === 'svg' && entry.svgContent" class="chip-svg" v-html="entry.svgContent" />
+                  <span v-else class="chip-emoji">🎁</span>
+                </div>
+                <span v-if="!unlockedEntriesBySlot[slot] || unlockedEntriesBySlot[slot].length === 0" class="slot-empty">未解锁</span>
+              </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 2026-06-22: 食物区 — SVG chip 显示积分 + +exp + +hunger；点击代买 -->
+        <div class="stat-card" v-if="canWrite && pet?.state === 'alive'">
+          <div class="label">食物 · 点 SVG 代买喂食</div>
+          <div class="food-grid">
+            <div
+              v-for="c in consumableEntries"
+              :key="c.key"
+              class="food-chip"
+              :class="{ unaffordable: studentPoints != null && c.priceForTier != null && studentPoints < c.priceForTier }"
+              :title="`${c.name} · ${c.priceForTier ?? '?'} 积分 · +${c.expGain}经验 +${c.hungerRestore}饱腹`"
+              @click="onBuyConsumable(c.key)"
+            >
+              <span class="food-thumb">
+                <img v-if="c.visualType === 'image' && c.imageFile?.url" :src="c.imageFile.url" :alt="c.name" />
+                <span v-else-if="c.visualType === 'svg' && c.svgContent" class="chip-svg" v-html="c.svgContent" />
+                <span v-else class="chip-emoji">🍖</span>
+              </span>
+              <div class="food-name">{{ c.name }}</div>
+              <div class="food-meta">
+                <span class="food-price">{{ c.priceForTier ?? '—' }} 积</span>
+                <span class="food-eff">+{{ c.expGain }}exp +{{ c.hungerRestore }}饱</span>
+              </div>
+            </div>
+            <span v-if="consumableEntries.length === 0" class="slot-empty">无可购食物</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 快捷操作 -->
-    <div class="action-bar" v-if="canWrite && pet?.state === 'alive'">
-      <el-button type="primary" size="large" @click="feedDialog = true">喂食</el-button>
-      <el-button type="success" size="large" :disabled="pet?.state !== 'alive'" @click="onHatch" :loading="actioning">破壳</el-button>
-      <el-button type="warning" size="large" @click="onSwap" :loading="actioning">置换</el-button>
-      <el-button type="info" size="large" :disabled="!canTierDown" @click="tierDownDialog = true">降阶</el-button>
-    </div>
-
-    <!-- 最近事件 -->
-    <div class="events-bar">
-      <div class="events-title">最近事件</div>
-      <el-table :data="recentEvents" max-height="160" size="small" stripe>
-        <el-table-column prop="type" label="类型" width="100" />
-        <el-table-column label="时间" width="180">
-          <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
-        </el-table-column>
-        <el-table-column label="payload" min-width="320">
-          <template #default="{ row }">
-            <code style="font-size:11px">{{ JSON.stringify(row.payload) }}</code>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+    <!-- 2026-06-22: action-bar 已删除 — 置换按钮迁到宠物下方，代买食物走下方食物 chip，点击装备走装饰 chip -->
 
     <!-- dialogs -->
-    <FeedOnBehalfDialog v-model="feedDialog" :pet="pet" :student-name="pet?.student?.name" @success="refresh" />
-
-    <el-dialog v-model="tierDownDialog" title="代降阶" width="420px">
-      <el-form>
-        <el-form-item label="目标阶">
-          <el-radio-group v-model="tierDownTarget">
-            <el-radio v-for="t in lowerTiers" :key="t" :label="t">{{ PET_TIER_LABELS[t] }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="tierDownDialog = false">取消</el-button>
-        <el-button type="primary" :disabled="!tierDownTarget" @click="onTierDown">确认</el-button>
-      </template>
-    </el-dialog>
+    <!-- 2026-06-22: 与 PetDetailDialog 共用 GrantOnBehalfDialog kind=consumable；不再用 FeedOnBehalfDialog -->
+    <GrantOnBehalfDialog
+      v-model="grantConsumableDialog"
+      kind="consumable"
+      :pet-account-id="pet?._id"
+      :student-tier="pet?.tier || pet?.eggTier || null"
+      @success="onConsumableBought"
+    />
+    <!-- EquipOnBehalfDialog 已不再需要 — 装饰点击 inline toggle 装备 -->
   </div>
 </template>
 
@@ -119,13 +154,16 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Picture } from '@element-plus/icons-vue'
+import { Picture, ShoppingCart, Coin } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
-import FeedOnBehalfDialog from '@/components/Pet/FeedOnBehalfDialog.vue'
+import { petCatalogApi } from '@/api/petCatalog'
+import { pointsAdminApi } from '@/api/pointsAdmin'
+import GrantOnBehalfDialog from '@/components/Pet/GrantOnBehalfDialog.vue'
+import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
 import { useUserPerms } from '@/composables/useUserPerms'
 import { formatDate } from '@/utils/format'
 import {
-  PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS
+  PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS
 } from '@/utils/constants'
 
 const SPECIES_EMOJI_FALLBACK = {
@@ -137,18 +175,25 @@ const SPECIES_EMOJI_FALLBACK = {
 
 export default {
   name: 'PetClassroomDisplay',
-  components: { FeedOnBehalfDialog },
+  components: { GrantOnBehalfDialog, PetEquipmentOverlay },
   setup() {
     const route = useRoute()
     const { can } = useUserPerms()
     const studentId = route.query.studentId
     const pet = ref(null)
-    const recentEvents = ref([])
     const pollTimer = ref(null)
     const actioning = ref(false)
-    const feedDialog = ref(false)
-    const tierDownDialog = ref(false)
-    const tierDownTarget = ref('')
+    // 2026-06-22: 与 PetDetailDialog 对齐，用 GrantOnBehalfDialog kind='consumable'
+    const grantConsumableDialog = ref(false)
+    // 2026-06-22: 装饰 key→{name,visualType,svgContent,imageFile} 翻译 map
+    // 拉一次复用，避免每 3s 轮询都打 catalog；SVG/image 信息用于叠加渲染
+    const itemMap = ref({})
+    let itemMapLoaded = false
+    // 2026-06-22: 食物 (consumable) 翻译 map — 同样拉一次，按 tier 提取价格
+    const consumableMap = ref({})
+    let consumableMapLoaded = false
+    // 2026-06-22: 学生剩余积分（顶栏显示 + 食物 chip 灰化判定）
+    const studentPoints = ref(null)
     const canWrite = can('pet.write')
 
     const tierLabel = computed(() => PET_TIER_LABELS[pet.value?.tier] || pet.value?.eggTier || '—')
@@ -166,16 +211,52 @@ export default {
       if (!pet.value) return 0
       return Math.min(100, Math.round((pet.value.currentHunger / pet.value.maxHunger) * 100))
     })
-    const canTierDown = computed(() => {
-      if (!pet.value?.tier) return false
-      return PET_TIERS.indexOf(pet.value.tier) > 0
-    })
-    const lowerTiers = computed(() => {
-      if (!pet.value?.tier) return []
-      const idx = PET_TIERS.indexOf(pet.value.tier)
-      return PET_TIERS.slice(0, idx)
-    })
     const speciesEmoji = computed(() => SPECIES_EMOJI_FALLBACK[pet.value?.species] || '🐾')
+
+    // 2026-06-22: 背包视图 — 按 slot 汇总 pet.unlocked[slot]，每项含 name（从 itemMap 翻译）
+    // 与 PetDetailDialog 的 unlockedEntriesBySlot 同款，跨页展示对齐
+    const unlockedEntriesBySlot = computed(() => {
+      const out = {}
+      for (const slot of PET_ITEM_SLOTS) out[slot] = []
+      const unlocked = pet.value?.unlocked || {}
+      for (const slot of PET_ITEM_SLOTS) {
+        const arr = Array.isArray(unlocked[slot]) ? unlocked[slot] : []
+        out[slot] = arr.map(key => ({
+          key,
+          name: (itemMap.value[key] && itemMap.value[key].name) || key,
+          visualType: itemMap.value[key]?.visualType,
+          svgContent: itemMap.value[key]?.svgContent,
+          imageFile: itemMap.value[key]?.imageFile
+        }))
+      }
+      return out
+    })
+
+    // 2026-06-22: 已装备装饰叠加层 — 迁到 PetEquipmentOverlay 组件（内部按 slot 顺序渲染）
+
+    async function loadItemMap() {
+      // 平台共享 catalog；只拉一次（per-tab 缓存）— 避免每 3s 轮询都打 catalog
+      if (itemMapLoaded) return
+      itemMapLoaded = true
+      try {
+        const { data } = await petCatalogApi.listItems({ pageSize: 100 })
+        const map = {}
+        for (const it of (data.items || [])) {
+          map[it.key] = {
+            name: it.name,
+            slot: it.slot,
+            // 2026-06-22: 视觉字段补齐 — 让叠加层 (equipment-overlay) 真的能渲染
+            visualType: it.visualType || 'image',
+            svgContent: it.svgContent || null,
+            imageFile: it.imageFile || null
+          }
+        }
+        itemMap.value = map
+      } catch (e) {
+        // 拉失败 → 退化显示 key，UI 不报错
+        itemMap.value = {}
+      }
+    }
 
     async function fetchOnce() {
       if (!studentId) {
@@ -185,10 +266,123 @@ export default {
       try {
         const r = await petAdminApi.getByStudent(studentId)
         pet.value = r.data?.pet || null
-        recentEvents.value = r.data?.recentEvents || []
+        // 2026-06-22: 最近事件 UI 已删除，不再保留 recentEvents 字段
       } catch (e) {
         // ignore（轮询失败不阻塞）
       }
+      // 2026-06-22: 学生积分（独立 fetch，与 getByStudent 解耦）
+      // 失败不报错（积分账户可能还没建），UI 不显示 chip
+      try {
+        const { data } = await pointsAdminApi.getAccount(studentId)
+        studentPoints.value = data?.account?.balance ?? null
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    /**
+     * 食物 chip 列表（2026-06-22）— 按当前 pet tier 提取 perTier 价格
+     * consumableMap 缓存全量 consumable 元数据（视觉字段）
+     */
+    const consumableEntries = computed(() => {
+      const tier = pet.value?.tier || pet.value?.eggTier || null
+      const out = []
+      for (const [key, c] of Object.entries(consumableMap.value)) {
+        // 仅列 isActive + 当前 tier 适用
+        if (c.isActive === false) continue
+        if (c.applicableTier && c.applicableTier !== 'all' && c.applicableTier !== tier) continue
+        const cfg = (c.perTier && (c.perTier[tier] || c.perTier.all)) || null
+        const priceForTier = cfg ? cfg.pointCost : null
+        const hungerRestore = cfg ? cfg.hungerRestore : 0
+        const expGain = cfg ? cfg.expGain : 0
+        if (priceForTier == null) continue  // 当前阶不适用
+        out.push({
+          key,
+          name: c.name,
+          visualType: c.visualType || 'image',
+          svgContent: c.svgContent || null,
+          imageFile: c.imageFile || null,
+          priceForTier,
+          hungerRestore,
+          expGain
+        })
+      }
+      return out
+    })
+
+    async function loadConsumableMap() {
+      if (consumableMapLoaded) return
+      consumableMapLoaded = true
+      try {
+        const { data } = await petCatalogApi.listConsumables({ pageSize: 100 })
+        const map = {}
+        for (const c of (data.items || [])) {
+          map[c.key] = {
+            name: c.name,
+            kind: c.kind,
+            applicableTier: c.applicableTier,
+            perTier: c.perTier || {},
+            isActive: c.isActive,
+            visualType: c.visualType || 'image',
+            svgContent: c.svgContent || null,
+            imageFile: c.imageFile || null
+          }
+        }
+        consumableMap.value = map
+      } catch (e) {
+        consumableMap.value = {}
+      }
+    }
+
+    /**
+     * 装饰 chip 点击 → toggle 装备（2026-06-22）
+     * 已装备 → 卸下（itemKey=null）；未装备 → 装备
+     */
+    async function onToggleEquip(slot, key) {
+      if (!pet.value?._id) return
+      const currentKey = pet.value?.equipped?.[slot] || null
+      const isEquipped = currentKey === key
+      const nextItemKey = isEquipped ? null : key
+      const itemName = itemMap.value[key]?.name || key
+      try {
+        await petAdminApi.equipOnBehalf(pet.value._id, { slot, itemKey: nextItemKey })
+        ElMessage.success(isEquipped ? `已卸下 ${itemName}` : `已装备 ${itemName}`)
+        await fetchOnce()
+      } catch (e) {
+        ElMessage.error(e?.response?.data?.message || (isEquipped ? '卸下失败' : '装备失败'))
+      }
+    }
+
+    /**
+     * 食物 chip 点击 → 代买并立即喂（2026-06-22）
+     */
+    async function onBuyConsumable(key) {
+      if (!pet.value?._id) return
+      const c = consumableMap.value[key]
+      const itemName = c?.name || key
+      const cfg = (c?.perTier && (c.perTier[pet.value?.tier] || c.perTier.all)) || null
+      const cost = cfg?.pointCost ?? 0
+      if (studentPoints.value != null && studentPoints.value < cost) {
+        ElMessage.warning(`积分不足：当前 ${studentPoints.value}，需要 ${cost}`)
+        return
+      }
+      try {
+        await ElMessageBox.confirm(`确认代买 ${itemName}（扣 ${cost} 积分）并立即喂食？`, '代买食物', { type: 'warning' })
+      } catch (_) { return }
+      try {
+        await petAdminApi.grantConsumable(pet.value._id, { consumableKey: key })
+        ElMessage.success(`已代买并喂食 ${itemName}`)
+        await fetchOnce()
+      } catch (e) {
+        ElMessage.error(e?.response?.data?.message || '代买失败')
+      }
+    }
+
+    /**
+     * 装饰代买成功（弹窗回来）→ 刷新
+     */
+    function onConsumableBought() {
+      fetchOnce()
     }
 
     function refresh() {
@@ -229,13 +423,6 @@ export default {
     async function onSwap() {
       await doAction('代置换蛋（扣积分）', () => petAdminApi.swapEggOnBehalf(pet.value._id))
     }
-    async function onTierDown() {
-      const target = tierDownTarget.value
-      if (!target) return
-      tierDownDialog.value = false
-      await doAction(`代降阶到 ${PET_TIER_LABELS[target]}`, () => petAdminApi.tierDownOnBehalf(pet.value._id, { targetTier: target }))
-      tierDownTarget.value = ''
-    }
 
     function onClose() {
       if (window.opener) {
@@ -247,6 +434,8 @@ export default {
     }
 
     onMounted(async () => {
+      loadItemMap()
+      loadConsumableMap()
       await fetchOnce()
       startPolling()
     })
@@ -255,12 +444,14 @@ export default {
     })
 
     return {
-      pet, recentEvents, pollTimer, actioning, canWrite,
-      feedDialog, tierDownDialog, tierDownTarget,
-      tierLabel, tierClass, expPercent, hungerPercent, canTierDown, lowerTiers, speciesEmoji,
-      PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS,
-      Picture,
-      refresh, onHatch, onSwap, onTierDown, onClose, formatDate
+      pet, pollTimer, actioning, canWrite,
+      grantConsumableDialog,
+      itemMap, unlockedEntriesBySlot, consumableEntries, studentPoints,
+      tierLabel, tierClass, expPercent, hungerPercent, speciesEmoji,
+      PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS,
+      Picture, ShoppingCart, Coin,
+      refresh, onHatch, onSwap, onClose, formatDate,
+      onToggleEquip, onBuyConsumable, onConsumableBought
     }
   }
 }
@@ -344,34 +535,139 @@ export default {
   gap: 16px;
   padding: 24px;
 }
-.pet-display img {
-  max-width: 80%;
-  max-height: 60vh;
-  object-fit: contain;
-}
-.pet-display .svg-wrap :deep(svg) {
-  max-width: 80%;
-  max-height: 60vh;
-}
-.pet-display .emoji-fallback {
-  font-size: 280px;
-  line-height: 1;
-}
 .pet-display .species-name {
   font-size: 36px;
   font-weight: bold;
   color: #ffd04b;
+  margin-top: 8px;
 }
 .pet-display .hint {
   color: #aaa;
   font-size: 16px;
 }
-.pet-egg { font-size: 240px; line-height: 1; }
+
+/* 2026-06-22: 蛋 frame — 与 PetEquipmentOverlay 同尺寸结构（同 .pet-frame / .pet-img），
+   让蛋和破壳后的宠物占位一致，破壳瞬间不会有"跳一下" */
+.egg-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  max-height: 60vh;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 240, 200, 0.10), transparent 70%);
+  border-radius: 12px;
+}
+.egg-emoji {
+  font-size: clamp(180px, 30vw, 280px);
+  line-height: 1;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4));
+  transition: transform 0.2s;
+}
+/* 破壳 shake 动画：连续抖动 + 微旋转 */
+.egg-frame.hatching .egg-emoji {
+  animation: hatch-shake 0.45s ease-in-out infinite;
+}
+@keyframes hatch-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  15%  { transform: translate(-3px, -2px) rotate(-3deg); }
+  30%  { transform: translate(4px, 1px) rotate(3deg); }
+  45%  { transform: translate(-3px, 2px) rotate(-2deg); }
+  60%  { transform: translate(3px, -2px) rotate(2deg); }
+  75%  { transform: translate(-2px, 1px) rotate(-3deg); }
+  90%  { transform: translate(2px, 2px) rotate(3deg); }
+}
+
+/* 破壳闪光：径向高光快速扩散 */
+.hatch-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(255, 255, 200, 0.95) 0%,
+    rgba(255, 200, 100, 0.6) 25%,
+    transparent 65%);
+  animation: hatch-burst-anim 0.9s ease-out infinite;
+  mix-blend-mode: screen;
+  border-radius: 12px;
+}
+@keyframes hatch-burst-anim {
+  0%   { transform: scale(0.4); opacity: 1; }
+  60%  { transform: scale(1.3); opacity: 0.5; }
+  100% { transform: scale(2.0); opacity: 0; }
+}
+
+/* 2026-06-22: 宠物展示框 — 限宽,作为叠加层定位基准
+   避免 .pet-img 被 species-name 拉伸,让叠加层与图本身对齐 */
+.pet-img {
+  position: relative;
+  width: 100%;
+  max-width: 80%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pet-img > img,
+.pet-img > .svg-wrap,
+.pet-img > .emoji-fallback {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  display: block;
+}
+.pet-img > .svg-wrap :deep(svg) {
+  width: 100%;
+  max-height: 60vh;
+  display: block;
+}
+.pet-img > .emoji-fallback {
+  font-size: 280px;
+  line-height: 1;
+  text-align: center;
+}
+
+/* 2026-06-22: 已装备装饰叠加层（absolute 在 .pet-img 内，覆盖图片区域）
+   注：inset:0 相对 .pet-img，不含底部 species-name（species-name 不在框内） */
+.equipment-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.overlay-slot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+.overlay-slot img,
+.overlay-slot .svg-wrap :deep(svg) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+}
+
+/* ─── 6 slot 固定坐标(以 .pet-img 为 100% × 100% 框)
+     思路:物种 SVG 中心约在 50%/55% 区域,头顶约 15-25%,脖子 45-55%,躯干 55-85%
+     不同物种大小会略有偏移,但「明显戴头上 / 围脖子上」可达成 */
+.slot-background {
+  top: 0; left: 0; width: 100%; height: 100%;
+  opacity: 0.35;
+  z-index: 0;
+}
+.slot-hat       { top: -2%;  left: 50%; transform: translateX(-50%); width: 50%; height: 32%; z-index: 2; }
+.slot-scarf     { top: 28%;  left: 50%; transform: translateX(-50%); width: 50%; height: 18%; z-index: 2; }
+.slot-clothes   { top: 38%;  left: 50%; transform: translateX(-50%); width: 60%; height: 32%; z-index: 2; }
+.slot-accessory { top: 50%;  left: 50%; transform: translateX(-50%); width: 22%; height: 22%; z-index: 2; }
+.slot-halo      { top: -8%;  left: 50%; transform: translateX(-50%); width: 75%; height: 50%; opacity: 0.85; z-index: 2; }
 
 .pet-stats {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
 }
 .stat-card {
   background: rgba(255, 255, 255, 0.05);
@@ -388,34 +684,115 @@ export default {
   font-size: 14px;
   margin-top: 8px;
 }
-.equipped-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-.slot-box {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 12px;
-  text-align: center;
-}
-.slot-box .slot-label { color: #aaa; font-size: 12px; margin-bottom: 4px; }
-.slot-box .slot-value { color: #fff; font-size: 16px; font-weight: bold; }
 
-.action-bar {
+/* 2026-06-22: 装饰 chip 区 — 6 行 × N chip, 整行 row layout */
+.equip-categories { display: flex; flex-direction: column; gap: 8px; }
+.cat-row {
   display: flex;
-  justify-content: center;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 10px;
+  border-radius: 6px;
 }
-
-.events-bar {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 16px;
-}
-.events-bar .events-title {
+.cat-label {
   color: #ccc;
-  margin-bottom: 12px;
-  font-size: 16px;
+  font-size: 13px;
+  width: 56px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; align-items: center; }
+.slot-empty { color: #666; font-size: 12px; }
+
+/* 装备 chip：默认无边框；装备中：success 边框 + 浅绿底 */
+.equip-chip {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.equip-chip:hover { transform: scale(1.08); background: rgba(255, 255, 255, 0.12); }
+.equip-chip.framed {
+  border: 2px solid #67c23a;
+  background: #f0f9eb;
+  box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.3);
+}
+.equip-chip img,
+.equip-chip .chip-svg {
+  display: block;
+  max-width: 44px;
+  max-height: 44px;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+/* 2026-06-22: inline SVG 没 width/height 时浏览器默认 300×150，会撑爆 chip
+   必须直接给 svg 元素固定尺寸，max-width 才有用 */
+.equip-chip .chip-svg :deep(svg) {
+  width: 44px !important;
+  height: 44px !important;
+  display: block;
+}
+.equip-chip .chip-emoji { font-size: 24px; }
+
+/* 食物 chip：大一些 + 显示 name + 积分 + 效果 */
+.food-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+.food-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+.food-chip:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.12); }
+.food-chip.unaffordable { opacity: 0.4; cursor: not-allowed; }
+.food-chip .food-thumb {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #fafbfc, #f0f2f5);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.food-chip .food-thumb img,
+.food-chip .food-thumb .chip-svg {
+  display: block;
+  max-width: 52px;
+  max-height: 52px;
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+.food-chip .food-thumb .chip-svg :deep(svg) {
+  width: 52px !important;
+  height: 52px !important;
+  display: block;
+}
+.food-chip .food-thumb .chip-emoji { font-size: 32px; }
+.food-chip .food-name { font-size: 12px; color: #fff; font-weight: 600; }
+.food-chip .food-meta { font-size: 10px; color: #aaa; text-align: center; }
+.food-chip .food-price { color: #e6a23c; font-weight: 600; }
+
+/* 2026-06-22: 宠物底部中央按钮（蛋态代破壳 / 存活态置换 共用） */
+.pet-bottom-btn {
+  margin-top: 16px;
+  min-width: 160px;
 }
 </style>

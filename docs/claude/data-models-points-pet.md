@@ -432,7 +432,7 @@ swap:    points.recordTransaction({ trigger: 'pet', amount: -petConfig.swapCost,
 - `GET /admin/pet/accounts/:id` — detail（带最近 20 条事件）
 - `GET /admin/pet/accounts-by-student?studentId=xxx` — 按学员查（课堂展示用）
 - `PUT /admin/pet/accounts/:id` — 字段调整（白名单：nickname / currentHunger / lastFedAt / deathThresholdDays / state / level / experience / maxHunger）
-- `GET /admin/pet/events` — 事件流分页（filter: petAccountId/studentId/type）
+- `GET /admin/pet/events` — 事件流分页（filter: petAccountId/studentId/type；**2026-06-22 改 cursor 分页**：query=cursor&limit，返回 `{items, nextCursor, hasMore}`，前端 append 不替换）
 
 **不允许 admin 改的字段**：`org` / `student` / `adoptedAt` / `species` / `tier`（结构性字段走专门流程）
 

@@ -23,12 +23,26 @@
             :value="opt.key"
             :disabled="opt.disabled"
           >
-            <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
-              <span>{{ opt.label }}</span>
-              <span style="color:#f5222d;font-size:12px">{{ opt.priceText }}</span>
+            <div class="opt-row">
+              <!-- 2026-06-22: SVG/image 预览 chip（listShop 已返 visualType/svgContent/imageFile） -->
+              <span class="opt-thumb">
+                <img v-if="opt.visualType === 'image' && opt.imageFile?.url" :src="opt.imageFile.url" :alt="opt.label" />
+                <span v-else-if="opt.visualType === 'svg' && opt.svgContent" class="opt-svg" v-html="opt.svgContent" />
+                <span v-else class="opt-emoji">{{ kind === 'item' ? '🎁' : '🍖' }}</span>
+              </span>
+              <span class="opt-label">{{ opt.label }}</span>
+              <span class="opt-price">{{ opt.priceText }}</span>
             </div>
           </el-option>
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="pickedOpt" label="预览">
+        <!-- 大图预览（让用户看清买的是什么） -->
+        <div class="preview-box">
+          <img v-if="pickedOpt.visualType === 'image' && pickedOpt.imageFile?.url" :src="pickedOpt.imageFile.url" :alt="pickedOpt.label" />
+          <div v-else-if="pickedOpt.visualType === 'svg' && pickedOpt.svgContent" class="preview-svg" v-html="pickedOpt.svgContent" />
+          <div v-else class="preview-empty">无预览</div>
+        </div>
       </el-form-item>
       <el-form-item v-if="pickedOpt" label="积分">
         <el-tag type="danger">{{ pickedOpt.pointCost ?? pickedOpt.priceForTier }} 积分</el-tag>
@@ -104,11 +118,16 @@ export default {
           if (this.kind === 'item') {
             return {
               key: it.key,
+              slot: it.slot,
               label: `${it.name}（${this.slotLabel(it.slot)}）`,
               pointCost: it.pointCost,
               priceText: `${it.pointCost} 积分`,
               hint: '',
-              disabled: false
+              disabled: false,
+              // 2026-06-22: 透传视觉字段（用于 dropdown 内 + 大图预览）
+              visualType: it.visualType || 'image',
+              svgContent: it.svgContent || null,
+              imageFile: it.imageFile || null
             }
           } else {
             const price = it.priceForTier
@@ -119,7 +138,10 @@ export default {
               pointCost: price,
               priceText: price !== null ? `${price} 积分` : '不适用',
               hint: price === null ? '当前阶不适用' : `+${it.expGain}经验 / +${it.hungerRestore}饱腹`,
-              disabled: price === null
+              disabled: price === null,
+              visualType: it.visualType || 'image',
+              svgContent: it.svgContent || null,
+              imageFile: it.imageFile || null
             }
           }
         })
@@ -178,3 +200,52 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+/* 2026-06-22: dropdown 内 + 大图预览样式 */
+.opt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.opt-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #fafbfc, #f0f2f5);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.opt-thumb img,
+.opt-thumb .opt-svg :deep(svg) {
+  max-width: 28px;
+  max-height: 28px;
+  object-fit: contain;
+}
+.opt-thumb .opt-emoji { font-size: 20px; }
+.opt-label { flex: 1; font-size: 13px; }
+.opt-price { color: #f5222d; font-size: 12px; font-weight: 600; }
+
+.preview-box {
+  width: 120px;
+  height: 120px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #fafbfc, #f0f2f5);
+  overflow: hidden;
+}
+.preview-box img,
+.preview-box .preview-svg :deep(svg) {
+  max-width: 100px;
+  max-height: 100px;
+  object-fit: contain;
+}
+.preview-empty { color: #c0c4cc; font-size: 12px; }
+</style>

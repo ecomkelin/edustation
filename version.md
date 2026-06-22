@@ -14,6 +14,44 @@
 ## 当前版本
 
 ##
+**v0.6.49** （2026-06-22）
+- 蛋态 / 破壳体验重做：
+  - 蛋显示：去掉"蛋"字标签，蛋 emoji 改用与 PetEquipmentOverlay 同尺寸的 .pet-frame 包装（aspect-ratio 1:1, max-height 60vh），破壳瞬间不会有"位置跳一下"
+  - 装饰区 + 食物区：蛋态隐藏（v-if="pet?.state === 'alive'"），蛋在概念上没有装饰
+  - 破壳动画：点"代破壳"按钮后蛋进入 .hatching class，连续 shake（hatch-shake keyframe 0.45s 抖动+微旋转）+ 径向闪光（hatch-burst-anim 0.9s 扩散）
+  - 后端 hatch 服务：`$set.equipped` 强制重置为全 null（修 swapEgg 后旧装备仍残留 bug）
+  - 后端逻辑与前端 UI 一致：蛋态 → equipped 必为 null
+
+**v0.6.48** （2026-06-22）
+- bugfix：装饰 chip + 食物 chip SVG 不显示。根因 = inline `<svg>` 没 width/height 属性时浏览器默认 300×150，`max-width: 44px` 截到但 layout 仍按 300×150 算 → 撑出可视区域被 overflow:hidden 切掉。修法：直接给 `.chip-svg :deep(svg)` 加 `width/height: !important 44px` (equip) / 52px (food)，同时把 .chip-svg 自身也改成 block display + 显式尺寸。
+
+**v0.6.47** （2026-06-22）
+- 课堂展示页 UI 重布（按用户截图反馈）：
+  - 移除底部 action-bar（代买食物/置换/装备管理 3 个按钮）
+  - 置换按钮迁到宠物 SVG 下方中央，与蛋态"代破壳"按钮共用同一位置 pattern（class `.pet-bottom-btn`）
+  - 删除"装备管理"按钮 + EquipOnBehalfDialog；装饰 chip 区改为 inline 点击 toggle 装备（有框=已装备，无框=未装备）
+  - 装饰区下面新增"食物 SVG chip"区：点击即代买并立即喂食；显示 SVG + name + 积分 + +exp + +饱腹；积分不足时灰化
+  - 顶栏加积分 chip（pointsAdminApi.getAccount，每次轮询刷新）
+  - 删废 CSS .equipped-grid / .slot-box / .action-bar；新 CSS .equip-chip.framed / .food-chip / .cat-row
+
+**v0.6.46** （2026-06-22）
+- 装备可视化 + 代换装：
+  - 课堂展示页：宠物 SVG 之上叠加已装备的装饰（按 slot 定位，background 隐藏在宠物背后）；新增"装备管理"按钮弹 EquipOnBehalfDialog，点击 chip 一键装备/卸下
+  - 购买 dialog (GrantOnBehalfDialog item)：dropdown 每项加 SVG/image 缩略图 chip，右侧加大图预览区
+  - 详情弹窗背包区：每个 unlocked item 渲染 SVG/image 缩略图 + 名称（已装备高亮 success + "✓ 已装备" tag）
+  - itemMap 字段从 {name,slot} 扩到含 visualType/svgContent/imageFile；listShop 返回的 options 也透传视觉字段
+  - 新组件 [EquipOnBehalfDialog.vue](packages/admin/src/components/Pet/EquipOnBehalfDialog.vue)：6 slot × unlocked items，单击 chip 在 equipOnBehalf(itemKey) / unequip(itemKey=null) 间切换
+
+**v0.6.45** （2026-06-22）
+- bugfix：宠物商城显示"无数据"。根因 = DB 里 35 个 PetItem 全是 pointCost=null（catalog seed 未带 POINT_COST_MAP 的最新版本入库）；跑一次 pet-catalog seed 已为所有 item 回填 pointCost（C 阶 lv1 pet 现可见 7 件装饰）
+- 新增：PetDetailDialog 加"已解锁 · 背包"区，按 6 个 slot 列已解锁的 item（已装备的高亮 success）
+
+**v0.6.44** （2026-06-22）
+- 课堂展示页清理：喂食按钮改名为"代买食物"（与详情弹窗一致）+ 移除破壳/降阶按钮 + 移除最近事件区块 + 修复学员名永远"加载中..."（后端 getByStudent 补 studentName 冗余）
+
+**v0.6.43** （2026-06-22）
+- 优化 宠物领养
+
 **v0.6.42** （2026-06-22）
 - 宠物领养 采购 喂养
 

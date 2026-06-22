@@ -59,7 +59,7 @@
           {{ row.experience }}
         </template>
       </el-table-column>
-      <el-table-column label="饱腹度" width="100">
+      <el-table-column label="饱腹度" width="120">
         <template #default="{ row }">
           <el-progress :percentage="row.currentHunger" :stroke-width="8" :show-text="false" :color="hungerColor(row.currentHunger)" />
         </template>
@@ -69,9 +69,25 @@
           {{ formatDate(row.lastFedAt) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <!-- 2026-06-22: 代喂食 + 课堂展示 + 事件 放到列表行 (与详情并列)；代买装饰/食物仍走详情弹窗 -->
+      <el-table-column label="操作" width="320" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openDetail(row)">详情</el-button>
+          <el-tooltip content="详情/破壳/置换/降阶/代买装饰/代买食物" placement="top">
+            <el-button size="small" @click="openDetail(row)">详情</el-button>
+          </el-tooltip>
+          <el-tooltip :disabled="row.state === 'alive'" content="仅存活状态可喂食" placement="top">
+            <el-button size="small" type="primary" :disabled="row.state !== 'alive'" @click="openFeedDialog(row)">
+              <el-icon style="margin-right:2px;vertical-align:-2px"><Bowl /></el-icon>代喂食
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看）" placement="top">
+            <el-button size="small" type="primary" plain @click="openClassroom(row)">课堂展示</el-button>
+          </el-tooltip>
+          <el-tooltip content="查看该宠物的事件流" placement="top">
+            <el-button size="small" type="info" plain @click="openEventsDialog(row)">
+              <el-icon style="margin-right:2px;vertical-align:-2px"><Tickets /></el-icon>事件
+            </el-button>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -86,7 +102,22 @@
     />
 
     <!-- 详情弹窗 -->
-    <PetDetailDialog v-model="detailVisible" :pet-id="selectedPetId" @updated="fetchList" />
+    <PetDetailDialog v-model="detailVisible" :pet-id="selectedPetId" @updated="onDetailUpdated" />
+
+    <!-- 代喂食弹窗（每行点击触发，复用 FeedOnBehalfDialog 组件） -->
+    <FeedOnBehalfDialog
+      v-model:visible="feedDialogVisible"
+      :pet="feedPet"
+      :student-name="feedStudentName"
+      @success="onFeedSuccess"
+    />
+
+    <!-- 单宠物事件流弹窗（2026-06-22 调整：列表行按钮触发） -->
+    <PetEventsDialog
+      v-model="eventsDialogVisible"
+      :pet-account-id="eventsPetId"
+      :student-name="eventsStudentName"
+    />
 
     <!-- 代领养弹窗：选择学员 → 调 adoptOnBehalf -->
     <el-dialog v-model="adoptDialogVisible" title="代领养宠物" width="560px" :close-on-click-modal="false">
@@ -119,12 +150,7 @@
             </el-table-column>
             <el-table-column prop="name" label="姓名" min-width="100" />
             <el-table-column prop="mobile" label="手机号" min-width="120" />
-            <el-table-column label="是否有宠物" width="120">
-              <template #default="{ row }">
-                <el-tag v-if="row.hasPet" type="success" size="small">已有</el-tag>
-                <el-tag v-else type="info" size="small">未领养</el-tag>
-              </template>
-            </el-table-column>
+            <!-- 2026-06-22: 列表已过滤 hasPet=false，「是否有宠物」列无意义删除 -->
           </el-table>
         </el-form-item>
       </el-form>
@@ -141,15 +167,17 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Bowl, Tickets } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import { studentApi } from '@/api/student'
 import { formatDate } from '@/utils/format'
 import PetDetailDialog from './PetDetailDialog.vue'
+import FeedOnBehalfDialog from '@/components/Pet/FeedOnBehalfDialog.vue'
+import PetEventsDialog from '@/components/Pet/PetEventsDialog.vue'
 
 export default {
   name: 'PetAdmin',
-  components: { PetDetailDialog },
+  components: { PetDetailDialog, FeedOnBehalfDialog, PetEventsDialog },
   data() {
     return {
       filters: { keyword: '', state: '', tier: '' },
@@ -169,7 +197,17 @@ export default {
       pickedStudentId: null,
       pickedStudent: null,
       adopting: false,
-      studentSearchTimer: null
+      studentSearchTimer: null,
+
+      // 代喂食弹窗状态（2026-06-22: 从详情移过来）
+      feedDialogVisible: false,
+      feedPet: null,
+      feedStudentName: '',
+
+      // 单宠物事件流弹窗状态（2026-06-22: 列表行按钮触发）
+      eventsDialogVisible: false,
+      eventsPetId: null,
+      eventsStudentName: ''
     }
   },
   mounted() {
@@ -199,7 +237,42 @@ export default {
       this.detailVisible = true
     },
 
-    // ─── 代领养 ───
+    // ─── 代喂食（列表行） ───
+    async openFeedDialog(row) {
+      // 列表行只有 summary 字段；调一次详情接口拿完整 pet（含 unlocked/equipped）
+      try {
+        const r = await petAdminApi.get(row._id)
+        const payload = r?.data?.pet ? r.data : r
+        this.feedPet = payload?.pet || null
+        this.feedStudentName = row.studentName || ''
+        this.feedDialogVisible = true
+      } catch (e) {
+        ElMessage.error(e?.response?.data?.message || '加载宠物失败')
+      }
+    },
+    onFeedSuccess() {
+      this.fetchList()
+    },
+
+    // ─── 课堂展示（列表行） ───
+    openClassroom(row) {
+      const url = `/class/pet-display?studentId=${row.student}`
+      window.open(url, '_blank')
+    },
+
+    // ─── 事件流（列表行）：弹 PetEventsDialog ───
+    openEventsDialog(row) {
+      this.eventsPetId = row._id
+      this.eventsStudentName = row.studentName || ''
+      this.eventsDialogVisible = true
+    },
+
+    // ─── 详情 dialog 关闭后刷新 ───
+    onDetailUpdated() {
+      this.fetchList()
+    },
+
+    // ─── 代领养（保留） ───
     openAdoptDialog() {
       this.adoptDialogVisible = true
       this.studentKeyword = ''
@@ -212,10 +285,11 @@ export default {
       try {
         const r = await studentApi.list({
           keyword: this.studentKeyword || undefined,
+          // 2026-06-22: 代领养弹窗默认只显示未领养学员；后端也校验防绕过
+          hasPet: 'false',
           pageSize: 20,
           page: 1
         })
-        // ⚠️ 当前 http.js 第 125 行 return body（未真正解包），r 是 {success, data: {items}}
         this.studentOptions = r.data?.items || []
       } catch (e) {
         this.studentOptions = []
@@ -224,7 +298,6 @@ export default {
       }
     },
     onStudentKeywordInput() {
-      // 300ms 防抖
       if (this.studentSearchTimer) clearTimeout(this.studentSearchTimer)
       this.studentSearchTimer = setTimeout(() => this.fetchStudents(), 300)
     },
@@ -233,7 +306,6 @@ export default {
       this.pickedStudent = row
     },
     onStudentPick(row) {
-      // 表格行点击选择
       if (row) {
         this.pickedStudentId = row._id
         this.pickedStudent = row
@@ -244,24 +316,13 @@ export default {
         ElMessage.warning('请先选择学员')
         return
       }
-      if (this.pickedStudent && this.pickedStudent.hasPet) {
-        try {
-          await ElMessageBox.confirm(
-            `学员【${this.pickedStudent.name}】已有宠物，继续将创建第二个宠物账号（与原宠物独立）。是否继续？`,
-            '提示',
-            { type: 'warning', confirmButtonText: '继续领养', cancelButtonText: '取消' }
-          )
-        } catch (_) {
-          return
-        }
-      }
+      // 2026-06-22: 列表已过滤 hasPet=false；后端也 422 兜底。移除"已有宠物仍强建"确认。
       this.adopting = true
       try {
         const r = await petAdminApi.adoptOnBehalf(this.pickedStudentId)
         ElMessage.success(`已为【${this.pickedStudent?.name}】领养宠物（蛋状态），可在列表查看`)
         this.adoptDialogVisible = false
         await this.fetchList()
-        // 当前 http.js return body；r.data 即业务对象（petAccount）
         const newId = r.data?._id
         if (newId) {
           this.selectedPetId = newId

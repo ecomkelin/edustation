@@ -386,7 +386,7 @@ Auth 列简写:
 | R-2301 | GET | /admin/pet/accounts/:id | PERM | pet.read | 详情 | |
 | R-2303 | PUT | /admin/pet/accounts/:id | PERM | pet.write | 更新 | |
 | R-2306 | GET | /admin/pet/accounts-by-student | PERM | pet.read | 按 studentId 查 | 课堂展示页用 |
-| R-2307 | GET | /admin/pet/events | PERM | pet.read | 事件流水 | |
+| R-2307 | GET | /admin/pet/events | PERM | pet.read | 事件流水（cursor 分页：query=cursor&limit） | 2026-06-22 由 page 改 cursor |
 | R-2363 | POST | /admin/pet/accounts | PERM | pet.write | 代领养 | 老师/admin 代操作 |
 | R-2364 | POST | /admin/pet/accounts/:id/hatch | PERM | pet.write | 代孵化 | |
 | R-2365 | POST | /admin/pet/accounts/:id/feed | PERM | pet.write | 代喂养 | |

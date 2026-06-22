@@ -23,14 +23,14 @@ exports.get = async (req, res) => {
 }
 
 exports.listEvents = async (req, res) => {
-  const { page, pageSize, petAccountId, studentId, type } = req.query
+  const { petAccountId, studentId, type, cursor, limit } = req.query
   res.json(ApiResponse.ok(await s.listEvents({
     orgId: req.orgId,
-    page: page ? Number(page) : 1,
-    pageSize: pageSize ? Number(pageSize) : 30,
     petAccountId: petAccountId || undefined,
     studentId: studentId || undefined,
-    type: type || undefined
+    type: type || undefined,
+    cursor: cursor || undefined,
+    limit: limit ? Number(limit) : 30
   })))
 }
 

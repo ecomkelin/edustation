@@ -16,7 +16,7 @@ const removable = require('@utils/removable')
 const config = require('@config/index')
 const { CLIENT_LEVEL } = require('@shared/enums')
 
-async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSize }) {
+async function list({ orgId, keyword, isActive, isBlocked, school, hasPet, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (isActive === 'true' || isActive === true) filter.isActive = true
@@ -26,6 +26,17 @@ async function list({ orgId, keyword, isActive, isBlocked, school, page, pageSiz
   if (isBlocked === 'false' || isBlocked === false) filter.isBlocked = { $ne: true }
   if (school) filter.school = school
   if (keyword) filter.name = { $regex: keyword, $options: 'i' }
+  // 2026-06-22: hasPet 过滤（用于 admin 代领养弹窗）
+  //   - hasPet=false → 过滤掉已有 PetAccount 的学员（默认期望）
+  //   - hasPet=true  → 只返回已有 PetAccount 的学员
+  //   - undefined    → 不过滤（兼容旧调用）
+  if (hasPet === 'true' || hasPet === true) {
+    const petStudentIds = await PetAccount.distinct('student', { org: orgId })
+    filter._id = { $in: petStudentIds }
+  } else if (hasPet === 'false' || hasPet === false) {
+    const petStudentIds = await PetAccount.distinct('student', { org: orgId })
+    filter._id = { $nin: petStudentIds }
+  }
   const [items, total] = await Promise.all([
     Student.find(filter)
       .populate('guardians', 'mobile realName avatar')
