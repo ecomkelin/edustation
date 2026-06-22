@@ -23,6 +23,7 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
+// R-0930 GET /orgs/:id/promotion
 router.get(
   '/',
   mws.requirePermission('org-promotion.read'),
@@ -31,6 +32,7 @@ router.get(
   asyncHandler(c.get)
 )
 
+// R-0931 PUT /orgs/:id/promotion
 router.put(
   '/',
   mws.requirePermission('org-promotion.write'),

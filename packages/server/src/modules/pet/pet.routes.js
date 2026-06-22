@@ -20,18 +20,28 @@ const asyncHandler = require('@utils/asyncHandler')
 router.use(mws.authenticate, mws.requireOrg, mws.activeStudent)
 
 // GET 端点：不要求 enrolled（懒创建即可）
+// R-2272 GET /pet/me
 router.get('/me', asyncHandler(c.me))
+// R-2206 GET /pet/species
 router.get('/species', asyncHandler(c.species))
+// R-2207 GET /pet/items
 router.get('/items', asyncHandler(c.items))
+// R-2200 GET /pet/events
 router.get('/events', asyncHandler(c.events))
 
 // 写端点：必须 enrolled（按 D8 决策，未报班不能领养/喂养/换装）
 router.use(mws.requireEnrolledStudent)
+// R-2263 POST /pet/adopt
 router.post('/adopt', asyncHandler(c.adopt))
+// R-2264 POST /pet/hatch
 router.post('/hatch', asyncHandler(c.hatch))
+// R-2265 POST /pet/feed
 router.post('/feed', asyncHandler(c.feed))
+// R-2267 POST /pet/swap-egg
 router.post('/swap-egg', asyncHandler(c.swapEgg))
+// R-2268 POST /pet/tier-down
 router.post('/tier-down', asyncHandler(c.tierDown))
+// R-2266 POST /pet/equip
 router.post('/equip', asyncHandler(c.equip))
 
 module.exports = router

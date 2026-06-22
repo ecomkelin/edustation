@@ -22,14 +22,21 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
+// R-1950 GET /reports/overview
 router.get('/overview', mws.requirePermission('report.read'), asyncHandler(c.overview))
+// R-1951 GET /reports/lesson-consumption
 router.get('/lesson-consumption', mws.requirePermission('report.read'), asyncHandler(c.lessonConsumption))
+// R-1952 GET /reports/room-utilization
 router.get('/room-utilization', mws.requirePermission('report.read'), asyncHandler(c.roomUtilization))
+// R-1953 GET /reports/teacher-productivity
 router.get('/teacher-productivity', mws.requirePermission('report.read'), asyncHandler(c.teacherProductivity))
+// R-1954 GET /reports/points-activity
 router.get('/points-activity', mws.requirePermission('report.read'), asyncHandler(c.pointsActivity))
 
 // 招生看板 (2026-06 新增)
+// R-1955 GET /reports/recruit-promoter
 router.get('/recruit-promoter', mws.requirePermission('recruit.read'), asyncHandler(c.recruitPromoter))
+// R-1956 GET /reports/recruit-teacher-conversion
 router.get('/recruit-teacher-conversion', mws.requirePermission('recruit.read'), asyncHandler(c.recruitTeacherConversion))
 
 module.exports = router

@@ -26,27 +26,45 @@ const c = require('@modules/pet/petCatalog.admin.controller')
 router.use(mws.authenticate, mws.requireOrg)
 
 // ─── Species ───
+// R-2480 GET /admin/pet/species
 router.get('/species', mws.requirePermission('pet.read'), c.listSpecies)
+// R-2481 POST /admin/pet/species
 router.post('/species', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.createSpecies)
+// R-2482 GET /admin/pet/species/:id
 router.get('/species/:id', mws.requirePermission('pet.read'), c.getSpecies)
+// R-2483 PUT /admin/pet/species/:id
 router.put('/species/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.updateSpecies)
+// R-2484 GET /admin/pet/species/:id/removable-check
 router.get('/species/:id/removable-check', mws.requirePermission('pet.read'), c.removableCheckSpecies)
+// R-2485 DELETE /admin/pet/species/:id
 router.delete('/species/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), mws.requirePlatformPassword, c.removeSpecies)
 
 // ─── Items ───
+// R-2486 GET /admin/pet/items
 router.get('/items', mws.requirePermission('pet.read'), c.listItems)
+// R-2487 POST /admin/pet/items
 router.post('/items', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.createItem)
+// R-2488 GET /admin/pet/items/:id
 router.get('/items/:id', mws.requirePermission('pet.read'), c.getItem)
+// R-2489 PUT /admin/pet/items/:id
 router.put('/items/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.updateItem)
+// R-2490 GET /admin/pet/items/:id/removable-check
 router.get('/items/:id/removable-check', mws.requirePermission('pet.read'), c.removableCheckItem)
+// R-2491 DELETE /admin/pet/items/:id
 router.delete('/items/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), mws.requirePlatformPassword, c.removeItem)
 
 // ─── Consumables ───
+// R-2492 GET /admin/pet/consumables
 router.get('/consumables', mws.requirePermission('pet.read'), c.listConsumables)
+// R-2493 POST /admin/pet/consumables
 router.post('/consumables', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.createConsumable)
+// R-2494 GET /admin/pet/consumables/:id
 router.get('/consumables/:id', mws.requirePermission('pet.read'), c.getConsumable)
+// R-2495 PUT /admin/pet/consumables/:id
 router.put('/consumables/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.updateConsumable)
+// R-2496 GET /admin/pet/consumables/:id/removable-check
 router.get('/consumables/:id/removable-check', mws.requirePermission('pet.read'), c.removableCheckConsumable)
+// R-2497 DELETE /admin/pet/consumables/:id
 router.delete('/consumables/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), mws.requirePlatformPassword, c.removeConsumable)
 
 module.exports = router

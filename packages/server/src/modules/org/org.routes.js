@@ -18,6 +18,7 @@ router.use(mws.requireOrg)
 
 // 机构推广信息 (OrgPromotion) —— 必须在 platform-admin 门控**之前**挂载
 // 否则机构 admin 也会被"仅平台超管"挡住。自身走 org-promotion.* 权限码。
+// (R-0930/R-0931 在 orgPromotion.routes.js 内标注)
 router.use('/:id/promotion', orgPromoRouter)
 
 router.use((req, res, next) => {
@@ -26,13 +27,19 @@ router.use((req, res, next) => {
   next()
 })
 
+// R-0900 GET /orgs
 router.get('/', asyncHandler(c.list))
+// R-0901 GET /orgs/:id
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
+// R-0953 GET /orgs/:id/candidate-principals
 router.get('/:id/candidate-principals', v.idParam, mws.validateRequest, asyncHandler(c.candidatePrincipals))
+// R-0902 POST /orgs
 router.post('/', v.create, mws.validateRequest, asyncHandler(c.create))
+// R-0903 PUT /orgs/:id
 router.put('/:id', v.idParam, v.update, mws.validateRequest, asyncHandler(c.update))
 // 注意：机构不允许物理删除（机构下业务数据太多，物理删除会留下大量悬空引用）。
 // 业务上请用 toggle-active 接口做"启用/停用"。
+// R-0917 POST /orgs/:id/toggle-active
 router.post('/:id/toggle-active', v.idParam, v.toggleActive, mws.validateRequest, asyncHandler(c.toggleActive))
 
 module.exports = router

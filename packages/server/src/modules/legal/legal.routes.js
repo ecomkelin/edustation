@@ -27,10 +27,13 @@ const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
 
 // ── 平台级 (公开, 不需要 authenticate) ──
+// R-3100 GET /legal/platform
 router.get('/platform', asyncHandler(c.platformList))
+// R-3101 GET /legal/platform/:key
 router.get('/platform/:key', v.platformKeyParam, mws.validateRequest, asyncHandler(c.platformGet))
 
 // ── 公开机构协议读 (家长 C 端用, 不需要 authenticate) ──
+// R-3131 GET /legal/orgs/:orgId/legal-docs/:key
 router.get('/orgs/:orgId/legal-docs/:key',
   v.orgKeyParam,
   mws.validateRequest,
@@ -41,17 +44,21 @@ router.get('/orgs/:orgId/legal-docs/:key',
 router.use(mws.authenticate)
 
 // ── /me 系列 (登录后, 不要求 orgId 强制) ──
+// R-3172 GET /legal/me/pending
 router.get('/me/pending', asyncHandler(c.myPending))
+// R-3173 POST /legal/me/consents
 router.post('/me/consents',
   v.recordConsentsBody,
   mws.validateRequest,
   asyncHandler(c.recordMyConsents)
 )
+// R-3174 GET /legal/me/consents
 router.get('/me/consents', asyncHandler(c.myConsents))
 
 // ── 机构级 CRUD (需要 orgId + 权限码) ──
 router.use(mws.requireOrg)
 
+// R-3130 GET /legal/orgs/:orgId/legal-docs
 router.get('/orgs/:orgId/legal-docs',
   mws.requirePermission('legal.read'),
   v.orgIdParam,
@@ -59,6 +66,7 @@ router.get('/orgs/:orgId/legal-docs',
   asyncHandler(c.orgList)
 )
 
+// R-3132 PUT /legal/orgs/:orgId/legal-docs/:key
 router.put('/orgs/:orgId/legal-docs/:key',
   mws.requirePermission('legal.write'),
   v.orgKeyParam,
@@ -67,6 +75,7 @@ router.put('/orgs/:orgId/legal-docs/:key',
   asyncHandler(c.orgUpsert)
 )
 
+// R-3133 GET /legal/orgs/:orgId/legal-docs/:key/history
 router.get('/orgs/:orgId/legal-docs/:key/history',
   mws.requirePermission('legal.read'),
   v.orgKeyParam,
@@ -74,6 +83,7 @@ router.get('/orgs/:orgId/legal-docs/:key/history',
   asyncHandler(c.orgHistory)
 )
 
+// R-3134 POST /legal/orgs/:orgId/legal-docs/:key/disable
 router.post('/orgs/:orgId/legal-docs/:key/disable',
   mws.requirePermission('legal.write'),
   v.orgKeyParam,

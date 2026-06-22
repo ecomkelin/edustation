@@ -23,6 +23,7 @@ const asyncHandler = require('@utils/asyncHandler')
 router.use(mws.authenticate, mws.requireOrg)
 
 // 只读 (points.read)
+// R-2100 GET /points-admin/accounts
 router.get(
   '/accounts',
   mws.requirePermission('points.read'),
@@ -31,6 +32,7 @@ router.get(
   asyncHandler(c.listAccounts)
 )
 
+// R-2101 GET /points-admin/accounts/:studentId
 router.get(
   '/accounts/:studentId',
   mws.requirePermission('points.read'),
@@ -39,6 +41,7 @@ router.get(
   asyncHandler(c.getAccount)
 )
 
+// R-2110 GET /points-admin/transactions
 router.get(
   '/transactions',
   mws.requirePermission('points.read'),
@@ -47,6 +50,7 @@ router.get(
   asyncHandler(c.listTransactions)
 )
 
+// R-2106 GET /points-admin/reasons
 router.get(
   '/reasons',
   mws.requirePermission('points.read'),
@@ -54,6 +58,7 @@ router.get(
 )
 
 // 写 (points.write)
+// R-2115 POST /points-admin/accounts/:studentId/adjust
 router.post(
   '/accounts/:studentId/adjust',
   mws.requirePermission('points.write'),

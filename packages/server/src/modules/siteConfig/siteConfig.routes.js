@@ -16,8 +16,10 @@ const v = require('./siteConfig.validator')
 const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
 
+// R-3200 GET /site-config
 router.get('/', asyncHandler(c.get))
 
+// R-3201 PUT /site-config
 router.put(
   '/',
   mws.authenticate,

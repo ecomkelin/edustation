@@ -19,7 +19,9 @@ const asyncHandler = require('@utils/asyncHandler')
 
 const rawJson = express.raw({ type: '*/*', limit: '4mb' })
 
+// R-2990 POST /access-control/webhook/:deviceSn
 router.post('/webhook/:deviceSn', rawJson, webhookAuth, asyncHandler(c.webhook))
+// R-2992 POST /access-control/webhook/:deviceSn/heartbeat
 router.post('/webhook/:deviceSn/heartbeat', rawJson, webhookAuth, asyncHandler(c.heartbeat))
 
 module.exports = router

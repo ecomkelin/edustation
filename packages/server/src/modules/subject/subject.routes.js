@@ -24,8 +24,11 @@ const platformAdminOnly = (req, res, next) => {
   next()
 }
 platformRouter.use(mws.requireOrg)
+// R-0507 GET /subjects/source-orgs
 platformRouter.get('/source-orgs', platformAdminOnly, asyncHandler(c.listSourceOrgs))
+// R-0508 GET /subjects/by-org/:orgId
 platformRouter.get('/by-org/:orgId', platformAdminOnly, asyncHandler(c.listByOrg))
+// R-0509 POST /subjects/sync
 platformRouter.post('/sync', platformAdminOnly, v.sync, mws.validateRequest, asyncHandler(c.sync))
 router.use(platformRouter)
 
@@ -34,12 +37,18 @@ router.use(platformRouter)
  * ------------------------------------------------------------------ */
 router.use(mws.authenticate, mws.requireOrg)
 
+// R-0500 GET /subjects
 router.get('/', mws.requirePermission('subject.read'), asyncHandler(c.list))
+// R-0501 GET /subjects/:id
 router.get('/:id', mws.requirePermission('subject.read'), asyncHandler(c.detail))
+// R-0505 GET /subjects/:id/removable-check
 router.get('/:id/removable-check', mws.requirePermission('subject.read'), asyncHandler(c.removableCheck))
+// R-0502 POST /subjects
 router.post('/', mws.requirePermission('subject.write'), v.create, mws.validateRequest, asyncHandler(c.create))
+// R-0503 PUT /subjects/:id
 router.put('/:id', mws.requirePermission('subject.write'), v.update, mws.validateRequest, asyncHandler(c.update))
 // 物理删除(「误操」场景):超管+密码二次确认 + 业务上无 CourseProduct/CourseInstance 引用
+// R-0504 DELETE /subjects/:id
 router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
 
 module.exports = router

@@ -165,6 +165,7 @@ server/src/
 - 请求头：`Authorization: Bearer <access>`、`x-org-id`、可选 `x-active-student-id`
 - 响应格式：`{ success: true, data }` / `{ success: false, message }`
 - 关键端点见各模块的 `api.desc.md`。
+- **完整路由索引（按编号 R-MMPP 排序）**：[docs/claude/routes-server.md](docs/claude/routes-server.md)
 
 ## 10. 管理后台 (Vue3)
 - 根据当前机构 Position 权限动态渲染菜单。
@@ -237,6 +238,7 @@ server/src/
 | 改人脸识别 / 门禁 / 接送授权 | [docs/claude/data-models-access.md](docs/claude/data-models-access.md) |
 | 改 AI 助手 / RAG / 会话持久化 | [docs/claude/ai-assistant.md](docs/claude/ai-assistant.md) |
 | 改经营看板 / 报表 / 聚合管道 | [docs/claude/dashboards.md](docs/claude/dashboards.md) |
+| 改 / 加 / 删 / 查后端 API 路由（编号、Auth、跨模块） | [docs/claude/routes-server.md](docs/claude/routes-server.md) |
 
 ## 15. 新增知识到本仓库的约定
 
@@ -246,6 +248,7 @@ server/src/
 - 新子文件顶部必须有 `> 何时读这个文件：...` + 1 行摘要，方便模型快速判断是否对路。
 - 新子文件加入 §14 "何时读" 表。
 - **一次性坑点 / 调试教训**（如某字段类型 bug、某 API 误用）：写到 `~/.claude/projects/.../memory/` 对应文件，不写进 docs/claude/。
+- **改任何 `*.routes.js` 文件**：必须在 `routes-server.md` 同步加/改/废弃行；新增端点取下一个空 PP（不重排、不填空），废弃端点 R 号保留移入 §4.1；详见 §14 入口。
 
 ## 16. 维护规则
 

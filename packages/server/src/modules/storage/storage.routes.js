@@ -29,7 +29,9 @@ router.use(mws.authenticate, mws.requireOrg)
 // bind / unbind / delete 仍需 storage.write:
 //   - 显式 bind/unbind 是 admin 在 /files 页管理引用时用, 非超管用不到
 //   - delete 是销毁性操作, 由前端 DestructiveConfirm + 密码二次确认保护
+// R-3001 POST /storage/upload
 router.post('/upload', upload.single('file'), asyncHandler(c.upload))
+// R-3002 POST /storage/upload-many
 router.post(
   '/upload-many',
   upload.array('files', config.storage.maxFilesPerUpload),
@@ -37,15 +39,21 @@ router.post(
 )
 
 // 列表 —— 任意已认证 + 带 x-org-id 的用户可调（org 隔离由 service 强制）
+// R-3000 GET /storage/files
 router.get('/files', asyncHandler(c.list))
 // 详情
+// R-3003 GET /storage/files/:id
 router.get('/files/:id', asyncHandler(c.detail))
 // 显式 bind / unbind（业务模块用 fileBind 自动调用；这里给手写流程备用）
+// R-3004 POST /storage/files/:id/bind
 router.post('/files/:id/bind', mws.requirePermission('storage.write'), asyncHandler(c.bind))
+// R-3005 POST /storage/files/:id/unbind
 router.post('/files/:id/unbind', mws.requirePermission('storage.write'), asyncHandler(c.unbind))
 // 删除预检 —— 任意已认证用户可调(预检只读,真删走下方 DELETE 仍需 storage.write)
+// R-3006 GET /storage/files/:id/removable-check
 router.get('/files/:id/removable-check', asyncHandler(c.removableCheck))
 // 物理删除（refCount=0 才让删）
+// R-3007 DELETE /storage/files/:id
 router.delete('/files/:id', mws.requirePermission('storage.write'), asyncHandler(c.remove))
 
 module.exports = router
