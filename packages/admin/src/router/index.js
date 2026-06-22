@@ -45,6 +45,8 @@ const routes = [
       { path: 'pet/species', component: () => import('@/views/pet/PetSpeciesAdmin.vue') },
       { path: 'pet/items', component: () => import('@/views/pet/PetItemAdmin.vue') },
       { path: 'pet/consumables', component: () => import('@/views/pet/PetConsumableAdmin.vue') },
+      // 商城流水 (2026-06-22 pet-shop): 学生买/老师代发 流水
+      { path: 'pet/shop-orders', component: () => import('@/views/pet/PetShopOrders.vue') },
       // 经营分析:5 块看板对应后端 /api/v1/reports/* ；二级菜单入口见 DefaultLayout
       { path: 'reports/overview', component: () => import('@/views/reports/OverviewReport.vue') },
       { path: 'reports/lesson-consumption', component: () => import('@/views/reports/LessonConsumptionReport.vue') },

@@ -61,6 +61,17 @@
         <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看）" placement="top">
           <el-button type="primary" plain @click="openClassroom">课堂展示</el-button>
         </el-tooltip>
+        <!-- 2026-06-22 pet-shop：代买装饰/代买食物（扣学员积分） -->
+        <el-tooltip :disabled="pet.state === 'dead'" content="从学员积分扣费购买装饰（解锁进背包）" placement="top">
+          <el-button type="warning" :disabled="pet.state === 'dead'" @click="grantItemDialog = true">
+            <el-icon style="margin-right:4px;vertical-align:-2px"><ShoppingCart /></el-icon>代买装饰
+          </el-button>
+        </el-tooltip>
+        <el-tooltip :disabled="pet.state === 'alive'" content="从学员积分扣费购买食物/玩具（立即喂一次）" placement="top">
+          <el-button type="success" :disabled="pet.state !== 'alive'" @click="grantConsumableDialog = true">
+            <el-icon style="margin-right:4px;vertical-align:-2px"><ShoppingCart /></el-icon>代买食物
+          </el-button>
+        </el-tooltip>
       </div>
 
       <el-divider content-position="left">字段调整 (pet.write)</el-divider>
@@ -100,19 +111,37 @@
         <el-button type="primary" :loading="actioning" :disabled="!tierDownTarget" @click="onTierDown">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- 2026-06-22 pet-shop：代买装饰/代买食物 -->
+    <GrantOnBehalfDialog
+      v-model="grantItemDialog"
+      kind="item"
+      :pet-account-id="petId"
+      :student-tier="pet?.tier || pet?.eggTier || null"
+      @success="onActionSuccess"
+    />
+    <GrantOnBehalfDialog
+      v-model="grantConsumableDialog"
+      kind="consumable"
+      :pet-account-id="petId"
+      :student-tier="pet?.tier || pet?.eggTier || null"
+      @success="onActionSuccess"
+    />
   </el-dialog>
 </template>
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ShoppingCart } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import FeedOnBehalfDialog from '@/components/Pet/FeedOnBehalfDialog.vue'
+import GrantOnBehalfDialog from '@/components/Pet/GrantOnBehalfDialog.vue'
 import { formatDate } from '@/utils/format'
 import { PET_TIERS, PET_TIER_LABELS } from '@/utils/constants'
 
 export default {
   name: 'PetDetailDialog',
-  components: { FeedOnBehalfDialog },
+  components: { FeedOnBehalfDialog, GrantOnBehalfDialog, ShoppingCart },
   props: {
     modelValue: { type: Boolean, default: false },
     petId: { type: String, default: null }
@@ -127,6 +156,8 @@ export default {
       feedDialog: false,
       tierDownDialog: false,
       tierDownTarget: '',
+      grantItemDialog: false,
+      grantConsumableDialog: false,
       actioning: false,
       PET_TIERS, PET_TIER_LABELS
     }

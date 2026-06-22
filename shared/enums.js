@@ -255,7 +255,10 @@ const PetEventType = Object.freeze({
   ADMIN_HATCH: 'admin_hatch',     // 老师/admin 代破壳
   ADMIN_SWAP: 'admin_swap',       // 老师/admin 代置换
   ADMIN_TIERDOWN: 'admin_tierdown', // 老师/admin 代降阶
-  ADMIN_EQUIP: 'admin_equip'      // 老师/admin 代换装
+  ADMIN_EQUIP: 'admin_equip',     // 老师/admin 代换装
+  // ── 2026-06-22 pet-shop：购买/代发（by 区分 student / admin） ──
+  PURCHASE_ITEM: 'purchase_item',         // 买装饰（解锁进背包）
+  PURCHASE_CONSUMABLE: 'purchase_consumable' // 买食物/玩具（立即喂一次）
 })
 const PET_EVENT_TYPES = Object.values(PetEventType)
 

@@ -145,8 +145,8 @@
     />
 
     <el-dialog v-model="dialog" :title="form._id ? '编辑学生' : '新建学生'" width="520px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="姓名" required><el-input v-model="form.name" /></el-form-item>
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="姓名" prop="name" required><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="性别">
           <el-select v-model="form.gender">
             <el-option label="男" value="male" />
@@ -157,7 +157,7 @@
         <el-form-item label="生日">
           <el-date-picker v-model="form.birthday" type="date" value-format="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item label="监护人手机" v-if="!form._id">
+        <el-form-item label="监护人手机" v-if="!form._id" prop="guardianMobile" :required="!form._id">
           <el-input v-model="form.guardianMobile" placeholder="不存在的手机号将自动创建家长账号" />
         </el-form-item>
         <el-form-item label="所属学校">
@@ -257,6 +257,7 @@ const stateFilter = ref('active')
 const schoolFilter = ref('')
 const orgUsers = ref([])
 const schoolOptions = ref([])
+const formRef = ref(null)
 const form = reactive({
   _id: '',
   name: '',
@@ -267,6 +268,15 @@ const form = reactive({
   school: '',
   notes: ''
 })
+
+// 表单校验规则(必填 + 手机号格式)
+const rules = {
+  name: [{ required: true, message: '请填写姓名', trigger: 'blur' }],
+  guardianMobile: [
+    { required: true, message: '请填写监护人手机', trigger: 'blur' },
+    { pattern: /^1[3-9]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }
+  ]
+}
 
 async function load() {
   loading.value = true
@@ -413,7 +423,12 @@ function openPetPanel(row) {
 }
 
 async function submit() {
-  if (!form.name) return ElMessage.warning('请填写姓名')
+  // 表单前置校验(必填 + 格式),校验不通过直接返回,不发请求
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
   saving.value = true
   try {
     if (form._id) {

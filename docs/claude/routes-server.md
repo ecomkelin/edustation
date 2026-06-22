@@ -393,6 +393,17 @@ Auth 列简写:
 | R-2366 | POST | /admin/pet/accounts/:id/equip | PERM | pet.write | 代换装 | |
 | R-2367 | POST | /admin/pet/accounts/:id/swap-egg | PERM | pet.write | 代换蛋 | |
 | R-2368 | POST | /admin/pet/accounts/:id/tier-down | PERM | pet.write | 代降阶 | |
+| R-2373 | POST | /admin/pet/grant-item | PERM | pet.write | 代买装饰 | 扣学员积分 + unlocked |
+| R-2374 | POST | /admin/pet/grant-consumable | PERM | pet.write | 代买食物/玩具 | 扣学员积分 + 立即喂 |
+| R-2375 | GET | /admin/pet/shop | PERM | pet.read | 商城列表（admin 端） | 不走 C 端 activeStudent 中间件 |
+
+### petShop C 端 (URL: /pet/shop)
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-2370 | GET | /pet/shop | GUARD | enrolled? | 商城列表（items + consumables） | active student 上下文 |
+| R-2371 | POST | /pet/shop/buy-item | GUARD | enrolled | 学生买装饰 | 扣学生积分 + unlocked |
+| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具 | 扣学生积分 + 立即喂 |
 
 ### MM=24 petCatalog (URL: /admin/pet)
 

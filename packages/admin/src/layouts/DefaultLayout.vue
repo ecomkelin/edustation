@@ -115,7 +115,9 @@ import {
   MagicStick,
   // 课堂展示 (2026-06-21 pet-system-v2-ext) — 全屏展示
   VideoPlay,
-  VideoCamera
+  VideoCamera,
+  // 商城流水 (2026-06-22 pet-shop) — 用 Tickets 图标（避免与"订单"的 ShoppingCart 重名）
+  Tickets
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -160,7 +162,9 @@ const menuGroups = [
         children: [
           { path: '/pet/species', label: '宠物图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
           { path: '/pet/items', label: '装饰图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
-          { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write', requirePlatform: true }
+          { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
+          // 商城流水 (2026-06-22 pet-shop): 看学生买/老师代发 流水；本机构看本机构
+          { path: '/pet/shop-orders', label: '商城流水', icon: Tickets, perm: 'pet.read' }
         ]
       },
       // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典

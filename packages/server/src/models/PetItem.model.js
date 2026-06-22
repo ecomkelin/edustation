@@ -38,6 +38,9 @@ const PetItemSchema = new Schema(
     unlockTier: { type: String, enum: PET_TIERS, default: null },
     unlockLevel: { type: Number, default: null, min: 1, max: 100 },
 
+    // 2026-06-22 pet-shop：购买积分（>=0）。null 表示不可购买（仅自动解锁）。
+    pointCost: { type: Number, default: null, min: 0, max: 100000 },
+
     // 视觉类型（2026-06-22 user SVG 决策）
     // image: 上传图片，存 imageFile
     // svg:   内联 SVG，存 svgContent

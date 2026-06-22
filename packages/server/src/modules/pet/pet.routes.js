@@ -12,6 +12,7 @@
 
 const router = require('express').Router()
 const c = require('./pet.controller')
+const shopRoutes = require('./petShop.routes')
 const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
 
@@ -43,5 +44,9 @@ router.post('/swap-egg', asyncHandler(c.swapEgg))
 router.post('/tier-down', asyncHandler(c.tierDown))
 // R-2266 POST /pet/equip
 router.post('/equip', asyncHandler(c.equip))
+
+// ─── 2026-06-22 pet-shop：商城子路由（R-2370/2371/2372） ───
+// shopRoutes 内部会再分 enrolled 校验：GET /shop 不要求，写操作要求
+router.use(shopRoutes)
 
 module.exports = router

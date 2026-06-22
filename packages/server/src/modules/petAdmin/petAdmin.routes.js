@@ -2,6 +2,7 @@
 
 const router = require('express').Router()
 const c = require('./petAdmin.controller')
+const shopC = require('@modules/pet/petShop.controller')
 const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
 
@@ -37,5 +38,13 @@ router.post('/accounts/:id/swap-egg', mws.requirePermission('pet.write'), asyncH
 router.post('/accounts/:id/tier-down', mws.requirePermission('pet.write'), asyncHandler(c.tierDownOnBehalf))
 // R-2366 POST /admin/pet/accounts/:id/equip
 router.post('/accounts/:id/equip', mws.requirePermission('pet.write'), asyncHandler(c.equipOnBehalf))
+
+// ─── 2026-06-22 pet-shop：老师/admin 代买（扣学员积分） ───
+// R-2373 POST /admin/pet/grant-item
+router.post('/grant-item', mws.requirePermission('pet.write'), asyncHandler(shopC.grantItem))
+// R-2374 POST /admin/pet/grant-consumable
+router.post('/grant-consumable', mws.requirePermission('pet.write'), asyncHandler(shopC.grantConsumable))
+// R-2375 GET /admin/pet/shop — admin 端商城列表（不走 active student 中间件）
+router.get('/shop', mws.requirePermission('pet.read'), asyncHandler(shopC.adminListShop))
 
 module.exports = router

@@ -15,6 +15,7 @@ const initialSeed = require('./seeds/initial.seed')
 const leadTagSeed = require('./seeds/leadTag.seed')
 const channelSeed = require('./seeds/channel.seed')
 const schoolSeed = require('./seeds/school.seed')
+const petCatalogSeed = require('./seeds/pet-catalog.seed')
 
 async function initSeeds() {
   // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
@@ -35,6 +36,11 @@ async function initSeeds() {
   // 4. 学校档案: 给所有启用 org 写入周边学校名单, 幂等
   //    initial.seed.js 已经把梓潼人工智网下的学校档案写入, 这里跑会补全其他 org 的学校
   await schoolSeed.run()
+
+  // 5. 宠物图鉴 (2026-06-22 pet-shop): species/items/consumables 内联 SVG 种子
+  //    平台级共享（无 org 维度）；幂等 upsert by key
+  //    不依赖 initial 的 dropDatabase，单跑也行
+  await petCatalogSeed.run()
 }
 
 module.exports = { initSeeds }

@@ -28,5 +28,11 @@ export const petAdminApi = {
   equipOnBehalf: (petAccountId, { slot, itemKey }) => http.post(`/admin/pet/accounts/${petAccountId}/equip`, { slot, itemKey }),
 
   // ─── 课堂展示 ───
-  getByStudent: (studentId) => http.get('/admin/pet/accounts-by-student', { params: { studentId } })
+  getByStudent: (studentId) => http.get('/admin/pet/accounts-by-student', { params: { studentId } }),
+
+  // ─── 2026-06-22 pet-shop：老师/admin 代买（扣学员积分） ───
+  grantItem: (petAccountId, { itemKey }) => http.post('/admin/pet/grant-item', { petAccountId, itemKey }),
+  grantConsumable: (petAccountId, { consumableKey }) => http.post('/admin/pet/grant-consumable', { petAccountId, consumableKey }),
+  // R-2375：admin 端商城列表（不走 C 端 activeStudent 中间件）
+  shopList: (params) => http.get('/admin/pet/shop', { params })
 }
