@@ -104,14 +104,6 @@
               @click="openParentProfile(row)"
             >家长画像{{ row.hasParentProfile ? '✓' : '' }}</el-button>
           </el-tooltip>
-          <!-- 2026-06-21 pet-system-v2: 宠物面板 (per-student)
-               - 通过 student._id 触发 PetPanelDialog
-               - 不需要 hasPet 标志，弹窗内自取 -->
-          <el-button
-            size="small"
-            :type="row.hasPet ? 'success' : ''"
-            @click="openPetPanel(row)"
-          >宠物{{ row.hasPet ? '✓' : '' }}</el-button>
           <el-button
             v-if="auth.isPlatformAdmin"
             size="small"
@@ -219,12 +211,6 @@
       :parent="parentProfileDialog.parent"
       @saved="onParentProfileSaved"
     />
-
-    <!-- 2026-06-21 pet-system-v2: 宠物面板 (per-student) -->
-    <PetPanelDialog
-      v-model:visible="petPanelDialog.visible"
-      :student="petPanelDialog.student"
-    />
   </div>
 </template>
 
@@ -237,7 +223,6 @@ import { parentApi } from '@/api/parent'
 import { schoolApi } from '@/api/school'
 import StudentProfileDialog from '@/components/Profile/StudentProfileDialog.vue'
 import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
-import PetPanelDialog from '@/components/Pet/PetPanelDialog.vue'
 import { handleRemoveError } from '@/utils/removable'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
@@ -413,13 +398,6 @@ async function openParentProfile(row) {
 function onParentProfileSaved() {
   // 家长画像保存后, 列表 hasParentProfile 标记要刷新 (✓ 可能新增/消失)
   load()
-}
-
-// 2026-06-21 pet-system-v2: 宠物面板 dialog 状态
-const petPanelDialog = reactive({ visible: false, student: null })
-function openPetPanel(row) {
-  petPanelDialog.student = { ...row, id: row._id }
-  petPanelDialog.visible = true
 }
 
 async function submit() {

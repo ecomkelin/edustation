@@ -64,13 +64,13 @@
               size="small"
               style="margin-left:6px"
             >
-              当前装备: {{ itemMap[pet.equipped[slot]]?.name || pet.equipped[slot] }}
+              当前装备: {{ itemMap[pet.equipped?.[slot]]?.name || pet.equipped?.[slot] }}
             </el-tag>
           </div>
           <div class="slot-items">
             <!-- 2026-06-22: SVG/image 缩略图 + name chip -->
             <div
-              v-for="entry in unlockedEntriesBySlot[slot]"
+              v-for="entry in entriesFor[slot]"
               :key="slot + ':' + entry.key"
               class="chip"
               :class="{ active: pet.equipped?.[slot] === entry.key }"
@@ -84,7 +84,7 @@
               <span class="chip-name">{{ entry.name }}</span>
               <el-tag v-if="pet.equipped?.[slot] === entry.key" type="success" size="small" effect="dark">✓ 已装备</el-tag>
             </div>
-            <span v-if="!unlockedEntriesBySlot[slot] || unlockedEntriesBySlot[slot].length === 0" class="empty">—</span>
+            <span v-if="!entriesFor[slot] || entriesFor[slot].length === 0" class="empty">—</span>
           </div>
         </div>
       </div>
@@ -198,7 +198,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ShoppingCart } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import { petCatalogApi } from '@/api/petCatalog'
-import { effectiveHungerDecayMinutes } from '@/utils/pet'
+import * as petUtil from '@/utils/pet'
 import GrantOnBehalfDialog from '@/components/Pet/GrantOnBehalfDialog.vue'
 import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
 import HatchAnimation from '@/components/Pet/HatchAnimation.vue'
@@ -230,6 +230,13 @@ export default {
       hatchResultSpecies: null,
       hatchResultEquipped: {},
       hatchResultItemMap: {},
+      // 2026-06-23 fix #3: 背包条目数组对象，按 slot 键存数组，由 watch 派生。
+      // 原因: 用 computed + [slot] 索引的写法被 vite 6 + vue 3.5 编译成 $options.xxx[slot],
+      //       $options.xxx 是 computed 函数本体,函数[slot] = undefined → 后续 .hat 崩。
+      //       method 路径 $options.xxx(slot) 调用时 Vue runtime 不会自动 bind this,
+      //       method body 内 this.pet 也是 undefined。
+      //       用 data 字段对象(非函数)最稳,模板走 $data.entriesFor[slot] → 正常返回数组。
+      entriesFor: { hat: [], scarf: [], clothes: [], accessory: [], halo: [], background: [] },
       PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS
     }
   },
@@ -262,27 +269,16 @@ export default {
     /**
      * 2026-06-22: 背包视图 — 按 slot 汇总 pet.unlocked[slot]，每项含 name/key
      * 已装备的用 success tag 高亮
+     *
+     * ⚠️ 2026-06-23 fix #3: 全部改用 data 字段 + watch 派生
+     * 原因: vue3 SFC compiler 在 options API 下把模板里的 computed 索引访问编译成
+     *       `$options.xxx[slot]`,而 $options.xxx 是 computed 函数本体(非 getter),
+     *       导致 `function()[slot]` 是 undefined → `undefined.hat` 崩。
+     *       method 路径 `$options.xxx(slot)` 调用时 Vue runtime 不会自动 bind this,
+     *       method body 内 `this.pet` 也是 undefined。
+     *       唯一稳的方案: 把派生结果存到 data 字段,模板走 `$data.entriesForHat` (data 字段)
+     *       编译器不会用 $options 替代,绝对安全。
      */
-    unlockedEntriesBySlot() {
-      const out = {}
-      for (const slot of PET_ITEM_SLOTS) out[slot] = []
-      const unlocked = this.pet?.unlocked || {}
-      for (const slot of PET_ITEM_SLOTS) {
-        const arr = Array.isArray(unlocked[slot]) ? unlocked[slot] : []
-        out[slot] = arr.map(key => {
-          const it = this.itemMap[key]
-          return {
-            key,
-            name: (it && it.name) || key,
-            // 2026-06-22: 透传视觉字段，背包 chip 用 SVG 缩略图替代纯文字
-            visualType: it?.visualType,
-            svgContent: it?.svgContent || null,
-            imageFile: it?.imageFile || null
-          }
-        })
-      }
-      return out
-    }
   },
   watch: {
     petId: {
@@ -290,6 +286,17 @@ export default {
       handler(id) {
         if (id) this.fetchDetail()
       }
+    },
+    // 2026-06-23 fix #3: 监听 pet.unlocked + itemMap 重新派生 6 个 entriesFor* 数组
+    'pet.unlocked': {
+      immediate: true,
+      deep: true,
+      handler() { this.recomputeEntries() }
+    },
+    itemMap: {
+      immediate: true,
+      deep: true,
+      handler() { this.recomputeEntries() }
     }
   },
   computed: {
@@ -299,10 +306,36 @@ export default {
     },
     // 2026-06-23: 三级优先级 (pet > species > 平台)
     effectiveHungerDecayMinutes() {
-      return effectiveHungerDecayMinutes(this.pet, this.hungerDecayMinutes)
+      // 2026-06-23: species 决定；platformDefault=60 是兜底（species 一定有值）
+      // 三重 optional chaining 防止 pet/speciesRecord 在异步加载瞬间是 undefined
+      try {
+        const v = petUtil.effectiveHungerDecayMinutes(this.pet, 60)
+        return (v && v > 0) ? v : 60
+      } catch (_) {
+        return 60
+      }
     }
   },
   methods: {
+    // 2026-06-23 fix #3: 由 watch('pet.unlocked' + itemMap) 触发
+    recomputeEntries() {
+      const unlocked = this.pet?.unlocked || {}
+      const out = this.entriesFor || {}
+      for (const slot of PET_ITEM_SLOTS) {
+        const arr = Array.isArray(unlocked[slot]) ? unlocked[slot] : []
+        out[slot] = arr.map(key => {
+          const it = this.itemMap[key]
+          return {
+            key,
+            name: (it && it.name) || key,
+            visualType: it?.visualType,
+            svgContent: it?.svgContent || null,
+            imageFile: it?.imageFile || null
+          }
+        })
+      }
+      this.entriesFor = { ...out }
+    },
     formatMinutesLeft(min) {
       if (min == null) return '—'
       if (min < 60) return `${min} 分钟`
@@ -325,6 +358,8 @@ export default {
           lastFedAt: this.pet?.lastFedAt ? new Date(this.pet.lastFedAt) : null,
           reason: ''
         }
+        // 2026-06-23 fix #3: fetchDetail 完成后立即重派生（不依赖 watch 时序）
+        this.recomputeEntries()
       } catch (e) {
         this.pet = null
       }

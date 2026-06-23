@@ -78,6 +78,7 @@ const routes = [
     ]
   },
   // 课堂展示 (2026-06-21 pet-system-v2-ext): 独立 layout (ClassroomLayout), 全屏深色背景
+  // 2026-06-23: 菜单已移除「教学工具 > 宠物课堂展示」, 路由保留以供「宠物实例」页面每行的展示按钮跳转
   {
     path: '/class',
     component: () => import('@/layouts/ClassroomLayout.vue'),

@@ -3,9 +3,10 @@
     :model-value="modelValue"
     @update:model-value="(v) => $emit('update:modelValue', v)"
     :title="title"
-    size="720px"
+    size="900px"
     direction="rtl"
     :close-on-click-modal="false"
+    @open="onOpen"
   >
     <!-- 招生试听 (2026-06): 试听课显示横幅, 提示"请到试听看板"看名单, 不在这里做考勤 -->
     <el-alert
@@ -21,10 +22,27 @@
     </el-alert>
     <AttendanceRosterTable
       v-if="schedule"
+      ref="rosterRef"
       :schedule="schedule"
-      :read-only="false"
-      @saved="onSaved"
-    />
+      :read-only="readOnly"
+      :show-evaluation-column="showEvaluationColumn"
+      :expose-roster="true"
+      @loaded="(r) => $emit('loaded', r)"
+      @saved="$emit('saved')"
+    >
+      <!--
+        2026-06-23: 把 ClassSchedulePage 里的"展开体"迁到这个 drawer 里
+          - 课评列 (row-extra): 已结束/已归档排课的考勤行后追加 EvaluationEditor
+          - 补课按钮 (row-makeup): 未消课考勤的"补课"操作按钮
+        父组件 ClassSchedulePage 通过 v-slot 注入内容, drawer 本身保持通用
+      -->
+      <template v-if="$slots['row-extra']" #row-extra="slotProps">
+        <slot name="row-extra" v-bind="slotProps" />
+      </template>
+      <template v-if="$slots['row-makeup']" #row-makeup="slotProps">
+        <slot name="row-makeup" v-bind="slotProps" />
+      </template>
+    </AttendanceRosterTable>
     <template #footer>
       <div class="drawer-footer">
         <el-button @click="$emit('update:modelValue', false)">关闭</el-button>
@@ -34,14 +52,31 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import AttendanceRosterTable from './AttendanceRosterTable.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
-  schedule: { type: Object, default: null }
+  schedule: { type: Object, default: null },
+  // 2026-06-23: 新增 readOnly 参数, 让 ClassSchedulePage 可以让 completed/archived 排课走只读模式
+  //   (与原 card-body 的 `:read-only="row.status !== 'in_progress'"` 保持一致)
+  readOnly: { type: Boolean, default: false },
+  // 2026-06-23: 透传 showEvaluationColumn — 控制 AttendanceRosterTable 是否在行尾追加「课评」列.
+  //   父组件 ClassSchedulePage 按当前抽屉排课的状态决定 (completed/archived 显示, 其他隐藏).
+  showEvaluationColumn: { type: Boolean, default: false }
 })
-const emit = defineEmits(['update:modelValue', 'done'])
+const emit = defineEmits(['update:modelValue', 'loaded', 'saved'])
+
+// 暴露给父组件的命令式 API (reload / hasDirty / getDirtyCount / submit / getRoster),
+// 父组件 (ClassSchedulePage) 用来在 finish/archive/makeup 后刷新名单.
+const rosterRef = ref(null)
+defineExpose({
+  reload: () => rosterRef.value?.reload?.(),
+  hasDirty: () => rosterRef.value?.hasDirty?.() || false,
+  getDirtyCount: () => rosterRef.value?.getDirtyCount?.() || 0,
+  submit: () => rosterRef.value?.submit?.(),
+  getRoster: () => rosterRef.value?.getRoster?.() || []
+})
 
 const title = computed(() => {
   if (!props.schedule) return '开课考勤登记'
@@ -49,8 +84,8 @@ const title = computed(() => {
   return `${prefix} · 第 ${props.schedule.lessonNo || '?'} 课`
 })
 
-function onSaved() {
-  emit('done')
+function onOpen() {
+  // 占位 — drawer open 时的初始化钩子, 后续需要时再加
 }
 </script>
 

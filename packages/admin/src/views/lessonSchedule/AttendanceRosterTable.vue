@@ -45,8 +45,54 @@
       <div class="muted" style="margin-top: 4px" v-if="!readOnly">保存后写入学勤状态（<b>不扣课时</b>，扣课时走"消课"环节）。已完成消课的考勤不可再改。</div>
     </el-alert>
 
-    <!-- 名单表 -->
+    <!--
+      名单表 (2026-06-23 改造: 课评 / 补课 折叠到可展开行内, 避免横向滚动)
+        - 行内仅显示: 学生/课包/状态/本次登记/备注 (5 列)
+        - 行尾加 type="expand" 展开列, 点了下边展开行: 课评 (左) + 补课按钮 (右)
+        - 已消课/已补的学生也支持展开, 用于查看/补写课评
+        - 不再有横向滚动, 抽屉宽度可缩到合理范围
+    -->
     <el-table v-if="rosterItems.length" :data="rosterItems" border size="small" max-height="540">
+      <!-- 展开列: 仅当排课需要课评或可补课时显示 (避免无意义箭头) -->
+      <el-table-column v-if="canExpand" type="expand" width="44">
+        <template #default="{ row }">
+          <!--
+            展开区: 左右两栏
+              左 (flex: 1): EvaluationEditor (通过 #row-extra 插槽注入)
+              右 (固定宽度): 状态标记 + 补课按钮 (通过 #row-makeup 插槽注入)
+            两者至少有一个, 父组件控制内容. 若都无内容, 整区显示 "—".
+          -->
+          <div class="row-expansion">
+            <div class="row-expansion-main">
+              <slot
+                v-if="showEvaluationColumn"
+                name="row-extra"
+                :row="row"
+              />
+              <span v-else class="muted">（无课评）</span>
+            </div>
+            <div class="row-expansion-side">
+              <slot
+                v-if="canMakeupColumn && !isConsumedRow(row)"
+                name="row-makeup"
+                :row="row"
+              />
+              <el-tag
+                v-else-if="row.status === 'madeup'"
+                size="small"
+                type="warning"
+                effect="plain"
+              >已补</el-tag>
+              <el-tag
+                v-else-if="isConsumedRow(row)"
+                size="small"
+                type="success"
+                effect="plain"
+              >已消课</el-tag>
+            </div>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="学生" min-width="110">
         <template #default="{ row }">
           <span v-if="row.student">{{ row.student.name }}</span>
@@ -95,21 +141,6 @@
           />
         </template>
       </el-table-column>
-      <!-- 可选：行尾插槽。新页面用此插槽渲染课评表单；抽屉不传则为空。 -->
-       <!-- 「补课」操作列：仅当排课处于「已结束/已归档」、且该考勤未消课/未补课时显示。
-           内容由父组件通过 #row-makeup 插槽注入（通常是「补课」按钮 + 弹框）。 -->
-      <el-table-column v-if="canMakeupColumn" label="操作" width="90" align="center">
-        <template #default="{ row }">
-          <slot
-            v-if="!isConsumedRow(row)"
-            name="row-makeup"
-            :row="row"
-          />
-          <el-tag v-else-if="row.status === 'madeup'" size="small" type="warning" effect="plain">已补</el-tag>
-          <el-tag v-else size="small" type="success" effect="plain">已消课</el-tag>
-        </template>
-      </el-table-column>
-            <slot name="row-extra" :row="row" />
     </el-table>
 
     <!-- 底部批量操作 -->
@@ -147,7 +178,13 @@ const props = defineProps({
   // 只读模式：状态非进行中或排课已归档/已取消时为 true
   readOnly: { type: Boolean, default: false },
   // 暴露给父组件的 roster ref（在抽屉里无意义，新页面用它来获取已加载名单）
-  exposeRoster: { type: Boolean, default: false }
+  exposeRoster: { type: Boolean, default: false },
+  // 2026-06-23: 是否在行尾追加「课评」列. 由父组件按排课状态 (completed/archived) 控制.
+  //   课评列内容由父组件通过 #row-extra 插槽注入 (EvaluationEditor);
+  //   旧版本用 <slot name="row-extra"> 直接写在 el-table 子节点里, 会触发 Vue 警告
+  //   "Property 'row' was accessed during render but is not defined on instance",
+  //   所以改成包在 el-table-column 里 (row 通过 #default="{ row }" 解构出来) + 由 prop 控制显隐.
+  showEvaluationColumn: { type: Boolean, default: false }
 })
 const emit = defineEmits(['loaded', 'saved'])
 
@@ -215,6 +252,14 @@ const canMakeupColumn = computed(() => {
  const s = props.schedule && props.schedule.status
  return s === 'completed' || s === 'archived'
 })
+
+/**
+ * 2026-06-23: 整张表是否需要展开列 (type="expand").
+ *   - 仅当排课已结束/已归档 才允许展开 (写课评 / 补课)
+ *   - 状态 preparing/in_progress 时不显示箭头, 行内 5 列已足够
+ *   - 当父组件没传 showEvaluationColumn 也不需要展开 (无课评无补课场景)
+ */
+const canExpand = computed(() => canMakeupColumn.value)
 
 const summary = computed(() => {
   const counts = { present: 0, late: 0, leave: 0, no_show: 0 }
@@ -373,4 +418,25 @@ async function onSubmit() {
 }
 .bulk-actions .spacer { flex: 1; }
 .muted { color: #909399; font-size: 12px; }
+
+/* 2026-06-23: 可展开行 — 课评 + 补课按钮折叠在行内
+     左: EvaluationEditor (flex 1, 自动占满)
+     右: 状态标记 / 补课按钮 (固定宽度, 居右)
+   让行尾不再需要 420px 宽的课评列, 抽屉也不会出现横向滚动. */
+.row-expansion {
+  display: flex;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #fafbfc;
+}
+.row-expansion-main {
+  flex: 1;
+  min-width: 0;  /* 关键: 允许 flex 子项收缩, 让 EvaluationEditor 内的 input 不溢出 */
+}
+.row-expansion-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
 </style>

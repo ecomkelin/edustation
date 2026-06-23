@@ -130,9 +130,6 @@ import {
   UserFilled,
   // AI 助手 (2026-06) — 魔棒图标
   MagicStick,
-  // 课堂展示 (2026-06-21 pet-system-v2-ext) — 全屏展示
-  VideoPlay,
-  VideoCamera,
   // 商城流水 (2026-06-22 pet-shop) — 用 Tickets 图标（避免与"订单"的 ShoppingCart 重名）
   Tickets
 } from '@element-plus/icons-vue'
@@ -265,16 +262,7 @@ const menuGroups = [
       { path: '/course-instances', label: '开班', icon: Reading, perm: 'courseInstance.read' },
       { path: '/course-enrollments', label: '课程报名', icon: Notebook, perm: 'courseEnrollment.read' },
       { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
-      { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' },
-      // 教学工具 (2026-06 方案 A): 原"课堂展示"一级菜单降级到子组, 预留扩展
-      {
-        label: '教学工具',
-        icon: VideoPlay,
-        children: [
-          // 宠物课堂展示 (2026-06-21 pet-system-v2-ext): 全屏宠物展示页 (老师投影给全班看)
-          { path: '/class/pet-display', label: '宠物课堂展示', icon: VideoCamera, perm: 'pet.read' }
-        ]
-      }
+      { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' }
     ]
   },
   {
@@ -293,7 +281,6 @@ const menuGroups = [
       { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' }
     ]
   },
-  // 课堂展示 (2026-06 方案 A): 降级到 教务 > 教学工具 子组, 不再作为一级菜单
   {
     key: 'analytics',
     title: '经营分析',

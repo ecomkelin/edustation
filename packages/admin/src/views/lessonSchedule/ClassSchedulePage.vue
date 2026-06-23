@@ -61,7 +61,13 @@
         class="schedule-card"
         shadow="hover"
       >
-        <div class="card-header" @click="toggleExpand(row)">
+        <!--
+          2026-06-23: 卡片头部不再整体可点击展开, 改为显式「详情」按钮弹抽屉
+            原因: 原地展开把整个卡片撑得很高, 多条已结束/已归档排课时页面非常长, 翻页很慢
+            新行为: 顶部 header 仅展示元信息 + 状态操作; 点「详情」在右侧抽屉打开考勤名单 + 课评
+            注意: 头部整体的 cursor:pointer / user-select:none 也已移除, 避免误导用户
+        -->
+        <div class="card-header">
           <div class="meta">
             <span class="ci-name">{{ ciName(row) }}</span>
             <span class="muted">·</span>
@@ -92,50 +98,12 @@
             <el-tooltip v-if="['preparing','in_progress','completed','archived'].includes(row.status) && (syncToCreate[row._id] ?? 0) > 0" content="为该排课补建尚未生成考勤的已报名学生" placement="top">
               <el-button size="small" :loading="syncLoading[row._id]" @click="onSyncAttendances(row)">补齐名单（{{ syncToCreate[row._id] }}）</el-button>
             </el-tooltip>
-            <el-button class="expand-btn" :icon="expanded[row._id] ? ArrowUp : ArrowDown" link size="small" @click="toggleExpand(row)">
-              {{ expanded[row._id] ? '收起' : '展开' }}
+            <!-- 2026-06-23: 「详情」按钮 — 替代原来的原地"展开/收起"
+                 点击后右侧弹抽屉, 展示考勤名单 + 课评 (未消课行还能看到「补课」按钮) -->
+            <el-button class="detail-btn" :icon="View" link size="small" @click="openDetail(row)">
+              详情
             </el-button>
           </div>
-        </div>
-
-        <!-- 展开体：考勤名单 + 课评表单 -->
-        <div v-if="expanded[row._id]" class="card-body">
-          <AttendanceRosterTable
-            :ref="(el) => bindRosterRef(row._id, el)"
-            :schedule="row"
-            :read-only="row.status !== 'in_progress'"
-            :expose-roster="true"
-            @loaded="(r) => onRosterLoaded(row, r)"
-            @saved="onRosterSaved"
-          >
-            <template v-if="row.status === 'completed' || row.status === 'archived'" #row-extra>
-              <!-- 已结束/已归档的考勤：行尾追加课评列；
-                   仅「已消课/已补」行渲染课评编辑，未消课行（leave / no_show / scheduled / checked_in）显示「—」，
-                   跟 2026-06 课评只对已消课/已补有效的服务端语义保持一致 -->
-              <el-table-column label="课评" min-width="420">
-                <template #default="{ row: attRow }">
-                  <EvaluationEditor
-                    v-if="attRow.status === 'completed' || attRow.status === 'madeup'"
-                    :attendance="attRow"
-                    :read-only="row.status === 'archived'"
-                    @saved="onEvaluationSaved(row, $event)"
-                  />
-                  <span v-else class="muted">—</span>
-                </template>
-              </el-table-column>
-            </template>
-            <!-- 「补课」操作列插槽：AttendanceRosterTable 在已结束/已归档状态下对未消课行渲染这里的内容。
-                 点击弹出补课确认框，调用 /lesson-attendances/:id/makeup 接口。 -->
-            <template #row-makeup="{ row: attRow }">
-              <el-button
-                type="primary"
-                size="small"
-                link
-                :loading="makeupLoading[attRow.id]"
-                @click="openMakeupDialog(row, attRow)"
-              >补课</el-button>
-            </template>
-          </AttendanceRosterTable>
         </div>
       </el-card>
     </div>
@@ -228,14 +196,57 @@
         >确认补课</el-button>
       </template>
     </el-dialog>
+
+    <!--
+      2026-06-23: 详情抽屉 — 替代原"原地展开"行为
+        卡片头部点「详情」 → openDetail(row) → 右侧抽屉弹出 AttendanceRosterTable
+        drawer 里通过 v-slot 注入课评列 (#row-extra) 和补课按钮 (#row-makeup), 与原展开体一致
+        drawer 关闭后再开同一排课, AttendanceRosterTable 的 reload 由 v-if="detailDialog && currentSchedule?.id === row.id" 触发,
+        保证看到最新名单状态
+    -->
+    <AttendanceRosterDialog
+      v-model="detailDialog"
+      :ref="(el) => { rosterDrawerRef = el }"
+      :schedule="currentSchedule"
+      :read-only="currentScheduleReadOnly"
+      :show-evaluation-column="currentScheduleShowEvaluation"
+      @loaded="onRosterLoaded"
+      @saved="onRosterSaved"
+    >
+      <!--
+        2026-06-23: #row-extra 现在只负责渲染单元格内容 (EvaluationEditor).
+          是否展示整列由 AttendanceRosterTable 内部的 showEvaluationColumn 控制 (在 AttendanceRosterDialog 透传).
+          旧版本这里还套了一个 <el-table-column>, 那样会导致两列重复.
+      -->
+      <template #row-extra="{ row: attRow }">
+        <EvaluationEditor
+          v-if="attRow.status === 'completed' || attRow.status === 'madeup'"
+          :attendance="attRow"
+          :read-only="currentSchedule?.status === 'archived'"
+          @saved="(payload) => onEvaluationSaved(currentSchedule, payload)"
+        />
+        <span v-else class="muted">—</span>
+      </template>
+      <template #row-makeup="{ row: attRow }">
+        <el-button
+          type="primary"
+          size="small"
+          link
+          :loading="makeupLoading[attRow.id]"
+          @click="openMakeupDialog(currentSchedule, attRow)"
+        >补课</el-button>
+      </template>
+    </AttendanceRosterDialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowUp, ArrowDown } from '@element-plus/icons-vue'
-import AttendanceRosterTable from './AttendanceRosterTable.vue'
+import { View } from '@element-plus/icons-vue'
+// 2026-06-23: 详情从卡片展开改为右侧抽屉, AttendanceRosterTable + EvaluationEditor
+//   不再直接渲染在 ClassSchedulePage 模板里, 改成 AttendanceRosterDialog 内部通过 slot 注入
+import AttendanceRosterDialog from './AttendanceRosterDialog.vue'
 import EvaluationEditor from './EvaluationEditor.vue'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { courseInstanceApi } from '@/api/courseInstance'
@@ -298,15 +309,35 @@ const items = ref([])
 const total = ref(0)
 const loading = ref(false)
 const actionLoading = reactive({}) // { [scheduleId]: boolean }
-const expanded = reactive({})      // { [scheduleId]: boolean }
-const rosterBySchedule = reactive({}) // { [scheduleId]: [...] } —— 跟踪每张卡片已加载的名单
-const rosterRefs = {}              // 引用 AttendanceRosterTable 实例，用于 reload
+// 2026-06-23: 详情抽屉 — 替代原 expanded / card-body 原地展开
+const detailDialog = ref(false)
+const currentSchedule = ref(null)
+const rosterDrawerRef = ref(null)
+const rosterBySchedule = reactive({}) // { [scheduleId]: [...] } —— 跟踪每张排课已加载的名单, 用于 archiveEnabled 派生
 
 const courseInstanceOptions = ref([])
 const teacherOptions = ref([])
 const roomOptions = ref([])
 
-function bindRosterRef(id, el) { if (el) rosterRefs[id] = el }
+// 当前抽屉里排课的只读状态: in_progress 之外的状态都只读
+const currentScheduleReadOnly = computed(() => {
+  if (!currentSchedule.value) return false
+  return currentSchedule.value.status !== 'in_progress'
+})
+
+// 当前抽屉里排课是否需要「课评」列: 仅已完成 / 已归档排课才有课评.
+const currentScheduleShowEvaluation = computed(() => {
+  if (!currentSchedule.value) return false
+  const s = currentSchedule.value.status
+  return s === 'completed' || s === 'archived'
+})
+
+// 打开抽屉: 把当前 row 推给 drawer, drawer 内部 AttendanceRosterTable 加载名单
+function openDetail(row) {
+  if (!row) return
+  currentSchedule.value = row
+  detailDialog.value = true
+}
 
 // ─── 数据拉取 ─────────────────────────────────────────────
 async function fetchList() {
@@ -378,25 +409,30 @@ function clearDateRange() {
   fetchList()
 }
 
-function toggleExpand(row) { expanded[row._id] = !expanded[row._id] }
-
 // ─── 课评编辑 / 归档判定 ──────────────────────────────────
-function onRosterLoaded(row, roster) {
+function onRosterLoaded(roster) {
+  // drawer 里 AttendanceRosterTable emit('loaded', roster): 此时 currentSchedule 一定是当前抽屉排课
+  const row = currentSchedule.value
+  if (!row) return
   rosterBySchedule[row._id] = roster
-  // 首次加载该卡片名单时，异步拉一次"潜在需要补齐人数"以决定"补齐名单"按钮是否显示
+  // 首次加载该抽屉名单时，异步拉一次"潜在需要补齐人数"以决定"补齐名单"按钮是否显示
   if (syncToCreate[row._id] === undefined) {
     refreshSyncPreview(row)
   }
 }
 
 function onRosterSaved() {
-  // 重拉当前卡片名单（保证 status / actualStartTime 等同步）
-  // 注意：roster 已经在内部 reload 过；这里只是把缓存覆盖一次
-  Object.values(rosterRefs).forEach((ref) => ref && ref.reload && ref.reload())
+  // drawer 内部 AttendanceRosterTable 已经 reload 过, 这里只需要把最新名单同步到外层缓存
+  // (让 archiveEnabled / archiveTooltip 即时重算)
+  const drawer = rosterDrawerRef.value
+  if (!drawer || !currentSchedule.value) return
+  if (typeof drawer.getRoster === 'function') {
+    onRosterLoaded(drawer.getRoster())
+  }
 }
 
 async function onEvaluationSaved(row, payload) {
-  // 把刚保存的课评写回本卡片 roster 缓存；archivedEnabled 派生计算会即时刷新
+  // 把刚保存的课评写回本卡片 roster 缓存；archiveEnabled 派生计算会即时刷新
   const roster = rosterBySchedule[row._id] || []
   const target = roster.find((a) => a.id === payload.attendanceId)
   if (target) {
@@ -466,8 +502,9 @@ const finishNeedsReason = computed(() => {
 // 用户标记的「请假/未到」被静默吞掉，且没有任何「补课」按钮可以挽回
 // （已 completed 行不再允许改回 leave/no_show，makeup 又是新建一条）。
 // 因此结束前必须先 flush。本函数返回时已经确保 dirty 已处理（保存 or 用户主动放弃）。
+// 2026-06-23: drawer 改造后, dirty 检测改读 rosterDrawerRef: 仅当 row.id === currentSchedule.id 且抽屉打开时才有意义
 async function openFinishDialog(row) {
-  const ref = rosterRefs[row._id]
+  const ref = (currentSchedule.value && currentSchedule.value._id === row._id) ? rosterDrawerRef.value : null
   if (ref && typeof ref.hasDirty === 'function' && ref.hasDirty()) {
     const dirty = typeof ref.getDirtyCount === 'function' ? ref.getDirtyCount() : 0
     try {
@@ -522,7 +559,8 @@ async function submitFinish() {
       // AttendanceRosterTable 只在 schedule._id 变化时 reload，所以这里手动 reload 一次，
       // 否则 UI 上仍显示旧状态（"待上课"/"已签到"），与实际后端不一致；
       // 也会导致「已消课」标签、补课后新行的 status 等无法反映。
-      const ref = rosterRefs[target._id]
+      // 2026-06-23: drawer 模式下, 只有该排课的详情抽屉还开着才需要 reload + 同步外层缓存
+      const ref = (currentSchedule.value && currentSchedule.value._id === target._id) ? rosterDrawerRef.value : null
       if (ref && typeof ref.reload === 'function') {
         await ref.reload()
         if (typeof ref.getRoster === 'function') {
@@ -588,8 +626,8 @@ async function onSyncAttendances(row) {
     const r = await lessonScheduleApi.syncAttendances(row._id)
     const created = r.data?.created ?? 0
     ElMessage.success(created > 0 ? `已补齐 ${created} 名学生考勤` : '名单已完整，无需补齐')
-    // 刷新本卡片名单（AttendanceRosterTable 暴露了 reload）
-    const ref = rosterRefs[row._id]
+    // 刷新本卡片名单（仅当该排课的详情抽屉还开着时）
+    const ref = (currentSchedule.value && currentSchedule.value._id === row._id) ? rosterDrawerRef.value : null
     if (ref && typeof ref.reload === 'function') await ref.reload()
     // 同步外部 roster 缓存（让 archiveEnabled 重新计算）
     if (ref && typeof ref.getRoster === 'function') {
@@ -662,8 +700,8 @@ async function submitMakeup() {
  const r = await lessonAttendanceApi.makeup(attendance.id, { remark: makeupForm.remark || undefined })
  ElMessage.success('已补课；学生课包 -1')
  makeupDialog.value = false
- // 刷新本卡片名单（AttendanceRosterTable 暴露了 reload）
- const ref = rosterRefs[makeupTarget.value.schedule._id]
+ // 刷新本卡片名单（仅当该排课的详情抽屉还开着时）
+ const ref = (currentSchedule.value && currentSchedule.value._id === makeupTarget.value.schedule._id) ? rosterDrawerRef.value : null
  if (ref && typeof ref.reload === 'function') await ref.reload()
  // 同步外部 roster 缓存（让 archiveEnabled 重新计算）
  if (ref && typeof ref.getRoster === 'function') {
@@ -683,9 +721,9 @@ async function submitMakeup() {
 .filter-card { margin-bottom: 12px; }
 .card-list { display: flex; flex-direction: column; gap: 12px; }
 .schedule-card { transition: box-shadow .2s; }
+/* 2026-06-23: 卡片头部不再整体可点击展开, 故移除 cursor:pointer / user-select:none */
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
-  cursor: pointer; user-select: none;
 }
 .card-header .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .card-header .ci-name { font-weight: 600; font-size: 15px; }
@@ -693,6 +731,6 @@ async function submitMakeup() {
 .card-header .time { font-size: 12px; margin-left: 12px; }
 .card-header .actions { display: flex; align-items: center; gap: 6px; }
 .card-header .muted { color: #909399; }
-.card-body { margin-top: 12px; padding-top: 12px; border-top: 1px solid #ebeef5; }
-.expand-btn { padding: 4px 6px; }
+/* 2026-06-23: 「详情」按钮替代原「展开/收起」 */
+.detail-btn { padding: 4px 6px; }
 </style>
