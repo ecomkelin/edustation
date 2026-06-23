@@ -81,7 +81,7 @@
         </el-form-item>
         <el-form-item label="解锁类型" prop="unlockType">
           <el-radio-group v-model="form.unlockType">
-            <el-radio v-for="u in PET_ITEM_UNLOCK_TYPES" :key="u" :label="u">{{ PET_ITEM_UNLOCK_TYPE_LABELS[u] }}</el-radio>
+            <el-radio v-for="u in PET_ITEM_UNLOCK_TYPES" :key="u" :value="u">{{ PET_ITEM_UNLOCK_TYPE_LABELS[u] }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.unlockType === 'level'" label="解锁等级" prop="unlockLevel">
@@ -89,13 +89,13 @@
         </el-form-item>
         <el-form-item v-else label="解锁阶" prop="unlockTier">
           <el-radio-group v-model="form.unlockTier">
-            <el-radio v-for="t in PET_TIERS" :key="t" :label="t">{{ PET_TIER_LABELS[t] }}</el-radio>
+            <el-radio v-for="t in PET_TIERS" :key="t" :value="t">{{ PET_TIER_LABELS[t] }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
-            <el-radio label="image">图片</el-radio>
-            <el-radio label="svg">SVG</el-radio>
+            <el-radio value="image">图片</el-radio>
+            <el-radio value="svg">SVG</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'image'" label="贴图">
@@ -309,6 +309,7 @@ export default {
       speciesOptions, imagePicker, previewOpen, previewRow,
       PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS, PET_ITEM_UNLOCK_TYPES, PET_ITEM_UNLOCK_TYPE_LABELS,
       Plus, Upload, Picture,
+      petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm, openPreview
     }
   }

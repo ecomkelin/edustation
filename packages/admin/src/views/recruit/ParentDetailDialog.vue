@@ -474,9 +474,9 @@ async function loadTags() {
 }
 
 function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s }
-function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || '' }
+function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || 'info' }
 function statusLabel(s) { return CHILD_LEAD_STATUS_LABEL[s] || s }
-function statusTagType(s) { return CHILD_LEAD_STATUS_TAG_TYPE[s] || '' }
+function statusTagType(s) { return CHILD_LEAD_STATUS_TAG_TYPE[s] || 'info' }
 function activityTypeLabel(t) { return LEAD_ACTIVITY_TYPE_LABEL[t] || t }
 function genderLabel(g) { return GENDER_LABEL[g] || g }
 function tagColor(tag) {

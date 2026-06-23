@@ -109,6 +109,7 @@ async function createSpecies({ payload, operatorId }) {
     imageFile: payload.visualType === 'image' ? (payload.imageFile || null) : null,
     svgContent: payload.visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     weight: Number(payload.weight) || 100,
+    hungerDecayMinutes: Number(payload.hungerDecayMinutes) || 60,  // 2026-06-23
     isActive: payload.isActive !== false,
     description: payload.description || null,
     createdBy: operatorId,
@@ -135,6 +136,7 @@ async function updateSpecies({ id, payload, operatorId }) {
   if (payload.tier !== undefined) updates.tier = payload.tier
   if (payload.visualType !== undefined) updates.visualType = payload.visualType
   if (payload.weight !== undefined) updates.weight = Number(payload.weight) || 0
+  if (payload.hungerDecayMinutes !== undefined) updates.hungerDecayMinutes = Number(payload.hungerDecayMinutes) || 60  // 2026-06-23
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
   if (payload.description !== undefined) updates.description = payload.description
   if (payload.imageFile !== undefined && doc.visualType === 'image') {

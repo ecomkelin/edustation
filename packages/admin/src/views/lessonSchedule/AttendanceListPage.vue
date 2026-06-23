@@ -168,11 +168,13 @@ const STATUS_OPTIONS = [
 const STATUS_LABELS = {
  scheduled: '待上课', checked_in: '已签到', completed: '已消课', madeup: '已补', no_show: '未到', leave: '请假'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+// leave 是中性状态用 info；任何未知状态 fallback 也用 info（不能再用 ''，否则触发 Invalid prop 警告）。
 const STATUS_TYPES = {
- scheduled: 'info', checked_in: 'warning', completed: 'success', madeup: 'warning', no_show: 'danger', leave: ''
+  scheduled: 'info', checked_in: 'warning', completed: 'success', madeup: 'warning', no_show: 'danger', leave: 'info'
 }
 function statusLabel(s) { return STATUS_LABELS[s] || s || '—' }
-function statusType(s) { return STATUS_TYPES[s] || '' }
+function statusType(s) { return STATUS_TYPES[s] || 'info' }
 
 const filter = reactive({
  student: null,

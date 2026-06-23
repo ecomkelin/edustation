@@ -48,6 +48,10 @@ const PetSpeciesSchema = new Schema(
     // 破壳加权随机权重
     weight: { type: Number, default: 100, min: 0, max: 10000 },
 
+    // 2026-06-23: 物种级饱腹度衰减间隔（分钟/点），破壳时继承到 PetAccount
+    //   默认 60 分钟/点（用户决策）；cron 优先级: PetAccount.hungerDecayMinutes > species > 平台级 fallback
+    hungerDecayMinutes: { type: Number, default: 60, min: 1, max: 10080 },
+
     // 软启用
     isActive: { type: Boolean, default: true, index: true },
 

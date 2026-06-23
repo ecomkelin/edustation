@@ -141,6 +141,29 @@ async function run({ reset = false } = {}) {
     }
   }
 
+  // ── species ── (2026-06-23: 补默认 hungerDecayMinutes)
+  for (const s of speciesList) {
+    if (reset) {
+      // 重置模式: PetSpecies 已通过上面 `insertMany` 写入;这里需要补 hungerDecayMinutes 字段
+      // 但 _petCatalog 静态数据没带 hungerDecayMinutes,这里 hardcode 补 60
+      await PetSpecies.updateOne({ key: s.key }, { $set: { hungerDecayMinutes: 60 } })
+      summary.species.updated += 1
+      continue
+    }
+    const existing = await PetSpecies.findOne({ key: s.key }).select('_id hungerDecayMinutes').lean()
+    if (existing) {
+      if (existing.hungerDecayMinutes == null) {
+        await PetSpecies.updateOne({ _id: existing._id }, { $set: { hungerDecayMinutes: 60 } })
+        summary.species.updated += 1
+      } else {
+        summary.species.skipped += 1
+      }
+      continue
+    }
+    // insertMany 阶段已 insert 了没 hungerDecayMinutes 字段的 species（default 60 由 schema 自动填）
+    summary.species.inserted += 1
+  }
+
   // ── consumables ──
   for (const c of consumableList) {
     if (reset) {

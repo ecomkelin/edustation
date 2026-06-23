@@ -65,7 +65,10 @@ import { LEAD_ACTIVITY_TYPE_LABEL } from '@/utils/constants'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  childLeadId: { type: String, required: true },
+  // 注：el-dialog 默认始终挂载 DOM（关闭时 display:none），prop validator 立即跑。
+  // 此组件由 ParentDetailDialog 控制 visible，打开时 childLeadId 必填；初始为 null 是合法状态，
+  // 不能用 required:true（会触发 "Expected String with value 'null', got Null" 警告）。
+  childLeadId: { type: String, default: null },
   activity: { type: Object, default: null }
 })
 const emit = defineEmits(['update:visible', 'saved'])

@@ -34,16 +34,35 @@
           <img v-else-if="itemMap[pet.equipped.background].imageFile?.url" :src="itemMap[pet.equipped.background].imageFile.url" />
         </div>
 
-        <!-- 2026-06-22: 蛋态 — 与 PetEquipmentOverlay 同尺寸结构 (max-width 80% / 内部 frame)，
-             保持位置 / 大小与破壳后宠物一致；去掉「蛋」文字；破壳时加 shake + glow + 破裂闪光 -->
-        <div v-if="pet?.state === 'egg'" class="pet-img">
-          <div class="pet-frame egg-frame" :class="{ hatching: actioning }">
-            <div class="egg-emoji">🥚</div>
-            <!-- 破壳时径向闪光 -->
-            <div class="hatch-burst" v-if="actioning"></div>
+        <!-- 2026-06-23: 蛋态 + 破壳特效 — 4 阶段精简版（用户反馈）：
+             T+0s 锤子砸下 → T+0.4s 蛋壳裂痕 → T+1s 蛋晃动 → T+2s 金光（蛋在金光中淡出）→ T+3s 宠物出现 -->
+        <div v-if="pet?.state === 'egg' || hatchActive" class="pet-img hatch-stage" :class="`phase-${hatchPhase}`">
+          <!-- 锤子：T+0s ~ T+0.4s 从顶部砸下 -->
+          <div class="hatch-hammer" :class="{ active: hatchPhase === 'hammer' }">🔨</div>
+
+          <!-- 蛋 + 裂痕（SVG path）+ gold 阶段在金光中淡出 -->
+          <div class="pet-frame egg-frame" :class="{ fading: hatchPhase === 'gold' }">
+            <div class="egg-emoji" :class="{ cracking: ['cracks','shake','gold'].includes(hatchPhase) }">🥚</div>
+            <!-- 裂痕：cracks/shake/gold 阶段都显示 -->
+            <svg
+              v-if="['cracks','shake','gold'].includes(hatchPhase)"
+              class="egg-cracks"
+              :class="{ deep: hatchPhase === 'gold' }"
+              viewBox="0 0 200 240"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <path d="M 100 60 L 95 90 L 110 110 L 95 140 L 115 165 L 100 200" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" />
+              <path d="M 70 90 L 80 115 L 65 145" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" />
+              <path d="M 130 90 L 125 120 L 140 150" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" />
+              <path d="M 80 180 L 100 200 L 120 180" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" />
+            </svg>
           </div>
-          <!-- 蛋态：底部中央放「代破壳」 -->
-          <el-button v-if="canWrite" type="success" size="large" class="pet-bottom-btn" :loading="actioning" @click="onHatch">
+
+          <!-- 金光：T+2s 径向高光扩张（蛋在 .egg-frame.fading 中同步淡出） -->
+          <div class="hatch-gold" :class="{ active: hatchPhase === 'gold' }"></div>
+
+          <!-- 蛋态按钮：仅 idle 时显示 + canWrite 时 -->
+          <el-button v-if="canWrite && hatchPhase === 'idle'" type="success" size="large" class="pet-bottom-btn" @click="onHatch">
             代破壳
           </el-button>
         </div>
@@ -92,11 +111,17 @@
         </div>
 
         <div class="stat-card">
-          <div class="label">饱腹度</div>
+          <div class="label">
+            饱腹度
+            <span v-if="pet?.state === 'alive'" class="hunger-meta">
+              每 {{ hungerDecayMinutes }} 分钟 -1 · 剩 {{ formatTimeLeft(hungerMinutesLeft) }} 归零
+            </span>
+            <span v-else-if="pet?.state === 'egg'" class="hunger-meta">蛋态不减</span>
+          </div>
           <el-progress
             :percentage="hungerPercent"
             :stroke-width="32"
-            :format="() => `${pet?.currentHunger || 0} / ${pet?.maxHunger || 100}`"
+            :format="() => `${pet?.currentHunger || 0} / ${pet?.maxHunger || 1000}`"
             :status="hungerPercent < 20 ? 'warning' : hungerPercent === 0 ? 'exception' : ''"
           />
         </div>
@@ -180,6 +205,7 @@ import { Picture, ShoppingCart, Coin } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import { petCatalogApi } from '@/api/petCatalog'
 import { pointsAdminApi } from '@/api/pointsAdmin'
+import { effectiveHungerDecayMinutes } from '@/utils/pet'
 import GrantOnBehalfDialog from '@/components/Pet/GrantOnBehalfDialog.vue'
 import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
 import { useUserPerms } from '@/composables/useUserPerms'
@@ -218,6 +244,14 @@ export default {
     const studentPoints = ref(null)
     const canWrite = can('pet.write')
 
+    // 2026-06-23: 破壳特效状态机
+    // 阶段：idle → hammer (0.4s) → cracks → shake (1s) → gold (1s) → split (1s) → flash (1s) → reveal
+    // 总时长 ~5.5s；reveal 后 fetchOnce 拉新数据，宠物出现
+    // hatchActive 在 reveal 前保持 true，避免 v-if='egg' 被后端 alive 切掉
+    const hatchPhase = ref('idle')
+    const hatchActive = ref(false)
+    let hatchTimers = []
+
     const tierLabel = computed(() => PET_TIER_LABELS[pet.value?.tier] || pet.value?.eggTier || '—')
     const tierClass = computed(() => {
       const t = pet.value?.tier || pet.value?.eggTier
@@ -231,8 +265,22 @@ export default {
     })
     const hungerPercent = computed(() => {
       if (!pet.value) return 0
+      // maxHunger 现在是 1000（2026-06-23 改造），进度条按比例缩放到 100%
       return Math.min(100, Math.round((pet.value.currentHunger / pet.value.maxHunger) * 100))
     })
+    // 2026-06-23: 饱腹度衰减间隔 由 PetSpecies.hungerDecayMinutes 决定
+    const hungerDecayMinutes = computed(() => effectiveHungerDecayMinutes(pet.value, 60))
+    // 预计到 0 剩余分钟数（仅 alive 态有意义）
+    const hungerMinutesLeft = computed(() => {
+      if (!pet.value || pet.value.state !== 'alive') return null
+      return Math.max(0, (pet.value.currentHunger || 0) * hungerDecayMinutes.value)
+    })
+    function formatTimeLeft(minutes) {
+      if (minutes == null) return '—'
+      if (minutes < 60) return `${minutes} 分钟`
+      if (minutes < 60 * 24) return `${(minutes / 60).toFixed(1)} 小时`
+      return `${(minutes / 60 / 24).toFixed(1)} 天`
+    }
     const speciesEmoji = computed(() => SPECIES_EMOJI_FALLBACK[pet.value?.species] || '🐾')
 
     // 2026-06-22: 背包视图 — 按 slot 汇总 pet.unlocked[slot]，每项含 name（从 itemMap 翻译）
@@ -440,8 +488,35 @@ export default {
     }
 
     async function onHatch() {
-      await doAction('代破壳', () => petAdminApi.hatchOnBehalf(pet.value._id))
+      if (hatchActive.value) return  // 防双击
+      hatchActive.value = true
+      // 2026-06-23 简化时序：0s 锤子 → 0.4s 裂痕 → 1s 晃动 → 2s 金光（蛋在金光中淡出）→ 3s 宠物出现
+      const setP = (phase, ms) => hatchTimers.push(setTimeout(() => { hatchPhase.value = phase }, ms))
+      setP('hammer', 0)
+      setP('cracks', 400)
+      setP('shake',  1000)
+      setP('gold',   2000)
+      // API 在点时并行调用（通常 < 1s 已回），UI 数据更新推迟到 gold 阶段结束
+      petAdminApi.hatchOnBehalf(pet.value._id).catch(e => {
+        ElMessage.error(e?.response?.data?.message || '破壳失败')
+      })
+      // gold 阶段 1s（蛋在金光中淡出）→ 直接 fetchOnce + 复位，PetEquipmentOverlay 接位
+      hatchTimers.push(setTimeout(async () => {
+        await fetchOnce()
+        hatchPhase.value = 'idle'
+        hatchActive.value = false
+      }, 3000))
     }
+
+    function clearHatchTimers() {
+      hatchTimers.forEach(clearTimeout)
+      hatchTimers = []
+    }
+
+    onUnmounted(() => {
+      stopPolling()
+      clearHatchTimers()
+    })
     async function onSwap() {
       await doAction('代置换蛋（扣积分）', () => petAdminApi.swapEggOnBehalf(pet.value._id))
     }
@@ -501,13 +576,11 @@ export default {
       await fetchOnce()
       startPolling()
     })
-    onUnmounted(() => {
-      stopPolling()
-    })
 
     return {
       pet, pollTimer, actioning, canWrite,
       grantConsumableDialog,
+      hatchPhase, hatchActive,
       itemMap, unlockedEntriesBySlot, consumableEntries, studentPoints,
       tierLabel, tierClass, expPercent, hungerPercent, speciesEmoji,
       PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS,
@@ -515,7 +588,9 @@ export default {
       // 2026-06-22: 手动升阶
       canTierUpNow, nextTierLabel, onTierUp,
       refresh, onHatch, onSwap, onClose, formatDate,
-      onToggleEquip, onBuyConsumable, onConsumableBought
+      onToggleEquip, onBuyConsumable, onConsumableBought,
+      // 2026-06-23: 饱腹度衰减展示
+      hungerDecayMinutes, hungerMinutesLeft, formatTimeLeft
     }
   }
 }
@@ -636,8 +711,7 @@ export default {
   font-size: 16px;
 }
 
-/* 2026-06-22: 蛋 frame — 与 PetEquipmentOverlay 同尺寸结构（同 .pet-frame / .pet-img），
-   让蛋和破壳后的宠物占位一致，破壳瞬间不会有"跳一下" */
+/* 2026-06-23: 蛋 frame — 与 PetEquipmentOverlay 同尺寸结构 */
 .egg-frame {
   display: flex;
   align-items: center;
@@ -646,44 +720,104 @@ export default {
   max-height: 60vh;
   background: radial-gradient(circle at 50% 40%, rgba(255, 240, 200, 0.10), transparent 70%);
   border-radius: 12px;
+  position: relative;
+  overflow: hidden;
 }
 .egg-emoji {
   font-size: clamp(180px, 30vw, 280px);
   line-height: 1;
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4));
-  transition: transform 0.2s;
+  transition: transform 0.2s, filter 0.3s;
 }
-/* 破壳 shake 动画：连续抖动 + 微旋转 */
-.egg-frame.hatching .egg-emoji {
-  animation: hatch-shake 0.45s ease-in-out infinite;
+/* 蛋壳变脆（裂缝期开始）：微黄 + 抖动提示 */
+.egg-emoji.cracking { filter: drop-shadow(0 6px 12px rgba(0,0,0,0.4)) brightness(1.05); }
+
+/* 蛋裂痕 SVG：铺满 egg-frame 之上 */
+.egg-cracks {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  animation: crack-appear 0.3s ease-out;
+}
+.egg-cracks.deep { filter: drop-shadow(0 0 8px rgba(255,255,200,0.8)); }
+@keyframes crack-appear {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* 破壳 stage 容器（pet-img.hatch-stage）*/
+.hatch-stage {
+  position: relative;
+  overflow: visible;
+}
+
+/* ─── T+0s ~ T+0.4s 锤子砸下 ─── */
+.hatch-hammer {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -300px) rotate(-30deg);
+  font-size: 80px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+}
+.hatch-hammer.active {
+  animation: hammer-fall 0.4s ease-in forwards;
+}
+@keyframes hammer-fall {
+  0%   { transform: translate(-50%, -300px) rotate(-30deg); opacity: 0; }
+  20%  { transform: translate(-50%, -200px) rotate(-25deg); opacity: 1; }
+  60%  { transform: translate(-50%, 0)     rotate(0deg);   opacity: 1; }
+  80%  { transform: translate(-50%, 0)     rotate(0deg);   opacity: 1; }
+  100% { transform: translate(-50%, 200px) rotate(15deg);  opacity: 0; }
+}
+
+/* ─── T+1s ~ T+2s 蛋晃动 ─── */
+.hatch-stage.phase-shake .egg-frame {
+  animation: hatch-shake 0.12s ease-in-out infinite;
 }
 @keyframes hatch-shake {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  15%  { transform: translate(-3px, -2px) rotate(-3deg); }
-  30%  { transform: translate(4px, 1px) rotate(3deg); }
-  45%  { transform: translate(-3px, 2px) rotate(-2deg); }
-  60%  { transform: translate(3px, -2px) rotate(2deg); }
-  75%  { transform: translate(-2px, 1px) rotate(-3deg); }
-  90%  { transform: translate(2px, 2px) rotate(3deg); }
+  20% { transform: translate(-4px, -2px) rotate(-2deg); }
+  40% { transform: translate(5px, 1px)  rotate(2deg); }
+  60% { transform: translate(-3px, 3px) rotate(-1deg); }
+  80% { transform: translate(3px, -2px) rotate(1deg); }
 }
 
-/* 破壳闪光：径向高光快速扩散 */
-.hatch-burst {
+/* ─── T+2s ~ T+3s 金光 + 蛋在金光中淡出 ─── */
+.hatch-gold {
   position: absolute;
-  inset: 0;
+  inset: -20%;
   pointer-events: none;
   background: radial-gradient(circle at 50% 50%,
-    rgba(255, 255, 200, 0.95) 0%,
-    rgba(255, 200, 100, 0.6) 25%,
-    transparent 65%);
-  animation: hatch-burst-anim 0.9s ease-out infinite;
+    rgba(255, 240, 130, 0.95) 0%,
+    rgba(255, 200, 60, 0.7) 20%,
+    rgba(255, 180, 40, 0.4) 45%,
+    transparent 70%);
+  opacity: 0;
   mix-blend-mode: screen;
-  border-radius: 12px;
+  border-radius: 50%;
+  z-index: 5;
 }
-@keyframes hatch-burst-anim {
-  0%   { transform: scale(0.4); opacity: 1; }
-  60%  { transform: scale(1.3); opacity: 0.5; }
-  100% { transform: scale(2.0); opacity: 0; }
+.hatch-gold.active {
+  animation: gold-flash 1s ease-out forwards;
+}
+@keyframes gold-flash {
+  0%   { opacity: 0; transform: scale(0.4); }
+  30%  { opacity: 1; transform: scale(1.0); }
+  100% { opacity: 0; transform: scale(1.8); }
+}
+/* 蛋 frame 在 gold 阶段：opacity 1→0 + 微微 scale up，"在金光中慢慢消失" */
+.egg-frame.fading {
+  animation: egg-fade-in-gold 1s ease-out forwards;
+}
+@keyframes egg-fade-in-gold {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.15); }
 }
 
 /* 2026-06-22: 宠物展示框 — 限宽,作为叠加层定位基准
@@ -768,6 +902,12 @@ export default {
   color: #ccc;
   margin-bottom: 12px;
   font-size: 18px;
+}
+.stat-card .label .hunger-meta {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 8px;
+  font-weight: normal;
 }
 .stat-card .tierup-hint {
   color: #ffd04b;

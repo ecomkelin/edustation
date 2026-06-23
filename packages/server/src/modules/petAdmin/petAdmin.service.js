@@ -17,6 +17,7 @@
 const mongoose = require('mongoose')
 const PetAccount = require('@models/PetAccount.model')
 const PetEvent = require('@models/PetEvent.model')
+const PetSpecies = require('@models/PetSpecies.model')
 const Student = require('@models/Student.model')
 const ApiError = require('@utils/ApiError')
 const petService = require('@modules/pet/pet.service')
@@ -109,11 +110,15 @@ async function list({ orgId, page = 1, pageSize = 20, state, tier, keyword }) {
   const items = await PetAccount.aggregate(pipeline)
   const total = await PetAccount.countDocuments(match)
 
-  // 补 species 记录
-  const { getSpecies } = require('@shared/petSpecies')
+  // 补 species 记录（2026-06-23: 从 DB PetSpecies 取，确保 hungerDecayMinutes 等动态字段实时生效）
+  const speciesKeys = [...new Set(items.map(it => it.species).filter(Boolean))]
+  const speciesDocs = speciesKeys.length > 0
+    ? await PetSpecies.find({ key: { $in: speciesKeys } }).lean()
+    : []
+  const speciesMap = Object.fromEntries(speciesDocs.map(s => [s.key, s]))
   const decorated = items.map(it => ({
     ...it,
-    speciesRecord: it.species ? getSpecies(it.species) : null
+    speciesRecord: it.species ? speciesMap[it.species] || null : null
   }))
 
   return { items: decorated, total, page: safePage, pageSize: safeSize }

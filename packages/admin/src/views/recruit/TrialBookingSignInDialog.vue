@@ -464,7 +464,7 @@ function statusLabel(s) {
   return TRIAL_BOOKING_STATUS_LABEL[s] || s
 }
 function statusTagType(s) {
-  return TRIAL_BOOKING_STATUS_TAG_TYPE[s] || ''
+  return TRIAL_BOOKING_STATUS_TAG_TYPE[s] || 'info'
 }
 function formatTime(d) {
   if (!d) return '-'

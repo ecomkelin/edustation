@@ -188,19 +188,20 @@ import { formatDate } from '@/utils/format'
 const STATUS_LABELS = {
  scheduled: '待上课', checked_in: '已签到', completed: '已消课', madeup: '已补', no_show: '未到', leave: '请假'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，leave 改 info。
 const STATUS_TYPES = {
- scheduled: 'info', checked_in: 'warning', completed: 'success', madeup: 'warning', no_show: 'danger', leave: ''
+  scheduled: 'info', checked_in: 'warning', completed: 'success', madeup: 'warning', no_show: 'danger', leave: 'info'
 }
 const SCHEDULE_LABELS = {
- scheduled: '预备', preparing: '准备中', in_progress: '进行中', completed: '已结束', archived: '已归档', cancelled: '已取消'
+  scheduled: '预备', preparing: '准备中', in_progress: '进行中', completed: '已结束', archived: '已归档', cancelled: '已取消'
 }
 const SCHEDULE_TYPES = {
- scheduled: 'info', preparing: 'primary', in_progress: 'warning', completed: 'success', archived: '', cancelled: 'danger'
+  scheduled: 'info', preparing: 'primary', in_progress: 'warning', completed: 'success', archived: 'info', cancelled: 'danger'
 }
 function statusLabel(s) { return STATUS_LABELS[s] || s || '—' }
-function statusType(s) { return STATUS_TYPES[s] || '' }
+function statusType(s) { return STATUS_TYPES[s] || 'info' }
 function scheduleLabel(s) { return SCHEDULE_LABELS[s] || s || '—' }
-function scheduleType(s) { return SCHEDULE_TYPES[s] || '' }
+function scheduleType(s) { return SCHEDULE_TYPES[s] || 'info' }
 
 const filter = reactive({
  student: null,

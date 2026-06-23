@@ -381,7 +381,7 @@ function onOpenExisting(parent) {
 }
 
 function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s }
-function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || '' }
+function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || 'info' }
 function tagColor(tag) {
   const name = tag?.name
   if (name === '已流失') return 'danger'

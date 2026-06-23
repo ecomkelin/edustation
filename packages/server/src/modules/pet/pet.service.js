@@ -83,7 +83,7 @@ async function ensurePetAccount(orgId, studentId, by = 'manual') {
     hatchedAt: null,
     adoptedAt: now,
     currentHunger: 100,
-    maxHunger: 100,
+    maxHunger: petConfig.MAX_HUNGER,
     lastFedAt: null,
     lastHungerDecayAt: null,
     deathThresholdDays: 30,
@@ -162,6 +162,8 @@ async function hatch({ orgId, studentId }) {
   const newLevelUnlocks = await petCatalog.listItemsUnlockedAtLevel({ tier: eggTier, level: 1 })
   // 蛋→活不触发 halo/background（仅 alive 升阶时解锁）
 
+  // 2026-06-23: 不再写 PetAccount.hungerDecayMinutes；由 PetSpecies.hungerDecayMinutes 直接决定
+
   // 合并 unlocked（去重）—— 按 item.slot 分类
   const unlocked = pet.unlocked || {}
   const itemsByKey = await Promise.all(newLevelUnlocks.map(k => petCatalog.getItem({ key: k })))
@@ -192,8 +194,8 @@ async function hatch({ orgId, studentId }) {
         experience: 0,
         hatchedAt: now,
         eggHatchedAt: now,
-        currentHunger: pet.maxHunger,
-        lastFedAt: now, // 破壳即满饱 + 立即记录
+        currentHunger: petConfig.INIT_HUNGER_AFTER_HATCH,  // 2026-06-23: 破蛋后从 300 起（maxHunger=1000）
+        lastFedAt: now, // 破壳即记录（衰减起点）
         lastHungerDecayAt: now,
         deathThresholdDays: cfg.deathThresholdDays,
         unlocked: mergedUnlocked,
@@ -336,7 +338,7 @@ async function feed({ orgId, studentId, consumableKey, by = 'parent' }) {
     setFields.tier = nextTier
     setFields.level = 1
     setFields.experience = 0
-    setFields.currentHunger = pet.maxHunger
+    setFields.currentHunger = pet.currentHunger  // 2026-06-23: 升阶继承原饱腹度
     setFields.lastHungerDecayAt = now
     setFields.deathThresholdDays = petConfig.PET_TIER_CONFIG[nextTier].deathThresholdDays
     setFields.species = pet.species // D2: species 保留
@@ -505,7 +507,7 @@ async function swapEgg({ orgId, studentId }) {
         species: null,
         level: 1,
         experience: 0,
-        currentHunger: pet.maxHunger,
+        currentHunger: pet.currentHunger,  // 2026-06-23: 置换后保留原饱腹度（用户决策）
         lastHungerDecayAt: now,
         // unlocked / equipped 保留（玩家已解锁的不会丢）
         // equipped 不动（D3 一致：降阶/置换不动 unlocked；只有 tierdown 触发超 cap 卸下）
@@ -617,7 +619,7 @@ async function tierDown({ orgId, studentId, targetTier }) {
         tier: targetTier,
         level: 1,
         experience: 0,
-        currentHunger: pet.maxHunger,
+        currentHunger: pet.currentHunger,  // 2026-06-23: 降阶继承原饱腹度
         lastHungerDecayAt: now,
         deathThresholdDays: targetCfg.deathThresholdDays,
         equipped: newEquipped
@@ -709,7 +711,7 @@ async function manualTierUp({ orgId, studentId }) {
     tier: nextTier,
     level: 1,
     experience: 0,
-    currentHunger: pet.maxHunger,
+    currentHunger: pet.currentHunger,  // 2026-06-23: 手动升阶继承原饱腹度
     lastHungerDecayAt: now,
     deathThresholdDays: petConfig.PET_TIER_CONFIG[nextTier].deathThresholdDays,
     species: pet.species, // D2 保留

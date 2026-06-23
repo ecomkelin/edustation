@@ -69,6 +69,9 @@
         <div v-if="form.customerServicePhone" class="muted">客服 / 投诉:{{ form.customerServicePhone }}</div>
       </div>
     </el-card>
+
+    <!-- 2026-06-23: 宠物饱腹度衰减间隔已从站点配置移除
+         改由 PetSpecies.hungerDecayMinutes 控制（在「宠物图鉴」编辑） -->
   </div>
 </template>
 
@@ -132,7 +135,9 @@ async function submit() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+})
 </script>
 
 <style scoped>

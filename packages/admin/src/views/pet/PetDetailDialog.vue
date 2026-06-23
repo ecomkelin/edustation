@@ -36,7 +36,13 @@
         <el-descriptions-item label="种类">{{ pet.speciesRecord?.name || '—' }}</el-descriptions-item>
         <el-descriptions-item label="等级">Lv.{{ pet.level }}</el-descriptions-item>
         <el-descriptions-item label="经验">{{ pet.experience }} / {{ pet.nextExpToLevel || pet.tierUpThreshold || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="饱腹度">{{ pet.currentHunger }} / {{ pet.maxHunger }}</el-descriptions-item>
+        <el-descriptions-item label="饱腹度">
+          {{ pet.currentHunger }} / {{ pet.maxHunger }}
+          <span v-if="pet.state === 'alive'" style="color:#909399;font-size:12px;margin-left:6px">
+            (每 {{ effectiveHungerDecayMinutes }} 分钟 -1, 剩 {{ formatMinutesLeft(hungerMinutesLeft) }})
+          </span>
+          <span v-else-if="pet.state === 'egg'" style="color:#909399;font-size:12px;margin-left:6px">(蛋态不减)</span>
+        </el-descriptions-item>
         <el-descriptions-item label="最后喂食">{{ formatDate(pet.lastFedAt) }}</el-descriptions-item>
         <el-descriptions-item label="死亡阈值">{{ pet.deathThresholdDays }} 天</el-descriptions-item>
       </el-descriptions>
@@ -150,7 +156,7 @@
       <el-form>
         <el-form-item label="目标阶">
           <el-radio-group v-model="tierDownTarget">
-            <el-radio v-for="t in lowerTiers" :key="t" :label="t">{{ PET_TIER_LABELS[t] }}</el-radio>
+            <el-radio v-for="t in lowerTiers" :key="t" :value="t">{{ PET_TIER_LABELS[t] }}</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -192,6 +198,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ShoppingCart } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import { petCatalogApi } from '@/api/petCatalog'
+import { effectiveHungerDecayMinutes } from '@/utils/pet'
 import GrantOnBehalfDialog from '@/components/Pet/GrantOnBehalfDialog.vue'
 import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
 import HatchAnimation from '@/components/Pet/HatchAnimation.vue'
@@ -285,7 +292,23 @@ export default {
       }
     }
   },
+  computed: {
+    hungerMinutesLeft() {
+      if (!this.pet || this.pet.state !== 'alive') return null
+      return Math.max(0, (this.pet.currentHunger || 0) * this.effectiveHungerDecayMinutes)
+    },
+    // 2026-06-23: 三级优先级 (pet > species > 平台)
+    effectiveHungerDecayMinutes() {
+      return effectiveHungerDecayMinutes(this.pet, this.hungerDecayMinutes)
+    }
+  },
   methods: {
+    formatMinutesLeft(min) {
+      if (min == null) return '—'
+      if (min < 60) return `${min} 分钟`
+      if (min < 1440) return `${(min / 60).toFixed(1)} 小时`
+      return `${(min / 1440).toFixed(1)} 天`
+    },
     async fetchDetail() {
       // 背包区需要 item.name → 一次性拉 items 建 map
       if (Object.keys(this.itemMap).length === 0) {

@@ -255,12 +255,14 @@ const STATUS_OPTIONS = [
 const STATUS_LABELS = {
   preparing: '准备中', scheduled: '预备上课', in_progress: '进行中', completed: '已结束', archived: '已归档', cancelled: '已取消'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+// archived 是中性状态用 info；fallback 也不能用 ''，未知状态用 info。
 const STATUS_TYPES = {
-  preparing: 'primary', scheduled: 'info', in_progress: 'warning', completed: 'success', archived: '', cancelled: 'danger'
+  preparing: 'primary', scheduled: 'info', in_progress: 'warning', completed: 'success', archived: 'info', cancelled: 'danger'
 }
 
 function statusLabel(s) { return STATUS_LABELS[s] || s }
-function statusType(s) { return STATUS_TYPES[s] || '' }
+function statusType(s) { return STATUS_TYPES[s] || 'info' }
 function ciName(row) {
   const ci = row.courseInstance
   if (!ci) return '—'
@@ -311,7 +313,7 @@ async function fetchList() {
   loading.value = true
   try {
     const params = {
-      status: filter.status.join(','),
+      statuses: filter.status.join(','),
       courseInstance: filter.courseInstance || undefined,
       teacher: filter.teacher || undefined,
       room: filter.room || undefined,
@@ -338,9 +340,11 @@ async function fetchOptions() {
       userApi.list({ pageSize: 200 }),
       roomApi.list({ pageSize: 200 })
     ])
-    courseInstanceOptions.value = ci.data?.items || ci.data || []
-    teacherOptions.value = (users.data?.items || users.data || []).filter((u) => u.isActive !== false)
-    roomOptions.value = rooms.data?.items || rooms.data || []
+    // 过滤掉 _id 缺失的项：<el-option :value> 不接受 null/undefined，
+    // 否则 el-select 渲染时会触发 "Invalid prop: type check failed for prop 'value'" 警告。
+    courseInstanceOptions.value = (ci.data?.items || ci.data || []).filter((x) => x && x._id)
+    teacherOptions.value = (users.data?.items || users.data || []).filter((u) => u && u._id && u.isActive !== false)
+    roomOptions.value = (rooms.data?.items || rooms.data || []).filter((r) => r && r._id)
   } catch (e) {
     // 选项加载失败不阻塞主页面
     // eslint-disable-next-line no-console
@@ -635,11 +639,12 @@ onMounted(async () => {
 const MAKEUP_STATUS_LABELS = {
  scheduled: '待上课', checked_in: '已签到', completed: '已消课', madeup: '已补', no_show: '未到', leave: '请假'
 }
+// leave 改 info；fallback 也用 info（不能再用 ''）
 const MAKEUP_STATUS_TYPES = {
- scheduled: 'info', checked_in: 'warning', completed: 'success', madeup: 'warning', no_show: 'danger', leave: ''
+  scheduled: 'info', checked_in: 'warning', completed: 'success', madeup: 'warning', no_show: 'danger', leave: 'info'
 }
 function originalStatusLabel(s) { return MAKEUP_STATUS_LABELS[s] || s || '—' }
-function originalStatusType(s) { return MAKEUP_STATUS_TYPES[s] || '' }
+function originalStatusType(s) { return MAKEUP_STATUS_TYPES[s] || 'info' }
 const makeupLoading = reactive({}) // { [attendanceId]: boolean }
 const makeupDialog = ref(false)
 const makeupTarget = ref(null) // { schedule, attendance }

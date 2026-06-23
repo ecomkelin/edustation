@@ -157,7 +157,7 @@ const lifecycleOptions = [
 ]
 const currentLifecycle = computed(() => props.parent?.lifecycle || '')
 function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s || '-' }
-function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || '' }
+function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || 'info' }
 
 watch(
   () => props.visible,

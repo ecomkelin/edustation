@@ -43,7 +43,11 @@ const SiteConfigSchema = new Schema(
     // 平台 logo (与 Org.logo 区分: 这是 SaaS 平台主体 logo)
     platformLogo: { type: Schema.Types.ObjectId, ref: 'File', default: null },
 
-    meta: { type: Schema.Types.Mixed, default: {} }
+    // 扩展位 (2026-06-23 删除了 meta.pet.hungerDecayMinutes — 改由 PetSpecies 控制)
+    meta: {
+      type: Schema.Types.Mixed,
+      default: () => ({})
+    }
   },
   { timestamps: true, collection: 'site_configs' }
 )

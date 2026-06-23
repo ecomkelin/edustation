@@ -78,7 +78,7 @@
           <el-tag
             v-for="p in row.positions"
             :key="p.id"
-            :type="Number(p.clientLevel) > 0 ? 'warning' : ''"
+            :type="Number(p.clientLevel) > 0 ? 'warning' : 'info'"
             style="margin-right: 4px"
           >
             {{ p.name }}

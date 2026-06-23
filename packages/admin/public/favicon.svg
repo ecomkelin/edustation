@@ -1,0 +1,18 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1E40AF"/>
+    </linearGradient>
+  </defs>
+  <!-- 圆角方块背景 -->
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <!-- 信号波 (顶部, 单线 + 弱化副本) -->
+  <path d="M 6 9 Q 16 4 26 9" stroke="#FCD34D" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M 10 11.5 Q 16 9 22 11.5" stroke="#FCD34D" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.65"/>
+  <!-- 打开的书 (左右两页, 白色 + 半透明白) -->
+  <path d="M 4 15 L 4 26 L 16 24 L 16 13 Z" fill="#fff"/>
+  <path d="M 28 15 L 28 26 L 16 24 L 16 13 Z" fill="#fff" opacity="0.9"/>
+  <!-- 书脊暗线 -->
+  <line x1="16" y1="13" x2="16" y2="24" stroke="#1E40AF" stroke-width="1" opacity="0.4"/>
+</svg>

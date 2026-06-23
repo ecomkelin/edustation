@@ -29,4 +29,8 @@ router.put(
   asyncHandler(c.update)
 )
 
+// 2026-06-23 宠物系统: 平台级饱腹度衰减间隔端点已移除
+//   衰减间隔完全由 PetSpecies.hungerDecayMinutes 控制（物种级）
+//   旧路由 R-3202/R-3203 (GET/PUT /site-config/pet/hunger-decay-minutes) 已下线
+
 module.exports = router

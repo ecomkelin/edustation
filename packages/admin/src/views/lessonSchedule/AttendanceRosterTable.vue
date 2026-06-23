@@ -166,13 +166,14 @@ const BACKEND_ORIGINAL_LABELS = {
   no_show: '未到',
   leave: '请假'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，leave 改 info。
 const BACKEND_ORIGINAL_TYPES = {
   scheduled: 'info',
   checked_in: 'warning',
   completed: 'success',
   madeup: 'warning',
   no_show: 'danger',
-  leave: ''
+  leave: 'info'
 }
 
 /**
@@ -244,7 +245,7 @@ const dirtyCount = computed(() => {
 })
 
 function originalStatusLabel(s) { return BACKEND_ORIGINAL_LABELS[s] || s || '待上课' }
-function originalStatusType(s) { return BACKEND_ORIGINAL_TYPES[s] || '' }
+function originalStatusType(s) { return BACKEND_ORIGINAL_TYPES[s] || 'info' }
 // 行级"是否已扣课时"判断（radio / 备注 disable / makeup 按钮 / setAll / onSubmit 复用）
 function isConsumedRow(row) { return isConsumed(row && row.status) }
 

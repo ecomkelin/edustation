@@ -168,12 +168,14 @@ const STATUS_OPTIONS = [
 const STATUS_LABELS = {
   scheduled: '已排课', in_progress: '进行中', completed: '已完成', cancelled: '已取消'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+// cancelled 是破坏性状态用 danger；fallback 也用 info。
 const STATUS_TYPES = {
-  scheduled: 'info', in_progress: 'warning', completed: 'success', cancelled: ''
+  scheduled: 'info', in_progress: 'warning', completed: 'success', cancelled: 'danger'
 }
 
 function statusLabel(s) { return STATUS_LABELS[s] || s || '—' }
-function statusType(s) { return STATUS_TYPES[s] || '' }
+function statusType(s) { return STATUS_TYPES[s] || 'info' }
 function courseInstanceLabel(c) {
   if (!c) return ''
   const product = c.courseProduct && c.courseProduct.name

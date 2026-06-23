@@ -80,12 +80,12 @@
         </el-form-item>
         <el-form-item label="类型" prop="kind">
           <el-radio-group v-model="form.kind">
-            <el-radio v-for="k in PET_CONSUMABLE_KINDS" :key="k" :label="k">{{ PET_CONSUMABLE_KIND_LABELS[k] }}</el-radio>
+            <el-radio v-for="k in PET_CONSUMABLE_KINDS" :key="k" :value="k">{{ PET_CONSUMABLE_KIND_LABELS[k] }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="适用阶" prop="applicableTier">
           <el-radio-group v-model="form.applicableTier">
-            <el-radio v-for="t in PET_CONSUMABLE_APPLICABLE_TIERS" :key="t" :label="t">{{ PET_CONSUMABLE_APPLICABLE_TIER_LABELS[t] }}</el-radio>
+            <el-radio v-for="t in PET_CONSUMABLE_APPLICABLE_TIERS" :key="t" :value="t">{{ PET_CONSUMABLE_APPLICABLE_TIER_LABELS[t] }}</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -120,8 +120,8 @@
 
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
-            <el-radio label="image">图片</el-radio>
-            <el-radio label="svg">SVG</el-radio>
+            <el-radio value="image">图片</el-radio>
+            <el-radio value="svg">SVG</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'image'" label="图标">
@@ -351,6 +351,7 @@ export default {
       PET_TIERS, PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS,
       PET_CONSUMABLE_APPLICABLE_TIERS, PET_CONSUMABLE_APPLICABLE_TIER_LABELS,
       Plus, Upload, Picture,
+      petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm, openPreview
     }
   }

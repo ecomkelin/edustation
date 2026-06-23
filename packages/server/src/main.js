@@ -35,7 +35,7 @@ async function bootstrap() {
 
   // 3. 启动监听 (test 环境不 listen)
   if (!config.isTest) {
-    const server = app.listen(config.port, () => {
+    const server = app.listen(config.port, '0.0.0.0', () => {
       // eslint-disable-next-line no-console
       console.log(`[server] listening on http://localhost:${config.port} (${config.env})`)
     })

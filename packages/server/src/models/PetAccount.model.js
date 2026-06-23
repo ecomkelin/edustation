@@ -87,11 +87,14 @@ const PetAccountSchema = new Schema(
     adoptedAt: { type: Date, default: Date.now },
 
     // === 饥饿系统（D1: cron 写 + read 纯展示） ===
-    currentHunger: { type: Number, default: 100, min: 0, max: 100 },
-    maxHunger: { type: Number, default: 100, min: 1 },
+    currentHunger: { type: Number, default: 100, min: 0, max: 1000 },
+    maxHunger: { type: Number, default: 1000, min: 1 },
     lastFedAt: { type: Date, default: null },
     lastHungerDecayAt: { type: Date, default: null },
     deathThresholdDays: { type: Number, default: 30, min: 1 },
+    // 2026-06-23: 饱腹度衰减间隔已从 PetAccount 移除
+    //   改由 PetSpecies.hungerDecayMinutes 决定（物种统一控制）
+    //   平台级 fallback 在 cron 内部用 SiteConfig.pet.hungerDecayMinutes
 
     // === 宠物昵称 ===
     nickname: { type: String, trim: true, default: null, maxlength: 32 },

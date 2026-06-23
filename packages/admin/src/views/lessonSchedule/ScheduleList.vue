@@ -239,18 +239,20 @@ const STATUS_LABELS = {
   archived: '完成归档',
   cancelled: '已取消'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+// preparing 用 primary（蓝色，准备中）；cancelled 用 danger（破坏性状态）。
 const STATUS_TYPES = {
   scheduled: 'info',
-  preparing: '',
+  preparing: 'primary',
   in_progress: 'warning',
   completed: 'success',
   archived: 'success',
-  cancelled: ''
+  cancelled: 'danger'
 }
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 function statusLabel(s) { return STATUS_LABELS[s] || s }
-function statusType(s) { return STATUS_TYPES[s] || '' }
+function statusType(s) { return STATUS_TYPES[s] || 'info' }
 function weekdayCN(d) {
   if (!d) return ''
   return WEEKDAYS[new Date(d).getDay()]

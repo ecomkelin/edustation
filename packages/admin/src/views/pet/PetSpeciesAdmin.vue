@@ -32,6 +32,11 @@
         </template>
       </el-table-column>
       <el-table-column prop="weight" label="权重" width="80" />
+      <el-table-column label="衰减" width="100">
+        <template #default="{ row }">
+          <el-tag size="small">{{ row.hungerDecayMinutes || 60 }} 分/点</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="视觉" width="80">
         <template #default="{ row }">{{ VISUAL_LABELS[row.visualType] }}</template>
       </el-table-column>
@@ -71,13 +76,13 @@
         </el-form-item>
         <el-form-item label="阶" prop="tier">
           <el-radio-group v-model="form.tier">
-            <el-radio v-for="t in PET_TIERS" :key="t" :label="t">{{ PET_TIER_LABELS[t] }}</el-radio>
+            <el-radio v-for="t in PET_TIERS" :key="t" :value="t">{{ PET_TIER_LABELS[t] }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
-            <el-radio label="image">图片</el-radio>
-            <el-radio label="svg">SVG</el-radio>
+            <el-radio value="image">图片</el-radio>
+            <el-radio value="svg">SVG</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'image'" label="图片">
@@ -97,6 +102,11 @@
         <el-form-item label="权重">
           <el-input-number v-model="form.weight" :min="0" :max="10000" />
           <span class="hint">破壳时加权随机权重，0=不参与抽取</span>
+        </el-form-item>
+        <!-- 2026-06-23: 物种级饱腹度衰减间隔（分钟/点） -->
+        <el-form-item label="饱腹度衰减">
+          <el-input-number v-model="form.hungerDecayMinutes" :min="1" :max="10080" />
+          <span class="hint">每 {{ form.hungerDecayMinutes }} 分钟扣 1 点饱腹度（破壳时宠物继承）</span>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.isActive" />
@@ -161,6 +171,7 @@ export default {
       imageFile: null,
       svgContent: '',
       weight: 100,
+      hungerDecayMinutes: 60,  // 2026-06-23
       isActive: true,
       description: ''
     })
@@ -213,6 +224,7 @@ export default {
         imageFile: row.imageFile || null,
         svgContent: row.svgContent || '',
         weight: row.weight,
+        hungerDecayMinutes: row.hungerDecayMinutes || 60,  // 2026-06-23
         isActive: row.isActive,
         description: row.description || ''
       })
@@ -245,6 +257,7 @@ export default {
           imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
           weight: Number(form.weight) || 0,
+          hungerDecayMinutes: Number(form.hungerDecayMinutes) || 60,  // 2026-06-23
           isActive: !!form.isActive,
           description: form.description || null
         }
@@ -275,7 +288,10 @@ export default {
     }
 
     function tierTagType(t) {
-      return { C: '', B: 'success', A: 'warning', S: 'danger' }[t] || ''
+      // el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+      // 不能用空串占位（会触发 Invalid prop 警告）。给 C 阶用 info（中性灰），
+      // 与 B/A/S 形成 4 阶递进的视觉等级。
+      return { C: 'info', B: 'success', A: 'warning', S: 'danger' }[t] || 'info'
     }
 
     function openPreview(row) {
@@ -290,6 +306,7 @@ export default {
       imagePicker, previewOpen, previewRow,
       PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
       Plus, Upload, Picture,
+      petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm,
       openPreview, tierTagType, formatDate
     }

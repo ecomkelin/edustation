@@ -201,7 +201,6 @@ async function detail(id, orgId) {
     .populate('teacher', 'mobile realName')
     .populate('subject', 'name')
     .populate('consultant', 'mobile realName')
-    .populate('lessonSchedule')
     .sort({ attemptNo: 1 })
     .lean()
 

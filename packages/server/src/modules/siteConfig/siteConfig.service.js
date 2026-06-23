@@ -89,4 +89,9 @@ async function update(payload, options = {}) {
   return updated
 }
 
-module.exports = { ensureSingleton, get, update, UPDATABLE_FIELDS }
+module.exports = {
+  ensureSingleton,
+  get,
+  update,
+  UPDATABLE_FIELDS
+}

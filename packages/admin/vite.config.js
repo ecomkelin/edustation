@@ -27,6 +27,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 8000,
+      // 局域网访问必须监听所有接口；不写的话 Vite 默认只绑 localhost,
+      // 导致 127.0.0.1 和 LAN IP (192.168.1.x) 都连不上,
+      // 但本机浏览器用 localhost 又是 OK 的, 看起来很玄学.
+      host: true,
       proxy: {
         // 业务 API
         '/api': {

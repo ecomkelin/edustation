@@ -14,6 +14,14 @@
 ## 当前版本
 
 ##
+**v0.6.51** （2026-06-23）
+- 局域网访问 问题 listen 0.0.0.0 vite.config host:true
+- 破壳特效
+  - 4 阶段：hammer (0.4s) → cracks → shake → gold (1s，蛋在金光中淡出)
+  - gold 阶段 .egg-frame.fading 加 egg-fade-in-gold keyframe（opacity 1→0 + scale 1→1.15，"在金光中慢慢消失"）
+  - gold 结束直接 fetchOnce + 清 hatchActive，PetEquipmentOverlay 接位显示宠物
+  - 总时长 3s
+
 **v0.6.50** （2026-06-23）
 - 蛋态 / 破壳体验重做：
 

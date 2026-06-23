@@ -53,7 +53,7 @@ export const PARENT_LIFECYCLE_TAG_TYPE = {
   partial: 'warning',
   full: 'success',
   lost: 'danger',
-  dormant: ''
+  dormant: 'info'
 }
 
 // ChildLead 状态机标签
@@ -67,7 +67,7 @@ export const CHILD_LEAD_STATUS_LABEL = {
 }
 export const CHILD_LEAD_STATUS_TAG_TYPE = {
   pending: 'info',
-  contacted: '',
+  contacted: 'info',
   scheduled: 'warning',
   tried: 'primary',
   converted: 'success',
@@ -90,7 +90,7 @@ export const TRIAL_BOOKING_STATUS_TAG_TYPE = {
   arrived: 'primary',
   completed: 'success',
   considering: 'warning',
-  cancelled: ''
+  cancelled: 'danger'
 }
 
 // 触点类型标签

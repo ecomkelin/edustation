@@ -112,7 +112,6 @@
         <!-- 2) 会话记录 (2026-06-18 调整: 移到 AI 助手说明下方) -->
         <AiConversationList
           ref="convListRef"
-          class="conv-list-card"
           :active-id="activeConversationId"
           :is-streaming="isStreaming"
           :active-count="conversationLimit.activeCount"
@@ -676,5 +675,4 @@ onMounted(() => {
 
 .settings-card { /* 跟其他右侧卡同等间距 */ }
 .preset-card { /* 间距由 .right-col gap 控制 */ }
-.conv-list-card { /* 间距由 .right-col gap 控制 */ }
 </style>

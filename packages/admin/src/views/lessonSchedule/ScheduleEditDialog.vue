@@ -279,8 +279,10 @@ const rosterSchedule = computed(() => ({
 const STATUS_LABELS = {
   scheduled: '已排课', in_progress: '进行中', completed: '已完成', archived: '已归档', cancelled: '已取消'
 }
+// el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+// archived 用 info（中性），cancelled 用 danger（破坏性）。
 const STATUS_TYPES = {
-  scheduled: 'info', in_progress: 'warning', completed: 'success', archived: '', cancelled: ''
+  scheduled: 'info', in_progress: 'warning', completed: 'success', archived: 'info', cancelled: 'danger'
 }
 
 const form = reactive({
@@ -340,7 +342,7 @@ const title = computed(() => {
 })
 
 function statusLabel(s) { return STATUS_LABELS[s] || s }
-function statusType(s) { return STATUS_TYPES[s] || '' }
+function statusType(s) { return STATUS_TYPES[s] || 'info' }
 
 const minutesPerLessonHint = ref(90)
 

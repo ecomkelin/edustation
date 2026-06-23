@@ -59,9 +59,23 @@
           {{ row.experience }}
         </template>
       </el-table-column>
-      <el-table-column label="饱腹度" width="120">
+      <el-table-column label="饱腹度" width="140">
         <template #default="{ row }">
-          <el-progress :percentage="row.currentHunger" :stroke-width="8" :show-text="false" :color="hungerColor(row.currentHunger)" />
+          <el-tooltip
+            v-if="row.state === 'alive'"
+            :content="`每 ${rowEffectiveDecay(row)} 分钟 -1; 剩 ${row.currentHunger}/${row.maxHunger || 1000}`"
+            placement="top"
+          >
+            <el-progress
+              :percentage="Math.round((row.currentHunger / (row.maxHunger || 1000)) * 100)"
+              :stroke-width="8"
+              :show-text="true"
+              :format="() => `${row.currentHunger}/${row.maxHunger || 1000}`"
+              :color="hungerColor(row.currentHunger, row.maxHunger || 1000)"
+            />
+          </el-tooltip>
+          <span v-else-if="row.state === 'egg'" style="color:#909399;font-size:12px">🥚 蛋态</span>
+          <span v-else style="color:#909399;font-size:12px">💀 已死亡</span>
         </template>
       </el-table-column>
       <el-table-column label="最后喂食" width="160">
@@ -170,6 +184,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Bowl, Tickets } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import { studentApi } from '@/api/student'
+import { effectiveHungerDecayMinutes } from '@/utils/pet'
 import { formatDate } from '@/utils/format'
 import PetDetailDialog from './PetDetailDialog.vue'
 import FeedOnBehalfDialog from '@/components/Pet/FeedOnBehalfDialog.vue'
@@ -343,12 +358,20 @@ export default {
       return { egg: 'info', alive: 'success', dead: 'danger' }[s] || ''
     },
     tierTagType(t) {
-      return { C: 'info', B: 'primary', A: 'warning', S: 'danger' }[t] || ''
+      // el-tag 的 type 校验只接受 primary/success/info/warning/danger，
+      // fallback 不能用空串，否则脏 tier 数据会触发 Invalid prop 警告。
+      return { C: 'info', B: 'primary', A: 'warning', S: 'danger' }[t] || 'info'
     },
-    hungerColor(h) {
-      if (h < 30) return '#F56C6C'
-      if (h < 60) return '#E6A23C'
+    hungerColor(h, max = 1000) {
+      // 2026-06-23: maxHunger 改 1000，按百分比判断颜色（保持视觉一致）
+      const p = max > 0 ? (h / max) * 100 : 0
+      if (p < 30) return '#F56C6C'
+      if (p < 60) return '#E6A23C'
       return '#67C23A'
+    },
+    // 2026-06-23: 行级有效衰减（species 决定）
+    rowEffectiveDecay(row) {
+      return effectiveHungerDecayMinutes(row, 60)
     }
   }
 }

@@ -1,7 +1,24 @@
 <template>
   <el-container class="layout">
     <el-header class="header">
-      <div class="logo">🎓 EduStation</div>
+      <div class="logo">
+        <!-- EduStation logo (2026-06-22): 方案 2 书本+信号波 SVG, 替换原 emoji -->
+        <svg class="logo-icon" width="28" height="28" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-label="EduStation">
+          <defs>
+            <linearGradient id="logo-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#3B82F6"/>
+              <stop offset="100%" stop-color="#1E40AF"/>
+            </linearGradient>
+          </defs>
+          <rect width="32" height="32" rx="7" fill="url(#logo-bg)"/>
+          <path d="M 6 9 Q 16 4 26 9" stroke="#FCD34D" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 10 11.5 Q 16 9 22 11.5" stroke="#FCD34D" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.65"/>
+          <path d="M 4 15 L 4 26 L 16 24 L 16 13 Z" fill="#fff"/>
+          <path d="M 28 15 L 28 26 L 16 24 L 16 13 Z" fill="#fff" opacity="0.9"/>
+          <line x1="16" y1="13" x2="16" y2="24" stroke="#1E40AF" stroke-width="1" opacity="0.4"/>
+        </svg>
+        <span class="logo-text">EduStation</span>
+      </div>
       <div class="header-right">
         <OrgSwitcher />
         <el-dropdown @command="onCommand">
@@ -378,8 +395,19 @@ const avatarInitial = computed(() => {
 .body { flex: 1; min-height: 0; }
 .content { flex: 1; min-width: 0; }
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.logo-icon {
+  /* SVG 自适应 header 高度, 不拉伸 */
+  flex-shrink: 0;
+  display: block;
+}
+.logo-text {
   font-size: 18px;
   font-weight: 600;
+  letter-spacing: 0.3px;
 }
 .header-right {
   display: flex;
