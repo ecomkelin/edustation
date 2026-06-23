@@ -38,12 +38,30 @@ import {
   Promotion,
   User,
   Calendar,
-  ShoppingCart
+  ShoppingCart,
+  Bell,
+  Sunny
 } from '@element-plus/icons-vue'
 
 defineEmits(['pick'])
 
 const categories = [
+  // 2026-06-23: 今日工作台 (新加在最前面, 业务高频入口)
+  {
+    key: 'today',
+    title: '今日工作台',
+    icon: Sunny,
+    questions: [
+      '今天有哪些已经预约要来学校体验的',
+      '今天需要哪些老师来学校',
+      '有哪些考虑中的家长要沟通的',
+      '有哪些潜客家长需要跟进沟通了',
+      '今天有哪些课要上 哪个老师 哪些学生',
+      '有哪些学生课包不足，需要续费的',
+      '哪些学生的宠物快饿死了',
+      '哪些学生的积分快没了'
+    ]
+  },
   {
     key: 'recruit',
     title: '招生试听',

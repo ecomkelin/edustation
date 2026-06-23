@@ -408,6 +408,56 @@ async function listAccounts({ orgId, page = 1, pageSize = 20, keyword = '', sort
 }
 
 /**
+ * 今日工作台 (2026-06-23 AI 助手接入): 积分余额低于阈值的学生
+ *  - 默认 threshold=10
+ *  - 仅 isActive=true 的学员 (在职在读)
+ *  - 派生: 监护人手机号 (用于"提醒家长")
+ *  - 排序: balance 升序 (越少越靠前), tie 时 lastTransactionAt asc (越久没动越优先)
+ *  - 返回 { threshold, items, count }
+ */
+async function listLowBalance({ orgId, threshold = 10, limit = 50 }) {
+  const t = Math.max(0, Number(threshold) || 0)
+
+  // 先按 org 拉低余额账户, 再 left join 学员 (inactive/blocked 学员过滤掉)
+  const lowAccounts = await PointsAccount.find({
+    org: orgId,
+    balance: { $lte: t }
+  })
+    .sort({ balance: 1, lastTransactionAt: 1 })
+    .limit(Math.min(Number(limit) || 50, 200))
+    .lean()
+
+  if (lowAccounts.length === 0) return { threshold: t, items: [], count: 0 }
+
+  // 过滤 inActive / blocked 学员, 并取监护人手机
+  const Student = require('@models/Student.model')
+  const studentIds = lowAccounts.map((a) => a.student)
+  const students = await Student.find({
+    _id: { $in: studentIds },
+    isActive: true,
+    isBlocked: { $ne: true }
+  })
+    .populate('guardians', 'mobile')
+    .lean()
+  const sMap = new Map(students.map((s) => [String(s._id), s]))
+
+  const items = lowAccounts
+    .filter((a) => sMap.has(String(a.student)))
+    .map((a) => {
+      const s = sMap.get(String(a.student))
+      return {
+        studentId: a.student,
+        studentName: s?.name || null,
+        balance: a.balance,
+        lastTransactionAt: a.lastTransactionAt,
+        guardianMobile: s?.guardians?.[0]?.mobile || null
+      }
+    })
+
+  return { threshold: t, items, count: items.length }
+}
+
+/**
  * 全机构流水列表（admin 端"流水记录"tab）
  *  - 支持 studentId / trigger 多选 / 日期范围 / keyword
  */
@@ -485,5 +535,7 @@ module.exports = {
   getAccount,
   listAccounts,
   listTransactions,
-  listActiveReasons
+  listActiveReasons,
+  // 2026-06-23: AI 助手今日工作台
+  listLowBalance
 }

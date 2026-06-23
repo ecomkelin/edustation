@@ -16,6 +16,34 @@ const { pickStudentProductFIFO } = require('@modules/lessonAttendance/studentPro
 const lessonAttendanceService = require('@modules/lessonAttendance/lessonAttendance.service')
 const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
+/**
+ * 把 from/to 字符串解析为 Date, 兼容两种入参:
+ *   1) 完整 ISO (含时区或毫秒): "2026-06-24T09:00:00+08:00" → 原样 new Date()
+ *   2) 纯日期: "2026-06-24" → 当天 00:00:00 (start 模式) 或 次日 00:00:00 (end 模式)
+ *      这样 from=to="2026-06-24" 能正确表达"整天 6/24"
+ * 用法:
+ *   filter.plannedStartTime.$gte = parseBoundary(from, 'start')
+ *   filter.plannedStartTime.$lte = parseBoundary(to, 'end')
+ *
+ * 2026-06-23 修 calendar 同一天 from=to 边界 bug 时引入
+ */
+function parseBoundary(s, mode) {
+  if (!s) return null
+  // 含 'T' 或 ':' 或 'Z' 或 '+/-\d{2}:?\d{2}$' 视为完整 ISO, 直接 new Date()
+  const isFullISO = /T/.test(s)
+  if (isFullISO) return new Date(s)
+  // 纯日期 "YYYY-MM-DD"
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (!m) return new Date(s) // fallback: 让 new Date 抛错, 不静默
+  const [_, y, mo, d] = m
+  if (mode === 'end') {
+    // 次日 00:00:00 (= 当天 24:00:00)
+    return new Date(Number(y), Number(mo) - 1, Number(d) + 1, 0, 0, 0, 0)
+  }
+  // start: 当天 00:00:00
+  return new Date(Number(y), Number(mo) - 1, Number(d), 0, 0, 0, 0)
+}
+
 // ─── 冲突检测 ─────────────────────────────────────────────
 // 同时返回冲突的排课列表（id / 时间 / 老师 / 教室 / 课程），用于 UI 上的具体提示
 async function detectConflict({ orgId, teacher, room, start, end, excludeId }) {
@@ -976,8 +1004,13 @@ async function calendar({ orgId, from, to, teacher, room, courseInstance, status
   }
   if (from || to) {
     filter.plannedStartTime = {}
-    if (from) filter.plannedStartTime.$gte = new Date(from)
-    if (to) filter.plannedEndTime = { $lte: new Date(to) }
+    if (from) filter.plannedStartTime.$gte = parseBoundary(from, 'start')
+    // 修 bug (2026-06-23): 之前错把字段名写成 plannedEndTime, 导致同一天的 from=to 查不出任何数据
+    //   例: from=2026-06-24 to=2026-06-24 → 实际 filter = {plannedEndTime: {$lte: 2026-06-24 00:00:00}}
+    //   所有课 plannedEndTime > 00:00:00, 全部被滤掉, 返回空数组
+    //   截图复现: AI 调 list_lesson_calendar 查 6/24, 后端返回 [], AI 据此说"无任何排课",
+    //             但日历页面明明显示当天有 3 节课
+    if (to) filter.plannedStartTime.$lte = parseBoundary(to, 'end')
   }
   const items = await LessonSchedule.find(filter)
     .populate('courseInstance', 'name')
@@ -1011,6 +1044,88 @@ async function checkConflicts({ orgId, teacher, room, plannedStartTime, plannedE
   if (!(start < end)) throw ApiError.badRequest('开始时间必须早于结束时间')
   const conflict = await detectConflict({ orgId, teacher, room, start, end, excludeId })
   return { conflicts: conflictResponsePayload(conflict) }
+}
+
+/**
+ * 今日工作台: 今日排课 (含 teacher / room / 学生名单)
+ *  - 排除已归档 status='archived'
+ *  - 每个 schedule 附带 LessonAttendance 名单 (status != 'cancelled') → 学生名 + 考勤状态
+ *  - 排序按 plannedStartTime 升序
+ *  - 返回 { date, items, teachers }
+ *    teachers: 去重的 teacher (含今日节数), 用于"今日需哪些老师"
+ */
+async function listTodayWithRoster({ orgId }) {
+  const today = new Date()
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0)
+  const end = new Date(start.getTime() + 24 * 3600 * 1000)
+
+  const items = await LessonSchedule.find({
+    org: orgId,
+    status: { $ne: 'archived' },
+    plannedStartTime: { $gte: start, $lt: end }
+  })
+    .populate('teacher', 'mobile realName')
+    .populate('room', 'name')
+    .populate('courseInstance', 'title subject')
+    .sort({ plannedStartTime: 1 })
+    .lean()
+
+  if (items.length === 0) {
+    const pad = (n) => String(n).padStart(2, '0')
+    const dateStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+    return { date: dateStr, items: [], teachers: [], count: 0 }
+  }
+
+  const ids = items.map((s) => s._id)
+  const LessonAttendance = require('@models/LessonAttendance.model')
+  const attendances = await LessonAttendance.find({
+    org: orgId,
+    lessonSchedule: { $in: ids },
+    status: { $ne: 'cancelled' }
+  })
+    .populate('student', 'name')
+    .lean()
+
+  const rosterByLesson = new Map()
+  for (const a of attendances) {
+    const key = String(a.lessonSchedule)
+    if (!rosterByLesson.has(key)) rosterByLesson.set(key, [])
+    rosterByLesson.get(key).push({
+      studentId: a.student?._id,
+      studentName: a.student?.name || null,
+      status: a.status
+    })
+  }
+
+  const teacherMap = new Map()
+  for (const s of items) {
+    s.roster = rosterByLesson.get(String(s._id)) || []
+    s.studentCount = s.roster.length
+    if (s.teacher) {
+      const key = String(s.teacher._id)
+      if (!teacherMap.has(key)) {
+        teacherMap.set(key, {
+          id: s.teacher._id,
+          name: s.teacher.realName || s.teacher.mobile,
+          mobile: s.teacher.mobile,
+          lessonCount: 0,
+          studentCount: 0
+        })
+      }
+      const t = teacherMap.get(key)
+      t.lessonCount += 1
+      t.studentCount += s.studentCount
+    }
+  }
+
+  const pad = (n) => String(n).padStart(2, '0')
+  const dateStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+  return {
+    date: dateStr,
+    items,
+    teachers: Array.from(teacherMap.values()),
+    count: items.length
+  }
 }
 
 /**
@@ -1079,5 +1194,7 @@ module.exports = {
   generateAttendancesForSchedule,
   syncAttendances,
   previewSyncAttendances,
-  sortSchedulesForList
+  sortSchedulesForList,
+  // 2026-06-23: AI 助手今日工作台
+  listTodayWithRoster
 }

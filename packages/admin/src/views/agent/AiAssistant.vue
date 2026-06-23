@@ -183,7 +183,7 @@ const scrollRef = ref(null)
 const convListRef = ref(null)
 
 const systemPrompt = ref('')
-const temperature = ref(0.5)
+const temperature = ref(0.3)
 const maxTokens = ref(2048)
 
 const lastMeta = reactive({ model: '', latencyMs: null, usage: null })
@@ -230,7 +230,7 @@ function usePreset(q) {
 
 function resetParams() {
   systemPrompt.value = ''
-  temperature.value = 0.5
+  temperature.value = 0.3
   maxTokens.value = 2048
 }
 

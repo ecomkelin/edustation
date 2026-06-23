@@ -247,6 +247,136 @@ async function list({ orgId, currentUser, scope, lifecycle, keyword, phone, tag,
   return { items, total, page: p.page, pageSize: p.pageSize, scope: effectiveScope }
 }
 
+/* ─── 今日工作台 (2026-06-23 AI 助手接入) ─────────────── */
+
+/**
+ * 待跟进的潜客家长 (new / partial, lastContactedAt 距今 > staleDays 天)
+ *  - 业务场景: AI 助手"哪些潜客家长需要跟进沟通了"
+ *  - lastContactedAt 为 null (从未联系) 一并命中, 排在最前
+ *  - 默认 staleDays = 7; UI/LLM 可调 (3/7/14/30)
+ *  - 返回精简字段 (id/phone/lifecycle/lastContactedAt/childCount/firstChildName) 供 LLM 总结
+ *  - 排序: 从未联系 (lastContactedAt=null) 优先, 其余按 lastContactedAt 升序 (越久越靠前)
+ */
+async function listOverdue({ orgId, staleDays = 7, limit = 50 }) {
+  const threshold = new Date(Date.now() - Number(staleDays) * 24 * 3600 * 1000)
+  const items = await Parent.find({
+    org: orgId,
+    lifecycle: { $in: ['new', 'partial'] },
+    $or: [
+      { lastContactedAt: null },
+      { lastContactedAt: { $lt: threshold } }
+    ]
+  })
+    .populate('source', 'name')
+    .sort({ lastContactedAt: 1 }) // null 在前 (mongoose 默认 null < date)
+    .limit(Math.min(Number(limit) || 50, 200))
+    .lean()
+
+  // 派生: 孩子数量 + 第一个孩子名 (用于 LLM 自然语言)
+  const ids = items.map((p) => p._id)
+  const mongoose = require('mongoose')
+  const childCounts = ids.length
+    ? await ChildLead.aggregate([
+        { $match: { parent: { $in: ids }, org: new mongoose.Types.ObjectId(String(orgId)) } },
+        { $sort: { createdAt: 1 } },
+        {
+          $group: {
+            _id: '$parent',
+            count: { $sum: 1 },
+            firstName: { $first: '$name' }
+          }
+        }
+      ])
+    : []
+  const m = new Map(childCounts.map((c) => [String(c._id), { count: c.count, firstName: c.firstName }]))
+
+  return {
+    staleDays,
+    threshold: threshold.toISOString(),
+    items: items.map((p) => ({
+      id: p._id,
+      phone: p.phone,
+      lifecycle: p.lifecycle,
+      lastContactedAt: p.lastContactedAt,
+      daysSinceContact: p.lastContactedAt
+        ? Math.floor((Date.now() - new Date(p.lastContactedAt).getTime()) / (24 * 3600 * 1000))
+        : null,
+      childCount: m.get(String(p._id))?.count || 0,
+      firstChildName: m.get(String(p._id))?.firstName || null,
+      source: p.source?.name || null
+    })),
+    count: items.length
+  }
+}
+
+/**
+ * 处于 considering 状态的家长 (需主动沟通的)
+ *  - 业务场景: AI 助手"哪些考虑中的家长要沟通"
+ *  - lifecycle=considering 表示试听后还在犹豫
+ *  - 关联每个家长最近的 1 笔 TrialBooking, 输出科目/老师/完成时间
+ *  - 排序: lastContactedAt 升序 (越久没联系越靠前)
+ */
+async function listConsidering({ orgId, limit = 50 }) {
+  const items = await Parent.find({ org: orgId, lifecycle: 'considering' })
+    .populate('source', 'name')
+    .sort({ lastContactedAt: 1, updatedAt: 1 })
+    .limit(Math.min(Number(limit) || 50, 200))
+    .lean()
+
+  // 派生: 最近一笔 completed 试听 (用于"上次试听 X 课, Y 老师, Z 时长")
+  const ids = items.map((p) => p._id)
+  const recentBookings = ids.length
+    ? await TrialBooking.aggregate([
+        { $match: { parent: { $in: ids }, org: new mongoose.Types.ObjectId(String(orgId)), status: 'completed' } },
+        { $sort: { updatedAt: -1 } },
+        {
+          $group: {
+            _id: '$parent',
+            subject: { $first: '$subject' },
+            teacher: { $first: '$teacher' },
+            updatedAt: { $first: '$updatedAt' }
+          }
+        }
+      ])
+    : []
+  const sm = new Map(recentBookings.map((b) => [String(b._id), b]))
+
+  // populate subject.name + teacher.realName (aggregate 不支持 populate, 二次查)
+  const subjectIds = [...new Set(recentBookings.map((b) => b.subject).filter(Boolean).map(String))]
+  const teacherIds = [...new Set(recentBookings.map((b) => b.teacher).filter(Boolean).map(String))]
+  const Category = require('@models/Category.model')
+  const User = require('@models/User.model')
+  const [subjects, teachers] = await Promise.all([
+    subjectIds.length ? Category.find({ _id: { $in: subjectIds }, model: 'Subject' }).select('name').lean() : [],
+    teacherIds.length ? User.find({ _id: { $in: teacherIds } }).select('realName mobile').lean() : []
+  ])
+  const sMap = new Map(subjects.map((s) => [String(s._id), s.name]))
+  const tMap = new Map(teachers.map((t) => [String(t._id), { name: t.realName || t.mobile, mobile: t.mobile }]))
+
+  return {
+    items: items.map((p) => {
+      const rb = sm.get(String(p._id))
+      return {
+        id: p._id,
+        phone: p.phone,
+        lastContactedAt: p.lastContactedAt,
+        daysSinceContact: p.lastContactedAt
+          ? Math.floor((Date.now() - new Date(p.lastContactedAt).getTime()) / (24 * 3600 * 1000))
+          : null,
+        source: p.source?.name || null,
+        recentTrial: rb
+          ? {
+              subject: rb.subject ? sMap.get(String(rb.subject)) || null : null,
+              teacher: rb.teacher ? tMap.get(String(rb.teacher)) || null : null,
+              completedAt: rb.updatedAt
+            }
+          : null
+      }
+    }),
+    count: items.length
+  }
+}
+
 async function detail(id, orgId) {
   const parent = await Parent.findOne({ _id: id, org: orgId })
     .populate('promoteBy', 'mobile realName')
@@ -869,5 +999,8 @@ module.exports = {
   recomputeLifecycle,    // 供 trialBooking/childLead 服务调用
   parentUsageChecks,
   getDefaultChannelId,   // 默认渠道解析
-  _resetDefaultChannelCache
+  _resetDefaultChannelCache,
+  // 2026-06-23: AI 助手今日工作台
+  listOverdue,           // 待跟进潜客 (lifecycle ∈ {new, partial}, lastContactedAt 距今 > N 天)
+  listConsidering        // 考虑中家长 (lifecycle=considering) + 最近试听摘要
 }

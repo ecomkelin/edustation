@@ -109,4 +109,71 @@ async function gift({ orgId, operatorId, student, courseProduct, totalLessons, e
   return detail(sp._id, orgId)
 }
 
-module.exports = { list, detail, remaining, gift }
+/**
+ * 今日工作台 (2026-06-23 AI 助手接入): 剩余课时不足阈值的活跃课包
+ *  - threshold 默认 3 (>=0 且 <=threshold 视为不足)
+ *  - 仅 isActive=true 的课包
+ *  - 按 student 聚合, 每个学生只输出 1 行 (取最低 remainingLessons 的课包代表)
+ *    (避免一个学生有 5 个 1 课时的小课包时输出 5 行)
+ *  - 排序: remainingLessons 升序 (越少越靠前), tie 时按 updatedAt desc
+ *  - 返回 { threshold, items, count }
+ */
+async function listLowRemaining({ orgId, threshold = 3, limit = 50 }) {
+  const t = Math.max(0, Number(threshold) || 0)
+  const items = await StudentProduct.find({
+    org: orgId,
+    isActive: true,
+    remainingLessons: { $lte: t }
+  })
+    .populate('student', 'name')
+    .populate('courseProduct', 'name')
+    .sort({ remainingLessons: 1, updatedAt: -1 })
+    .limit(Math.min(Number(limit) || 50, 200))
+    .lean()
+
+  // 派生: 每个学生的活跃课包总数 (用于 LLM 自然语言: "还有 N 个活跃课包")
+  const studentIds = [...new Set(items.map((i) => String(i.student?._id)).filter(Boolean))]
+  const StudentProduct = require('@models/StudentProduct.model')
+  const mongoose = require('mongoose')
+  const orgOid = mongoose.Types.ObjectId.createFromHexString(String(orgId))
+  const studentOids = studentIds
+    .filter((s) => mongoose.Types.ObjectId.isValid(s))
+    .map((s) => mongoose.Types.ObjectId.createFromHexString(s))
+  const totals = studentOids.length
+    ? await StudentProduct.aggregate([
+        { $match: { org: orgOid, student: { $in: studentOids }, isActive: true } },
+        { $group: { _id: '$student', total: { $sum: 1 } } }
+      ])
+    : []
+  const tMap = new Map(totals.map((t) => [String(t._id), t.total]))
+
+  // 派生: 监护人手机号 (用于沟通)
+  const Student = require('@models/Student.model')
+  const students = studentIds.length
+    ? await Student.find({ _id: { $in: studentIds } })
+        .populate('guardians', 'mobile')
+        .lean()
+    : []
+  const sMap = new Map(students.map((s) => [String(s._id), s]))
+
+  return {
+    threshold: t,
+    items: items.map((p) => {
+      const s = sMap.get(String(p.student?._id))
+      const guardianMobile = s?.guardians?.[0]?.mobile || null
+      return {
+        studentId: p.student?._id,
+        studentName: p.student?.name || null,
+        courseProductName: p.courseProduct?.name || null,
+        remainingLessons: p.remainingLessons,
+        totalLessons: p.totalLessons,
+        expireDate: p.expireDate,
+        activePackCount: tMap.get(String(p.student?._id)) || 0,
+        guardianMobile
+      }
+    }),
+    count: items.length
+  }
+}
+
+module.exports = { list, detail, remaining, gift, listLowRemaining }

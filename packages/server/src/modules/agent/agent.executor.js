@@ -157,6 +157,22 @@ async function resolveInvocation({ toolName, args, currentUser, orgId }) {
       return { svcModule: meta.module, svcFn: meta.fn, args: { id: args.orderId, orgId, paymentMethod: args.paymentMethod, paidAmount: args.paidAmount } }
     case 'list_subjects':
       return { svcModule: meta.module, svcFn: meta.fn, args: { orgId, keyword: args.keyword } }
+    // ─── 今日工作台 (2026-06-23) ─────────
+    // 7 个新工具全部是 read 风险, 入参只透传 limit/threshold 等可选参数
+    case 'today_appointments':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId } }
+    case 'today_lessons':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId } }
+    case 'considering_parents':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId, limit: args.limit } }
+    case 'pending_followup_parents':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId, staleDays: args.staleDays, limit: args.limit } }
+    case 'starving_pets':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId, threshold: args.threshold, limit: args.limit } }
+    case 'low_points_students':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId, threshold: args.threshold, limit: args.limit } }
+    case 'low_classpack_students':
+      return { svcModule: meta.module, svcFn: meta.fn, args: { orgId, threshold: args.threshold, limit: args.limit } }
     default:
       throw ApiError.badRequest(`tool ${toolName} 参数适配未实现`)
   }
@@ -201,6 +217,21 @@ function buildSummary(toolName, args) {
         return `支付订单 ${args.orderId || '?'} 金额 ${args.paidAmount || '?'}`
       case 'list_subjects':
         return `查学科列表 (${args.keyword || '全部'})`
+      // ─── 今日工作台 (2026-06-23) ─────────
+      case 'today_appointments':
+        return '查今日试听预约 + 今日需到校老师'
+      case 'today_lessons':
+        return '查今日排课 + 学生名单 + 今日需到校老师'
+      case 'considering_parents':
+        return '查考虑中家长 (lifecycle=considering)'
+      case 'pending_followup_parents':
+        return `查待跟进潜客家长 (距上次联系 > ${args.staleDays || 7} 天)`
+      case 'starving_pets':
+        return `查快饿死的学员宠物 (饥饿度 <= ${args.threshold != null ? args.threshold : 20})`
+      case 'low_points_students':
+        return `查积分余额 <= ${args.threshold != null ? args.threshold : 10} 的学员`
+      case 'low_classpack_students':
+        return `查剩余课时 <= ${args.threshold != null ? args.threshold : 3} 的活跃课包 (需续费)`
       default:
         return `执行 ${toolName}`
     }

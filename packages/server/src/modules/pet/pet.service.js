@@ -823,6 +823,61 @@ async function listEvents({ orgId, studentId, page = 1, pageSize = 20 }) {
   return { items, total, page: safePage, pageSize: safeSize }
 }
 
+/**
+ * 今日工作台 (2026-06-23 AI 助手接入): 饥饿度低的宠物
+ *  - 默认 threshold=20 (currentHunger <= 20 即视为"快饿死")
+ *  - 仅 state=alive (egg 态没有 currentHunger 饥饿概念; dead 态已被 cron 自动转 egg, 不命中)
+ *  - 排序: currentHunger 升序 (越低越靠前)
+ *  - 派生: 监护人手机号 (用于"提醒家长喂食"等场景)
+ *  - 返回 { threshold, items, count }
+ */
+async function listStarving({ orgId, threshold = 20, limit = 50 }) {
+  const t = Math.max(0, Math.min(1000, Number(threshold) || 0))
+  const PetAccount = require('@models/PetAccount.model')
+  const Student = require('@models/Student.model')
+
+  const pets = await PetAccount.find({
+    org: orgId,
+    state: 'alive',
+    currentHunger: { $lte: t }
+  })
+    .populate('student', 'name')
+    .sort({ currentHunger: 1 })
+    .limit(Math.min(Number(limit) || 50, 200))
+    .lean()
+
+  // 派生: 监护人手机号
+  const studentIds = [...new Set(pets.map((p) => String(p.student?._id)).filter(Boolean))]
+  const students = studentIds.length
+    ? await Student.find({ _id: { $in: studentIds } })
+        .populate('guardians', 'mobile')
+        .lean()
+    : []
+  const sMap = new Map(students.map((s) => [String(s._id), s]))
+
+  return {
+    threshold: t,
+    items: pets.map((p) => {
+      const s = sMap.get(String(p.student?._id))
+      return {
+        petAccountId: p._id,
+        studentId: p.student?._id,
+        studentName: p.student?.name || null,
+        nickname: p.nickname || null,
+        species: p.species,
+        tier: p.tier,
+        level: p.level,
+        currentHunger: p.currentHunger,
+        maxHunger: p.maxHunger,
+        lastFedAt: p.lastFedAt,
+        deathThresholdDays: p.deathThresholdDays,
+        guardianMobile: s?.guardians?.[0]?.mobile || null
+      }
+    }),
+    count: pets.length
+  }
+}
+
 module.exports = {
   ensurePetAccount,
   adopt,
@@ -833,5 +888,6 @@ module.exports = {
   manualTierUp,
   getMine,
   decoratePet,
-  listEvents
+  listEvents,
+  listStarving
 }

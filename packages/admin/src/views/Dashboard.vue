@@ -4,18 +4,12 @@
       <h2>欢迎回来，{{ auth.user?.realName || auth.user?.mobile || '同事' }}</h2>
     </div>
 
-    <p class="hint">
-      当前机构：<b>{{ orgName }}</b>。完整 5 块经营看板已移到左侧
-      <b>「经营分析」</b> 一级菜单（含营收/课消/教室/老师/积分）。
-    </p>
-
     <!-- ───── 核心 1 块：经营总览的"今日要闻"6 Kpi（走 ReportBoard + 权限兜底） ───── -->
     <div v-if="perm.orderRead">
       <ReportBoard
         v-model="currentRange"
         title="今日要闻"
         icon="📊"
-        hint="数据来自「经营总览」看板；后端 60s 缓存，写订单/考勤后自动失效"
         :loading="loading"
         :generated-at="generatedAt"
         @range-change="reloadByRange"
@@ -107,47 +101,11 @@
       </el-row>
     </el-card>
 
-    <!-- ───── 系统说明（复用 platform/info 的内容） ───── -->
-    <el-card class="board" shadow="never">
-      <template #header>
-        <div class="board-title">
-          📘 系统说明
-          <span class="board-title-hint">系统定位、模块地图、典型流程一站式速览</span>
-        </div>
-      </template>
-      <div class="system-intro">
-        <h3>EduStation 是什么</h3>
-        <p>
-          面向科技 / 艺术类校外培训机构的 <b>SaaS 多租户</b> 管理系统。核心流程：
-          <b>学生建档</b> → <b>购买课包</b> → <b>开班报名</b> → <b>排课</b> → <b>上课消课</b> → <b>评价作品</b>。
-          所有业务数据通过「机构」字段隔离，第一家机构即第一个租户。
-        </p>
-
-        <h3>模块速查</h3>
-        <el-row :gutter="12">
-          <el-col :xs="24" :sm="12" :md="8" v-for="m in moduleMap" :key="m.path">
-            <div class="module-card" @click="$router.push(m.path)">
-              <div class="module-icon">{{ m.icon }}</div>
-              <div class="module-body">
-                <div class="module-title">{{ m.title }}</div>
-                <div class="module-desc">{{ m.desc }}</div>
-              </div>
-            </div>
-          </el-col>
-        </el-row>
-
-        <h3>典型的一天（按角色）</h3>
-        <ul class="role-list">
-          <li><b>校长 / 教务主管</b>：看「经营分析」→ 看课消进度 → 处理冲突 → 安排下期开班</li>
-          <li><b>老师</b>：在「排课 / 上课表」看今天的课 → 签到 / 消课 → 拍照上传作品 → 给家长写反馈</li>
-          <li><b>销售 / 财务</b>：在「订单」开单 / 收款 / 退款；在「学员与订单」建立学员课包</li>
-        </ul>
-
-        <div class="more">
-          <el-link type="primary" @click="$router.push('/platform/info')">查看完整系统说明 →</el-link>
-        </div>
-      </div>
-    </el-card>
+    <!--
+      2026-06-23: 「系统说明」+ 上面两个红框（hint 提示 / ReportBoard 缓存提示）已删除
+        - 用户反馈: "当前机构..." / "数据来自..." 两段提示没用, 系统说明也重复 platform/info 已有内容
+        - 整块删掉后, 页面只剩 KPI, 留出空间给后续要加的"今日排课时间线"
+    -->
   </div>
 </template>
 
@@ -230,15 +188,9 @@ async function loadRecruitKpi() {
   }
 }
 
-// 6 个模块卡片：与左侧菜单项对齐，但不显示左侧已显而易见的项
-const moduleMap = [
-  { path: '/students',         icon: '👤', title: '学生管理',     desc: '学员档案、家长关联、备注' },
-  { path: '/course-products',  icon: '📦', title: '课程产品',     desc: '上架课程 / 课包 / 定价' },
-  { path: '/course-instances', icon: '🎒', title: '开班',         desc: '招生 / 上课 / 结业' },
-  { path: '/schedule',         icon: '📅', title: '排课',         desc: '按周/月排课 + 冲突检测' },
-  { path: '/orders',           icon: '🧾', title: '订单',         desc: '合同 / 收款 / 退款' },
-  { path: '/student-works',    icon: '🖼️', title: '学员作品',     desc: '家长可见的作品墙' }
-]
+// 6 个模块卡片：与左侧菜单项对齐, 但不显示左侧已显而易见的项
+// 2026-06-23: 「系统说明」整块删除后, moduleMap 已无引用, 一并清理
+//   若后续想加"今日排课时间线"或"快捷入口", 再单独定义数组
 
 async function reloadByRange(next) {
   currentRange.value = { ...next }
@@ -278,35 +230,6 @@ onMounted(() => {
     font-weight: normal;
     font-size: 12px;
     color: #909399;
-  }
-  .system-intro {
-    h3 { font-size: 15px; margin: 16px 0 8px; }
-    p { color: #303133; line-height: 1.6; }
-    .module-card {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px;
-      margin-bottom: 8px;
-      border: 1px solid #ebeef5;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s;
-      &:hover {
-        border-color: #409eff;
-        background: #f0f9ff;
-      }
-      .module-icon { font-size: 24px; }
-      .module-body { flex: 1; }
-      .module-title { font-weight: 600; font-size: 14px; }
-      .module-desc { color: #909399; font-size: 12px; margin-top: 2px; }
-    }
-    .role-list {
-      color: #303133;
-      line-height: 1.8;
-      li { margin-bottom: 4px; }
-    }
-    .more { margin-top: 12px; }
   }
 }
 </style>

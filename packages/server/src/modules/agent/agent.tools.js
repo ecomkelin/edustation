@@ -127,6 +127,51 @@ const dispatchTable = {
     fn: 'list',
     risk: 'read',
     perm: 'subject.read'
+  },
+
+  // ─── 今日工作台 (2026-06-23 用户决策) ─────────────────────
+  // 7 个新工具, 全部 read 风险 (无副作用), 用于 LLM 汇总"今日需做什么"
+  today_appointments: {
+    module: 'trialBooking',
+    fn: 'listToday',
+    risk: 'read',
+    perm: 'recruit.read'
+  },
+  today_lessons: {
+    module: 'lessonSchedule',
+    fn: 'listTodayWithRoster',
+    risk: 'read',
+    perm: 'lessonSchedule.read'
+  },
+  considering_parents: {
+    module: 'parent',
+    fn: 'listConsidering',
+    risk: 'read',
+    perm: 'recruit.read'
+  },
+  pending_followup_parents: {
+    module: 'parent',
+    fn: 'listOverdue',
+    risk: 'read',
+    perm: 'recruit.read'
+  },
+  starving_pets: {
+    module: 'pet',
+    fn: 'listStarving',
+    risk: 'read',
+    perm: 'pet.read'
+  },
+  low_points_students: {
+    module: 'points',
+    fn: 'listLowBalance',
+    risk: 'read',
+    perm: 'points.read'
+  },
+  low_classpack_students: {
+    module: 'studentProduct',
+    fn: 'listLowRemaining',
+    risk: 'read',
+    perm: 'studentProduct.read'
   }
 }
 
@@ -444,6 +489,88 @@ const META = {
         pageSize: { type: 'integer' }
       }
     }
+  },
+
+  // ─── 今日工作台 (2026-06-23) ─────────────────────────────
+  // LLM 用这一组工具回答"今天需要做什么 / 哪些家长要跟进 / 哪些宠物要喂"
+  today_appointments: {
+    description:
+      '【今日工作台】今日 (plannedStartTime 落在今天) 待上课的试听预约。' +
+      '返回 {date, items:[{phone, childName, subject, teacher, plannedStartTime, status}], teachers:[{name, mobile, trialCount}], count}。' +
+      '直接覆盖用户问"今天有哪些预约要来 / 今天需要哪个老师来"。',
+    parameters: { type: 'object', properties: {} }
+  },
+  today_lessons: {
+    description:
+      '【今日工作台】今日排课列表 (LessonSchedule), 含每节课的考勤名单 (学生 + 考勤状态) 与老师。' +
+      '返回 {date, items:[{title, plannedStartTime, teacher, room, roster:[{studentName,status}], studentCount}], teachers:[{name, mobile, lessonCount, studentCount}], count}。' +
+      '覆盖"今天有哪些课要上 / 哪个老师上 / 哪些学生上"。',
+    parameters: { type: 'object', properties: {} }
+  },
+  considering_parents: {
+    description:
+      '【今日工作台】lifecycle=considering 的家长 (试听后还在犹豫)。' +
+      '返回 {items:[{id, phone, daysSinceContact, lastContactedAt, source, recentTrial:{subject, teacher, completedAt}}], count}。' +
+      '覆盖"哪些考虑中的家长要沟通"。',
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', description: '返回条数, 默认 50, 最大 200' }
+      }
+    }
+  },
+  pending_followup_parents: {
+    description:
+      '【今日工作台】需跟进的潜客家长 (lifecycle ∈ {new, partial}, 且 lastContactedAt 距今 > staleDays 天, 或从未联系)。' +
+      '返回 {staleDays, threshold, items:[{id, phone, lifecycle, daysSinceContact, childCount, firstChildName, source}], count}。' +
+      '覆盖"哪些潜客家长需要跟进沟通"。',
+    parameters: {
+      type: 'object',
+      properties: {
+        staleDays: { type: 'integer', description: '距上次联系超过多少天视为待跟进, 默认 7; 可传 3/7/14/30' },
+        limit: { type: 'integer', description: '返回条数, 默认 50, 最大 200' }
+      }
+    }
+  },
+  starving_pets: {
+    description:
+      '【今日工作台】快饿死的学员宠物 (PetAccount.state=alive 且 currentHunger <= threshold)。' +
+      '返回 {threshold, items:[{petAccountId, studentName, nickname, species, tier, level, currentHunger, maxHunger, lastFedAt, deathThresholdDays, guardianMobile}], count}。' +
+      '覆盖"哪些学生的宠物快饿死了 / 哪些宠物需要喂"。',
+    parameters: {
+      type: 'object',
+      properties: {
+        threshold: { type: 'integer', description: '饥饿度阈值 (0-1000), 默认 20' },
+        limit: { type: 'integer', description: '返回条数, 默认 50, 最大 200' }
+      }
+    }
+  },
+  low_points_students: {
+    description:
+      '【今日工作台】积分余额低于阈值的学生 (PointsAccount.balance <= threshold)。' +
+      '返回 {threshold, items:[{studentId, studentName, balance, lastTransactionAt, guardianMobile}], count}。' +
+      '覆盖"哪些学生的积分快没了"。',
+    parameters: {
+      type: 'object',
+      properties: {
+        threshold: { type: 'integer', description: '余额阈值, 默认 10' },
+        limit: { type: 'integer', description: '返回条数, 默认 50, 最大 200' }
+      }
+    }
+  },
+  low_classpack_students: {
+    description:
+      '【今日工作台】剩余课时不足的活跃课包 (StudentProduct.isActive=true 且 remainingLessons <= threshold)。' +
+      '按学生聚合, 每生取剩余最少那条代表。' +
+      '返回 {threshold, items:[{studentId, studentName, courseProductName, remainingLessons, totalLessons, expireDate, activePackCount, guardianMobile}], count}。' +
+      '覆盖"哪些学生课包不足, 需要续费"。',
+    parameters: {
+      type: 'object',
+      properties: {
+        threshold: { type: 'integer', description: '剩余课时阈值, 默认 3' },
+        limit: { type: 'integer', description: '返回条数, 默认 50, 最大 200' }
+      }
+    }
   }
 }
 
@@ -486,6 +613,9 @@ function categoryOf(name) {
   if (name === 'list_lesson_calendar' || name === 'complete_attendance') return 'schedule'
   if (name === 'create_order' || name === 'pay_order') return 'order'
   if (name === 'list_subjects') return 'helper'
+  // 2026-06-23: 今日工作台 7 工具
+  if (['today_appointments', 'today_lessons', 'considering_parents', 'pending_followup_parents'].includes(name)) return 'dashboard'
+  if (['starving_pets', 'low_points_students', 'low_classpack_students'].includes(name)) return 'dashboard'
   return 'other'
 }
 

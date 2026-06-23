@@ -124,6 +124,55 @@ async function detail(id, orgId) {
   return b
 }
 
+/* ─── 今日工作台 (2026-06-23 AI 助手接入) ─────────────── */
+
+/**
+ * 今日试听预约 (含 scheduled / arrived, 不含 awaiting/cancelled/completed)
+ *  - 限定 plannedStartTime ∈ [今天 00:00, 明天 00:00)
+ *  - 输出精简字段供 LLM 总结
+ *  - 走今日时区 = 机构时区 → 默认 +08:00 (学校类业务多在国内, MVP 不做时区配置)
+ *  - 返回 { date, items, teachers }
+ *    date: YYYY-MM-DD (用于前端展示 + LLM 上下文)
+ *    items: 完整 booking 列表
+ *    teachers: 不重复的 teacher 列表 (用于"今日需哪些老师")
+ */
+async function listToday({ orgId }) {
+  const today = new Date()
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0)
+  const end = new Date(start.getTime() + 24 * 3600 * 1000)
+
+  const items = await TrialBooking.find({
+    org: orgId,
+    status: { $in: ['scheduled', 'arrived'] },
+    plannedStartTime: { $gte: start, $lt: end }
+  })
+    .populate('preStudent', 'name')
+    .populate('parent', 'phone lifecycle')
+    .populate('teacher', 'mobile realName')
+    .populate('subject', 'name')
+    .sort({ plannedStartTime: 1 })
+    .lean()
+
+  // 派生: 今日需来学校的老师 (去重, 含真实姓名 + 手机)
+  const teacherMap = new Map()
+  for (const b of items) {
+    if (b.teacher && !teacherMap.has(String(b.teacher._id))) {
+      teacherMap.set(String(b.teacher._id), {
+        id: b.teacher._id,
+        name: b.teacher.realName || b.teacher.mobile,
+        mobile: b.teacher.mobile,
+        trialCount: 0
+      })
+    }
+    if (b.teacher) teacherMap.get(String(b.teacher._id)).trialCount += 1
+  }
+  const teachers = Array.from(teacherMap.values())
+
+  const pad = (n) => String(n).padStart(2, '0')
+  const dateStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+  return { date: dateStr, items, teachers, count: items.length }
+}
+
 /* ─── 更新 (cancelled / remark) ───────────────────── */
 
 async function update(id, orgId, body) {
@@ -679,5 +728,7 @@ module.exports = {
   // 2026-06-16: 删 reschedule (旧 no_show 路径); 加 rescheduleTime / revertToUnscheduled / rescheduleFromCancelled
   rescheduleTime, revertToUnscheduled, rescheduleFromCancelled,
   // 2026-06-21: 删 create (attached 跟班模式); 试听课完全独立于排课系统
-  trialBookingUsageChecks
+  trialBookingUsageChecks,
+  // 2026-06-23: AI 助手今日工作台 (含 scheduled/arrived + 今日需来校的 teacher 去重列表)
+  listToday
 }
