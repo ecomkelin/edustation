@@ -242,15 +242,70 @@ function buildSummary(toolName, args) {
 
 /* ─── 截断工具结果, 避免 LLM token 爆 ───────── */
 
+/**
+ * 智能截断:
+ *  - 若 value 是数组或对象含 `items` 数组 (绝大多数列表型工具的返回), 按条数截断
+ *    → 返回 { items: 前 N 条, _truncated: true, totalItems, hint }
+ *    → LLM 看到 _truncated 是顶层字段, 不会把它误读成"业务字段"
+ *  - 否则 (单条详情 / 简单对象), 按字符截断并保留 (已截断) 提示
+ *  - 决不把 "(已截断)" 拼在 preview 字符串末尾, 因为 LLM 会把它误当成"最后一个元素的内容"
+ */
 function truncate(value, max = MAX_RESULT_CHARS) {
-  let s
-  try {
-    s = JSON.stringify(value)
-  } catch (_) {
-    s = String(value)
+  // 1) 数组型: 数组本身
+  if (Array.isArray(value)) {
+    return truncateArray(value, value.length, max)
   }
+  // 2) 对象含 items 数组
+  if (value && typeof value === 'object' && Array.isArray(value.items)) {
+    const sliced = truncateArray(value.items, value.items.length, max, {
+      total: value.total,
+      page: value.page,
+      pageSize: value.pageSize,
+      count: value.count,
+      // 保留其他元信息 (date / threshold / scope / teachers / staleDays 等)
+      ...pickTopMeta(value)
+    })
+    return sliced
+  }
+  // 3) 简单对象: 字符截断
+  let s
+  try { s = JSON.stringify(value) } catch (_) { s = String(value) }
   if (s.length <= max) return value
-  return { _truncated: true, originalLength: s.length, preview: s.slice(0, max) + '...(已截断)' }
+  return {
+    _truncated: true,
+    originalLength: s.length,
+    preview: s.slice(0, max) + '...',
+    hint: '结果超长, 已截断字符串. 提示用户用更细的过滤条件重试 (如缩小日期范围 / 提高阈值)'
+  }
+}
+
+const MAX_LIST_ITEMS = 20 // 列表型工具结果保留前 N 条
+
+function truncateArray(items, total, max, meta = {}) {
+  if (items.length <= MAX_LIST_ITEMS) {
+    // 不超条数, 但 JSON 可能超字符 (单条特别大), 再按字符兜底
+    let s
+    try { s = JSON.stringify(items) } catch (_) { s = '' }
+    if (s.length <= max) return { ...meta, items, total: total }
+  }
+  const head = items.slice(0, MAX_LIST_ITEMS)
+  return {
+    ...meta,
+    items: head,
+    total: total,
+    _truncated: true,
+    truncatedItems: items.length - MAX_LIST_ITEMS,
+    hint: `返回 ${items.length} 条, 仅显示前 ${MAX_LIST_ITEMS} 条. 提示用户缩小范围重试 (如加时间窗 / 关键字 / 阈值)`
+  }
+}
+
+function pickTopMeta(obj) {
+  const out = {}
+  for (const k of Object.keys(obj)) {
+    if (k === 'items') continue
+    out[k] = obj[k]
+  }
+  return out
 }
 
 /* ─── 主体入口 ───────── */

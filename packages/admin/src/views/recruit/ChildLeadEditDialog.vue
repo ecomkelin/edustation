@@ -9,20 +9,44 @@
   >
     <!-- 软唯一命中告警 (仅当未传 parent 时) -->
     <el-alert
-      v-if="!parent && !childLead && duplicates.length > 0"
+      v-if="!effectiveParent && !childLead && duplicates.length > 0"
       type="warning"
       :closable="false"
       show-icon
       class="mb"
     >
       <template #title>
-        该手机号已存在家长账户, 共 {{ duplicates.length }} 个
+        该手机号已存在家长账户, 共 {{ duplicates.length }} 个 — 提交时将自动为该家长加孩子 (不会重复创建家长)
       </template>
       <div v-for="d in duplicates" :key="d._id" class="dup-line">
-        <el-link type="primary" @click="onOpenExisting(d)">
-          [查看] {{ d.phone }} - 状态: {{ lifecycleLabel(d.lifecycle) }} ({{ formatTime(d.createdAt) }})
+        <el-link type="primary" @click="onSwitchToAddChild(d)">
+          [为该家长加孩子] {{ d.phone }} - 状态: {{ lifecycleLabel(d.lifecycle) }} ({{ formatTime(d.createdAt) }})
+        </el-link>
+        <el-link type="info" class="ml" @click="onOpenExisting(d)">
+          [查看家长详情]
         </el-link>
       </div>
+      <div class="force-line">
+        <el-checkbox v-model="form.force" size="small">
+          管理员操作: 我就是要新建一个重复家长账户 (force, 仅在数据修复场景使用)
+        </el-checkbox>
+      </div>
+    </el-alert>
+
+    <!-- 2026-06-24: 软唯一命中后切到【加孩】模式的确认条 (已切走时显示) -->
+    <el-alert
+      v-if="localParent"
+      type="success"
+      :closable="false"
+      show-icon
+      class="mb"
+    >
+      <template #title>
+        已自动切换为【为家长 {{ localParent.phone }} 加一个孩子】模式, 孩子数据已保留, 直接点保存即可
+      </template>
+      <el-button size="small" link type="warning" @click="onCancelAddChildMode">
+        返回新建家长模式 (清空孩子数据)
+      </el-button>
     </el-alert>
 
     <el-form
@@ -34,7 +58,7 @@
     >
       <!-- 家长电话 (新建家长时必填; 编辑模式不可改) -->
       <el-form-item
-        v-if="!parent && !childLead"
+        v-if="!effectiveParent && !childLead"
         label="家长电话"
         prop="phone"
       >
@@ -46,10 +70,10 @@
         />
       </el-form-item>
       <el-form-item
-        v-else-if="parent"
+        v-else-if="effectiveParent"
         label="家长电话"
       >
-        <el-input :model-value="parent.phone" disabled />
+        <el-input :model-value="effectiveParent.phone" disabled />
       </el-form-item>
 
       <el-form-item label="孩子姓名" prop="name">
@@ -244,7 +268,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { parentApi } from '@/api/parent'
 import { childLeadApi } from '@/api/childLead'
 import { schoolApi } from '@/api/school'
@@ -273,17 +297,25 @@ const schoolOptions = ref([])
 const teacherOptions = ref([])
 const channelOptions = ref([])
 
+// 2026-06-24: 软唯一命中后, 在 dialog 内部从"新建家长"切到"加孩子" 模式
+//   - 用户点 [为该家长加孩子] 链接 → 设 localParent
+//   - 或后端 withChild 返回 duplicate → 自动设 localParent (保留已填孩子数据)
+//   - 关闭/取消时重置
+//   - 不影响 props.parent (props 是父传子, dialog 内部不写回)
+const localParent = ref(null)
+const effectiveParent = computed(() => localParent.value || props.parent)
+
 const isEdit = computed(() => !!props.childLead)
 
 const dialogTitle = computed(() => {
   if (isEdit.value) return `编辑孩子: ${props.childLead?.name || ''}`
-  if (props.parent) return `为家长 ${props.parent.phone} 加一个孩子`
+  if (effectiveParent.value) return `为家长 ${effectiveParent.value.phone} 加一个孩子`
   return '录入家长账户 + 第一个孩子'
 })
 
 const submitText = computed(() => {
   if (isEdit.value) return '保存修改'
-  if (props.parent) return '为该家长加一个孩子'
+  if (effectiveParent.value) return '为该家长加一个孩子'
   return '创建家长 + 第一个孩子'
 })
 
@@ -343,7 +375,7 @@ const rules = computed(() => {
     name: [{ required: true, message: '请填孩子姓名', trigger: 'blur' }],
     trialSubjects: [{ type: 'array', required: true, min: 1, message: '至少选 1 个试听科目类别', trigger: 'change' }]
   }
-  if (!props.parent && !props.childLead) {
+  if (!effectiveParent.value && !props.childLead) {
     r.phone = [
       { required: true, message: '请填家长电话', trigger: 'blur' },
       { pattern: phonePattern, message: '11 位手机号', trigger: 'blur' }
@@ -404,6 +436,8 @@ watch(() => props.visible, async (v) => {
   form.status = ''
   form.lostReason = ''
   duplicates.value = []
+  // 2026-06-24: 重开 dialog 时清掉 localParent (避免老状态干扰)
+  localParent.value = null
   await loadOptions()
 }, { immediate: true })
 
@@ -428,7 +462,13 @@ let blurTimer = null
 async function onPhoneBlur() {
   if (props.parent || !form.phone || !phonePattern.test(form.phone)) {
     duplicates.value = []
+    // 2026-06-24: 手机号清空/无效时, 也清掉 localParent (避免"用旧手机号的 parent" 干扰)
+    if (!form.phone) localParent.value = null
     return
+  }
+  // 2026-06-24: 用户改了手机号 → 清掉 localParent (它关联的是上次的 phone)
+  if (localParent.value && localParent.value.phone !== form.phone) {
+    localParent.value = null
   }
   clearTimeout(blurTimer)
   blurTimer = setTimeout(async () => {
@@ -441,6 +481,37 @@ async function onPhoneBlur() {
 
 function onOpenExisting(d) {
   emit('open-existing', d)
+}
+
+// 2026-06-24: 软唯一命中 → 用户点 [为该家长加孩子] 链接 → 切到加孩模式
+//   - localParent 覆盖 props.parent 的角色, 但保留 form 里已填的孩子数据
+//   - dialogTitle / submitText / rules 都基于 effectiveParent 自动适配
+function onSwitchToAddChild(d) {
+  localParent.value = d
+  ElMessage.success(`已切换为【为家长 ${d.phone} 加一个孩子】, 直接点保存即可`)
+}
+
+// 2026-06-24: 取消加孩模式, 回到新建家长. 清空 form (用户主动要求)
+function onCancelAddChildMode() {
+  localParent.value = null
+  // 保留孩子数据? 不, 用户主动返回 = 全部重置, 避免新家长带着上一个家长的孩子
+  form.name = ''
+  form.gender = 'male'
+  form.age = 7
+  form.school = null
+  form.grade = ''
+  form.className = ''
+  form.trialSubjects = []
+  form.trialFee = 19.90
+  form.source = null
+  form.inviteTeacher = null
+  form.expectedTime = ''
+  form.specificDate = null
+  form.remark = ''
+  form.status = ''
+  form.lostReason = ''
+  form.force = false
+  ElMessage.info('已返回新建家长模式')
 }
 
 function formatTime(d) {
@@ -493,23 +564,21 @@ async function submit() {
     }
     return
   }
-  // 软唯一 + force
-  if (!props.parent && duplicates.value.length > 0 && !form.force) {
-    try {
-      const ok = await ElMessageBox.confirm(
-        `该手机号已存在 ${duplicates.value.length} 个家长账户. 是否仍要新建一个家长 (force=true)?`,
-        '软唯一命中',
-        { type: 'warning' }
-      ).catch(() => null)
-      if (!ok) return
-      form.force = true
-    } catch (e) { return }
+  // 2026-06-24: 软唯一命中 → 自动切到加孩模式 (默认行为)
+  //   - 用户填了已存在家长的手机号时, 不再弹 force 二次确认
+  //   - 默认走 addChild, 把孩子加到该已有家长下
+  //   - admin 想要 force 创建重复家长: 勾选黄条里的 checkbox (form.force=true), 才走 withChild force 路径
+  //   - 用户点 [为该家长加孩子] 链接也会触发切换 (onSwitchToAddChild), 效果一样
+  if (!effectiveParent.value && !props.childLead && duplicates.value.length > 0 && !form.force) {
+    const d = duplicates.value[0]
+    localParent.value = d
+    ElMessage.warning(`检测到手机号 ${d.phone} 已存在家长, 自动切换为【为该家长加一个孩子】模式`)
   }
   submitting.value = true
   try {
-    if (props.parent) {
-      // 同家长加孩
-      const r = await parentApi.addChild(props.parent._id, {
+    if (effectiveParent.value) {
+      // 同家长加孩 (props.parent 或 localParent)
+      const r = await parentApi.addChild(effectiveParent.value._id, {
         name: form.name,
         gender: form.gender,
         age: form.age,
@@ -525,8 +594,8 @@ async function submit() {
         remark: form.remark,
         sameAs: props.sameAs
       })
-      ElMessage.success(`已为家长 ${props.parent.phone} 添加孩子 ${r.data?.name || ''}`)
-      emit('saved', { mode: 'addChild', parent: props.parent, childLead: r.data })
+      ElMessage.success(`已为家长 ${effectiveParent.value.phone} 添加孩子 ${r.data?.name || ''}`)
+      emit('saved', { mode: 'addChild', parent: effectiveParent.value, childLead: r.data })
     } else {
       // 新建家长 + 第一个孩子
       const r = await parentApi.withChild({
@@ -547,13 +616,17 @@ async function submit() {
         force: form.force
       })
       if (r.data?.duplicate) {
-        ElMessage.warning('该手机号已存在家长账户, 打开既有')
-        emit('open-existing', r.data.parent)
-      } else {
-        ElMessage.success(`已创建家长 + 孩子 ${r.data?.childLead?.name || ''}`)
-        emit('saved', { mode: 'withChild', parent: r.data.parent, childLead: r.data.childLead })
+        // 2026-06-24: 后端兜底 (force=false 但被并发抢先创建) → 自动切到加孩模式
+        //   - 不关 dialog, 设 localParent, 保留已填孩子数据, 提示用户再点一次保存
+        localParent.value = r.data.parent
+        ElMessage.warning(`手机号已存在家长账户, 已自动切换为【为家长 ${r.data.parent.phone} 加一个孩子】模式, 请再次点保存`)
+        // 不 emit update:visible, dialog 保持打开, 用户再点保存就 addChild
+        return  // 2026-06-24: 提前 return, 跳过下面 emit('update:visible', false)
       }
+      ElMessage.success(`已创建家长 + 孩子 ${r.data?.childLead?.name || ''}`)
+      emit('saved', { mode: 'withChild', parent: r.data.parent, childLead: r.data.childLead })
     }
+    // 走到这里 = 成功创建 / 成功加孩, 关闭 dialog
     emit('update:visible', false)
   } finally {
     submitting.value = false
@@ -562,6 +635,8 @@ async function submit() {
 
 function onClose() {
   formRef.value?.resetFields()
+  // 2026-06-24: 关 dialog 时清 localParent (虽然下次 watch 也会清, 这里再保险一下)
+  localParent.value = null
 }
 
 // 重新计算家长 lifecycle: 调 recompute-lifecycle, 拿到系统推导值后
@@ -592,6 +667,7 @@ async function onRecomputeLifecycle() {
 <style scoped>
 .mb { margin-bottom: 16px; }
 .dup-line { padding: 2px 0; font-size: 13px; }
+.force-line { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e6a23c; }
 .row-2 { display: flex; gap: 8px; }
 .row-2 .el-input { flex: 1; }
 .ml { margin-left: 8px; }
