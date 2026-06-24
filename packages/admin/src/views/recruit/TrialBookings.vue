@@ -80,17 +80,37 @@
           >
             <el-table-column v-if="tab.value === 'awaiting_schedule'" type="selection" width="50" />
             <el-table-column label="孩子姓名" min-width="100">
-              <template #default="{ row }">{{ row.preStudent?.name || '-' }}</template>
+              <template #default="{ row }">
+                <!-- 2026-06-24: 孩子姓名可点击 → 弹 ChildLeadDetailDialog (详情内已带完整触点时间线 + [+ 触点])
+                     - 兜底: 没有 childLeadId 时退化为纯文本
+                     - 不再内联触点摘要 (用户决定: 点开 dialog 就能看完整, 列表里不重复显示) -->
+                <div v-if="row.preStudent?._id || row.preStudent">
+                  <el-link type="primary" :underline="false" @click="openChildDetail(row)">
+                    {{ row.preStudent?.name || '-' }}
+                  </el-link>
+                </div>
+                <div v-else>{{ row.preStudent?.name || '-' }}</div>
+              </template>
             </el-table-column>
-            <el-table-column label="联系电话" width="130">
+            <el-table-column label="联系电话" width="180">
               <template #default="{ row }">
                 <!-- 2026-06-16: 修老 bug — 显示家长电话而非潜客自己的"电话"
                      - preStudent (ChildLead) 本身没 phone 字段, phone 在 Parent 上
                      - 优先级: preStudent.parent.phone (新结构) → parent.phone (TrialBooking 冗余) → 兜底 '未登记'
                      - 业务上"潜客没建 Parent" 也常见 (录入后还没转化), 给明确文案比"-"好 -->
-                <span v-if="row.preStudent?.parent?.phone">{{ row.preStudent.parent.phone }}</span>
-                <span v-else-if="row.parent?.phone">{{ row.parent.phone }}</span>
-                <span v-else class="muted">未登记</span>
+                <!-- 2026-06-24: 联系电话本身也可点击 → 弹 ParentDetailDialog (详情内已带聚合触点时间线 + [+ 添加触点])
+                     - 不再内联家长聚合摘要 (用户决定: 点开 dialog 就能看完整, 列表里不重复显示) -->
+                <template v-if="getParentId(row)">
+                  <el-link v-if="row.preStudent?.parent?.phone" type="primary" :underline="false" @click="openParentDetail(row)">
+                    {{ row.preStudent.parent.phone }}
+                  </el-link>
+                  <el-link v-else-if="row.parent?.phone" type="primary" :underline="false" @click="openParentDetail(row)">
+                    {{ row.parent.phone }}
+                  </el-link>
+                </template>
+                <div v-else-if="row.preStudent?.parent?.phone">{{ row.preStudent.parent.phone }}</div>
+                <div v-else-if="row.parent?.phone">{{ row.parent.phone }}</div>
+                <div v-else class="muted">未登记</div>
               </template>
             </el-table-column>
             <el-table-column label="第几次" width="80">
@@ -162,8 +182,19 @@
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="280" fixed="right">
+            <el-table-column label="操作" width="320" fixed="right">
               <template #default="{ row }">
+                <!-- 2026-06-24: + 触点 — 给当前 preStudent 快速记一笔沟通
+                     - 仅在 preStudent 存在时显示 (orphan booking 无 child)
+                     - 调 ActivityCreateDialog 复用 childLeadApi.createActivity
+                     - 走 recruit.write 权限 -->
+                <el-button
+                  v-if="row.preStudent?._id && hasPerm('recruit.write')"
+                  size="small"
+                  type="success"
+                  plain
+                  @click="openCreateActivity(row)"
+                >+ 触点</el-button>
                 <el-button
                   v-if="row.status === 'scheduled'"
                   size="small"
@@ -271,6 +302,31 @@
       @updated="onSignInUpdated"
     />
 
+    <!-- 2026-06-24: 孩子详情 dialog (点击孩子姓名 / 触点摘要触发; 详情内已含完整触点时间线 + [+ 触点]) -->
+    <ChildLeadDetailDialog
+      v-model:visible="childDetailDialog.visible"
+      :child-lead-id="childDetailDialog.childLeadId"
+      @updated="onDetailChanged"
+      @open-parent="openParentFromChild"
+    />
+
+    <!-- 2026-06-24: 家长详情 dialog (点击联系电话 / 家长聚合摘要触发; 详情内已含聚合触点时间线 + [+ 添加触点]) -->
+    <ParentDetailDialog
+      v-model:visible="parentDetailDialog.visible"
+      :parent-id="parentDetailDialog.parentId"
+      @updated="onDetailChanged"
+    />
+
+    <!-- 2026-06-24: 触点创建 dialog (per row [+ 触点] 按钮快捷入口, 直接给 preStudent 写一笔)
+         详情 dialog 也内含 [+ 触点] 入口; 这里列表行入口给不想打开详情的用户快捷使用 -->
+    <ActivityCreateDialog
+      v-model:visible="createActivityDialog.visible"
+      :child-lead-id="createActivityDialog.childLeadId"
+      :child-name="createActivityDialog.childName"
+      append-to-body
+      @saved="onDetailChanged"
+    />
+
     <!-- 2026-06-16: 改预约时间 / 再约一次 共用 dialog (mode 区分行为) -->
     <el-dialog
       :model-value="rescheduleDialog.visible"
@@ -357,11 +413,17 @@ import { trialBookingApi } from '@/api/trialBooking'
 import { userApi } from '@/api/user'
 import { categoryApi } from '@/api/category'
 import { TRIAL_BOOKING_STATUS_LABEL, TRIAL_BOOKING_STATUS_TAG_TYPE } from '@/utils/constants'
+import { hasPermInOrg } from '@/utils/permissionHelper'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import BatchScheduleDialog from './BatchScheduleDialog.vue'
 import TrialBookingSignInDialog from './TrialBookingSignInDialog.vue'
+import ChildLeadDetailDialog from './ChildLeadDetailDialog.vue'
+import ParentDetailDialog from './ParentDetailDialog.vue'
+import ActivityCreateDialog from './ActivityCreateDialog.vue'
 // 2026-06-21: 删 TrialAttachedDialog import (attached 跟班模式下线)
+// 2026-06-24: 删 ActivitiesTimelineDialog — 行内点击改弹现有 ChildLeadDetailDialog / ParentDetailDialog
+//             这两个 dialog 已自带完整触点时间线 + [+ 触点] 入口, 没必要再造专用 dialog
 
 // 2026-06-20 调整:
 //   - 状态机加 'considering' 顶级 status, 在 [已到店] 和 [已报名] 之间独立 tab
@@ -433,6 +495,12 @@ function defaultDateRange() {
 
 const batchDialog = reactive({ visible: false })
 const signInDialog = reactive({ visible: false, booking: null })
+// 2026-06-24: 孩子详情 dialog 状态 (点孩子姓名 / 触点摘要触发)
+const childDetailDialog = reactive({ visible: false, childLeadId: null })
+// 2026-06-24: 家长详情 dialog 状态 (点联系电话 / 家长聚合摘要触发)
+const parentDetailDialog = reactive({ visible: false, parentId: null })
+// 2026-06-24: 触点创建 dialog 状态 (per row [+ 触点] 按钮快捷入口)
+const createActivityDialog = reactive({ visible: false, childLeadId: null, childName: '' })
 // 2026-06-21: 删 attachedDialog (attached 跟班模式下线)
 // 2026-06-16: 改预约时间 / 再约一次 共用 dialog, mode 区分行为:
 //   - 'time'      → scheduled 改时间 (调 rescheduleTime)
@@ -484,6 +552,83 @@ const rescheduleRules = computed(() => ({
 
 const authStore = useAuthStore()
 const isPlatformAdmin = computed(() => !!authStore.user?.isPlatformAdmin)
+
+function hasPerm(code) {
+  return hasPermInOrg(authStore.user, authStore.org?._id, code)
+}
+
+/**
+ * 2026-06-24: 派生 row 的 Parent ID — 兼容 populate 后对象 / 未 populate 字符串 两种形态
+ *  - preStudent.parent (new 结构, 优先) → TrialBooking.parent (老冗余) → 兜底 null
+ *  - 拿不到 ID 则联系电话走静态文案, 不弹 dialog
+ */
+function getParentId(row) {
+  return row.preStudent?.parent?._id
+    || row.preStudent?.parent
+    || row.parent?._id
+    || row.parent
+    || null
+}
+
+/**
+ * 2026-06-24: 点击孩子姓名 / 触点摘要 → 弹 ChildLeadDetailDialog
+ *  - 详情 dialog 内自带完整触点时间线 + [+ 触点] + 编辑/删除 (24h/超管门控)
+ *  - 不再造专用 ActivitiesTimelineDialog, 保持单一详情入口
+ */
+function openChildDetail(row) {
+  const cid = row.preStudent?._id || row.preStudent
+  if (!cid) return
+  childDetailDialog.childLeadId = String(cid)
+  childDetailDialog.visible = true
+}
+
+/**
+ * 2026-06-24: 点击联系电话 / 家长聚合摘要 → 弹 ParentDetailDialog
+ *  - 详情 dialog 内自带聚合触点时间线 (跨该家长所有孩子) + [+ 添加触点]
+ *  - 多孩时 [添加触点] 走 el-popover 让孩子选, 避免 UI 选孩子的复杂度
+ */
+function openParentDetail(row) {
+  const pid = getParentId(row)
+  if (!pid) return
+  parentDetailDialog.parentId = String(pid)
+  parentDetailDialog.visible = true
+}
+
+/**
+ * 2026-06-24: ChildLeadDetailDialog 内部点家长电话 → emit('open-parent', child.parent)
+ * 转发到我们的 ParentDetailDialog, 实现 child ↔ parent 双向跳转
+ */
+function openParentFromChild(parentObj) {
+  const pid = parentObj?._id || parentObj
+  if (!pid) return
+  childDetailDialog.visible = false
+  parentDetailDialog.parentId = String(pid)
+  parentDetailDialog.visible = true
+}
+
+/**
+ * 2026-06-24: + 触点 → 直接给该行的 preStudent 写一笔沟通
+ *  - 复用 ActivityCreateDialog (列表行快捷入口, 不必打开详情 dialog)
+ *  - 走 /child-leads/:id/activities POST
+ *  - 不依赖 preStudent 是 Object 或 string (populate 后是 object)
+ */
+function openCreateActivity(row) {
+  const ps = row.preStudent
+  const cid = ps?._id || ps
+  if (!cid) return
+  createActivityDialog.childLeadId = String(cid)
+  createActivityDialog.childName = ps?.name || ''
+  createActivityDialog.visible = true
+}
+
+/**
+ * 2026-06-24: 任一详情 dialog 触发 updated / [+ 触点] 创建成功 → reload 列表 + 刷新计数
+ *  - 让行内触点摘要 (count / lastType / lastAt) 实时刷
+ */
+function onDetailChanged() {
+  load()
+  loadAllCounts()
+}
 
 onMounted(async () => {
   await Promise.all([loadAllCounts(), loadSubjectOptions()])
@@ -905,4 +1050,7 @@ function rowClassName({ row }) {
 :deep(.el-table__row.row-overdue:hover > td) {
   background-color: #fde2e2 !important;
 }
+
+/* 2026-06-24 (二次迭代): 列表行内不再显示触点摘要 (点名字/电话即弹详情看完整时间线)
+   - 这里只保留 el-link 默认样式 (不加自定义 hover 高亮), 走 Element Plus 原生 */
 </style>

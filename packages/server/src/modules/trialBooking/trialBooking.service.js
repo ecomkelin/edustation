@@ -108,7 +108,131 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
       .lean(),
     TrialBooking.countDocuments(filter)
   ])
+
+  // 2026-06-24: 列表行 inline 触点摘要 (不开新端点, 一次 aggregate 出所有孩子的)
+  //   - preStudent.activitySummary: 该孩子维度的 (count + lastType + lastAt + lastByUser)
+  //   - parent.aggregateActivitySummary: 跨该 parent 下所有 siblings 的 (count + childCount + lastType + lastAt)
+  //   - 不写库, 仅内存组装; 前端 list 摘要展示 + 点击拉详情
+  await enrichActivitySummaries(items, orgId)
+
   return { items, total, page: p.page, pageSize: p.pageSize }
+}
+
+/**
+ * 2026-06-24: 给 list items 装上触点摘要
+ *  - 拉 preStudentIDs + parentIDs 涉及的所有 childLead IDs
+ *  - 一次 aggregate, 按 lead 分组取 count + last(type, at, byUser)
+ *  - per-preStudent 直接 map; per-parent 把 siblings 各自的 count 累加, lastAt 取 max
+ *  - lastByUser 走 $lookup 一次性拿 realName/mobile, 避免二次 populate
+ */
+async function enrichActivitySummaries(items, orgId) {
+  if (!items || items.length === 0) return
+  const orgObjId = new mongoose.Types.ObjectId(String(orgId))
+  const preStudentIds = [
+    ...new Set(
+      items
+        .map((i) => (i.preStudent && i.preStudent._id ? String(i.preStudent._id) : null))
+        .filter(Boolean)
+    )
+  ]
+  const parentIds = [
+    ...new Set(
+      items
+        .map((i) => (i.parent && i.parent._id ? String(i.parent._id) : null))
+        .filter(Boolean)
+    )
+  ]
+  if (preStudentIds.length === 0 && parentIds.length === 0) return
+
+  // 1) parentIDs 下所有 childLead (含 preStudentIDs 自己的 + 同 parent 的 siblings)
+  const siblings = await ChildLead.find({ org: orgObjId, parent: { $in: parentIds.map((id) => new mongoose.Types.ObjectId(id)) } })
+    .select('_id parent')
+    .lean()
+  const childrenByParent = new Map()
+  for (const c of siblings) {
+    const k = String(c.parent)
+    if (!childrenByParent.has(k)) childrenByParent.set(k, [])
+    childrenByParent.get(k).push(String(c._id))
+  }
+  // 2) 收集所有要查的 childLead ID (preStudentIDs ∪ siblings)
+  const allChildIds = new Set(preStudentIds)
+  for (const arr of childrenByParent.values()) for (const id of arr) allChildIds.add(id)
+  if (allChildIds.size === 0) return
+  const allChildObjIds = [...allChildIds].map((id) => new mongoose.Types.ObjectId(id))
+
+  // 3) 一次 aggregate: 按 lead 分组, 取 count + last (type/at/byUser.{realName,mobile})
+  const grouped = await LeadActivity.aggregate([
+    { $match: { org: orgObjId, lead: { $in: allChildObjIds } } },
+    { $sort: { at: -1 } },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'byUser',
+        foreignField: '_id',
+        as: 'byUserDoc'
+      }
+    },
+    { $unwind: { path: '$byUserDoc', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: '$lead',
+        count: { $sum: 1 },
+        lastType: { $first: '$type' },
+        lastAt: { $first: '$at' },
+        lastByUser: {
+          $first: {
+            _id: '$byUserDoc._id',
+            realName: '$byUserDoc.realName',
+            mobile: '$byUserDoc.mobile'
+          }
+        }
+      }
+    }
+  ])
+  const byChildId = new Map(grouped.map((g) => [String(g._id), g]))
+
+  // 4) 回填到每条 item
+  for (const item of items) {
+    // preStudent.activitySummary
+    if (item.preStudent && typeof item.preStudent === 'object' && item.preStudent._id) {
+      const g = byChildId.get(String(item.preStudent._id))
+      if (g) {
+        item.preStudent.activitySummary = {
+          count: g.count,
+          lastType: g.lastType,
+          lastAt: g.lastAt,
+          lastByUser: g.lastByUser && g.lastByUser._id ? g.lastByUser : null
+        }
+      }
+    }
+    // parent.aggregateActivitySummary (跨所有 siblings)
+    if (item.parent && typeof item.parent === 'object' && item.parent._id) {
+      const sibIds = childrenByParent.get(String(item.parent._id)) || []
+      if (sibIds.length > 0) {
+        let totalCount = 0
+        let lastType = null
+        let lastAt = null
+        let lastByUser = null
+        for (const sid of sibIds) {
+          const g = byChildId.get(sid)
+          if (!g) continue
+          totalCount += g.count
+          if (!lastAt || new Date(g.lastAt) > new Date(lastAt)) {
+            lastAt = g.lastAt
+            lastType = g.lastType
+            lastByUser = g.lastByUser && g.lastByUser._id ? g.lastByUser : null
+          }
+        }
+        item.parent.aggregateActivitySummary = {
+          count: totalCount,
+          childCount: sibIds.length,
+          lastType,
+          lastAt,
+          lastByUser
+        }
+      }
+    }
+  }
 }
 
 async function detail(id, orgId) {

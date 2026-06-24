@@ -468,7 +468,7 @@ Auth 列简写:
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-2700 | GET | /trial-bookings | PERM | recruit.read | 列表 | |
+| R-2700 | GET | /trial-bookings | PERM | recruit.read | 列表 | 含 preStudent.activitySummary + parent.aggregateActivitySummary (2026-06-24) |
 | R-2701 | GET | /trial-bookings/:id | PERM | recruit.read | 详情 | |
 | R-2703 | PUT | /trial-bookings/:id | PERM | recruit.write | 更新(cancelled/remark) | |
 | R-2704 | DELETE | /trial-bookings/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
