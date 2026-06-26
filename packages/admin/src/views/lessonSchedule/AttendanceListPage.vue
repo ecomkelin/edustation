@@ -64,7 +64,7 @@
       >
         <template #title>
           <span>本页汇总该机构下所有 LessonAttendance，可按学生/开班/状态/课评/日期范围快速定位。
-          点击「跳转排课」回到「上课表」并自动展开该节。</span>
+          点击「跳转排课」跳到「排课日历」并自动打开对应排课的考勤抽屉。</span>
         </template>
       </el-alert>
 
@@ -252,12 +252,13 @@ function onReset() {
 }
 
 function goToSchedule(row, expandEval = false) {
- // 跳转到 ClassSchedulePage；query.expanded=<scheduleId> 让目标页自动展开该节
+ // 2026-06-26: 上课表下线, 改跳排课日历 (/schedule), 用 ?open=<scheduleId> 触发 calendar 自动弹抽屉
+ //   eval=<attendanceId> 临时保留 query 字段以便未来日历 drawer 内 EvaluationEditor 自动滚动到对应行
  const scheduleId = row.lessonSchedule && (row.lessonSchedule._id || row.lessonSchedule.id)
  if (!scheduleId) return
  router.push({
- path: '/schedule/class',
- query: { expanded: scheduleId, eval: expandEval ? row._id || row.id : undefined }
+ path: '/schedule',
+ query: { open: scheduleId, eval: expandEval ? row._id || row.id : undefined }
  })
 }
 

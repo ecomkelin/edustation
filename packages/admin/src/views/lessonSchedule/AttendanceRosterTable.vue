@@ -5,10 +5,37 @@
       <div class="summary-row">
         <span class="label">开班：</span>
         <span class="value">{{ courseInstanceName }}</span>
+        <!-- 2026-06-26: 开班状态 tag 总是显示（之前只在非 active 时显示，active 时缺席），让用户一眼知道开班生命周期。
+             type 区分：active=绿(success), 筹备/招生/已结班=灰(info), 已取消=红(danger)。 -->
+        <el-tag
+          v-if="courseInstanceStatus"
+          size="small"
+          effect="plain"
+          :type="courseInstanceStatusType"
+          style="margin-left: 8px"
+        >{{ courseInstanceStatusLabel }}</el-tag>
+      </div>
+      <!-- 2026-06-26: 开班上下文（周期 / 排课 / 上限 / 试听）保留为 muted 紧凑排版 -->
+      <div class="summary-row ci-meta-row">
+        <span>{{ courseInstancePeriod }}</span>
+        <span class="ci-meta-sep">·</span>
+        <span>{{ courseInstanceSchedule }}</span>
+        <template v-if="courseInstanceMaxStudents !== '—'">
+          <span class="ci-meta-sep">·</span>
+          <span>上限 {{ courseInstanceMaxStudents }} 人</span>
+        </template>
+        <template v-if="courseInstanceIsTrial">
+          <span class="ci-meta-sep">·</span>
+          <el-tag size="small" effect="plain" type="warning">试听</el-tag>
+        </template>
       </div>
       <div class="summary-row">
         <span class="label">课次：</span>
-        <span class="value">第 {{ lessonNo }} 课</span>
+        <!-- 2026-06-26: 总课时直接拼到「第 N / M 课」里，跟课时做"位置"对比，比单独一行 muted 共 X 课显眼得多。
+             当 CI 没回 syllabus / schedulePlan 总课时时，fallback 到普通「第 N 课」。 -->
+        <span class="value">
+          第 {{ lessonNo }}<template v-if="courseInstanceLessonCount !== '—'"> / {{ courseInstanceLessonCount }}</template> 课
+        </span>
         <span class="label" style="margin-left: 24px">时间：</span>
         <span class="value">{{ formatDate(plannedStartTime, 'YYYY-MM-DD HH:mm') }} - {{ formatDate(plannedEndTime, 'HH:mm') }}</span>
       </div>
@@ -18,34 +45,109 @@
         <span class="label" style="margin-left: 24px">教室：</span>
         <span class="value">{{ roomName }}</span>
       </div>
+      <!-- 2026-06-26: 加「状态」行, 跟老师/教室同一档, 让排课当前生命周期阶段（已排课/准备中/进行中/已结束/已归档/已取消）一眼可见。
+           同时通过 el-tag 的 type 让色彩辅助判读（已结束=绿，进行中=橙，已取消=红）。
+           状态行右侧用 #header-actions slot 承载"准备上课/开始上课/结束/归档"等生命周期操作。
+           默认空（列表视图本身卡片上已有按钮, 抽屉里再放一次会冗余），日历视图通过 slot 注入。
+           注意：开班 (CI) 状态已在「开班」行以 tag 形式一直展示，这里不再重复。 -->
+      <div class="summary-row summary-row--with-actions">
+        <span class="label">状态：</span>
+        <span class="value">
+          <el-tag :type="scheduleStatusType" size="small" effect="dark">{{ scheduleStatusLabel }}</el-tag>
+        </span>
+        <!-- 2026-06-26: 父组件（ScheduleCalendar）通过这个 slot 注入生命周期按钮。
+             slot 留空时这一格完全消失，不影响列表视图既有布局。 -->
+        <span class="summary-actions">
+          <slot name="header-actions" />
+        </span>
+      </div>
     </div>
 
-    <el-alert
-      v-if="rosterItems.length === 0 && !loading"
-      type="info"
-      :closable="false"
-      show-icon
-      style="margin: 12px 0"
-    >
-      <template #title>本节课暂无学生考勤名单</template>
-      <div class="muted" style="margin-top: 4px">可能原因：本开班下没有持有有效课包（remainingLessons &gt; 0 且未过期）的学生</div>
-    </el-alert>
-
-    <el-alert
-      v-else-if="!loading"
-      :type="readOnly ? 'info' : 'warning'"
-      :closable="false"
-      show-icon
-      style="margin: 12px 0"
-    >
-      <template #title>
-        <span v-if="readOnly">名单只读</span>
-        <span v-else>请逐个确认学生出勤状态：正常 / 迟到 / 请假 / 未到</span>
-      </template>
-      <div class="muted" style="margin-top: 4px" v-if="!readOnly">保存后写入学勤状态（<b>不扣课时</b>，扣课时走"消课"环节）。已完成消课的考勤不可再改。</div>
-    </el-alert>
-
     <!--
+      2026-06-26: roster 空时, 把"本开班下已报名学生"列出来 (按 user 要求)。
+        - 优先用 CourseEnrollment.studentProduct.remainingLessons 作为「剩余课时」徽标
+        - 失效/过期课包 (isActive=false 或 expireDate<now) 用灰色 + 文案提示
+        - 无 studentProduct 的报名行 (例如新生还没绑课) 单独标"未绑课"
+        - 完全没人报名时, 退回原来"可能原因"提示
+    -->
+    <template v-if="rosterItems.length === 0 && !loading">
+      <el-alert
+        v-if="enrolledLoading"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin: 12px 0"
+      >
+        <template #title>正在加载预报名单…</template>
+      </el-alert>
+      <template v-else-if="enrolledStudents.length > 0">
+        <div class="enrolled-section">
+          <div class="enrolled-header">
+            <span class="enrolled-title">本开班下已报名学生（暂未生成考勤）</span>
+            <span class="enrolled-sub muted">共 {{ enrolledStudents.length }} 人 · 准备上课时会按 FIFO 自动生成考勤</span>
+          </div>
+          <el-table :data="enrolledStudents" border size="small" max-height="320">
+            <el-table-column label="学生" prop="name" min-width="120" />
+            <el-table-column label="剩余课时" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  v-if="row.studentProduct && row.studentProduct.remainingLessons > 0 && productUsable(row.studentProduct)"
+                  type="success" effect="plain" size="small"
+                >剩 {{ row.studentProduct.remainingLessons }} 节</el-tag>
+                <el-tag
+                  v-else-if="row.studentProduct && row.studentProduct.remainingLessons > 0"
+                  type="info" effect="plain" size="small"
+                >剩 {{ row.studentProduct.remainingLessons }} 节 · 已过期</el-tag>
+                <el-tag
+                  v-else-if="row.studentProduct"
+                  type="info" effect="plain" size="small"
+                >已耗尽</el-tag>
+                <el-tag
+                  v-else
+                  type="warning" effect="plain" size="small"
+                >未绑课</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="总课时" width="90" align="center">
+              <template #default="{ row }">
+                <span v-if="row.studentProduct">{{ row.studentProduct.totalLessons || '—' }}</span>
+                <span v-else class="muted">—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="课包来源" min-width="140">
+              <template #default="{ row }">
+                <span v-if="!row.studentProduct" class="muted">—</span>
+                <span v-else-if="row.studentProduct.source === 'gift'">
+                  赠课<span v-if="row.studentProduct.giftReason"> · {{ row.studentProduct.giftReason }}</span>
+                </span>
+                <span v-else-if="row.studentProduct.source === 'order'">购课</span>
+                <span v-else class="muted">{{ row.studentProduct.source || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="到期" width="120" align="center">
+              <template #default="{ row }">
+                <span v-if="row.studentProduct && row.studentProduct.expireDate" class="muted">
+                  {{ formatDate(row.studentProduct.expireDate, 'YYYY-MM-DD') }}
+                </span>
+                <span v-else class="muted">—</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </template>
+      <el-alert
+        v-else
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin: 12px 0"
+      >
+        <template #title>本节课暂无学生考勤名单</template>
+        <div class="muted" style="margin-top: 4px">可能原因：本开班下没有已报名的学生，或所有报名学生都没有可用课包</div>
+      </el-alert>
+    </template>
+
+    <!-- 名单操作说明已收敛到行内的"本次登记 / 已消课"标签, 取消横幅 (2026-06-26)
       名单表 (2026-06-23 改造: 课评 / 补课 折叠到可展开行内, 避免横向滚动)
         - 行内仅显示: 学生/课包/状态/本次登记/备注 (5 列)
         - 行尾加 type="expand" 展开列, 点了下边展开行: 课评 (左) + 补课按钮 (右)
@@ -170,6 +272,8 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { lessonAttendanceApi } from '@/api/lessonAttendance'
+// 2026-06-26: roster 空时拉 CourseEnrollment 列预报名单, 让准备上课前就能看到"谁报了这门课 + 剩多少节"
+import { courseEnrollmentApi } from '@/api/courseEnrollment'
 import { formatDate } from '@/utils/format'
 
 const props = defineProps({
@@ -243,6 +347,97 @@ const roomName = computed(() => {
   const r = props.schedule?.room
   return r ? r.name : '—'
 })
+// 2026-06-26: 排课状态 + 开班状态的中文 + el-tag type，跟 ClassSchedulePage / ScheduleCalendar 对齐
+const SCHEDULE_STATUS_LABELS = {
+  scheduled: '已排课', preparing: '准备中', in_progress: '进行中',
+  completed: '已结束', archived: '已归档', cancelled: '已取消'
+}
+const SCHEDULE_STATUS_TYPES = {
+  scheduled: 'info', preparing: 'primary', in_progress: 'warning',
+  completed: 'success', archived: 'info', cancelled: 'danger'
+}
+const CI_STATUS_LABELS = {
+  planning: '筹备中', enrolling: '招生中', active: '进行中', closed: '已结班', cancelled: '已取消'
+}
+const scheduleStatusLabel = computed(() => {
+  const s = props.schedule && props.schedule.status
+  return SCHEDULE_STATUS_LABELS[s] || s || '—'
+})
+const scheduleStatusType = computed(() => {
+  const s = props.schedule && props.schedule.status
+  return SCHEDULE_STATUS_TYPES[s] || 'info'
+})
+const courseInstanceStatus = computed(() => {
+  const ci = props.schedule && props.schedule.courseInstance
+  return ci && ci.status
+})
+const courseInstanceStatusLabel = computed(() => {
+  const s = courseInstanceStatus.value
+  return s ? `开班${CI_STATUS_LABELS[s] || s}` : ''
+})
+// 2026-06-26: CI 状态 tag 的 el-tag type——active 用 success 跟开班行背景区分（开班 active = "正常/健康"），
+//   cancelled 用 danger（破坏性），其他筹备/招生/已结班 用 info（中性）。
+//   跟 ScheduleCalendar 事件块的底色逻辑保持视觉一致。
+const CI_STATUS_TYPES = {
+  planning: 'info',
+  enrolling: 'info',
+  active: 'success',
+  closed: 'info',
+  cancelled: 'danger'
+}
+const courseInstanceStatusType = computed(() => {
+  const s = courseInstanceStatus.value
+  return CI_STATUS_TYPES[s] || 'info'
+})
+// 2026-06-26: 开班上下文字段（周期 / 排课计划 / 总课时 / 招生上限），由日历 calendar 接口带回的
+//   startDate / estimatedEndDate / schedulePlan / syllabusSnapshot / maxStudents 派生。
+const courseInstancePeriod = computed(() => {
+  const ci = props.schedule && props.schedule.courseInstance
+  if (!ci || !ci.startDate) return '—'
+  const start = formatDate(ci.startDate, 'YYYY-MM-DD')
+  const end = ci.estimatedEndDate ? formatDate(ci.estimatedEndDate, 'YYYY-MM-DD') : '?'
+  return `${start} ~ ${end}`
+})
+const courseInstanceSchedule = computed(() => {
+  const ci = props.schedule && props.schedule.courseInstance
+  if (!ci || !ci.schedulePlan) return '—'
+  const sp = ci.schedulePlan
+  const parts = []
+  if (sp.mode === 'weekly' && sp.lessonsPerWeek) {
+    parts.push(`每周 ${sp.lessonsPerWeek} 节`)
+  } else if (sp.mode === 'cycle' && sp.cycleOnDays) {
+    parts.push(`每 ${sp.cycleOnDays} 天循环`)
+  }
+  if (sp.minutesPerLesson) parts.push(`每节 ${sp.minutesPerLesson} 分钟`)
+  return parts.length ? parts.join(' · ') : '—'
+})
+const courseInstanceLessonCount = computed(() => {
+  const ci = props.schedule && props.schedule.courseInstance
+  if (!ci) return '—'
+  const total = (ci.syllabusSnapshot && ci.syllabusSnapshot.totalLessons)
+    || (ci.syllabusOverride && ci.syllabusOverride.totalLessons)
+    || (ci.schedulePlan && ci.schedulePlan.totalPlannedLessons)
+    || 0
+  return total > 0 ? total : '—'
+})
+const courseInstanceMaxStudents = computed(() => {
+  const ci = props.schedule && props.schedule.courseInstance
+  if (!ci || !ci.maxStudents) return '—'
+  return ci.maxStudents
+})
+const courseInstanceIsTrial = computed(() => {
+  const ci = props.schedule && props.schedule.courseInstance
+  return !!(ci && ci.isTrial)
+})
+// 2026-06-26: 判断一个 StudentProduct 是否还能用于生成考勤 / 消课 (用于预报名单的"剩余课时"徽标颜色)
+//   isActive=false 或 expireDate 已过 → 失效
+//   isActive 字段没返回时默认 true (后端 list 已 populate, 多数情况都有)
+function productUsable(sp) {
+  if (!sp) return false
+  if (sp.isActive === false) return false
+  if (sp.expireDate && new Date(sp.expireDate).getTime() < Date.now()) return false
+  return true
+}
 
 /**
  * 「补课」操作列是否显示：仅当排课处于「已结束/已归档」时显示。
@@ -307,9 +502,54 @@ defineExpose({
   getDirtyCount() { return dirtyCount.value }
 })
 
+// 2026-06-26: roster 空时, 拉一遍 CourseEnrollment 把"已报名学生 + 剩余课时"列出来
+//   解决"准备上课前虽然还没生成考勤, 但 system 知道谁报了名"的信息缺失。
+//   - 只在 schedule.courseInstance 存在 + 当前 roster 为空时拉, 减少无谓请求
+//   - 失败/空时 fallback 到原来"可能原因"提示
+// 注意: 这两个 ref + 函数必须在 watch(..., { immediate: true }) 之前声明,
+//   否则 setup 阶段 immediate 触发时访问 enrolledStudents 会 TDZ (ReferenceError)。
+const enrolledStudents = ref([]) // [{ id, name, studentProduct: { remainingLessons, totalLessons, isActive, expireDate, source, giftReason } }]
+const enrolledLoading = ref(false)
+async function loadEnrolledStudents() {
+  const ci = props.schedule && props.schedule.courseInstance
+  if (!ci || !ci.id) { enrolledStudents.value = []; return }
+  enrolledLoading.value = true
+  try {
+    const r = await courseEnrollmentApi.list({
+      courseInstance: ci.id,
+      status: 'enrolled',
+      pageSize: 200
+    })
+    const items = r.data?.items || r.data || []
+    // 只取 student + studentProduct 两个关键字段, 避免把整张课程报名文档都拖到前端
+    enrolledStudents.value = items.map((e) => ({
+      id: e._id || e.id,
+      studentId: e.student && (e.student._id || e.student.id),
+      name: e.student && e.student.name || '—',
+      studentProduct: e.studentProduct || null
+    }))
+  } catch (err) {
+    // 拉失败不阻塞主流程, 退回到原来"可能原因"提示
+    enrolledStudents.value = []
+    console.warn('加载预报名单失败', err)
+  } finally {
+    enrolledLoading.value = false
+  }
+}
+
 watch(
   () => props.schedule && props.schedule._id,
-  () => { if (props.schedule && props.schedule._id) loadRoster() },
+  async () => {
+    // 切 schedule 时清空预报名单, 避免上一张排课的数据闪一下
+    enrolledStudents.value = []
+    if (props.schedule && props.schedule._id) {
+      await loadRoster()
+      // 2026-06-26: roster 拉完后再决定是否拉预报名单
+      if (rosterItems.value.length === 0) {
+        loadEnrolledStudents()
+      }
+    }
+  },
   { immediate: true }
 )
 
@@ -412,6 +652,29 @@ async function onSubmit() {
 .summary-row { font-size: 13px; line-height: 1.8; color: #303133; }
 .summary-row .label { color: #909399; margin-right: 4px; }
 .summary-row .value { font-weight: 500; }
+/* 2026-06-26: 开班上下文字段（周期/排课计划/总课时/上限），muted 风格紧凑排版 */
+.ci-meta-row {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+  margin-top: -4px;
+}
+.ci-meta-sep { margin: 0 6px; color: #c0c4cc; }
+/* 2026-06-26: roster 空时的"预报名单"小标题 */
+.enrolled-section { margin: 12px 0; }
+.enrolled-header {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 8px;
+}
+.enrolled-title { font-weight: 600; font-size: 13px; color: #303133; }
+.enrolled-sub { font-size: 12px; }
+/* 2026-06-26: 含生命周期按钮的状态行，左侧 label/value，右侧 #header-actions slot。
+   用 :has() 检测 slot 是否真有内容，没内容就不占右侧空间，保持原来紧凑。 */
+.summary-row--with-actions {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+.summary-row--with-actions:has(.summary-actions:empty) .summary-actions { display: none; }
+.summary-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 .bulk-actions {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   margin-top: 12px; padding-top: 12px; border-top: 1px solid #ebeef5;

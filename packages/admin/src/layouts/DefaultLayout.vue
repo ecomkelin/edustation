@@ -47,7 +47,9 @@
     </el-header>
     <el-container class="body">
       <el-aside width="220px" class="aside">
-        <el-menu :default-active="route.path" router :default-openeds="defaultOpeneds" class="aside-menu">
+        <!-- 2026-06-26: default-active 走 computed activeMenuPath — /schedule/list 也算「排课」激活,
+             因为侧栏只有一个「排课」入口, 日历视图和列表视图都在它下面 -->
+        <el-menu :default-active="activeMenuPath" router :default-openeds="defaultOpeneds" class="aside-menu">
           <el-menu-item index="/dashboard">
             <el-icon><Odometer /></el-icon><span>仪表盘</span>
           </el-menu-item>
@@ -266,8 +268,8 @@ const menuGroups = [
     icon: TrendCharts,
     children: [
       // 顺序按数据收敛方向: 家长 (按手机号) → 孩子 (按孩子) → 预约 (按单次试听)
-      { path: '/recruit/leads', label: '潜客管理(按家长)', icon: UserFilled, perm: 'recruit.read' },
-      { path: '/recruit/child-leads', label: '孩子管理', icon: UserFilled, perm: 'recruit.read' },
+      // 2026-06-26 合并: 「潜客管理」单菜单, LeadsHub 内嵌孩子/家长 2 个 tab, 默认 孩子
+      { path: '/recruit/leads', label: '潜客管理', icon: UserFilled, perm: 'recruit.read' },
       { path: '/recruit/trial-bookings', label: '试听记录', icon: Calendar, perm: 'recruit.read' }
     ]
   },
@@ -279,8 +281,9 @@ const menuGroups = [
       { path: '/course-products', label: '课程产品', icon: Files, perm: 'courseProduct.read' },
       // 课程 (2026-06-26): 合并原「开班」+「课程报名」到单页双标签, 任一 perm 可见
       { path: '/course', label: '课程', icon: Notebook, perm: ['courseInstance.read', 'courseEnrollment.read'] },
-      { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
-      { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' }
+      { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' }
+      // 2026-06-26: 排课列表视图 (ScheduleList) 入口合并到日历右上角「列表视图」按钮, 侧栏不再独立占位
+      // 2026-06-26: "上课表" 页面下线, 排课日历已承担其全部功能 (考勤/课评/补课/补齐名单/生命周期按钮)
     ]
   },
   {
@@ -354,9 +357,17 @@ const visibleGroups = computed(() =>
     .filter((g) => g.children.length > 0)
 )
 
+// 当前侧栏要高亮的菜单路径 (2026-06-26): schedule 父级路由吸收 list/makeup/attendance 子路径,
+// 这样日历视图/列表视图/考勤看板/补课页都让「排课」菜单亮.
+const activeMenuPath = computed(() => {
+  const p = route.path
+  if (p === '/schedule/list' || p === '/schedule/makeup' || p === '/schedule/attendance') return '/schedule'
+  return p
+})
+
 // 当前活跃子项所属分组 (含二级嵌套), 初始化时自动展开 group + sub-group
 const defaultOpeneds = computed(() => {
-  const active = route.path
+  const active = activeMenuPath.value
   for (const g of menuGroups) {
     for (const c of g.children) {
       if (c.path === active) return [g.key]

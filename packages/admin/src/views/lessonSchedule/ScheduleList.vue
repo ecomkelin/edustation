@@ -7,8 +7,24 @@
           <div class="subtitle">按课节安排老师、教室、时间。可按开班 / 老师 / 教室 / 日期 筛选。</div>
         </div>
         <div class="header-actions">
-          <el-button @click="$router.push('/schedule')">日历视图</el-button>
-          <el-button type="primary" @click="openGenerateDialog()">为开班排课</el-button>
+          <!-- 2026-06-26: 视图切换 pill; 与 ScheduleCalendar 互为镜像, 当前路由端 active 黑底白字.
+               「为开班排课」按钮已下线 — 入口挪到 课程 → 开班详情抽屉 footer. -->
+          <div class="view-toggle">
+            <button
+              type="button"
+              class="view-toggle__btn"
+              @click="$router.push('/schedule')"
+            >
+              日历视图
+            </button>
+            <button
+              type="button"
+              class="view-toggle__btn is-active"
+              disabled
+            >
+              列表视图
+            </button>
+          </div>
         </div>
       </div>
     </el-card>
@@ -557,7 +573,39 @@ onMounted(() => {
 .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .title { margin: 0 0 4px 0; font-size: 20px; }
 .subtitle { color: #909399; font-size: 13px; }
-.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.header-actions { display: flex; gap: 12px; flex-shrink: 0; align-items: center; }
+
+/* 2026-06-26: 视图切换 pill — 跟 ScheduleCalendar 同款, active 端黑底白字 */
+.view-toggle {
+  display: inline-flex;
+  background: #f4f4f5;
+  border-radius: 999px;
+  padding: 3px;
+  gap: 0;
+}
+.view-toggle__btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #606266;
+  font-size: 13px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  line-height: 1.2;
+}
+.view-toggle__btn:hover:not(:disabled):not(.is-active) {
+  background: #fff;
+  color: #303133;
+}
+.view-toggle__btn.is-active,
+.view-toggle__btn:disabled {
+  background: #303133;
+  color: #fff;
+  font-weight: 500;
+  cursor: default;
+}
 .cell-strong { font-weight: 600; color: #303133; }
 .muted { color: #909399; font-size: 12px; }
 .pager {

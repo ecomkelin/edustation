@@ -30,8 +30,8 @@ const routes = [
       { path: 'rooms', component: () => import('@/views/rooms/Rooms.vue') },
       { path: 'schools', component: () => import('@/views/schools/Schools.vue') },
       { path: 'schedule', component: () => import('@/views/lessonSchedule/ScheduleCalendar.vue') },
+      // 排课列表视图 (日历的姊妹页): 编辑/批量/补齐名单主战场; 日历只读
       { path: 'schedule/list', component: () => import('@/views/lessonSchedule/ScheduleList.vue') },
-      { path: 'schedule/class', component: () => import('@/views/lessonSchedule/ClassSchedulePage.vue') },
       { path: 'schedule/attendance', component: () => import('@/views/lessonSchedule/AttendanceListPage.vue') },
       { path: 'schedule/makeup', component: () => import('@/views/lessonSchedule/MakeupPage.vue') },
       { path: 'orders', component: () => import('@/views/orders/Orders.vue') },
@@ -75,9 +75,10 @@ const routes = [
       // 协议接受页 (强制拦截目标; 不可被 pendingConsents 守卫拦截, 否则死循环)
       { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },
       // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)
-      { path: 'recruit/leads', component: () => import('@/views/recruit/Parents.vue') },
-      // 孩子管理 (2026-06-19): 按孩子维度的精细跟进页, 与"潜客管理(按家长)"同级并列
-      { path: 'recruit/child-leads', component: () => import('@/views/recruit/ChildLeads.vue') },
+      // 2026-06-26 合并: 「潜客管理」单菜单, 内嵌孩子/家长两个 tab (LeadsHub)
+      { path: 'recruit/leads', component: () => import('@/views/recruit/LeadsHub.vue') },
+      // 兼容旧链接 /recruit/child-leads: 重定向到 LeadsHub 默认 tab=child
+      { path: 'recruit/child-leads', redirect: '/recruit/leads?tab=child' },
       { path: 'recruit/trial-bookings', component: () => import('@/views/recruit/TrialBookings.vue') },
       // 招生看板 (2026-06)
       { path: 'reports/recruit', component: () => import('@/views/reports/RecruitReport.vue') },

@@ -725,6 +725,8 @@
         <div class="detail-footer-actions">
           <el-button @click="detailDrawer = false">关闭</el-button>
           <div class="detail-footer-right">
+            <!-- 2026-06-26: 排课入口从「排课列表/排课日历 header」挪到这里 — 对单开班的批量排课更直观 -->
+            <el-button v-if="detailRow" type="success" @click="openGenerateForDetail">为该开班排课</el-button>
             <el-button v-if="detailRow && canCancel(detailRow)" type="warning" @click="openCancelDialog(detailRow)">取消</el-button>
             <el-button v-if="detailRow && canChangeStatus(detailRow)" @click="openStatusDialog(detailRow)">改状态</el-button>
             <el-button v-if="detailRow" type="primary" @click="openEdit(detailRow)">编辑</el-button>
@@ -930,7 +932,8 @@
             <template #header>
               <div class="card-header-row">
                 <span class="card-title">已排课（{{ scheduleInfoSchedules.length }}）</span>
-                <el-button link type="primary" @click="goScheduleListFromInfo">前往排课列表</el-button>
+                <!-- 2026-06-26: 排课列表页下线, 改跳排课日历 (顺手把按钮文字从"列表"改成"日历") -->
+                <el-button link type="primary" @click="goScheduleListFromInfo">前往排课日历</el-button>
               </div>
             </template>
             <el-empty
@@ -1053,7 +1056,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Document, Folder, Upload } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
@@ -1382,6 +1385,14 @@ function openScheduleDialog(row) {
   }
   scheduleTarget.value = row
   scheduleDialog.value = true
+}
+// 2026-06-26: 详情抽屉 footer 的「为该开班排课」复用同一入口; 先关详情抽屉避免叠层视觉冲突
+function openGenerateForDetail() {
+  const row = detailRow.value
+  if (!row) return
+  detailDrawer.value = false
+  // 下一个 tick 开 dialog, 让 drawer 关闭动画先跑, 避免两个 el-dialog 叠层闪烁
+  nextTick(() => openScheduleDialog(row))
 }
 
 const nextStatusOptions = computed(() => STATUS_NEXT[statusForm.from] || [])

@@ -134,7 +134,9 @@ async function list({ orgId, from, to, courseInstance, teacher, room, statuses, 
   //      排课列表数据量级（单机构学期内几千条）远小于 Mongo 排序成本,可以接受。
   const fetchLimit = Math.max(p.limit * 5, 500) // 拉宽一些再在内存裁，避免漏数据
   const docs = await LessonSchedule.find(filter)
-    .populate('courseInstance', 'name')
+    // 2026-06-26: 把 courseInstance.status 一起带回，前端用来给"开班不在 active"的卡片降饱和度，
+    //   提示用户：这些排课虽然状态是 scheduled，但后端 prepare/start/finish/archive 都会被 assertCourseInstanceActive 挡掉。
+    .populate('courseInstance', 'name status')
     .populate('teacher', 'mobile realName')
     .populate('room', 'name location')
     .sort({ plannedStartTime: 1 })
@@ -1013,7 +1015,9 @@ async function calendar({ orgId, from, to, teacher, room, courseInstance, status
     if (to) filter.plannedStartTime.$lte = parseBoundary(to, 'end')
   }
   const items = await LessonSchedule.find(filter)
-    .populate('courseInstance', 'name')
+    // 2026-06-26: 把 courseInstance.status 一起带回。日历前端用它判断「开班是否进行中」，
+    //   非 active 的开班走更浅的底色 + 深色文字，避免跟正常「白字+饱和底」的"可上课"事件混淆。
+    .populate('courseInstance', 'name status')
     .populate('teacher', 'realName')
     .populate('room', 'name')
     .sort({ plannedStartTime: 1 })
@@ -1025,9 +1029,26 @@ async function calendar({ orgId, from, to, teacher, room, courseInstance, status
     end: s.plannedEndTime,
     status: s.status,
     lessonNo: s.lessonNo,
-    teacher: s.teacher && s.teacher.realName,
-    room: s.room && s.room.name,
-    courseInstance: s.courseInstance && { id: String(s.courseInstance._id), name: s.courseInstance.name }
+    // 2026-06-26: teacher/room 改成 object（之前压成 realName/name 字符串，导致日历弹考勤抽屉时
+    //   AttendanceRosterTable 读不到 teacher.realName / room.name → 显示 "—"）。
+    //   跟 detail 接口 / list 接口的 populate 形状对齐。
+    teacher: s.teacher && { id: String(s.teacher._id), realName: s.teacher.realName, mobile: s.teacher.mobile },
+    room: s.room && { id: String(s.room._id), name: s.room.name, location: s.room.location },
+    // 把 status + 关键开班字段一并回传：日历 drawer 弹出后展示开班周期 / 排课计划 / 招生上限
+    //   让用户不仅看到"这是哪一节课"，还能看到这节课所在的整个开班上下文。
+    //   schedulePlan / syllabusSnapshot 体积可控（前者几条 string+number，后者 lessons 数组最多几十条），全量回传比单独再发一次 detail 体验好。
+    courseInstance: s.courseInstance && {
+      id: String(s.courseInstance._id),
+      name: s.courseInstance.name,
+      status: s.courseInstance.status,
+      isTrial: s.courseInstance.isTrial,
+      startDate: s.courseInstance.startDate,
+      estimatedEndDate: s.courseInstance.estimatedEndDate,
+      maxStudents: s.courseInstance.maxStudents,
+      schedulePlan: s.courseInstance.schedulePlan,
+      syllabusSnapshot: s.courseInstance.syllabusSnapshot,
+      syllabusOverride: s.courseInstance.syllabusOverride
+    }
   }))
 }
 
