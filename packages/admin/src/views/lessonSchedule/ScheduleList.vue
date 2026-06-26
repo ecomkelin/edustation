@@ -7,7 +7,7 @@
           <div class="subtitle">按课节安排老师、教室、时间。可按开班 / 老师 / 教室 / 日期 筛选。</div>
         </div>
         <div class="header-actions">
-          <el-button @click="$router.push('/schedule/calendar')">日历视图</el-button>
+          <el-button @click="$router.push('/schedule')">日历视图</el-button>
           <el-button type="primary" @click="openGenerateDialog()">为开班排课</el-button>
         </div>
       </div>

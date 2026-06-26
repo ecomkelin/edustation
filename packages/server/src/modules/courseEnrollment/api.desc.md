@@ -33,10 +33,16 @@
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | courseInstance | String (ObjectId) | 按开班过滤 |
+| courseInstanceStatus | String | 按开班状态过滤（可逗号分隔多值，如 `enrolling,closed`） |
+| courseInstanceTeacher | String (ObjectId) | 按开班老师过滤 |
 | student | String (ObjectId) | 按学生过滤 |
-| status | String | 状态过滤（可逗号分隔多值） |
+| status | String | 报名状态过滤（可逗号分隔多值） |
+| enrolledFrom | String (YYYY-MM-DD) | 报名时间 ≥ 此日期（含） |
+| enrolledTo | String (YYYY-MM-DD) | 报名时间 < 此日期的下一天（含） |
 | page | Number | 默认 1 |
 | pageSize | Number | 默认 20 |
+
+> 报名时间段为闭区间 `[enrolledFrom, enrolledTo + 1天)`，按 `enrolledAt` 字段过滤。与 `courseInstanceStatus` / `courseInstanceTeacher` 共存时按 AND 取交集（先按开班过滤取 ID，再按报名记录过滤）。
 
 - **成功响应** (`200 OK`)：`{ data: { items: CourseEnrollment[], total, page, pageSize } }`。
 

@@ -550,9 +550,11 @@ async function update(id, orgId, payload) {
  *   enrolling → planning     （可逆，需"无 CourseEnrollment 且无 LessonAttendance"）
  *   active    → enrolling    （可逆，同上）
  *   closed    → *            （不可逆）
- *   *         → cancelled    （死胡同，仅超管）
+ *   *         → cancelled    （仅超管）
+ *   cancelled → planning/enrolling/active （仅超管；误操作恢复用）
  * 权限：
- *   - cancelled：仅平台超管（req.user.isPlatformAdmin）
+ *   - 进入 cancelled：仅平台超管（req.user.isPlatformAdmin）
+ *   - 从 cancelled 复生：仅平台超管（恢复性操作，避免非超管误改）
  *   - 其他：courseInstance.write
  * 入参：by = req.user.id（操作人），reason = 必填（写 statusLog）
  */
@@ -568,26 +570,36 @@ async function setStatus(id, orgId, toStatus, by, reason, isPlatformAdmin) {
     throw ApiError.badRequest('状态未变化')
   }
 
-  // cancelled 死胡同：从任何状态都能切到 cancelled，但仅超管；cancelled 不能再切走
+  // 进入 cancelled：任何状态都可切到 cancelled，但仅超管
   if (toStatus === 'cancelled') {
     if (!isPlatformAdmin) {
       throw ApiError.forbidden('仅平台超管可取消开班')
     }
     // 落到具体写入
   } else if (from === 'cancelled') {
-    throw ApiError.badRequest('已取消的开班不可变更状态（只能软删）')
+    // 复生 cancelled：仅超管（误操作恢复用；前端不展示"复生"按钮给非超管）
+    if (!isPlatformAdmin) {
+      throw ApiError.forbidden('仅平台超管可恢复已取消的开班')
+    }
+    // 落到 allowedNext 统一校验
   } else if (from === 'closed') {
     throw ApiError.badRequest('已结班的开班不可变更状态')
   } else {
     // 正向 / 可逆校验
-    const allowedNext = {
-      planning: ['enrolling'],
-      enrolling: ['planning', 'active'],
-      active: ['enrolling', 'closed']
-    }
-    if (!allowedNext[from] || !allowedNext[from].includes(toStatus)) {
-      throw ApiError.badRequest(`状态 ${from} → ${toStatus} 不允许`)
-    }
+    // （cancelled → * 的允许集合也用同一张表，避免分支逻辑分裂）
+  }
+  // 统一 allowedNext：包含 cancelled 的复生路径
+  const allowedNext = {
+    planning: ['enrolling'],
+    enrolling: ['planning', 'active'],
+    active: ['enrolling', 'closed'],
+    // 复生目标：planning（重新筹备）/ enrolling（恢复招生）/ active（直接开课）
+    // 不含 closed（已取消的开班"直接结班"没业务意义）
+    cancelled: ['planning', 'enrolling', 'active']
+  }
+  if (!allowedNext[from] || !allowedNext[from].includes(toStatus)) {
+    throw ApiError.badRequest(`状态 ${from} → ${toStatus} 不允许`)
+  }
     // 硬规则：enrolling → active 必须已排满 + 至少 1 个有效报名
     // 业务语义："进行中" = 已经在上课
     //   1) 必须把 schedulePlan.totalPlannedLessons 全部排完；
@@ -659,7 +671,6 @@ async function setStatus(id, orgId, toStatus, by, reason, isPlatformAdmin) {
         )
       }
     }
-  }
 
   cur.status = toStatus
   cur.statusLog.push({ from, to: toStatus, by, at: new Date(), reason: String(reason).trim() })

@@ -1,19 +1,16 @@
 <template>
+  <!--
+    课程 - 开课 tab (2026-06-26)
+    原 CourseInstances.vue 的 body 拆出来作为「课程」页的 tab 1。
+    顶部 header-card (含「开班」h2 + 新建开班按钮) 已由父 Course.vue 接管；
+    「新建开班」按钮搬到 filter 卡左侧 (与原 header 区域视觉等价)。
+  -->
   <div class="page course-instances-page">
-    <el-card shadow="never" class="header-card">
-      <div class="header-row">
-        <div>
-          <h2 class="title">开班</h2>
-          <div class="subtitle">一个开班对应一个教学科目 + 一套课程产品。开班后学生通过"课程报名"加入；超额时可分班到另一个开班。</div>
-        </div>
-        <div class="header-actions">
-          <el-button type="primary" @click="openCreate">新建开班</el-button>
-        </div>
-      </div>
-    </el-card>
-
     <el-card shadow="never" class="filter-card">
       <el-form inline :model="filters" class="filter-form" @submit.prevent>
+        <el-form-item>
+          <el-button type="primary" @click="openCreate">新建开班</el-button>
+        </el-form-item>
         <el-form-item label="开班名称">
           <el-input v-model="filters.keyword" clearable placeholder="模糊搜索" style="width: 180px" @input="onKeywordInput" />
         </el-form-item>
@@ -163,11 +160,8 @@
       </el-table-column>
       <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row.status === 'enrolling'" size="small" type="success" @click="openEnroll(row)">加学生</el-button>
-          <el-button size="small" type="primary" @click="openScheduleDialog(row)">排课</el-button>
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="canChangeStatus(row)" size="small" @click="openStatusDialog(row)">改状态</el-button>
-          <el-button v-if="canCancel(row)" size="small" type="warning" @click="openCancelDialog(row)">取消</el-button>
+          <el-button size="small" type="primary" @click="openEnrollmentInfo(row)">报名信息</el-button>
+          <el-button size="small" @click="openScheduleInfo(row)">排课信息</el-button>
           <!-- 「误操删除」:仅超管;前置条件:planning/cancelled 状态 + 无业务引用 -->
           <DestructiveConfirm
             v-if="canDelete(row)"
@@ -415,7 +409,7 @@
       </template>
     </el-dialog>
 
-    <!-- 修改状态 弹窗（不含 cancelled） -->
+    <!-- 修改状态 弹窗（含 cancelled → 复生选项，仅超管可见） -->
     <el-dialog v-model="statusDialog" :title="`修改状态：${transferSourceLabel}`" width="480px" :close-on-click-modal="false">
       <el-form label-width="80px">
         <el-form-item label="当前状态">
@@ -560,7 +554,7 @@
       v-model="enrollDialog"
       :course-instance="enrollTarget"
       :title="enrollTarget ? `批量报名 · ${enrollTarget.name || enrollTarget.courseProduct?.name || '?'}` : '批量报名学生'"
-      @done="load"
+      @done="onEnrollDone"
     />
 
     <!-- 已报名学生列表:从列表里点「已报 / 上限」打开,只读 -->
@@ -617,7 +611,82 @@
       @done="load"
     />
 
-    <!-- 详情抽屉：点行名打开，展示进度 + 已排课列表 + 加一节 -->
+    <!-- 调整班级（报名信息抽屉内触发, 2026-06-26） -->
+    <el-dialog v-model="enrollmentTransferDialog" title="调整班级" width="500px" :close-on-click-modal="false">
+      <el-form label-width="100px">
+        <el-form-item label="学生">
+          <span>{{ enrollmentTransferSource && enrollmentTransferSource.student && enrollmentTransferSource.student.name }}</span>
+        </el-form-item>
+        <el-form-item label="当前班级">
+          <span>{{ enrollmentTransferSourceLabel }}</span>
+        </el-form-item>
+        <el-form-item label="目标班级" required>
+          <el-select v-model="enrollmentTransferTarget" filterable placeholder="选择目标开班" style="width: 100%">
+            <el-option
+              v-for="c in enrollmentTransferOptions"
+              :key="c._id"
+              :label="instanceLabel(c) + ' · ' + statusLabel(c.status)"
+              :value="c._id"
+            />
+          </el-select>
+          <div v-if="enrollmentTransferOptions.length === 0" class="hint-warn">
+            没有可转入的开班(需要状态为"招生中"或"进行中",且不能是当前班级)
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="enrollmentTransferDialog = false">取消</el-button>
+        <el-button type="primary" :loading="enrollmentTransferring" :disabled="!enrollmentTransferTarget" @click="submitEnrollmentTransfer">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 选课包（报名信息抽屉内触发, 2026-06-26） -->
+    <el-dialog v-model="enrollmentSpDialog" title="选课包" width="560px" :close-on-click-modal="false">
+      <div v-if="enrollmentSpTarget" v-loading="enrollmentSpLoading">
+        <p class="hint">
+          学生 <b>{{ enrollmentSpTarget.student?.name }}</b> · 开班 <b>{{ enrollmentSpTarget.courseInstance?.name || '?' }}</b>
+        </p>
+        <el-form label-width="100px">
+          <el-form-item label="当前课包">
+            <template v-if="enrollmentSpTarget.studentProduct">
+              <span :class="enrollmentSpTarget.studentProduct.source === 'gift' ? 'gift-strong' : 'cell-strong'">
+                剩余 {{ enrollmentSpTarget.studentProduct.remainingLessons }} / 共 {{ enrollmentSpTarget.studentProduct.totalLessons }} 节
+              </span>
+              <span class="muted" style="margin-left: 8px">
+                {{ enrollmentSpTarget.studentProduct.source === 'gift' ? '赠课' : '购买' }}
+              </span>
+            </template>
+            <span v-else class="hint-warn">未绑定</span>
+          </el-form-item>
+          <el-form-item label="可选课包">
+            <el-select
+              v-model="enrollmentSpSelected"
+              filterable
+              clearable
+              placeholder="请选择该学生的有效课包（限本开班 acceptedCourseProducts 范围）"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="sp in enrollmentSpOptions"
+                :key="sp._id"
+                :value="sp._id"
+                :label="`${sp.courseProduct?.name || '?'} · 剩${sp.remainingLessons}/${sp.totalLessons}节 · ${sp.source === 'gift' ? '赠课' : '购买'} · 至${formatDate(sp.expireDate, 'YYYY-MM-DD')}`"
+              />
+            </el-select>
+            <div class="hint" style="margin-top: 4px">
+              共 {{ enrollmentSpOptions.length }} 个有效课包（含已用完 / 已过期的标灰不会显示）。
+              选择空表示清空主用课包（排课时按 FIFO 兜底）。
+            </div>
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="enrollmentSpDialog = false">取消</el-button>
+        <el-button type="primary" :loading="enrollmentSpSaving" :disabled="!enrollmentSpDirty" @click="submitEnrollmentPickSp">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 详情抽屉：点行名 / 点"排课信息"按钮打开，展示概览 + 已排课列表 + footer 操作按钮 -->
     <el-drawer
       v-model="detailDrawer"
       :title="detailTitle"
@@ -627,51 +696,7 @@
     >
       <div v-loading="detailLoading" class="detail-content">
         <template v-if="detailRow">
-          <!-- 顶部进度 -->
-          <el-card shadow="never" class="detail-card">
-            <div class="detail-progress-row">
-              <div class="detail-progress-text">
-                <span class="muted">排课进度：</span>
-                <span :class="scheduleProgressClass(detailRow)">
-                  {{ detailRow.scheduledCount || 0 }} / {{ detailRow.schedulePlan?.totalPlannedLessons || 0 }}
-                </span>
-                <el-tag
-                  v-if="scheduleState(detailRow) === 'full'"
-                  type="success"
-                  effect="plain"
-                  size="small"
-                  style="margin-left: 8px"
-                >已排满</el-tag>
-                <el-tag
-                  v-else-if="scheduleState(detailRow) === 'none'"
-                  type="danger"
-                  effect="plain"
-                  size="small"
-                  style="margin-left: 8px"
-                >未排</el-tag>
-                <el-tag
-                  v-else
-                  type="warning"
-                  effect="plain"
-                  size="small"
-                  style="margin-left: 8px"
-                >未排满 · 还可加 {{ (detailRow.schedulePlan?.totalPlannedLessons || 0) - (detailRow.scheduledCount || 0) }} 节</el-tag>
-              </div>
-              <el-button
-                type="primary"
-                :disabled="scheduleState(detailRow) === 'full'"
-                @click="openAddLesson"
-              >加一节</el-button>
-            </div>
-            <el-progress
-              v-if="detailRow.schedulePlan?.totalPlannedLessons"
-              :percentage="Math.min(100, Math.round(((detailRow.scheduledCount || 0) / detailRow.schedulePlan.totalPlannedLessons) * 100))"
-              :stroke-width="10"
-              style="margin-top: 12px"
-            />
-          </el-card>
-
-          <!-- 概览 -->
+          <!-- 概览（2026-06-26：详情抽屉只管基本信息 + footer 操作；已排课列表拆到独立「排课信息」抽屉） -->
           <el-card shadow="never" class="detail-card">
             <template #header><span class="card-title">概览</span></template>
             <el-descriptions :column="2" size="small" border>
@@ -693,21 +718,227 @@
               </el-descriptions-item>
             </el-descriptions>
           </el-card>
+        </template>
+      </div>
+      <!-- 详情页 footer：操作按钮区（2026-06-26：把列表里的 编辑/改状态/取消 搬到这） -->
+      <template #footer>
+        <div class="detail-footer-actions">
+          <el-button @click="detailDrawer = false">关闭</el-button>
+          <div class="detail-footer-right">
+            <el-button v-if="detailRow && canCancel(detailRow)" type="warning" @click="openCancelDialog(detailRow)">取消</el-button>
+            <el-button v-if="detailRow && canChangeStatus(detailRow)" @click="openStatusDialog(detailRow)">改状态</el-button>
+            <el-button v-if="detailRow" type="primary" @click="openEdit(detailRow)">编辑</el-button>
+          </div>
+        </div>
+      </template>
+    </el-drawer>
 
-          <!-- 已排课列表 -->
+    <!-- 报名信息抽屉（2026-06-26：与排课信息抽屉对称, 管报名进度 + 已报名学生 + 新增报名） -->
+    <el-drawer
+      v-model="enrollmentInfoDrawer"
+      :title="enrollmentInfoTitle"
+      direction="rtl"
+      size="720px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="enrollmentInfoLoading" class="detail-content">
+        <template v-if="enrollmentInfoRow">
+          <!-- 报名进度（对应"排课进度"位置） -->
           <el-card shadow="never" class="detail-card">
             <template #header>
               <div class="card-header-row">
-                <span class="card-title">已排课（{{ detailSchedules.length }}）</span>
-                <el-button link type="primary" @click="goScheduleList">前往排课列表</el-button>
+                <span class="card-title">报名进度</span>
+                <el-button
+                  v-if="enrollmentInfoRow.status === 'enrolling' || enrollmentInfoRow.status === 'active'"
+                  type="primary"
+                  size="small"
+                  @click="openEnrollFromInfo"
+                >
+                  新增报名
+                </el-button>
+              </div>
+            </template>
+            <div class="detail-progress-text">
+              <span class="muted">已报 / 上限：</span>
+              <span :class="enrollProgressClass(enrollmentInfoRow)">
+                {{ enrollmentInfoRow.enrolledCount || 0 }} / {{ enrollmentInfoRow.maxStudents || '∞' }}
+              </span>
+              <el-tag
+                v-if="(enrollmentInfoRow.enrolledCount || 0) >= (enrollmentInfoRow.maxStudents || Infinity)"
+                type="danger"
+                effect="plain"
+                size="small"
+                style="margin-left: 8px"
+              >已报满 · 建议分班</el-tag>
+              <el-tag
+                v-else-if="(enrollmentInfoRow.maxStudents || 0) > 0 && (enrollmentInfoRow.enrolledCount || 0) / enrollmentInfoRow.maxStudents >= 0.7"
+                type="warning"
+                effect="plain"
+                size="small"
+                style="margin-left: 8px"
+              >接近上限 · 剩 {{ (enrollmentInfoRow.maxStudents || 0) - (enrollmentInfoRow.enrolledCount || 0) }} 名额</el-tag>
+              <el-tag
+                v-else-if="(enrollmentInfoRow.maxStudents || 0) > 0"
+                type="success"
+                effect="plain"
+                size="small"
+                style="margin-left: 8px"
+              >未满 · 还可报 {{ (enrollmentInfoRow.maxStudents || 0) - (enrollmentInfoRow.enrolledCount || 0) }} 名</el-tag>
+            </div>
+            <el-progress
+              v-if="enrollmentInfoRow.maxStudents"
+              :percentage="Math.min(100, Math.round(((enrollmentInfoRow.enrolledCount || 0) / enrollmentInfoRow.maxStudents) * 100))"
+              :stroke-width="10"
+              style="margin-top: 12px"
+            />
+          </el-card>
+
+          <!-- 已报名学生列表 -->
+          <el-card shadow="never" class="detail-card">
+            <template #header>
+              <div class="card-header-row">
+                <span class="card-title">已报名学生（{{ enrollmentInfoList.length }}）</span>
+                <span class="muted" style="font-size: 12px">仅 enrolled 状态 · 操作请到「课程报名」页</span>
               </div>
             </template>
             <el-empty
-              v-if="!detailLoading && detailSchedules.length === 0"
+              v-if="!enrollmentInfoLoading && enrollmentInfoList.length === 0"
+              description="暂无报名学生"
+              :image-size="80"
+            />
+            <el-table v-else :data="enrollmentInfoList" border size="small">
+              <el-table-column label="学生" width="100">
+                <template #default="{ row }">{{ row.student?.name || '—' }}</template>
+              </el-table-column>
+              <el-table-column label="课程进度" width="150">
+                <template #default="{ row }">
+                  <template v-if="row.progress">
+                    <div class="cell-strong">已上 {{ row.progress.attendedLessons }} / 共 {{ row.progress.totalLessons || '?' }} 节</div>
+                    <div class="muted">已排课 {{ row.progress.scheduledLessons }} 节</div>
+                  </template>
+                  <span v-else class="muted">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="课包" width="180">
+                <template #default="{ row }">
+                  <template v-if="row.studentProduct">
+                    <div :class="row.studentProduct.source === 'gift' ? 'gift-strong' : 'cell-strong'">
+                      剩余 {{ row.studentProduct.remainingLessons }} / 共 {{ row.studentProduct.totalLessons }} 节
+                    </div>
+                    <div class="muted" v-if="row.studentProduct.source === 'gift'">赠课</div>
+                    <div class="muted" v-else>购买课包</div>
+                  </template>
+                  <span v-else class="hint-warn">无可用课包</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="enrollStatusType(row.status)">{{ enrollStatusLabel(row.status) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="报名时间" width="160">
+                <template #default="{ row }">{{ formatDate(row.enrolledAt) }}</template>
+              </el-table-column>
+              <!-- 操作列 (2026-06-26)：跟课程报名页一致, 4 个行级操作;
+                   仅 enrolled 状态可调整班级/选课包/退班; 误操删除超管可见 -->
+              <el-table-column label="操作" width="380" fixed="right">
+                <template #default="{ row }">
+                  <el-button v-if="row.status === 'enrolled'" size="small" @click="openEnrollmentTransfer(row)">调整班级</el-button>
+                  <el-button v-if="row.status === 'enrolled'" size="small" type="primary" plain @click="openEnrollmentPickSp(row)">选课包</el-button>
+                  <el-button v-if="row.status === 'enrolled'" size="small" type="warning" @click="setEnrollmentStatus(row, 'dropped')">退班</el-button>
+                  <DestructiveConfirm
+                    v-if="row.status === 'enrolled' && isPlatformAdmin"
+                    :target="`报名记录 ${row.student?.name || ''}`"
+                    warning="高风险"
+                    :precheck-notes="['报名状态为 enrolled', '已结业/退班的记录请走状态变更']"
+                    :precheck="() => courseEnrollmentApi.removableCheck(row._id).then((r) => r.data)"
+                    @confirm="(p) => onEnrollmentRemoveConfirm(row, p)"
+                  >
+                    <el-button size="small" type="danger">误操删除</el-button>
+                  </DestructiveConfirm>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </template>
+      </div>
+      <!-- 报名信息抽屉 footer：只有"关闭" -->
+      <template #footer>
+        <div class="detail-footer-actions">
+          <el-button @click="enrollmentInfoDrawer = false">关闭</el-button>
+        </div>
+      </template>
+    </el-drawer>
+
+    <!-- 排课信息抽屉（2026-06-26：与详情抽屉独立, 管排课进度 + 已排课 + 加一节） -->
+    <el-drawer
+      v-model="scheduleInfoDrawer"
+      :title="scheduleInfoTitle"
+      direction="rtl"
+      size="720px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="scheduleInfoLoading" class="detail-content">
+        <template v-if="scheduleInfoRow">
+          <!-- 排课进度（含进度条 + 加一节） -->
+          <el-card shadow="never" class="detail-card">
+            <template #header>
+              <div class="card-header-row">
+                <span class="card-title">排课进度</span>
+                <el-button type="primary" size="small" :disabled="scheduleState(scheduleInfoRow) === 'full'" @click="openAddLessonFromInfo">
+                  加一节
+                </el-button>
+              </div>
+            </template>
+            <div class="detail-progress-text">
+              <span class="muted">已排 / 总计划：</span>
+              <span :class="scheduleProgressClass(scheduleInfoRow)">
+                {{ scheduleInfoRow.scheduledCount || 0 }} / {{ scheduleInfoRow.schedulePlan?.totalPlannedLessons || 0 }}
+              </span>
+              <el-tag
+                v-if="scheduleState(scheduleInfoRow) === 'full'"
+                type="success"
+                effect="plain"
+                size="small"
+                style="margin-left: 8px"
+              >已排满</el-tag>
+              <el-tag
+                v-else-if="scheduleState(scheduleInfoRow) === 'none'"
+                type="danger"
+                effect="plain"
+                size="small"
+                style="margin-left: 8px"
+              >未排</el-tag>
+              <el-tag
+                v-else
+                type="warning"
+                effect="plain"
+                size="small"
+                style="margin-left: 8px"
+              >未排满 · 还可加 {{ (scheduleInfoRow.schedulePlan?.totalPlannedLessons || 0) - (scheduleInfoRow.scheduledCount || 0) }} 节</el-tag>
+            </div>
+            <el-progress
+              v-if="scheduleInfoRow.schedulePlan?.totalPlannedLessons"
+              :percentage="Math.min(100, Math.round(((scheduleInfoRow.scheduledCount || 0) / scheduleInfoRow.schedulePlan.totalPlannedLessons) * 100))"
+              :stroke-width="10"
+              style="margin-top: 12px"
+            />
+          </el-card>
+
+          <!-- 已排课列表（含编辑 / 删除） -->
+          <el-card shadow="never" class="detail-card">
+            <template #header>
+              <div class="card-header-row">
+                <span class="card-title">已排课（{{ scheduleInfoSchedules.length }}）</span>
+                <el-button link type="primary" @click="goScheduleListFromInfo">前往排课列表</el-button>
+              </div>
+            </template>
+            <el-empty
+              v-if="!scheduleInfoLoading && scheduleInfoSchedules.length === 0"
               description="尚未排课"
               :image-size="80"
             />
-            <el-table v-else :data="detailSchedules" border size="small">
+            <el-table v-else :data="scheduleInfoSchedules" border size="small">
               <el-table-column label="课次" prop="lessonNo" width="60" />
               <el-table-column label="日期" width="110">
                 <template #default="{ row }">{{ formatDate(row.plannedStartTime, 'YYYY-MM-DD') }}</template>
@@ -724,10 +955,30 @@
                 <template #default="{ row }">{{ row.room?.name || '—' }}</template>
               </el-table-column>
               <el-table-column label="主题" prop="title" min-width="120" />
+              <el-table-column label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" @click="openEditSchedule(row)">编辑</el-button>
+                  <DestructiveConfirm
+                    :target="`第 ${row.lessonNo} 课`"
+                    warning="中风险"
+                    :precheck-notes="['该排课已有考勤/作品将一并阻断', '已完成的排课不可删除']"
+                    :precheck="() => lessonScheduleApi.removableCheck(row._id).then((r) => r.data)"
+                    @confirm="(p) => onRemoveScheduleConfirm(row, p)"
+                  >
+                    <el-button size="small" type="danger">删除</el-button>
+                  </DestructiveConfirm>
+                </template>
+              </el-table-column>
             </el-table>
           </el-card>
         </template>
       </div>
+      <!-- 排课信息抽屉 footer：只有"关闭"，不放状态流转按钮 -->
+      <template #footer>
+        <div class="detail-footer-actions">
+          <el-button @click="scheduleInfoDrawer = false">关闭</el-button>
+        </div>
+      </template>
     </el-drawer>
 
     <!-- 加一节排课（单条创建） -->
@@ -735,6 +986,13 @@
       v-model="addLessonDialog"
       :course-instance="addLessonTarget"
       @done="onAddLessonDone"
+    />
+
+    <!-- 编辑排课（单条，2026-06-26：开班详情抽屉"已排课"行内编辑入口） -->
+    <ScheduleEditDialog
+      v-model="editScheduleDialog"
+      :schedule="editScheduleTarget"
+      @done="onEditScheduleDone"
     />
 
     <!-- 状态流转历史:点列表里的状态 tag 触发。只读,不能改状态(改状态用「改状态」按钮)。 -->
@@ -809,16 +1067,20 @@ import { roomApi } from '@/api/room'
 import { userApi } from '@/api/user'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
+import { studentProductApi } from '@/api/studentProduct'
 import { storageApi } from '@/api/storage'
 import { formatDate } from '@/utils/format'
 import { useAuthStore } from '@/stores/auth'
 import EnrollStudentsDialog from '@/components/EnrollStudentsDialog.vue'
 import ScheduleGenerateDialog from '@/views/lessonSchedule/ScheduleGenerateDialog.vue'
 import AddLessonDialog from '@/views/lessonSchedule/AddLessonDialog.vue'
+import ScheduleEditDialog from '@/views/lessonSchedule/ScheduleEditDialog.vue'
 
 const router = useRouter()
 
 const auth = useAuthStore()
+// 平台超管: 仅「误操删除」等高危操作可见 (报名信息抽屉行级)
+const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const REST_DAY_LABELS = { 0: '周日', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六' }
 
@@ -843,20 +1105,23 @@ const filteredPresets = computed(() => {
 
 const STATUS_LABELS = { planning: '筹备', enrolling: '招生中', active: '进行中', closed: '已结班', cancelled: '已取消' }
 const STATUS_TYPES = { planning: 'info', enrolling: 'success', active: 'warning', closed: '', cancelled: 'danger' }
-// 列表筛选用状态选项：移除 cancelled（死胡同状态，列表里不需要）
+// 列表筛选用状态选项：含 cancelled（用户可能想看"被取消的班"做审计/恢复；
+// 默认不勾选，所以不会污染"在跑的班"主视图）
 const STATUS_OPTIONS = [
   { value: 'planning', label: STATUS_LABELS.planning },
   { value: 'enrolling', label: STATUS_LABELS.enrolling },
   { value: 'active', label: STATUS_LABELS.active },
-  { value: 'closed', label: STATUS_LABELS.closed }
+  { value: 'closed', label: STATUS_LABELS.closed },
+  { value: 'cancelled', label: STATUS_LABELS.cancelled }
 ]
 // 排序优先级：筹备 → 招生中 → 进行中 → 已结班 → 已取消
-// cancelled 仍在表里兜底（理论上筛不掉，但它在 STATUS_OPTIONS 里被拿掉后，正常流程不会再出现）
 const STATUS_ORDER = { planning: 0, enrolling: 1, active: 2, closed: 3, cancelled: 4 }
 // 状态筛选项的默认值：默认不选"已结班"和"已取消"（用户偏好"看到还在跑的班"）
 const DEFAULT_STATUS_FILTER = ['planning', 'enrolling', 'active']
 
 // 状态机：每种状态允许的下一步（与 service.setStatus 的 allowedNext 保持一致）
+// cancelled 现在不是死胡同：仅超管可复生到 planning/enrolling/active
+// （误操作恢复用；前端根据 canChangeStatus 决定是否展示"改状态"按钮给非超管）
 const STATUS_NEXT = {
   planning: [{ value: 'enrolling', label: '招生中' }],
   enrolling: [
@@ -868,7 +1133,11 @@ const STATUS_NEXT = {
     { value: 'closed', label: '已结班' }
   ],
   closed: [],
-  cancelled: []
+  cancelled: [
+    { value: 'planning', label: '筹备（复生）' },
+    { value: 'enrolling', label: '招生中（复生）' },
+    { value: 'active', label: '进行中（复生）' }
+  ]
 }
 
 const list = ref([])
@@ -1221,6 +1490,8 @@ const transferSourceLabel = computed(() => {
 // 行操作权限
 function canChangeStatus(row) {
   // 至少有下一步才能改
+  // cancelled 状态的"复生"只允许平台超管（与后端 service.setStatus 保持一致）
+  if (row.status === 'cancelled') return auth.isPlatformAdmin
   return (STATUS_NEXT[row.status] || []).length > 0
 }
 function canCancel(row) {
@@ -1378,7 +1649,46 @@ function goScheduleList() {
   })
 }
 
-// ─── 加一节排课（单条） ───
+// ─── 排课信息抽屉（2026-06-26：与详情抽屉独立, 管排课进度 + 已排课列表） ───
+const scheduleInfoDrawer = ref(false)
+const scheduleInfoLoading = ref(false)
+const scheduleInfoRow = ref(null)
+const scheduleInfoSchedules = ref([])
+const scheduleInfoTitle = computed(() => {
+  const r = scheduleInfoRow.value
+  if (!r) return '排课信息'
+  return `排课信息 · ${r.name || (r.courseProduct && r.courseProduct.name) || '?'}`
+})
+
+async function openScheduleInfo(row) {
+  scheduleInfoRow.value = row
+  scheduleInfoSchedules.value = []
+  scheduleInfoDrawer.value = true
+  scheduleInfoLoading.value = true
+  try {
+    // 重新拉 detail（拿到最新 scheduledCount）和该开班的全部排课
+    const [d, s] = await Promise.all([
+      courseInstanceApi.detail(row._id),
+      lessonScheduleApi.list({ courseInstance: row._id, pageSize: 500 })
+    ])
+    scheduleInfoRow.value = d.data
+    scheduleInfoSchedules.value = s.data?.items || []
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载排课信息失败')
+  } finally {
+    scheduleInfoLoading.value = false
+  }
+}
+
+function goScheduleListFromInfo() {
+  if (!scheduleInfoRow.value) return
+  router.push({
+    path: '/schedule',
+    query: { courseInstance: scheduleInfoRow.value._id }
+  })
+}
+
+// ─── 加一节排课（单条；从排课信息抽屉触发） ───
 const addLessonDialog = ref(false)
 const addLessonTarget = ref(null)
 
@@ -1389,13 +1699,273 @@ function openAddLesson() {
   addLessonDialog.value = true
 }
 
+function openAddLessonFromInfo() {
+  if (!scheduleInfoRow.value) return
+  // 重新拉一份最新 detail 进来（确保 scheduledCount 是最新的）
+  addLessonTarget.value = scheduleInfoRow.value
+  addLessonDialog.value = true
+}
+
+// ─── 报名信息抽屉（2026-06-26：与排课信息抽屉对称, 管报名进度 + 已报名学生列表 + 新增报名） ───
+const enrollmentInfoDrawer = ref(false)
+const enrollmentInfoLoading = ref(false)
+const enrollmentInfoRow = ref(null)
+const enrollmentInfoList = ref([])
+const enrollmentInfoTitle = computed(() => {
+  const r = enrollmentInfoRow.value
+  if (!r) return '报名信息'
+  return `报名信息 · ${r.name || (r.courseProduct && r.courseProduct.name) || '?'}`
+})
+
+/**
+ * 报名进度配色：超额红 / 接近黄 / 正常绿（仅参考提示，不阻断）
+ */
+function enrollProgressClass(row) {
+  const lvl = capLevel(row || {})
+  if (lvl === 'over') return 'progress-over'
+  if (lvl === 'mid') return 'progress-mid'
+  if (lvl === 'low') return 'progress-low'
+  return 'cell-strong'
+}
+
+async function openEnrollmentInfo(row) {
+  enrollmentInfoRow.value = row
+  enrollmentInfoList.value = []
+  enrollmentInfoDrawer.value = true
+  enrollmentInfoLoading.value = true
+  try {
+    // 拉最新 detail（拿到最新 enrolledCount）+ 该开班下全部报名记录（含已结业/退班）
+    const [d, s] = await Promise.all([
+      courseInstanceApi.detail(row._id),
+      courseEnrollmentApi.list({ courseInstance: row._id, pageSize: 500 })
+    ])
+    enrollmentInfoRow.value = d.data
+    enrollmentInfoList.value = s.data?.items || []
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载报名信息失败')
+  } finally {
+    enrollmentInfoLoading.value = false
+  }
+}
+
+/**
+ * 从报名信息抽屉内触发"新增报名"：
+ * - 复用现有 enrollDialog（EnrollStudentsDialog 支持 enrolling/active 状态）
+ * - 状态不符时给出 ElMessage 提示
+ */
+function openEnrollFromInfo() {
+  const r = enrollmentInfoRow.value
+  if (!r) return
+  if (r.status !== 'enrolling' && r.status !== 'active') {
+    return ElMessage.warning(`开班状态 ${r.status} 不允许新增报名`)
+  }
+  enrollTarget.value = r
+  enrollDialog.value = true
+}
+
+/**
+ * EnrollStudentsDialog 关闭后: 刷新报名信息抽屉 + 主列表
+ */
+async function onEnrollDone() {
+  // 主列表 enrolledCount 更新
+  load()
+  // 报名信息抽屉如果开着, 同步刷新
+  if (enrollmentInfoDrawer.value && enrollmentInfoRow.value && enrollmentInfoRow.value._id) {
+    await openEnrollmentInfo(enrollmentInfoRow.value)
+  }
+}
+
+// ─── 报名信息抽屉 · 行级操作 (2026-06-26) ───
+// 复用 CourseEnrollments.vue 的 API 调用范式, 但 state/handler 独立封装,
+// 互不影响页面其他抽屉。
+
+// 退班（直接调 setStatus 接口, 跟课程报名页一致）
+async function setEnrollmentStatus(row, toStatus) {
+  const reason = toStatus === 'dropped'
+    ? await ElMessageBox.prompt('退班原因(可选)', '退班', { confirmButtonText: '确定', cancelButtonText: '取消' }).catch(() => null)
+    : null
+  if (toStatus === 'dropped' && reason === null) return
+  try {
+    await courseEnrollmentApi.setStatus(row._id, { toStatus, reason: typeof reason === 'object' ? reason.value : undefined })
+    ElMessage.success('已更新')
+    await refreshEnrollmentInfoAfterMutation()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '更新失败')
+  }
+}
+
+// 误操删除（超管 + 二次密码 + 互锁预检）
+async function onEnrollmentRemoveConfirm(row, { password }) {
+  try {
+    await courseEnrollmentApi.remove(row._id, { password })
+    ElMessage.success('已删除')
+    await refreshEnrollmentInfoAfterMutation()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 中风险', `报名记录 ${row.student?.name || ''}`)
+  }
+}
+
+/**
+ * 统一刷新: 报名信息抽屉列表 + 主列表 enrolledCount
+ * 报名从抽屉移除后, 主列表的 "已报" 数字也要变, 不能只刷抽屉
+ */
+async function refreshEnrollmentInfoAfterMutation() {
+  load()
+  if (enrollmentInfoDrawer.value && enrollmentInfoRow.value && enrollmentInfoRow.value._id) {
+    await openEnrollmentInfo(enrollmentInfoRow.value)
+  }
+}
+
+// ─── 调整班级（抽屉内） ───
+const enrollmentTransferDialog = ref(false)
+const enrollmentTransferSource = ref(null)
+const enrollmentTransferTarget = ref('')
+const enrollmentTransferOptions = ref([])
+const enrollmentTransferring = ref(false)
+const enrollmentTransferSourceLabel = computed(() => {
+  const src = enrollmentTransferSource.value
+  if (!src || !src.courseInstance) return '—'
+  return instanceLabel(src.courseInstance)
+})
+
+async function openEnrollmentTransfer(row) {
+  enrollmentTransferSource.value = row
+  enrollmentTransferTarget.value = ''
+  // 拉开班列表（如果还没拉过 — 该页通常已在 loadRefs 里拉过）
+  let list = courseInstances.value
+  if (!list || list.length === 0) {
+    try {
+      const r = await courseInstanceApi.list({ pageSize: 500 })
+      list = r.data?.items || r.data || []
+      courseInstances.value = list
+    } catch (e) {
+      list = []
+    }
+  }
+  const sourceId = row.courseInstance && (row.courseInstance._id || row.courseInstance.id)
+  enrollmentTransferOptions.value = (list || []).filter((c) =>
+    String(c._id) !== String(sourceId) &&
+    ['enrolling', 'active'].includes(c.status)
+  )
+  enrollmentTransferDialog.value = true
+}
+
+async function submitEnrollmentTransfer() {
+  if (!enrollmentTransferTarget.value) return ElMessage.warning('请选择目标班级')
+  enrollmentTransferring.value = true
+  try {
+    await courseEnrollmentApi.update(enrollmentTransferSource.value._id, { courseInstance: enrollmentTransferTarget.value })
+    ElMessage.success('已调整')
+    enrollmentTransferDialog.value = false
+    await refreshEnrollmentInfoAfterMutation()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '调整失败')
+  } finally {
+    enrollmentTransferring.value = false
+  }
+}
+
+// ─── 选课包（抽屉内） ───
+const enrollmentSpDialog = ref(false)
+const enrollmentSpTarget = ref(null)
+const enrollmentSpOptions = ref([])
+const enrollmentSpSelected = ref('')
+const enrollmentSpOriginal = ref('')
+const enrollmentSpLoading = ref(false)
+const enrollmentSpSaving = ref(false)
+const enrollmentSpDirty = computed(() =>
+  String(enrollmentSpSelected.value || '') !== String(enrollmentSpOriginal.value || '')
+)
+
+async function openEnrollmentPickSp(row) {
+  enrollmentSpTarget.value = row
+  enrollmentSpLoading.value = true
+  enrollmentSpDialog.value = true
+  enrollmentSpSelected.value = row.studentProduct?._id || row.studentProduct || ''
+  enrollmentSpOriginal.value = enrollmentSpSelected.value
+  try {
+    const r = await studentProductApi.list({ student: row.student._id || row.student, pageSize: 200 })
+    enrollmentSpOptions.value = (r.data?.items || r.data || [])
+      .filter((sp) => {
+        const ci = row.courseInstance || {}
+        const accepted = (ci.acceptedCourseProducts && ci.acceptedCourseProducts.length)
+          ? ci.acceptedCourseProducts
+          : (ci.courseProduct ? [ci.courseProduct] : [])
+        const spCp = sp.courseProduct?._id || sp.courseProduct
+        return accepted.some((id) => String(id) === String(spCp))
+      })
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载课包列表失败')
+    enrollmentSpOptions.value = []
+  } finally {
+    enrollmentSpLoading.value = false
+  }
+}
+
+async function submitEnrollmentPickSp() {
+  if (!enrollmentSpTarget.value || !enrollmentSpDirty.value) return
+  enrollmentSpSaving.value = true
+  try {
+    const newValue = enrollmentSpSelected.value || null
+    await courseEnrollmentApi.update(enrollmentSpTarget.value._id, { studentProduct: newValue })
+    ElMessage.success(newValue ? '已更新主用课包' : '已清空主用课包')
+    enrollmentSpDialog.value = false
+    await refreshEnrollmentInfoAfterMutation()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '保存失败')
+  } finally {
+    enrollmentSpSaving.value = false
+  }
+}
+
 async function onAddLessonDone() {
-  // 重新拉详情，刷新进度 + 排课列表
-  if (detailRow.value && detailRow.value._id) {
+  // 优先刷新"排课信息"抽屉；详情抽屉如果开着也同步刷新
+  if (scheduleInfoRow.value && scheduleInfoRow.value._id) {
+    await openScheduleInfo(scheduleInfoRow.value)
+  }
+  if (detailDrawer.value && detailRow.value && detailRow.value._id) {
     await openDetail(detailRow.value)
   }
   // 同步主列表的 scheduledCount
   load()
+}
+
+// ─── 编辑单条排课（2026-06-26：排课信息抽屉"已排课"行内编辑入口） ───
+const editScheduleDialog = ref(false)
+const editScheduleTarget = ref(null)
+
+function openEditSchedule(row) {
+  editScheduleTarget.value = row
+  editScheduleDialog.value = true
+}
+
+async function onEditScheduleDone() {
+  // 优先刷新"排课信息"抽屉
+  if (scheduleInfoRow.value && scheduleInfoRow.value._id) {
+    await openScheduleInfo(scheduleInfoRow.value)
+  }
+  if (detailDrawer.value && detailRow.value && detailRow.value._id) {
+    await openDetail(detailRow.value)
+  }
+  load()
+}
+
+// ─── 删除单条排课（中风险：要求教务.password 二次确认 + 互锁预检） ───
+async function onRemoveScheduleConfirm(row, { password }) {
+  try {
+    await lessonScheduleApi.remove(row._id, { password })
+    ElMessage.success(`第 ${row.lessonNo} 课已删除`)
+    // 重新拉两个可能开着的抽屉 + 主列表
+    if (scheduleInfoDrawer.value && scheduleInfoRow.value && scheduleInfoRow.value._id) {
+      await openScheduleInfo(scheduleInfoRow.value)
+    }
+    if (detailDrawer.value && detailRow.value && detailRow.value._id) {
+      await openDetail(detailRow.value)
+    }
+    load()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 中风险', `第 ${row.lessonNo} 课`)
+  }
 }
 
 async function load() {
@@ -1903,6 +2473,16 @@ onMounted(() => {
 }
 .detail-progress-text { font-size: 14px; }
 .card-title { font-weight: 600; }
+.detail-footer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.detail-footer-right {
+  display: flex;
+  gap: 8px;
+}
 .card-header-row {
   display: flex;
   justify-content: space-between;

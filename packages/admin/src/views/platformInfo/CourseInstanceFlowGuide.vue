@@ -129,7 +129,7 @@
           <h4>3.2 加学生（创建 CourseEnrollment）</h4>
           <ol>
             <li>入口 1：开班列表点「<strong>加学生</strong>」（仅 enrolling 状态可见）→ 弹窗批量选择学生。</li>
-            <li>入口 2：在「教务管理 → 课程报名」直接新建报名，选定开班 + 学生。</li>
+            <li>入口 2：在「教务管理 → 课程 → 课程报名」直接新建报名，选定开班 + 学生。</li>
             <li>服务会校验：开班状态 ∈ {enrolling, active}。仅此一项，<strong>不强制</strong> StudentProduct、不强制 maxStudents（超额靠"分班"解决）。</li>
             <li>系统会按 FIFO 帮该学生选定 StudentProduct（未过期、remainingLessons&gt;0、courseProduct 在 acceptedCourseProducts 内），写入 <code>enrollment.studentProduct</code>；找不到则该字段为 null（业务信号：后续排课会跳过）。</li>
             <li>新建后 status = <code>enrolled</code>；下一次该开班任意一节「准备上课」时，<strong>自动</strong>为该学生生成 LessonAttendance（前提：持有有效课包）。</li>
@@ -489,7 +489,7 @@ const codeIndex = [
   { topic: '排课 archive', path: 'lessonSchedule.service.js · archive()', note: 'completed→archived；2026-06：仅「已消课/已补」未写课评阻塞归档' },
   { topic: '排课 generate', path: 'lessonSchedule.service.js · generate()', note: '批量按 schedulePlan 排课，先 preview 再 generate' },
   { topic: '补课接口', path: 'lessonAttendance.service.js · makeup()', note: '就地把 orig.status 翻成 madeup（不建新行），StudentProduct 扣 1 课时；meta 写 originalStatus/makeupAt' },
-  { topic: '管理后台入口', path: 'packages/admin/src/views/courseInstances/CourseInstances.vue', note: '"加学生" 仅 enrolling 可见；"改状态"按钮走 setStatus 弹窗' }
+  { topic: '管理后台入口', path: 'packages/admin/src/views/course/CourseInstancesTab.vue', note: '"加学生" 仅 enrolling 可见；"改状态"按钮走 setStatus 弹窗 (2026-06-26: 原 courseInstances/CourseInstances.vue 拆为 CourseInstancesTab.vue, 由父 Course.vue 渲染为「课程」页的开课 tab)' }
 ]
 </script>
 

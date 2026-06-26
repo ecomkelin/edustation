@@ -7,7 +7,7 @@
           <div class="subtitle">按时间块查看所有排课计划；点击事件可编辑详情。已完成的排课以绿色显示，进行中以橙色显示。</div>
         </div>
         <div class="header-actions">
-          <el-button @click="$router.push('/schedule')">列表视图</el-button>
+          <el-button @click="$router.push('/schedule/list')">列表视图</el-button>
           <el-button type="primary" @click="openGenerateDialog()">为开班排课</el-button>
         </div>
       </div>

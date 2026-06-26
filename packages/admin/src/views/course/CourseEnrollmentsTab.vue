@@ -1,6 +1,10 @@
 <template>
+  <!--
+    课程 - 课程报名 tab (2026-06-26)
+    原 CourseEnrollments.vue 的 body 拆出来作为「课程」页的 tab 2。
+    顶部 h2「课程报名」由父 Course.vue 接管；hint 文案保留。
+  -->
   <div class="page">
-    <h2>课程报名</h2>
     <p class="hint">学生 ↔ 开班 的报名关系。报名时仅校验开班状态;名额和课包均不前置校验,超额通过"分班"调整。已归档/退班的记录是审计依据,请走状态变更;物理删除(误操删除)仅平台超管可见,且需输入自己的登录密码二次确认。归档由开班 active→closed 时后端自动级联,此处不再提供手动归档按钮。</p>
 
     <el-form :inline="true" :model="filter" @submit.prevent="load">
@@ -20,12 +24,58 @@
           <el-option label="已取消" value="cancelled" />
         </el-select>
       </el-form-item>
+      <el-form-item label="老师">
+        <el-select
+          v-model="filter.courseInstanceTeacher"
+          clearable
+          filterable
+          placeholder="全部老师"
+          style="width: 160px"
+        >
+          <el-option
+            v-for="t in teacherOptions"
+            :key="t.id"
+            :label="t.realName || t.mobile"
+            :value="t.id"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="开班">
-        <el-select v-model="filter.courseInstance" clearable placeholder="全部开班" style="width: 280px" filterable>
+        <el-select v-model="filter.courseInstance" clearable placeholder="全部开班" style="width: 240px" filterable>
           <el-option v-for="i in courseInstanceOptions" :key="i._id" :label="instanceLabel(i)" :value="i._id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="状态">
+      <el-form-item label="学生">
+        <el-select
+          v-model="filter.student"
+          clearable
+          filterable
+          remote
+          :remote-method="searchStudents"
+          placeholder="搜索学生姓名/手机号"
+          style="width: 200px"
+        >
+          <el-option
+            v-for="s in studentOptions"
+            :key="s._id"
+            :label="s.name"
+            :value="s._id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="报名时间">
+        <el-date-picker
+          v-model="enrolledDateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始"
+          end-placeholder="结束"
+          value-format="YYYY-MM-DD"
+          style="width: 240px"
+          @change="onEnrolledDateChange"
+        />
+      </el-form-item>
+      <el-form-item label="报名状态">
         <el-select v-model="filter.status" clearable placeholder="全部" style="width: 140px">
           <el-option label="已报名" value="enrolled" />
           <el-option label="教务退班" value="dropped" />
@@ -36,6 +86,7 @@
         <el-button type="primary" @click="load">查询</el-button>
         <el-button type="success" @click="openEnroll">新增报名</el-button>
         <el-button @click="openRecover">补报(进行中开班)</el-button>
+        <el-button @click="resetFilters">重置</el-button>
       </el-form-item>
     </el-form>
 
@@ -217,6 +268,8 @@ import { courseEnrollmentApi } from '@/api/courseEnrollment'
 import { handleRemoveError } from '@/utils/removable'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { studentProductApi } from '@/api/studentProduct'
+import { studentApi } from '@/api/student'
+import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import EnrollStudentsDialog from '@/components/EnrollStudentsDialog.vue'
 
@@ -225,7 +278,28 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
-const filter = reactive({ courseInstance: '', courseInstanceStatuses: ['enrolling', 'active'], status: '' })
+// 默认勾选 招生中 + 进行中 + 已结班 (2026-06-26 用户决策):
+// - 课程报名页主要用途是看"某个学生报过哪些课",已结班是审计依据,默认看得到
+// - 已取消(planning/cancelled)业务上无报名数据, 默认不勾
+const filter = reactive({
+  courseInstance: '',
+  courseInstanceStatuses: ['enrolling', 'active', 'closed'],
+  courseInstanceTeacher: '',
+  student: '',
+  status: '',
+  enrolledFrom: '',
+  enrolledTo: ''
+})
+const enrolledDateRange = ref([])
+function onEnrolledDateChange(v) {
+  if (Array.isArray(v) && v.length === 2) {
+    filter.enrolledFrom = v[0]
+    filter.enrolledTo = v[1]
+  } else {
+    filter.enrolledFrom = ''
+    filter.enrolledTo = ''
+  }
+}
 
 // 当前登录用户(用于「误操删除」二次确认时显示操作人姓名,以及
 // 根据 isPlatformAdmin 决定是否渲染删除按钮)
@@ -234,6 +308,11 @@ const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 const currentUserRealName = computed(() => (auth.user && auth.user.realName) || auth.user.mobile || '当前账号')
 
 const courseInstances = ref([])
+
+// 老师筛选项:仅显示本机构"老师"岗的用户 (2026-06-26 加老师筛)
+const teachers = ref([])
+// 学生筛选项:远程搜索, 跟 CourseInstances.vue 的实现一致 (按姓名/手机号过滤)
+const studentOptions = ref([])
 
 // 两个独立的报名弹窗:一个面向招生中,一个面向已开课的补报
 const enrollDialog = ref(false)
@@ -272,10 +351,18 @@ const displayCourseInstances = computed(() => {
       return db - da
     })
 })
-// "开班"下拉:派生自"开班状态"多选筛选项
+// "开班"下拉:派生自"开班状态"多选筛选项 + "老师"筛选项 (2026-06-26)
+// 选了老师时下拉只显示该老师下的开班, 跟开班状态多选取交集
 const courseInstanceOptions = computed(() =>
-  displayCourseInstances.value.filter((i) => filter.courseInstanceStatuses.includes(i.status))
+  displayCourseInstances.value.filter((i) => {
+    if (!filter.courseInstanceStatuses.includes(i.status)) return false
+    if (filter.courseInstanceTeacher && String(i.teacher?._id || i.teacher) !== String(filter.courseInstanceTeacher)) return false
+    return true
+  })
 )
+
+// 老师下拉:从 teacher 列表派生 (loadRefs 时一次性拉全机构老师)
+const teacherOptions = computed(() => teachers.value)
 
 // 招生中(enrolling):主要报名场景 — 班还没开课,在正常排课前完成报名
 const enrollingInstances = computed(() =>
@@ -322,6 +409,10 @@ async function load() {
     if (filter.courseInstanceStatuses.length > 0) {
       params.courseInstanceStatus = filter.courseInstanceStatuses.join(',')
     }
+    if (filter.courseInstanceTeacher) params.courseInstanceTeacher = filter.courseInstanceTeacher
+    if (filter.student) params.student = filter.student
+    if (filter.enrolledFrom) params.enrolledFrom = filter.enrolledFrom
+    if (filter.enrolledTo) params.enrolledTo = filter.enrolledTo
     if (filter.status) params.status = filter.status
     const r = await courseEnrollmentApi.list(params)
     items.value = r.data.items
@@ -332,9 +423,44 @@ async function load() {
 }
 
 async function loadRefs() {
-  // 仅拉开班(学生由 EnrollStudentsDialog 自管)
-  const ci = await courseInstanceApi.list({ pageSize: 500 })
+  // 拉开班 (用于开班下拉) + 拉老师列表 (用于老师筛选项)
+  // 学生用远程搜索, 不在此一次性拉全
+  const [ci, u] = await Promise.all([
+    courseInstanceApi.list({ pageSize: 500 }),
+    userApi.list({ pageSize: 200 })
+  ])
   courseInstances.value = ci.data.items || ci.data || []
+  teachers.value = (u.data?.items || []).filter((x) =>
+    x.positions?.some((p) => p.name === '老师')
+  )
+}
+
+// 学生远程搜索 (el-select remote), 默认显示前 20 条
+async function searchStudents(q) {
+  try {
+    const r = await studentApi.list({
+      page: 1,
+      pageSize: 20,
+      // 后端支持的搜索字段 (按 Student 模型的 search 实现)
+      ...(q ? { q } : {})
+    })
+    studentOptions.value = r.data?.items || r.data || []
+  } catch (e) {
+    studentOptions.value = []
+  }
+}
+
+function resetFilters() {
+  filter.courseInstance = ''
+  filter.courseInstanceStatuses = ['enrolling', 'active', 'closed']
+  filter.courseInstanceTeacher = ''
+  filter.student = ''
+  filter.status = ''
+  filter.enrolledFrom = ''
+  filter.enrolledTo = ''
+  enrolledDateRange.value = []
+  page.value = 1
+  load()
 }
 
 function openEnroll() {

@@ -277,8 +277,8 @@ const menuGroups = [
     icon: School,
     children: [
       { path: '/course-products', label: '课程产品', icon: Files, perm: 'courseProduct.read' },
-      { path: '/course-instances', label: '开班', icon: Reading, perm: 'courseInstance.read' },
-      { path: '/course-enrollments', label: '课程报名', icon: Notebook, perm: 'courseEnrollment.read' },
+      // 课程 (2026-06-26): 合并原「开班」+「课程报名」到单页双标签, 任一 perm 可见
+      { path: '/course', label: '课程', icon: Notebook, perm: ['courseInstance.read', 'courseEnrollment.read'] },
       { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
       { path: '/schedule/class', label: '上课表', icon: Present, perm: 'lessonAttendance.read' }
     ]
@@ -320,8 +320,11 @@ function isAllowed(item) {
   // 平台超管直通：与后端 requirePermission 行为保持一致
   if (auth.isPlatformAdmin) return true
   if (!item.perm) return true
+  // perm 支持字符串或字符串数组 (2026-06-26: 课程菜单聚合了开班+课程报名两个 perm, OR 即可见)
+  const perms = Array.isArray(item.perm) ? item.perm : [item.perm]
   return auth.orgs.some(
-    (o) => o.id === auth.currentOrgId && (o.positions || []).some((p) => (p.permissions || []).includes(item.perm))
+    (o) => o.id === auth.currentOrgId &&
+      (o.positions || []).some((p) => perms.some((code) => (p.permissions || []).includes(code)))
   )
 }
 

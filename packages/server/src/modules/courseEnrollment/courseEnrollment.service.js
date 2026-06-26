@@ -73,41 +73,59 @@ async function assertCanEnroll({ orgId, courseInstance }) {
   return inst
 }
 
-async function list({ orgId, courseInstance, courseInstanceStatus, student, status, page, pageSize }) {
+async function list({ orgId, courseInstance, courseInstanceStatus, courseInstanceTeacher, student, status, enrolledFrom, enrolledTo, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (courseInstance) filter.courseInstance = courseInstance
   if (student) filter.student = student
   if (status) filter.status = status
+  // 报名时间段 (2026-06-26): 按 enrolledAt 区间过滤; 闭区间 [from, to+1天) 避免同日漏
+  if (enrolledFrom || enrolledTo) {
+    filter.enrolledAt = {}
+    if (enrolledFrom) filter.enrolledAt.$gte = new Date(enrolledFrom)
+    if (enrolledTo) {
+      // to 是日期字符串时, 加一天再 -1ms 形成 [to 00:00, next 00:00) 半开区间
+      const t = new Date(enrolledTo)
+      if (!Number.isNaN(t.getTime())) {
+        t.setDate(t.getDate() + 1)
+        filter.enrolledAt.$lt = t
+      }
+    }
+  }
 
   // courseInstanceStatus: 多值（数组 / 逗号分隔字符串），按 CourseInstance.status 过滤；
   // 与上面的 courseInstance（单值）共存时取交集；空值视为不过滤。
-  if (courseInstanceStatus) {
-    const arr = Array.isArray(courseInstanceStatus)
-      ? courseInstanceStatus
-      : String(courseInstanceStatus).split(',').map((s) => s.trim()).filter(Boolean)
-    if (arr.length > 0) {
-      const invalid = arr.filter((s) => !Object.values(CourseInstanceStatus).includes(s))
-      if (invalid.length > 0) {
-        throw ApiError.badRequest(`courseInstanceStatus 非法:${invalid.join(',')}`)
-      }
-      const ciFilter = { org: orgId, status: { $in: arr } }
-      // 若同时指定了 courseInstance（单值），用 ObjectId 收窄；交集为空时直接返回空
-      if (courseInstance) {
-        const singleId = toObjectId(courseInstance)
-        const hit = await CourseInstance.findOne({ _id: singleId, org: orgId, status: { $in: arr } })
-          .select('_id').lean()
-        if (!hit) {
-          return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
+  // courseInstanceTeacher: 经 courseInstance.teacher 间接过滤（单值 ObjectId）
+  if (courseInstanceStatus || courseInstanceTeacher) {
+    const ciWhere = { org: orgId }
+    if (courseInstanceStatus) {
+      const arr = Array.isArray(courseInstanceStatus)
+        ? courseInstanceStatus
+        : String(courseInstanceStatus).split(',').map((s) => s.trim()).filter(Boolean)
+      if (arr.length > 0) {
+        const invalid = arr.filter((s) => !Object.values(CourseInstanceStatus).includes(s))
+        if (invalid.length > 0) {
+          throw ApiError.badRequest(`courseInstanceStatus 非法:${invalid.join(',')}`)
         }
-        filter.courseInstance = singleId
-      } else {
-        const allowedCiIds = await CourseInstance.find(ciFilter).select('_id').lean()
-        if (allowedCiIds.length === 0) {
-          return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
-        }
-        filter.courseInstance = { $in: allowedCiIds.map((c) => c._id) }
+        ciWhere.status = { $in: arr }
       }
+    }
+    if (courseInstanceTeacher) ciWhere.teacher = courseInstanceTeacher
+
+    // 若同时指定了 courseInstance（单值），用 ObjectId 收窄；交集为空时直接返回空
+    if (courseInstance) {
+      const singleId = toObjectId(courseInstance)
+      const hit = await CourseInstance.findOne({ _id: singleId, ...ciWhere }).select('_id').lean()
+      if (!hit) {
+        return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
+      }
+      filter.courseInstance = singleId
+    } else {
+      const allowedCiIds = await CourseInstance.find(ciWhere).select('_id').lean()
+      if (allowedCiIds.length === 0) {
+        return { items: [], total: 0, page: p.page, pageSize: p.pageSize }
+      }
+      filter.courseInstance = { $in: allowedCiIds.map((c) => c._id) }
     }
   }
 
