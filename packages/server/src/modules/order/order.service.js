@@ -6,6 +6,7 @@ const Student = require('@models/Student.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const LegalDoc = require('@models/LegalDoc.model')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 const { normalizePagination } = require('@utils/pagination')
 const { OrderStatus, StudentProductSource } = require('@shared/enums')
 const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
@@ -334,12 +335,202 @@ async function cancel({ id, orgId, reason }) {
   return order.toObject()
 }
 
+/**
+ * 退款（R-1722 2026-06-25 立项）：部分退款支持，累计到 refundedAmount == paidAmount 自动转 refunded
+ *
+ * 业务规则：
+ *   - 状态门：只允许 paid / partially_refunded 退款；其他状态 422
+ *   - 金额门：refundAmount ≤ (paidAmount - refundedAmount)；超额 422
+ *   - 状态机：累计退完 → refunded；部分退 → partially_refunded
+ *   - 联动（**首次**退款时，不重复执行）：
+ *       1. 该 Order 创建的所有 StudentProduct（source='order'）软停用 isActive=false
+ *          + meta.refundedAt/reason/refundId；保留审计链路
+ *       2. CourseEnrollment.studentProduct（主用课包）**不**解绑（软引用，FIFO 兜底）
+ *       3. 已有 LessonAttendance.studentProduct 引用保留（populate 不过滤 isActive；审计凭证）
+ *   - 幂等：同一订单可多次退款；累计在 Order.refundedAmount
+ *   - 缓存：invalidateReportCache(orgId)
+ *   - 失败补偿：联动失败时回滚 Order（refunds/amount/status 全回退）+ 422
+ *
+ * 不开新权限码：复用 mws.requirePermission('order.pay')（permissions.json label 已是"收款 / 退款"）
+ */
+async function refund({ id, orgId, amount, reason, operator }) {
+  // 1. 加载 Order
+  const order = await Order.findOne({ _id: id, org: orgId })
+  if (!order) throw ApiError.notFound('订单不存在')
+
+  // 2. 状态门：只允许 paid / partially_refunded 退款
+  if (![OrderStatus.PAID, OrderStatus.PARTIALLY_REFUNDED].includes(order.status)) {
+    throw ApiError.unprocessable(
+      `订单当前状态 ${order.status}，不可退款（仅 paid / partially_refunded 可退）`
+    )
+  }
+
+  // 3. 金额门：refundAmount ≤ (paidAmount - refundedAmount)
+  const refundable = order.paidAmount - (order.refundedAmount || 0)
+  if (!(amount > 0)) throw ApiError.badRequest('退款金额必须 > 0')
+  if (amount > refundable + 0.01) {  // 容差 0.01 防浮点
+    throw ApiError.unprocessable(
+      `退款金额超出可退余额（已退 ¥${order.refundedAmount || 0} / 共 ¥${order.paidAmount}）`
+    )
+  }
+
+  // 4. 计算 SP 课时快照（家长对账 + 报表用）
+  //    注意：select 包含 isActive，用于首次联动判断（避免重复 updateMany）
+  const sps = await StudentProduct.find({ order: order._id, org: orgId })
+    .select('_id remainingLessons totalLessons isActive')
+    .lean()
+  const remainingLessonsSnapshot = sps.reduce((s, sp) => s + (sp.remainingLessons || 0), 0)
+  const consumedLessonsSnapshot = sps.reduce(
+    (s, sp) => s + ((sp.totalLessons || 0) - (sp.remainingLessons || 0)),
+    0
+  )
+
+  // 5. 计算新状态（部分退 / 退完）
+  const newRefundedAmount = (order.refundedAmount || 0) + amount
+  const isFullyRefunded = newRefundedAmount >= order.paidAmount - 0.01
+  const newStatus = isFullyRefunded ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED
+
+  // 6. 写 Order.refunds + 更新累计 + 状态（单 Mongo 节点无事务，直接 save）
+  const { Types } = require('mongoose')
+  const refundId = new Types.ObjectId()  // 子文档 _id 预生成（联动时回填到 SP.meta.refundId）
+  order.refunds.push({
+    _id: refundId,
+    amount,
+    reason,
+    operator: operator.userId,
+    refundedAt: new Date(),
+    remainingLessonsSnapshot,
+    consumedLessonsSnapshot
+  })
+  order.refundedAmount = newRefundedAmount
+  order.refundedAt = new Date()
+  order.status = newStatus
+  await order.save()
+
+  // 7. 首次退款时联动：软停用 Order 下所有「仍启用」的 SP
+  //    多次部分退款时，SP 已在第一次停用，此处跳过（activeSps 为空）
+  const activeSps = sps.filter((sp) => sp.isActive !== false)
+  if (activeSps.length > 0) {
+    try {
+      await StudentProduct.updateMany(
+        { _id: { $in: activeSps.map((sp) => sp._id) }, org: orgId },
+        {
+          $set: {
+            isActive: false,
+            'meta.refundedAt': new Date(),
+            'meta.refundReason': reason,
+            'meta.refundId': refundId
+          }
+        }
+      )
+    } catch (e) {
+      // 联动失败 → 回滚 Order（refunds 子文档 + 累计 + 状态）
+      order.refunds = order.refunds.filter((r) => !r._id.equals(refundId))
+      order.refundedAmount -= amount
+      order.refundedAt = order.refunds.length > 0 ? order.refunds[order.refunds.length - 1].refundedAt : null
+      order.status = order.refundedAmount > 0 ? OrderStatus.PARTIALLY_REFUNDED : OrderStatus.PAID
+      await order.save()
+      throw ApiError.unprocessable(`联动停用学员课包失败: ${e.message}`)
+    }
+  }
+
+  // 8. 失效报告缓存
+  invalidateReportCache(orgId)
+
+  // 9. 重新查一次（populate）返回
+  const updated = await Order.findById(order._id)
+    .populate('student', 'name')
+    .populate('items.courseProduct', 'name totalLessons validDays')
+    .lean()
+  return { order: updated, refundId, newStatus, refundedAmount: newRefundedAmount }
+}
+
+/**
+ * 互锁检查声明（与 remove / removableCheck 共用同一组，单点维护）
+ * - 「Order → StudentProduct」是单向生成关系（service.createStudentProductsForOrder）：
+ *   一旦订单有任一关联的 StudentProduct（不论 source='order'/'gift'，不论 isActive=true/false），
+ *   物理删除 Order 都会导致课包.order 悬空，因此必挡。
+ * - 业务上让员工先在「学生课包」里删掉对应 SP，再回头删 Order。
+ */
+function orderUsageChecks(orgId, orderId) {
+  return [
+    {
+      model: StudentProduct,
+      filter: { org: orgId, order: orderId },
+      label: '关联的学员课包',
+      hint: '请先删除该订单产生的学员课包（StudentProduct）后再删订单'
+    }
+  ]
+}
+
+/**
+ * 物理删除订单（2026-06-25 立项）
+ *
+ * 门控：
+ *   1. requirePlatformPassword（路由层）：超管 + 自身密码
+ *   2. 业务硬门：paid / refunded 订单禁止物理删除（财务凭证不能丢，引导走取消+退款）
+ *   3. assertUnused：StudentProduct.order == id 必须 count=0
+ *
+ * 失败响应：
+ *   - 业务硬门 → ApiError.unprocessable（422）
+ *   - assertUnused 失败 → ApiError.unprocessable（422）+ data.blockers
+ *   - 不存在 → ApiError.notFound（404）
+ *
+ * 成功：物理删除 + 失效本机构报告缓存
+ */
+async function remove(id, orgId) {
+  const order = await Order.findOne({ _id: id, org: orgId }).select('_id status').lean()
+  if (!order) throw ApiError.notFound('订单不存在')
+  if (order.status === OrderStatus.PAID) {
+    throw ApiError.unprocessable('已支付订单请联系财务走退款流程，不支持物理删除')
+  }
+  if (order.status === OrderStatus.REFUNDED) {
+    throw ApiError.unprocessable('已退款订单不支持物理删除，留作财务凭证')
+  }
+  await removable.assertUnused(orgId, orderUsageChecks(orgId, id))
+  await Order.deleteOne({ _id: id, org: orgId })
+  invalidateReportCache(orgId)
+  return { success: true, id }
+}
+
+/**
+ * 删除预检（2026-06-25 立项）
+ *
+ * 与 remove 走同一组 orderUsageChecks（单点维护），保证挡板与实际删除语义完全一致。
+ * 业务硬门（paid / refunded）也反映到预检结果，让前端按钮在挡板阶段就拦下。
+ */
+async function removableCheck(id, orgId) {
+  const order = await Order.findOne({ _id: id, org: orgId }).select('_id status').lean()
+  if (!order) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'Order', label: '订单', count: 0, hint: '该订单不存在或不属于本机构' }]
+    }
+  }
+  if (order.status === OrderStatus.PAID) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'Order', label: '订单状态', count: 1, hint: '已支付订单请联系财务走退款流程，不支持物理删除' }]
+    }
+  }
+  if (order.status === OrderStatus.REFUNDED) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'Order', label: '订单状态', count: 1, hint: '已退款订单不支持物理删除，留作财务凭证' }]
+    }
+  }
+  return removable.check(orgId, orderUsageChecks(orgId, id))
+}
+
 module.exports = {
   create,
   list,
   detail,
   pay,
   cancel,
+  refund,
+  remove,
+  removableCheck,
   computeOriginalPrice,
   pickUnitPrice,
   createStudentProductsForOrder

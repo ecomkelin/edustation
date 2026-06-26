@@ -1,7 +1,7 @@
 # 数据模型 - Order / StudentProduct / 支付
 
 > **何时读这个文件**：改订单、课包、支付流程、赠课（gift）、订单退款回滚时读。
-> **一行摘要**：交易核心 — Order（多 item 订单 + 三档金额语义 + status 联动 StudentProduct）+ StudentProduct（学生持有的课包，支持订单和赠课两种 source）。
+> **一行摘要**：交易核心 — Order（多 item 订单 + 三档金额语义 + 退款累计流水 + status 联动 StudentProduct）+ StudentProduct（学生持有的课包，支持订单和赠课两种 source）。
 
 ---
 
@@ -25,7 +25,10 @@
 - `actualPrice`：实际成交价（可被促销/折扣/手动调价覆盖；`<= originalPrice`）
 - `paidAmount`：累计实收金额（分期付款时 `< actualPrice`；多次付款累加）
 - `paidAt`：最近一次支付成功时间（service 写入）
-- `status`：`pending` / `paid` / `cancelled` / `refunded`
+- **`refundedAmount`**（R-1722 2026-06-25 立项）：累计退款金额；`0 ≤ refundedAmount ≤ paidAmount`；累计到 `paidAmount` 时 `status` 自动转 `refunded`
+- **`refundedAt`**：最近一次退款时间（service.refund 写入）
+- **`refunds`**：`[{ amount, reason, operator, refundedAt, remainingLessonsSnapshot, consumedLessonsSnapshot }]` — 每次退款一笔；累计金额在 `refundedAmount`
+- `status`：`pending` / `paid` / `partially_refunded`（部分退款中间态） / `cancelled` / `refunded`（终态）
 - `paymentMethod`
 - `remark`
 
@@ -40,7 +43,18 @@
 
 ### 支付联动
 
-`status` → `paid` 时，**按 items 逐项**创建对应 StudentProduct（每项一条 `source='order'`）；退款/取消时按 items 回滚对应 StudentProduct。
+`status` → `paid` 时，**按 items 逐项**创建对应 StudentProduct（每项一条 `source='order'`）。
+
+### 退款联动（R-1722 2026-06-25 立项）
+
+`status` 进入 `paid` / `partially_refunded` 后，可调用 `POST /orders/:id/refund` 发起退款（部分退款支持，多次累计）：
+- **首次退款时**联动把该 Order 下所有 `StudentProduct`（`source='order'`）**软停用**：`isActive=false` + `meta.refundedAt/reason/refundId`
+- **不**回滚已消课的 `LessonAttendance.studentProduct` 引用（**审计凭证保留**）
+- **不**解绑 `CourseEnrollment.studentProduct`（主用课包，软引用 + FIFO 兜底）
+- 累计 `refundedAmount == paidAmount` 时 `status` 自动 `refunded`；中间态为 `partially_refunded`
+- 联动失败时 service 主动回滚 Order（refunds 子文档 + refundedAmount + status 全部回退）
+
+> `refunded` / `cancelled` 订单的物理删除仍受 R-1704 业务硬门挡（财务凭证不能丢）。
 
 > 详细见 CLAUDE.md §16.3 "待开发" 表：`Order.source` / `Order.referrerUserId` 字段待立项。
 

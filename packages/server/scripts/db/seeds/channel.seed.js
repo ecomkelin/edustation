@@ -28,37 +28,58 @@ const CHANNELS = [
 ]
 
 async function run() {
+  // 2026-06-25: Category 必须 per-org (Category.org 必填, 2026-06-19 整改)
+  //   - 默认写梓潼 (zitong) 机构, 与初始数据一致
+  //   - 平台超管专属 — 给所有启用 org 各写一份 (业务上渠道字典跟 org 走, 跟 LeadTag 一致)
+  const Org = require('@models/Org.model')
+  const zitong = await Org.findOne({ name: /梓潼/ }).select('_id').lean()
+  if (!zitong) {
+    // eslint-disable-next-line no-console
+    console.warn('[seed.channel] 找不到梓潼机构, 跳过渠道 seed')
+    return { inserted: [], skipped: [] }
+  }
+  const targetOrgs = [zitong._id]
+  // 平台超管场景: 给所有启用 org 都补一份, 避免新机构前端拉空
+  const allActive = await Org.find({ isActive: true }).select('_id').lean()
+  for (const o of allActive) {
+    if (!targetOrgs.some((id) => String(id) === String(o._id))) targetOrgs.push(o._id)
+  }
+
   const inserted = []
   const skipped = []
-  for (const c of CHANNELS) {
-    // 顶级 (parentCategory=null) 在 (model, name, parentCategory) 唯一索引下天然去重
-    const existing = await Category.findOne({
-      model: 'Channel',
-      name: c.name,
-      parentCategory: null
-    })
-      .select('_id sort isActive')
-      .lean()
-    if (existing) {
-      // 顺手把 sort/isActive 修正到 seed 期望值 (只在这两个字段有差时写)
-      const patch = {}
-      if (existing.sort !== c.sort) patch.sort = c.sort
-      if (existing.isActive !== true) patch.isActive = true
-      if (Object.keys(patch).length > 0) {
-        await Category.updateOne({ _id: existing._id }, { $set: patch })
+  for (const orgId of targetOrgs) {
+    for (const c of CHANNELS) {
+      // 顶级 (parentCategory=null) 在 (org, model, name, parentCategory) 唯一索引下天然去重
+      const existing = await Category.findOne({
+        org: orgId,
+        model: 'Channel',
+        name: c.name,
+        parentCategory: null
+      })
+        .select('_id org sort isActive')
+        .lean()
+      if (existing) {
+        // 顺手把 sort/isActive 修正到 seed 期望值 (只在这两个字段有差时写)
+        const patch = {}
+        if (existing.sort !== c.sort) patch.sort = c.sort
+        if (existing.isActive !== true) patch.isActive = true
+        if (Object.keys(patch).length > 0) {
+          await Category.updateOne({ _id: existing._id }, { $set: patch })
+        }
+        skipped.push(`${orgId}/${c.name}`)
+        continue
       }
-      skipped.push(c.name)
-      continue
+      const created = await Category.create({
+        org: orgId,
+        model: 'Channel',
+        name: c.name,
+        level: 0,
+        parentCategory: null,
+        sort: c.sort,
+        isActive: true
+      })
+      inserted.push(`${orgId}/${created.name}`)
     }
-    const created = await Category.create({
-      model: 'Channel',
-      name: c.name,
-      level: 0,
-      parentCategory: null,
-      sort: c.sort,
-      isActive: true
-    })
-    inserted.push(created.name)
   }
   // eslint-disable-next-line no-console
   console.log(`[seed.channel] inserted: [${inserted.join(', ') || '∅'}] | already-exists: [${skipped.join(', ') || '∅'}]`)

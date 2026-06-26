@@ -87,6 +87,7 @@ edustation/
 - 订单/课包 → [docs/claude/data-models-order.md](docs/claude/data-models-order.md)
 - 积分/宠物 → [docs/claude/data-models-points-pet.md](docs/claude/data-models-points-pet.md)
 - 招生/潜客/试听 → [docs/claude/data-models-recruit.md](docs/claude/data-models-recruit.md)
+- 财务账本/流水 → [docs/claude/data-models-finance.md](docs/claude/data-models-finance.md)
 - 文件存储 → [docs/claude/data-models-storage.md](docs/claude/data-models-storage.md)
 - 人脸门禁 → [docs/claude/data-models-access.md](docs/claude/data-models-access.md)
 
@@ -234,6 +235,7 @@ server/src/
 | 改订单 / 课包 / 支付 / 赠课 | [docs/claude/data-models-order.md](docs/claude/data-models-order.md) |
 | 改积分 / 宠物 / 喂养 / 商店 | [docs/claude/data-models-points-pet.md](docs/claude/data-models-points-pet.md) |
 | 改招生 / 潜客 / 家长业务档案 / 试听 / 转化 | [docs/claude/data-models-recruit.md](docs/claude/data-models-recruit.md) |
+| 改财务账本 / 流水 / 转账 / 收支原因 / 汇总 | [docs/claude/data-models-finance.md](docs/claude/data-models-finance.md) |
 | 改文件上传 / File / Storage 驱动 / 引用追踪 | [docs/claude/data-models-storage.md](docs/claude/data-models-storage.md) |
 | 改人脸识别 / 门禁 / 接送授权 | [docs/claude/data-models-access.md](docs/claude/data-models-access.md) |
 | 改 AI 助手 / RAG / 会话持久化 | [docs/claude/ai-assistant.md](docs/claude/ai-assistant.md) |

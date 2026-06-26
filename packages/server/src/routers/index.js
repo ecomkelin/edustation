@@ -46,6 +46,8 @@ const trialBookingRoutes = require('@modules/trialBooking/trialBooking.routes')
 //   webhook 入口走 accessControl.webhookRoutes, 在 app.js 中先于 express.json 挂载
 //   这里挂载主路由 (admin 端 + client 端)
 const accessControlRoutes = require('@modules/accessControl/accessControl.routes')
+// 财务管理 (2026-06-25 立项): 账本 + 流水 + 字典, account-ledger pattern
+const financeRoutes = require('@modules/finance/finance.router')
 
 router.use('/auth', authRoutes)
 router.use('/orgs', orgRoutes)
@@ -85,5 +87,7 @@ router.use('/child-leads', childLeadRoutes)
 router.use('/trial-bookings', trialBookingRoutes)
 // 人脸识别门禁 (2026-06): webhook 已在 app.js 挂载, 这里挂主路由
 router.use('/access-control', accessControlRoutes)
+// 财务管理 (2026-06-25): /api/v1/finance/* (账本/流水/字典)
+router.use('/finance', financeRoutes)
 
 module.exports = router

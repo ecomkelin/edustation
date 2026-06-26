@@ -69,8 +69,8 @@ Auth 列简写:
 | 14 | lessonSchedule | /lesson-schedules | lessonSchedule/ | 16 |
 | 15 | lessonAttendance | /lesson-attendances | lessonAttendance/ | 9 |
 | 16 | studentWork | /student-works | studentWork/ | 6 |
-| 17 | order | /orders | order/ | 5 |
-| 18 | studentProduct | /student-products | studentProduct/ | 4 |
+| 17 | order | /orders | order/ | 8 |
+| 18 | studentProduct | /student-products | studentProduct/ | 6 |
 | 19 | report | /reports | report/ | 7 |
 | 20 | points | /points | points/ | 3 |
 | 21 | pointsAdmin | /points-admin | pointsAdmin/ | 5 |
@@ -86,7 +86,8 @@ Auth 列简写:
 | 31 | legal | /legal | legal/ | 10 |
 | 32 | site-config | /site-config | siteConfig/ | 2 |
 | 33 | health | /health | health/ | 1 |
-| **合计** | | | | **~276** |
+| 34 | finance | /finance | finance/ | 17 |
+| **合计** | | | | **~294** |
 
 ## 3. 路由总表 (按 MM 排序)
 
@@ -322,7 +323,10 @@ Auth 列简写:
 | R-1701 | GET | /orders/:id | PERM | order.read | 详情 | |
 | R-1702 | POST | /orders | PERM | order.write | 新建订单 | |
 | R-1721 | POST | /orders/:id/pay | PERM | order.pay | 支付 | pending → paid |
+| R-1722 | POST | /orders/:id/refund | PERM | order.pay | 退款 | 部分退款支持; 联动 StudentProduct 软停用; 累计退完转 refunded |
 | R-1723 | POST | /orders/:id/cancel | PERM | order.write | 取消 | pending → cancelled |
+| R-1704 | DELETE | /orders/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 StudentProduct.order; 业务硬门挡 paid/refunded |
+| R-1705 | GET | /orders/:id/removable-check | PERM | order.read | 删除预检 | |
 
 ### MM=18 studentProduct (URL: /student-products)
 
@@ -332,6 +336,8 @@ Auth 列简写:
 | R-1801 | GET | /student-products/:id | PERM | studentProduct.read | 详情 | |
 | R-1806 | GET | /student-products/:id/remaining | PERM | studentProduct.read | 剩余课时 | |
 | R-1869 | POST | /student-products/gift | PERM | studentProduct.gift | 赠课 | 员工直接建 StudentProduct |
+| R-1804 | DELETE | /student-products/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 LessonAttendance.studentProduct + CourseEnrollment.studentProduct |
+| R-1805 | GET | /student-products/:id/removable-check | PERM | studentProduct.read | 删除预检 | |
 
 ### MM=19 report (URL: /reports)
 
@@ -584,6 +590,32 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-3300 | GET | /health | NONE | — | 健康检查 | 不挂 /api 前缀, 含 DB 状态 |
 
+### MM=34 finance (URL: /finance)
+
+> 财务管理 (2026-06-25 立项)：账本 (FinanceAccount) + 流水 (FinanceTransaction) + 收支原因字典 (复用 Category.model='FinanceReason')。流水为 append-only ledger, 物理删除走 requirePlatformPassword + 业务门挡; Phase 1 不挂 Order 自动联动, 财务岗手动录入。
+> 权限码：`finance.read` (列表/详情/汇总/字典只读) / `finance.write` (写账本/写流水/转账/字典 CRUD)。
+> 详见 [data-models-finance.md](./data-models-finance.md) 与 [modules/finance/api.desc.md](../../packages/server/src/modules/finance/api.desc.md)。
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3400 | GET | /finance/accounts | PERM | finance.read | 账本列表 | isPrimary desc, createdAt desc |
+| R-3401 | GET | /finance/accounts/primary | PERM | finance.read | 默认账本 | isPrimary=true && isActive=true |
+| R-3402 | GET | /finance/accounts/:id | PERM | finance.read | 账本详情 | 含最近 10 笔流水 |
+| R-3403 | POST | /finance/accounts | PERM | finance.write | 新建账本 | 按 type 强校验子字段 |
+| R-3404 | PUT | /finance/accounts/:id | PERM | finance.write | 更新账本 | 白名单字段, 禁改 type/balance/isPrimary |
+| R-3405 | DELETE | /finance/accounts/:id | ADMIN_PWD | — | 物理删除账本 | 高风险, 业务门挡 balance=0 + 非 isPrimary, 互锁 FinanceTransaction.account |
+| R-3406 | GET | /finance/accounts/:id/removable-check | PERM | finance.read | 删除预检 | |
+| R-3410 | GET | /finance/transactions | PERM | finance.read | 流水列表 | 按 occurredAt desc, 支持 accountId/type/reason/dateFrom/dateTo |
+| R-3411 | GET | /finance/transactions/summary | PERM | finance.read | 流水汇总 | groupBy=reason/account/day/month |
+| R-3412 | GET | /finance/transactions/:id | PERM | finance.read | 流水详情 | |
+| R-3413 | POST | /finance/transactions | PERM | finance.write | 写一笔流水 | income/expense; service 校验 type+reason.direction |
+| R-3414 | POST | /finance/transactions/transfer | PERM | finance.write | 转账 | 同 session 写 2 笔 (out+in), 共享 transferGroupId |
+| R-3420 | GET | /finance/reasons | PERM | finance.read | 字典列表 | direction=in/out 过滤 |
+| R-3421 | POST | /finance/reasons | PERM | finance.write | 新建字典 | direction 必填 (in/out) |
+| R-3422 | PUT | /finance/reasons/:id | PERM | finance.write | 更新字典 | |
+| R-3423 | DELETE | /finance/reasons/:id | ADMIN_PWD | — | 物理删除字典 | 中风险, 互锁 FinanceTransaction.reason |
+| R-3424 | GET | /finance/reasons/:id/removable-check | PERM | finance.read | 删除预检 | |
+
 ## 4. 变更日志
 
 ### 4.1 废弃路由 (Deprecated)
@@ -598,3 +630,6 @@ Auth 列简写:
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
 | 2026-06-22 | 路由编号方案落地 | 全部 | init |
+| 2026-06-25 | 订单/课包物理删除门控上线 (中风险范式) | R-1704 / R-1705 / R-1804 / R-1805 | add |
+| 2026-06-25 | 订单退款端点 R-1722 上线 (支持部分退款 + SP 软停用) | R-1722 | add |
+| 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |

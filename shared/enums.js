@@ -106,8 +106,9 @@ const ATTENDANCE_STATUSES = Object.values(AttendanceStatus)
 const OrderStatus = Object.freeze({
   PENDING: 'pending',
   PAID: 'paid',
+  PARTIALLY_REFUNDED: 'partially_refunded',  // 部分退款中间态（2026-06-25 立项退款端点 R-1722）
   CANCELLED: 'cancelled',
-  REFUNDED: 'refunded'
+  REFUNDED: 'refunded'                      // 终态：refundedAmount == paidAmount
 })
 const ORDER_STATUSES = Object.values(OrderStatus)
 
@@ -421,6 +422,64 @@ function labelOfClientLevel(level) {
   return `未知等级(${level})`
 }
 
+// ─── 财务模块 (2026-06-25 立项) ─────────────
+
+/**
+ * 财务账号类型 (FinanceAccount.type)
+ *  - bank    银行账户（对公/个人银行卡）
+ *  - wechat  微信收款（商户号或个人号）
+ *  - alipay  支付宝收款
+ *  - cash    现金账本（保险柜/抽屉）
+ *  - other   其他（如第三方代收、内部挂账等）
+ */
+const FinanceAccountType = Object.freeze({
+  BANK: 'bank',
+  WECHAT: 'wechat',
+  ALIPAY: 'alipay',
+  CASH: 'cash',
+  OTHER: 'other'
+})
+const FINANCE_ACCOUNT_TYPES = Object.values(FinanceAccountType)
+const FINANCE_ACCOUNT_TYPE_LABELS = Object.freeze({
+  bank: '银行',
+  wechat: '微信',
+  alipay: '支付宝',
+  cash: '现金',
+  other: '其他'
+})
+
+/**
+ * 财务流水类型 (FinanceTransaction.type)
+ *  - income   收入（钱进账本，balance += amount）
+ *  - expense  支出（钱出账本，balance -= amount）
+ *  - transfer 转账（A 账本出 + B 账本入；同一 transferGroupId 关联 2 笔）
+ * 金额字段 amount 永远 > 0；方向由 type 决定。
+ */
+const FinanceTransactionType = Object.freeze({
+  INCOME: 'income',
+  EXPENSE: 'expense',
+  TRANSFER: 'transfer'
+})
+const FINANCE_TRANSACTION_TYPES = Object.values(FinanceTransactionType)
+const FINANCE_TRANSACTION_TYPE_LABELS = Object.freeze({
+  income: '收入',
+  expense: '支出',
+  transfer: '转账'
+})
+
+/**
+ * 财务原因方向 (Category.meta.direction, 2026-06-25 立项)
+ *  - in   收入类原因（学员报名/其他收入/退费冲账等）
+ *  - out  支出类原因（工资/租金/水电/其他支出等）
+ * 录流水时, service 校验 type 与 reason.direction 方向一致 (income+in / expense+out);
+ * transfer 方向由 from/to 账本角色决定, 与 reason.direction 无关 (允许"内部转账"原因).
+ */
+const FinanceReasonDirection = Object.freeze({
+  IN: 'in',
+  OUT: 'out'
+})
+const FINANCE_REASON_DIRECTIONS = Object.values(FinanceReasonDirection)
+
 // ─── 人脸识别门禁 (2026-06 立项, accessControl 模块) ─────────────
 
 /**
@@ -695,6 +754,14 @@ exports.StudentProductSource = StudentProductSource
 exports.STUDENT_PRODUCT_SOURCES = STUDENT_PRODUCT_SOURCES
 exports.SchedulePlanMode = SchedulePlanMode
 exports.SCHEDULE_PLAN_MODES = SCHEDULE_PLAN_MODES
+exports.FinanceAccountType = FinanceAccountType
+exports.FINANCE_ACCOUNT_TYPES = FINANCE_ACCOUNT_TYPES
+exports.FINANCE_ACCOUNT_TYPE_LABELS = FINANCE_ACCOUNT_TYPE_LABELS
+exports.FinanceTransactionType = FinanceTransactionType
+exports.FINANCE_TRANSACTION_TYPES = FINANCE_TRANSACTION_TYPES
+exports.FINANCE_TRANSACTION_TYPE_LABELS = FINANCE_TRANSACTION_TYPE_LABELS
+exports.FinanceReasonDirection = FinanceReasonDirection
+exports.FINANCE_REASON_DIRECTIONS = FINANCE_REASON_DIRECTIONS
 exports.SchoolType = SchoolType
 exports.SCHOOL_TYPES = SCHOOL_TYPES
 exports.CLIENT_LEVEL = CLIENT_LEVEL

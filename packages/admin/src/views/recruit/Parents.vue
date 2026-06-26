@@ -68,6 +68,7 @@
           style="width: 180px"
           @keyup.enter="load"
           @clear="load"
+          @input="onDebouncedLoad"
         />
         <el-input
           v-model="filters.phone"
@@ -77,6 +78,7 @@
           style="width: 160px"
           @keyup.enter="load"
           @clear="load"
+          @input="onDebouncedLoad"
         />
         <el-button :icon="Refresh" @click="onReset">重置</el-button>
         <div class="spacer" />
@@ -237,7 +239,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { parentApi } from '@/api/parent'
@@ -287,10 +289,32 @@ const editDialog = reactive({ visible: false })
 const addChildDialog = reactive({ visible: false, parent: null })
 const detailDialog = reactive({ visible: false, parentId: null })
 
+// 2026-06-25: 关键词/手机号输入防抖, 300ms 间隔触发查询
+//   - 不再要求"必须按回车才能搜", 边输入边查更符合用户预期
+//   - 保留 @keyup.enter 立即触发 + @clear 立即清空 (即时响应关键操作)
+//   - 用闭包而非全局变量, onBeforeUnmount 清掉防止内存泄漏
+let _debounceTimer = null
+function onDebouncedLoad() {
+  if (_debounceTimer) clearTimeout(_debounceTimer)
+  _debounceTimer = setTimeout(() => {
+    // 重置分页到第一页, 避免"输了一半关键词却看到第 3 页"的迷惑场景
+    pagination.page = 1
+    load()
+  }, 300)
+}
+
 onMounted(async () => {
   await loadTags()
   await loadChannels()
   load()
+})
+
+// 组件卸载时清掉防抖 timer, 避免页面跳走之后还在调 load() 导致错乱
+onBeforeUnmount(() => {
+  if (_debounceTimer) {
+    clearTimeout(_debounceTimer)
+    _debounceTimer = null
+  }
 })
 
 async function loadTags() {

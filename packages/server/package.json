@@ -8,6 +8,8 @@
     "dev": "cross-env NODE_ENV=development nodemon src/main.js",
     "start": "node src/main.js",
     "db:seeds": "node scripts/db/index.js",
+    "db:seed-finance": "node -e \"require('module-alias/register'); require('dotenv').config(); require('./scripts/db/seeds/finance.seed').run().then(()=>process.exit())\"",
+    "migrate:finance-permissions": "node scripts/db/_migrate-finance-permissions.js",
     "test": "jest --passWithNoTests"
   },
   "dependencies": {

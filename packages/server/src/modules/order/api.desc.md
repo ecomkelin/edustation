@@ -3,8 +3,9 @@
 > 基础路径：`/api/v1/orders`
 >
 > 订单管理。一个订单可包含**多个 CourseProduct**（`items` 数组；如"国画 48 节 + 书法 24 节"打包购买）。
-> 订单状态：`pending`（待支付）→ `paid`（已支付）→ `cancelled`（已取消）/ `refunded`（已退款）。
+> 订单状态：`pending`（待支付）→ `paid`（已支付）→ `partially_refunded`（部分退款）/ `refunded`（已退款）/ `cancelled`（已取消，仅 pending 可达）。
 > **支付成功（`pay`）会自动按 `items` 逐项创建 `StudentProduct`**（`source='order'`）。
+> **退款（`refund`）支持部分退款累计**，累计到 `refundedAmount == paidAmount` 自动转 `refunded`；首次退款时联动把所有 `StudentProduct` 软停用。
 
 ---
 
@@ -14,8 +15,8 @@
 - 权限码：
   - `order.read`
   - `order.write` —— 创建/取消
-  - `order.pay` —— 标记支付
-- 状态枚举（`ORDER_STATUSES`）：`pending` / `paid` / `cancelled` / `refunded`。
+  - `order.pay` —— 标记支付 / 发起退款（label "收款 / 退款"，权限码语义统一，财务复用）
+- 状态枚举（`ORDER_STATUSES`）：`pending` / `paid` / `partially_refunded` / `cancelled` / `refunded`。
 - 支付方式（`PAYMENT_METHODS`）：`cash`（现金） / `wechat`（微信） / `alipay`（支付宝） / `bank`（银行转账） / `other`。
 - 价格逻辑：
   - `originalPrice` = `Σ items[].unitPrice * items[].quantity`（创建时由 CourseProduct 当前价快照）
@@ -55,6 +56,9 @@
 | actualPrice | Number | 实际成交价 |
 | paidAmount | Number | 已付金额 |
 | paidAt | Date\|null | 最近一次支付成功时间 |
+| refundedAmount | Number | 累计退款金额（0 ≤ refundedAmount ≤ paidAmount；2026-06-25 R-1722 退款端点） |
+| refundedAt | Date\|null | 最近一次退款时间 |
+| refunds | RefundItem[] | 退款流水子文档（每次退款一笔，含 amount/reason/operator/refundedAt + 课时快照） |
 | status | String | 订单状态 |
 | paymentMethod | String\|null | 支付方式 |
 | remark | String | 备注 |
@@ -170,12 +174,51 @@
 
 ---
 
+## 6. 退款（R-1722 2026-06-25 立项）
+
+- **Method / Path**：`POST /api/v1/orders/:id/refund`
+- **权限**：`order.pay`（label 已是"收款 / 退款"，财务复用）
+- **说明**：支持部分退款（多次退款累计），累计到 `refundedAmount == paidAmount` 时自动 `status='refunded'`。**首次退款时**把该订单下的所有 `StudentProduct`（`source='order'`）软停用（`isActive=false` + `meta.refundedAt/reason/refundId`），后续不再重复操作。已消课的考勤不回滚（保留审计），`CourseEnrollment.studentProduct`（主用课包）不解绑（软引用，FIFO 兜底）。
+- **请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| amount | Number | 是 | 本次退款金额，`> 0`，`≤ (paidAmount - refundedAmount)` |
+| reason | String | 是 | 退款原因，1-500 字（财务凭证 + 家长沟通追溯） |
+
+- **约束**：
+  - 仅 `status='paid' / 'partially_refunded'` 可退；其他状态返回 `422`。
+  - `amount` 超出可退余额返回 `422`（含 0.01 浮点容差）。
+  - **失败补偿**：若首次退款的 SP 联动停用失败，service 自动回滚 Order（refunds 子文档 / refundedAmount / status 全部回退），返回 `422`。
+- **成功响应** (`200 OK`)：
+
+```json
+{
+  "success": true,
+  "data": {
+    "order": { "id": "...", "status": "partially_refunded|refunded", "refundedAmount": 500, "refunds": [...] },
+    "refundId": "ObjectId",
+    "newStatus": "partially_refunded|refunded",
+    "refundedAmount": 500
+  }
+}
+```
+
+- **副作用**：
+  - `Order.refunds.push({ amount, reason, operator, refundedAt, remainingLessonsSnapshot, consumedLessonsSnapshot })`
+  - `Order.refundedAmount += amount`；`Order.refundedAt = new Date()`
+  - `Order.status` 视累计结果置为 `partially_refunded` 或 `refunded`
+  - 首次退款：`StudentProduct.updateMany({ order, org, isActive: true }, { isActive: false, meta.refundedAt/reason/refundId })`
+  - `invalidateReportCache(orgId)` —— 报表"本月净收入"需重算
+
+---
+
 ## 错误码
 
 | 状态码 | 场景 |
 | ------ | ---- |
-| 400 | 课包下架 / 订单已支付/已取消 / 退款走错接口 |
+| 400 | 课包下架 / 订单已支付/已取消 / 退款走错接口 / 退款金额 <= 0 |
 | 401 | 未登录 |
-| 403 | 权限不足 |
+| 403 | 权限不足（缺 `order.pay` 权限） |
 | 404 | 订单/课包/学生不存在 |
-| 409 | 状态机非法迁移 |
+| 422 | 状态不允许退款 / 退款金额超出可退余额 / 联动停用 SP 失败 |

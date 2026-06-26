@@ -4,6 +4,7 @@
 export const ORDER_STATUS_LABEL = {
   pending: '待支付',
   paid: '已支付',
+  partially_refunded: '部分退款',  // 2026-06-25 R-1722 退款端点上线
   cancelled: '已取消',
   refunded: '已退款'
 }
@@ -107,6 +108,39 @@ export const LEAD_ACTIVITY_TYPE_ICON = {
   visit: 'Location',
   sms: 'Message',
   note: 'EditPen'
+}
+
+// ─── 财务模块 (2026-06-25 立项) ───
+// 账本类型 (FinanceAccount.type) — 与后端 @shared/enums.FINANCE_ACCOUNT_TYPES 对应
+export const FINANCE_ACCOUNT_TYPE_LABEL = {
+  bank: '银行',
+  wechat: '微信',
+  alipay: '支付宝',
+  cash: '现金',
+  other: '其他'
+}
+export const FINANCE_ACCOUNT_TYPE_TAG_TYPE = {
+  bank: 'info',
+  wechat: 'success',
+  alipay: 'primary',
+  cash: 'warning',
+  other: 'info'
+}
+// 流水类型 (FinanceTransaction.type)
+export const FINANCE_TX_TYPE_LABEL = {
+  income: '收入',
+  expense: '支出',
+  transfer: '转账'
+}
+export const FINANCE_TX_TYPE_TAG_TYPE = {
+  income: 'success',
+  expense: 'danger',
+  transfer: 'info'
+}
+// 字典方向 (FinanceReason.direction)
+export const FINANCE_REASON_DIRECTION_LABEL = {
+  in: '收入',
+  out: '支出'
 }
 
 // ─── 宠物系统 (pet-system-v2-ext 2026-06-21) ───

@@ -97,6 +97,23 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <!-- 财务原因 (2026-06-25): 方向 + 分类 列 -->
+            <el-table-column v-if="model === 'FinanceReason'" label="方向" width="90">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.meta?.direction === 'in' ? 'success' : (row.meta?.direction === 'out' ? 'danger' : 'info')"
+                  size="small"
+                >
+                  {{ row.meta?.direction === 'in' ? '收入' : (row.meta?.direction === 'out' ? '支出' : '通用') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="model === 'FinanceReason'" label="分类" min-width="120">
+              <template #default="{ row }">
+                <span v-if="row.meta?.category">{{ row.meta.category }}</span>
+                <span v-else style="color: #909399">—</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="code" label="编码" width="120" />
             <el-table-column prop="level" label="层级" width="80">
               <template #default="{ row }">L{{ row.level }}</template>
@@ -180,6 +197,19 @@
             <span class="form-tip">不选时按 defaultValue 符号自动推断</span>
           </el-form-item>
         </template>
+        <!-- 财务原因专用字段 (2026-06-25): 方向 + 分类 -->
+        <template v-if="form.model === 'FinanceReason'">
+          <el-form-item label="方向" prop="meta.direction">
+            <el-radio-group v-model="form.meta.direction">
+              <el-radio-button value="in">收入</el-radio-button>
+              <el-radio-button value="out">支出</el-radio-button>
+            </el-radio-group>
+            <span class="form-tip">收入=income 流水; 支出=expense 流水; 转账不校验 direction, 可任选</span>
+          </el-form-item>
+          <el-form-item label="分类">
+            <el-input v-model="form.meta.category" maxlength="50" placeholder="如: 学费 / 人工 / 场地 / 办公 / 转账 / 其他" />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
@@ -199,13 +229,14 @@ import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 
-const MODELS = ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason']
+const MODELS = ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason', 'FinanceReason']
 const MODEL_LABELS = {
   Student: '学员',
   Subject: '学科',
   LeadTag: '家长标签',
   Channel: '招生渠道',
-  PointsReason: '积分原因'
+  PointsReason: '积分原因',
+  FinanceReason: '财务原因'
 }
 
 // 默认显示学科 (2026-06-19): 学科字典最常用, 进首页直接看到 5 个学科分类
@@ -232,8 +263,8 @@ function emptyForm() {
     code: '',
     sort: 0,
     isActive: true,
-    // 积分原因专用 (2026-06-21): 其他 model 不会用到
-    meta: { defaultValue: 0, direction: 'in' }
+    // 积分原因 (2026-06-21) / 财务原因 (2026-06-25) 专用字段
+    meta: { defaultValue: 0, direction: 'in', category: '' }
   }
 }
 
@@ -327,7 +358,8 @@ function openEdit(node) {
     isActive: node.isActive !== false,
     meta: {
       defaultValue: Number(node.meta?.defaultValue) || 0,
-      direction: node.meta?.direction || (Number(node.meta?.defaultValue) < 0 ? 'out' : 'in')
+      direction: node.meta?.direction || (Number(node.meta?.defaultValue) < 0 ? 'out' : 'in'),
+      category: node.meta?.category || ''
     }
   })
   dialog.value = true
@@ -356,6 +388,13 @@ async function submit() {
       payload.meta = {
         defaultValue: Number(form.meta.defaultValue) || 0,
         direction: form.meta.direction || (Number(form.meta.defaultValue) < 0 ? 'out' : 'in')
+      }
+    }
+    // 财务原因专用 (2026-06-25): direction + category
+    if (form.model === 'FinanceReason') {
+      payload.meta = {
+        direction: form.meta.direction || 'in',
+        category: form.meta.category || ''
       }
     }
     if (form.id) {

@@ -38,4 +38,15 @@ const cancel = [
   body('reason').optional().isString().isLength({ max: 200 })
 ]
 
-module.exports = { create, pay, cancel, ORDER_STATUSES }
+/**
+ * 退款 (R-1722 2026-06-25 立项)：
+ *   - amount：本次退款金额 > 0；service 内再做 ≤ (paidAmount - refundedAmount) 二次校验
+ *   - reason：必填 1-500 字（财务凭证 + 家长沟通追溯）
+ *   - 部分退款支持：累计到 refundedAmount == paidAmount 自动转 refunded
+ */
+const refund = [
+  body('amount').isFloat({ min: 0.01 }).withMessage('退款金额必须 > 0'),
+  body('reason').isString().trim().isLength({ min: 1, max: 500 }).withMessage('退款原因必填, 1-500 字')
+]
+
+module.exports = { create, pay, cancel, refund, ORDER_STATUSES }

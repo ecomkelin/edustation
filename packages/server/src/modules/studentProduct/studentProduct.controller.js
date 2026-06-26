@@ -18,3 +18,11 @@ exports.gift = async (req, res) => {
     ...req.body
   })))
 }
+
+// 物理删除：超管+密码二次确认（requirePlatformPassword 路由层）；互锁检查 LessonAttendance.studentProduct + CourseEnrollment.studentProduct
+// 详见 studentProduct.service.remove 与 utils/removable.assertUnused
+exports.remove = async (req, res) =>
+  res.json(ApiResponse.ok(await s.remove(req.params.id, req.orgId)))
+// 删除预检：业务岗（studentProduct.read）即可查询，删除按钮触发前先弹挡板说明
+exports.removableCheck = async (req, res) =>
+  res.json(ApiResponse.ok(await s.removableCheck(req.params.id, req.orgId)))

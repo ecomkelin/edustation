@@ -17,11 +17,18 @@ const { ORDER_STATUSES, PAYMENT_METHODS } = require('@shared/enums')
  *   - paidAmount:    已实付金额（多次付款可累加；分期付款时 < actualPrice）
  *   - paidAt:        最近一次支付成功时间（service 写入）
  *
- * 状态机（ORDER_STATUSES）：
- *   pending   已下单未支付
- *   paid      已支付完成（paidAmount >= actualPrice）→ 触发按 items 创建 StudentProduct
- *   cancelled 已取消（未支付前主动取消）
- *   refunded  已退款（可能涉及回滚 StudentProduct；阶段 3 财务模块完善）
+ * 状态机（ORDER_STATUSES，2026-06-25 扩展）：
+ *   pending             已下单未支付
+ *   paid                已支付完成（paidAmount >= actualPrice）→ 触发按 items 创建 StudentProduct
+ *   partially_refunded  部分退款中间态（refundedAmount > 0 且 < paidAmount，可继续退款）
+ *   cancelled           已取消（仅 pending 可达，paid 之后需走 cancel→refund 路径）
+ *   refunded            已退款（refundedAmount == paidAmount 终态；财务凭证保留）
+ *
+ * 退款联动（R-1722 2026-06-25 立项）：
+ *   - 首次退款时 service.refund 会把该 Order 下所有 StudentProduct（source='order'）
+ *     软停用（isActive=false + meta.refundedAt/reason/refundId）
+ *   - 已消课的 LessonAttendance.studentProduct 引用**不**回滚（审计凭证）
+ *   - CourseEnrollment.studentProduct（主用课包）**不**解绑（软引用，FIFO 兜底）
  *
  * 联动：
  *   - status 进入 paid 时，service 在同一事务中按 items 逐项创建 StudentProduct
@@ -100,7 +107,25 @@ const OrderSchema = new Schema(
     remark: { type: String },
     // 创建时同意的协议快照 (2026-06)
     // 仅在 client 端"立即购买"流程中由前端携带; 后台手动开单可不传 (跳过校验).
-    agreements: { type: [OrderAgreementSchema], default: [] }
+    agreements: { type: [OrderAgreementSchema], default: [] },
+    // 退款累计金额（R-1722 2026-06-25 立项；0 ≤ refundedAmount ≤ paidAmount）
+    // 部分退款累计；累计到 paidAmount 时 status 自动转 refunded
+    refundedAmount: { type: Number, default: 0, min: 0 },
+    // 最近一次退款时间（service.refund 在每次退款时更新）
+    refundedAt: { type: Date, default: null },
+    // 退款流水子文档（R-1722）：每次退款一笔；累计金额在 refundedAmount
+    refunds: {
+      type: [new Schema({
+        amount: { type: Number, required: true, min: 0.01 },           // 本次退款金额
+        reason: { type: String, required: true, maxlength: 500 },        // 必填，财务凭证
+        operator: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        refundedAt: { type: Date, default: Date.now },
+        // 退款时尚未消耗的课时数快照（用于家长对账 / 报表）
+        remainingLessonsSnapshot: { type: Number, default: 0 },
+        // 退款时已消课次数（用于家长对账 / 报表）
+        consumedLessonsSnapshot: { type: Number, default: 0 }
+      }, { _id: true })]
+    }
   },
   { timestamps: true, collection: 'orders' }
 )

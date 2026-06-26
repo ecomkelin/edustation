@@ -131,7 +131,11 @@ import {
   // AI 助手 (2026-06) — 魔棒图标
   MagicStick,
   // 商城流水 (2026-06-22 pet-shop) — 用 Tickets 图标（避免与"订单"的 ShoppingCart 重名）
-  Tickets
+  Tickets,
+  // 财务 (2026-06-25 立项) — 用 Money 图标（资金/账本）
+  Money,
+  // 账本管理 (2026-06-25 拆 3 页后) — 钱包图标
+  Wallet
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -224,20 +228,34 @@ const menuGroups = [
           { path: '/legal/org-docs', label: '机构协议', icon: Notebook, perm: 'legal.read' }
         ]
       },
-      // 基础数据子组: 文件/字典/教室/学科/学校档案
+      // 基础数据子组: 文件/字典/账本/教室/学科/学校档案 (财务字典合并到类别字典)
       {
         label: '基础数据',
         icon: Files,
         children: [
           // 文件管理 (2026-06-22): 从基础数据分离出来, 归位到机构管理
           { path: '/files', label: '文件管理', icon: Picture, perm: 'storage.read' },
-          // 类别字典 (2026-06 整改): per-org, 机构 admin 可维护本机构字典
+          // 类别字典 (2026-06 整改 per-org, 2026-06-25 加 FinanceReason tab): 业务域含 Student/Subject/LeadTag/Channel/PointsReason/FinanceReason
           { path: '/categories', label: '类别字典', icon: Files },
+          // 账本 (2026-06-25 立项): 财务模块低频配置项, 放基础数据下, 排教室上面 (收款/支出入口语义上比"教室"更前置)
+          { path: '/finance/accounts', label: '账本管理', icon: Wallet, perm: 'finance.read' },
           { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
           { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
           { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
         ]
       }
+    ]
+  },
+  {
+    // 财务 (2026-06-25 立项, 2026-06-25 拆 3 页, 同日 财务字典合并到 类别字典):
+    // 流水是高频操作 → 放财务一级菜单; 账本放基础数据; 字典归类别字典
+    // Money icon 表示资金
+    // 位置 (2026-06-25): 放在招生上面, 因为机构日常高频操作 (收钱/记账) 比招生漏斗更前置
+    key: 'finance',
+    title: '财务',
+    icon: Money,
+    children: [
+      { path: '/finance/transactions', label: '财务流水', icon: Money, perm: 'finance.read' }
     ]
   },
   {

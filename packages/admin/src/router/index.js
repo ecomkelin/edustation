@@ -47,6 +47,11 @@ const routes = [
       { path: 'pet/consumables', component: () => import('@/views/pet/PetConsumableAdmin.vue') },
       // 商城流水 (2026-06-22 pet-shop): 学生买/老师代发 流水
       { path: 'pet/shop-orders', component: () => import('@/views/pet/PetShopOrders.vue') },
+      // 财务模块 (2026-06-25 立项, 2026-06-25 拆 3 页, 同日再合并 财务字典到 类别字典)
+      // /finance 重定向到 /finance/transactions (默认落地页)
+      { path: 'finance', redirect: '/finance/transactions' },
+      { path: 'finance/accounts', component: () => import('@/views/finance/FinanceAccounts.vue') },
+      { path: 'finance/transactions', component: () => import('@/views/finance/FinanceTransactions.vue') },
       // 经营分析:5 块看板对应后端 /api/v1/reports/* ；二级菜单入口见 DefaultLayout
       { path: 'reports/overview', component: () => import('@/views/reports/OverviewReport.vue') },
       { path: 'reports/lesson-consumption', component: () => import('@/views/reports/LessonConsumptionReport.vue') },

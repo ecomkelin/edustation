@@ -101,7 +101,7 @@
       <el-table-column label="下单时间" width="160">
         <template #default="{ row }">{{ formatDate(row.createdAt, 'YYYY-MM-DD HH:mm') }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link @click="openDetail(row)">详情</el-button>
           <el-button
@@ -112,6 +112,16 @@
             @click="openCancel(row)"
           >
             取消
+          </el-button>
+          <!-- 退款 (R-1722 2026-06-25): 仅 paid / partially_refunded 显示; 复用 order.pay 权限 -->
+          <el-button
+            v-if="(row.status === 'paid' || row.status === 'partially_refunded') && canRefund"
+            size="small"
+            link
+            type="warning"
+            @click="openRefund(row)"
+          >
+            退款
           </el-button>
         </template>
       </el-table-column>
@@ -308,6 +318,15 @@
         <el-descriptions-item label="成交价">¥ {{ formatMoney(current.actualPrice) }}</el-descriptions-item>
         <el-descriptions-item label="实付">¥ {{ formatMoney(current.paidAmount) }}</el-descriptions-item>
         <el-descriptions-item label="支付时间">{{ formatDate(current.paidAt) || '—' }}</el-descriptions-item>
+        <el-descriptions-item v-if="current.refundedAmount > 0" label="累计退款" :span="2">
+          <span class="cell-strong">¥ {{ formatMoney(current.refundedAmount) }}</span>
+          <span class="muted" style="margin-left: 8px">
+            共 {{ current.refunds?.length || 0 }} 笔
+            <template v-if="current.refundedAt">
+              (最近: {{ formatDate(current.refundedAt) }})
+            </template>
+          </span>
+        </el-descriptions-item>
         <el-descriptions-item label="下单时间" :span="2">{{ formatDate(current.createdAt) }}</el-descriptions-item>
         <el-descriptions-item v-if="current.remark" label="备注" :span="2">{{ current.remark }}</el-descriptions-item>
       </el-descriptions>
@@ -355,7 +374,60 @@
       </el-form>
       <template #footer>
         <el-button @click="cancelDialog = false">不取消了</el-button>
-        <el-button type="danger" :loading="cancelSaving" @click="submitCancel">确认取消</el-button>
+        <!-- 2026-06-25 修复双提交: cancelSaving 期间按钮禁用 -->
+        <el-button type="danger" :loading="cancelSaving" :disabled="cancelSaving" @click="submitCancel">确认取消</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ───── 退款弹窗 (R-1722 2026-06-25 立项) ─────
+         部分退款支持: 默认金额 = 可退余额; 可改小; service 内累计到 refundedAmount == paidAmount 自动转 refunded -->
+    <el-dialog v-model="refundDialog" title="订单退款" width="520px" :close-on-click-modal="false">
+      <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 12px">
+        <template #title>
+          退款将从订单可退余额扣除。已消课的课时不退回（保留作审计凭证）。
+        </template>
+      </el-alert>
+      <el-form :model="refundForm" label-width="100px">
+        <el-form-item label="订单号">
+          <span class="muted">{{ current && String(current._id).slice(-6).toUpperCase() }}</span>
+        </el-form-item>
+        <el-form-item label="订单金额">
+          <span class="cell-strong">¥ {{ formatMoney(current && current.paidAmount) }}</span>
+          <span class="muted" style="margin-left: 8px">
+            已退 ¥ {{ formatMoney(current && (current.refundedAmount || 0)) }}
+            / 仍可退 ¥ {{ formatMoney(refundableAmount) }}
+          </span>
+        </el-form-item>
+        <el-form-item label="退款金额" required>
+          <el-input-number
+            v-model="refundForm.amount"
+            :min="0.01"
+            :max="refundableAmount || 0.01"
+            :precision="2"
+            :step="10"
+            style="width: 100%"
+          />
+          <div class="form-hint">默认 = 可退余额; 部分退款可分多次, 累计退完自动转已退款</div>
+        </el-form-item>
+        <el-form-item label="退款原因" required>
+          <el-input
+            v-model="refundForm.reason"
+            type="textarea"
+            :rows="3"
+            maxlength="500"
+            show-word-limit
+            placeholder="必填：财务凭证 + 家长沟通记录可追溯"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="refundDialog = false">取消</el-button>
+        <el-button
+          type="warning"
+          :loading="refundSaving"
+          :disabled="!canSubmitRefund"
+          @click="submitRefund"
+        >确认退款</el-button>
       </template>
     </el-dialog>
   </div>
@@ -380,6 +452,14 @@ const canCreate = computed(() => {
   const cur = auth.orgs.find((o) => o.id === auth.currentOrgId)
   if (!cur) return false
   return (cur.positions || []).some((p) => (p.permissions || []).includes('order.write'))
+})
+
+// 退款权限 (R-1722 2026-06-25 立项): 复用 order.pay 权限码 (label "收款 / 退款")
+const canRefund = computed(() => {
+  if (auth.isPlatformAdmin) return true
+  const cur = auth.orgs.find((o) => o.id === auth.currentOrgId)
+  if (!cur) return false
+  return (cur.positions || []).some((p) => (p.permissions || []).includes('order.pay'))
 })
 
 // ─── 列表状态 ───
@@ -460,7 +540,10 @@ function recalcTotals() {
   createForm.paidAmount = sum
 }
 
+// 2026-06-25 修复双提交: 把 createSaving 纳入 canSubmitCreate, 加载中直接禁用按钮
+// (此前 :disabled 只校验表单字段, 加载中仍可点 → 秒级双击会创建 2 单)
 const canSubmitCreate = computed(() =>
+  !createSaving.value &&
   !!createForm.student &&
   createForm.items.length > 0 &&
   !!createForm.paymentMethod &&
@@ -551,6 +634,51 @@ async function submitCancel() {
   }
 }
 
+// ─── 退款弹窗 (R-1722 2026-06-25 立项) ───
+const refundDialog = ref(false)
+const refundSaving = ref(false)
+const refundForm = reactive({ amount: 0, reason: '' })
+
+// 可退余额 = paidAmount - refundedAmount（列表行可能没这两个字段，按 0 兜底）
+const refundableAmount = computed(() => {
+  const paid = Number(current.value?.paidAmount || 0)
+  const refunded = Number(current.value?.refundedAmount || 0)
+  return Math.max(0, paid - refunded)
+})
+
+const canSubmitRefund = computed(() =>
+  !refundSaving.value &&
+  refundForm.amount > 0 &&
+  refundForm.amount <= refundableAmount.value + 0.01 &&  // 容差 0.01 防浮点
+  (refundForm.reason || '').trim().length > 0
+)
+
+function openRefund(row) {
+  current.value = row
+  refundForm.amount = (row.paidAmount || 0) - (row.refundedAmount || 0)  // 默认 = 可退余额
+  refundForm.reason = ''
+  refundDialog.value = true
+}
+
+async function submitRefund() {
+  if (!canSubmitRefund.value) return ElMessage.warning('请检查金额与退款原因')
+  refundSaving.value = true
+  try {
+    const r = await orderApi.refund(current.value._id, {
+      amount: Number(refundForm.amount),
+      reason: refundForm.reason.trim()
+    })
+    const newStatus = r.data?.newStatus
+    ElMessage.success(newStatus === 'refunded' ? '已全额退款' : `已退款 ¥${formatMoney(refundForm.amount)}`)
+    refundDialog.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '退款失败')
+  } finally {
+    refundSaving.value = false
+  }
+}
+
 // ─── 加载 ───
 async function loadStudents() {
   try {
@@ -615,6 +743,7 @@ function itemsSummary(row) {
 function statusTagType(s) {
   if (s === 'paid') return 'success'
   if (s === 'pending') return 'warning'
+  if (s === 'partially_refunded') return 'warning' // 2026-06-25 部分退款中间态, 与 pending 同色
   if (s === 'cancelled') return 'info'
   if (s === 'refunded') return 'danger'
   return ''

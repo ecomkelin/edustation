@@ -950,7 +950,9 @@
         "user.write",
         "user.resetPassword",
         "legal.read",
-        "legal.write"
+        "legal.write",
+        "finance.read",
+        "finance.write"
       ],
       "isSystem": true,
       "clientLevel": 0,
@@ -987,7 +989,8 @@
         "pet.read",
         "report.read",
         "legal.read",
-        "legal.write"
+        "legal.write",
+        "finance.read"
       ],
       "isSystem": false,
       "clientLevel": 0,
@@ -1048,7 +1051,9 @@
         "order.pay",
         "student.read",
         "studentProduct.read",
-        "report.read"
+        "report.read",
+        "finance.read",
+        "finance.write"
       ],
       "isSystem": false,
       "clientLevel": 0,
@@ -1104,7 +1109,9 @@
         "user.write",
         "user.resetPassword",
         "legal.read",
-        "legal.write"
+        "legal.write",
+        "finance.read",
+        "finance.write"
       ],
       "isSystem": false,
       "clientLevel": 0,

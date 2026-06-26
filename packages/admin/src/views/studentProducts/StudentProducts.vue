@@ -391,7 +391,9 @@ function onProductChange(id) {
   }
 }
 
+// 2026-06-25 修复双提交: giftSaving 纳入禁用判断
 const canSubmitGift = computed(() =>
+  !giftSaving.value &&
   !!giftForm.student && !!giftForm.courseProduct && !!(giftForm.giftReason || '').trim()
 )
 

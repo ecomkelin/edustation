@@ -27,4 +27,11 @@ router.post(
   asyncHandler(c.gift)
 )
 
+// 物理删除：超管+密码二次确认；互锁由 service.remove 内检查 LessonAttendance/CourseEnrollment 引用
+// R-1804 DELETE /student-products/:id
+router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
+// 预检：业务岗即可查询，删除按钮触发前先弹挡板说明
+// R-1805 GET /student-products/:id/removable-check
+router.get('/:id/removable-check', mws.requirePermission('studentProduct.read'), asyncHandler(c.removableCheck))
+
 module.exports = router

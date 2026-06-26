@@ -16,6 +16,8 @@ const leadTagSeed = require('./seeds/leadTag.seed')
 const channelSeed = require('./seeds/channel.seed')
 const schoolSeed = require('./seeds/school.seed')
 const petCatalogSeed = require('./seeds/pet-catalog.seed')
+// 财务模块 (2026-06-25 立项): 8 条 FinanceReason 字典 + 4 本账本 + 3 条演示流水
+const financeSeed = require('./seeds/finance.seed')
 
 async function initSeeds() {
   // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
@@ -41,6 +43,10 @@ async function initSeeds() {
   //    平台级共享（无 org 维度）；幂等 upsert by key
   //    不依赖 initial 的 dropDatabase，单跑也行
   await petCatalogSeed.run()
+
+  // 6. 财务 (2026-06-25): 8 条 FinanceReason 字典 + 4 本账本 + 3 条演示流水
+  //    幂等: Category/FinanceAccount 走唯一索引, FinanceTransaction 按 (account,type,amount,occurredAt,remark) 查重
+  await financeSeed.run()
 }
 
 module.exports = { initSeeds }

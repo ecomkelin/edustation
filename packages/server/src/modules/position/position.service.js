@@ -39,7 +39,9 @@ const DEFAULT_POSITIONS = [
       'legal.read', 'legal.write',
       'report.read',
       'agent.read', 'agent.write',
-      'accessControl.read', 'accessControl.write', 'accessControl.pickup'
+      'accessControl.read', 'accessControl.write', 'accessControl.pickup',
+      // 财务模块 (2026-06-25 立项): 管理员可看可写
+      'finance.read', 'finance.write'
     ]
   },
   {
@@ -62,7 +64,9 @@ const DEFAULT_POSITIONS = [
       'legal.read', 'legal.write',
       'report.read',
       'agent.read', 'agent.write',
-      'accessControl.read', 'accessControl.write', 'accessControl.pickup'
+      'accessControl.read', 'accessControl.write', 'accessControl.pickup',
+      // 财务模块 (2026-06-25): 教务可看账, 不可记账
+      'finance.read'
     ]
   },
   {
@@ -99,7 +103,9 @@ const DEFAULT_POSITIONS = [
       'order.read', 'order.write', 'order.pay',
       'student.read', 'studentProduct.read',
       'report.read',
-      'accessControl.read'
+      'accessControl.read',
+      // 财务模块 (2026-06-25): 财务岗本职
+      'finance.read', 'finance.write'
     ]
   }
 ]

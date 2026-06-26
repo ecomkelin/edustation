@@ -341,6 +341,19 @@
         "accessControl.write": { "label": "管理门禁", "description": "注册/编辑门禁设备、录入/撤销人脸档案、切换门锁状态" },
         "accessControl.pickup": { "label": "接送授权", "description": "为学员配置/撤销接送授权人 (含家长与第三方)" }
       }
+    },
+    {
+      "key": "finance",
+      "label": "财务管理",
+      "description": "管理本机构财务账本与流水 (2026-06-25 立项): 财务账号 (银行/微信/支付宝/现金/其他) + 财务流水 (收入/支出/转账) + 收支原因字典 + 汇总。流水为 append-only ledger, 撤销走反向流水; 订单收/退款 Phase 1 不挂自动联动, 仅手动录入。",
+      "permissions": [
+        "finance.read",
+        "finance.write"
+      ],
+      "permissionLabels": {
+        "finance.read": { "label": "查看财务", "description": "查看账本余额、流水明细、汇总数据、收支原因字典" },
+        "finance.write": { "label": "编辑财务", "description": "创建/编辑账本; 录入收入/支出/转账流水; 维护收支原因字典" }
+      }
     }
   ]
 }

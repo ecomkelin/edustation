@@ -39,7 +39,8 @@ const CategorySchema = new Schema(
     //   'LeadTag'      → 家长标签字典 (被 Parent.tags 引用)
     //   'Channel'      → 招生渠道字典 (被 Parent.source / ChildLead.source 引用)
     //   'PointsReason' → 积分原因字典 (被 PointsTransaction.reason 引用; 2026-06-21 新增)
-    model: { type: String, enum: ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason'], required: true, index: true },
+    //   'FinanceReason'→ 财务原因字典 (被 FinanceTransaction.reason 引用; 2026-06-25 立项)
+    model: { type: String, enum: ['Student', 'Subject', 'LeadTag', 'Channel', 'PointsReason', 'FinanceReason'], required: true, index: true },
     // 租户隔离 (2026-06): 4 个 model 全是 per-org 业务字典
     //   - 机构内管理员/教务可读写自己 org 的字典
     //   - 跨 org 查询自动隔离 (list / tree 按 req.orgId 过滤)
