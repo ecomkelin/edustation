@@ -137,7 +137,9 @@ import {
   // 财务 (2026-06-25 立项) — 用 Money 图标（资金/账本）
   Money,
   // 账本管理 (2026-06-25 拆 3 页后) — 钱包图标
-  Wallet
+  Wallet,
+  // 操作留痕 (2026-06-27) — 文档/清单图标
+  Document
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -199,6 +201,8 @@ const menuGroups = [
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读
           { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
+          // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
+          { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看
           { path: '/platform/flow-guide', label: '开班流程说明', icon: Reading, requirePlatform: true },
           { path: '/platform/info', label: '系统说明', icon: Warning, requirePlatform: true }

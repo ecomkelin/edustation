@@ -87,7 +87,8 @@ Auth 列简写:
 | 32 | site-config | /site-config | siteConfig/ | 2 |
 | 33 | health | /health | health/ | 1 |
 | 34 | finance | /finance | finance/ | 17 |
-| **合计** | | | | **~294** |
+| 35 | audit | /audit-logs | audit/ | 5 |
+| **合计** | | | | **~299** |
 
 ## 3. 路由总表 (按 MM 排序)
 
@@ -616,6 +617,16 @@ Auth 列简写:
 | R-3423 | DELETE | /finance/reasons/:id | ADMIN_PWD | — | 物理删除字典 | 中风险, 互锁 FinanceTransaction.reason |
 | R-3424 | GET | /finance/reasons/:id/removable-check | PERM | finance.read | 删除预检 | |
 
+### MM=35 audit (URL: /audit-logs)
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3500 | GET | /audit-logs | ADMIN | — | 列表 (分页 + 筛选) | platform-admin 硬门; query: page/pageSize/method/statusCode/userId/orgId/path/q/from/to/requestId |
+| R-3501 | GET | /audit-logs/stats | ADMIN | — | 统计 (method × statusCode 桶) | |
+| R-3502 | GET | /audit-logs/options | ADMIN | — | 筛选下拉 (去重 method/path/users) | |
+| R-3503 | GET | /audit-logs/export.csv | ADMIN | — | 导出 CSV (BOM, Excel 友好) | |
+| R-3504 | GET | /audit-logs/:id | ADMIN | — | 详情 | |
+
 ## 4. 变更日志
 
 ### 4.1 废弃路由 (Deprecated)
@@ -633,3 +644,4 @@ Auth 列简写:
 | 2026-06-25 | 订单/课包物理删除门控上线 (中风险范式) | R-1704 / R-1705 / R-1804 / R-1805 | add |
 | 2026-06-25 | 订单退款端点 R-1722 上线 (支持部分退款 + SP 软停用) | R-1722 | add |
 | 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |
+| 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |

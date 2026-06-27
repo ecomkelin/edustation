@@ -2,6 +2,11 @@
 
 const express = require('express')
 const router = express.Router()
+const mws = require('@middlewares')
+
+// 操作留痕 (2026-06-27): 全局挂, controller 不动.
+// 内部判 user/orgId/敏感路径, finish 时异步写 audit_logs.
+router.use(mws.auditTrail)
 
 // 显式 require 所有模块。阶段 3 改用 routeLoader 自动扫描。
 const authRoutes = require('@modules/auth/auth.routes')
@@ -89,5 +94,8 @@ router.use('/trial-bookings', trialBookingRoutes)
 router.use('/access-control', accessControlRoutes)
 // 财务管理 (2026-06-25): /api/v1/finance/* (账本/流水/字典)
 router.use('/finance', financeRoutes)
+// 审计日志 (2026-06-27): /api/v1/audit-logs (操作留痕; 仅平台超管可见)
+const auditRoutes = require('@modules/audit/audit.routes')
+router.use('/audit-logs', auditRoutes)
 
 module.exports = router

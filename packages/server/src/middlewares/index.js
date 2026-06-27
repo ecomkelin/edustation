@@ -11,6 +11,7 @@ module.exports = {
   requireEnrolledStudent: require('./requireEnrolledStudent'),
   validateRequest: require('./validateRequest'),
   loginRateLimit: require('./loginRateLimit'),
+  auditTrail: require('./auditTrail'),
   notFound: require('./notFound'),
   errorHandler: require('./errorHandler')
 }
