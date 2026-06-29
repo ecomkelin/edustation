@@ -1,0 +1,94 @@
+// ============================================================================
+// EduStation C 端主题变量
+// 设计风格:暖橙教育 - 亲子感 / 温暖 / 情感化
+// ============================================================================
+
+// === 主色 (蜜桃橙) ===
+$primary: #FF8A65;
+$primary-light: #FFB088;
+$primary-lighter: #FFD0B8;
+$primary-dark: #E66B45;
+$primary-bg: #FFFAF5;
+
+// === 辅色 ===
+$accent: #7CD9B7;        // 薄荷绿 - 饱腹/正向
+$accent-light: #C8F0DF;
+$warning: #FF6B6B;       // 珊瑚红 - 警告/饥饿
+$warning-light: #FFD3D3;
+$info: #5B9EE6;          // 信息蓝 (次要)
+$gold: #F5C148;          // 金色 (S阶徽章/积分奖励)
+$purple: #B89AE6;        // 紫 (AI 助手/特殊)
+
+// === 中性色 ===
+$text-primary: #2D2D2D;
+$text-secondary: #6B6B6B;
+$text-tertiary: #9CA3AF;
+$text-disabled: #D1D5DB;
+$text-on-primary: #FFFFFF;
+
+$bg-page: #FFFAF5;
+$bg-card: #FFFFFF;
+$bg-mask: rgba(45, 24, 16, 0.5);
+$divider: #F0EBE6;
+$divider-light: #F8F4EE;
+
+// === 圆角 ===
+$radius-xs: 12rpx;
+$radius-sm: 16rpx;
+$radius-md: 24rpx;
+$radius-lg: 32rpx;
+$radius-xl: 48rpx;
+$radius-pill: 999rpx;
+
+// === 阴影 (暖色调,不用纯灰) ===
+$shadow-card: 0 4rpx 16rpx rgba(255, 138, 101, 0.08);
+$shadow-card-hover: 0 8rpx 24rpx rgba(255, 138, 101, 0.12);
+$shadow-button: 0 8rpx 24rpx rgba(255, 138, 101, 0.24);
+$shadow-float: 0 -4rpx 24rpx rgba(255, 138, 101, 0.10);
+$shadow-tabbar: 0 -2rpx 16rpx rgba(255, 138, 101, 0.06);
+
+// === 字号 ===
+$font-xs: 22rpx;
+$font-sm: 26rpx;
+$font-base: 30rpx;
+$font-md: 32rpx;
+$font-lg: 36rpx;
+$font-xl: 40rpx;
+$font-2xl: 48rpx;
+$font-3xl: 56rpx;
+$font-display: 72rpx;
+
+// === 字重 ===
+$font-weight-normal: 400;
+$font-weight-medium: 500;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+// === 间距 ===
+$spacing-xs: 8rpx;
+$spacing-sm: 16rpx;
+$spacing-md: 24rpx;
+$spacing-lg: 32rpx;
+$spacing-xl: 48rpx;
+$spacing-2xl: 64rpx;
+
+// === 过渡 ===
+$transition-fast: 0.15s ease-out;
+$transition-base: 0.25s ease-out;
+$transition-slow: 0.4s ease-out;
+$transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+// === 层级 ===
+$z-base: 1;
+$z-tabbar: 50;
+$z-fixed: 100;
+$z-mask: 900;
+$z-modal: 1000;
+$z-toast: 2000;
+
+// === Tabbar ===
+$tabbar-height: 56px;
+
+// === 安全区 (iPhone X+) ===
+$safe-top: env(safe-area-inset-top, 0);
+$safe-bottom: env(safe-area-inset-bottom, 0);

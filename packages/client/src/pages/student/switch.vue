@@ -1,32 +1,60 @@
+<!--
+  切换孩子 - 全屏选择
+-->
 <template>
-  <view class="page">
-    <view v-if="loading" class="empty-state">加载中…</view>
-    <view v-else-if="!list.length" class="empty-state">
-      <text>当前账号暂未关联孩子</text>
-      <text class="text-muted text-12">请联系机构管理员添加</text>
+  <view class="switch-student">
+    <view class="switch-student__bg">
+      <view class="switch-student__circle switch-student__circle--1" />
+      <view class="switch-student__circle switch-student__circle--2" />
     </view>
-    <view v-else class="list">
-      <view
-        v-for="s in list"
-        :key="s.id"
-        class="row card"
-        :class="{ active: s.id === activeStudentId }"
-        @tap="onPick(s.id)"
-      >
-        <view class="avatar">
-          <text>{{ avatarChar(s.name) }}</text>
-        </view>
-        <view class="info flex-1">
-          <view class="flex-row gap-8">
-            <text class="text-16 text-strong">{{ s.name }}</text>
-            <text class="tag">{{ genderLabel(s.gender) }}</text>
-            <text v-if="!s.isActive" class="tag tag-warn">已离校</text>
+
+    <view class="switch-student__inner safe-area-top">
+      <view class="switch-student__header">
+        <text class="switch-student__title">选择孩子</text>
+        <text class="switch-student__sub">每个孩子都有独立的课表、积分和宠物</text>
+      </view>
+
+      <view class="switch-student__list">
+        <view
+          v-for="s in student.list"
+          :key="s.id"
+          class="switch-student__item"
+          :class="{
+            'switch-student__item--active': String(s.id) === String(student.activeStudentId)
+          }"
+          @tap="select(s)"
+        >
+          <view class="switch-student__item-avatar">
+            <image
+              v-if="s.avatar"
+              class="switch-student__item-img"
+              :src="s.avatar"
+              mode="aspectFill"
+            />
+            <text v-else class="switch-student__item-emoji">{{ emojiOf(s) }}</text>
           </view>
-          <text class="text-12 text-muted">
-            {{ s.birthday ? formatBirth(s.birthday) : '未填写生日' }}
-          </text>
+          <view class="switch-student__item-info">
+            <text class="switch-student__item-name">{{ s.name }}</text>
+            <text v-if="s.school || s.grade" class="switch-student__item-meta">
+              {{ s.school || '' }} {{ s.grade ? '· ' + s.grade : '' }}
+            </text>
+            <text class="switch-student__item-gender">{{ genderOf(s) }} · {{ ageOf(s) }}</text>
+          </view>
+          <view
+            v-if="String(s.id) === String(student.activeStudentId)"
+            class="switch-student__item-check"
+          >
+            <text>✓</text>
+          </view>
         </view>
-        <text v-if="s.id === activeStudentId" class="check">✓</text>
+      </view>
+
+      <view class="switch-student__empty" v-if="!student.list.length">
+        <text>暂无孩子数据,请联系机构</text>
+      </view>
+
+      <view class="switch-student__done press" @tap="onDone">
+        <text>完成</text>
       </view>
     </view>
   </view>
@@ -34,78 +62,216 @@
 
 <script>
 import { useStudentStore } from '@/stores/student'
-import { mapState } from 'pinia'
-import { formatDate } from '@/utils/format'
-import { GenderLabel } from '@/utils/constants'
+import { date } from '@/utils/date'
+import { haptic } from '@/utils/haptic'
 
 export default {
   data() {
-    return { loading: true }
+    return {}
   },
   computed: {
-    ...mapState(useStudentStore, ['list', 'activeStudentId'])
-  },
-  async onLoad() {
-    const s = useStudentStore()
-    if (!s.list.length) {
-      try { await s.fetchMyStudents() } catch (_) {}
+    student() {
+      return useStudentStore()
     }
-    this.loading = false
+  },
+  onLoad() {
+    if (!this.student.list.length) {
+      this.student.fetchMyStudents().catch(() => null)
+    }
   },
   methods: {
-    onPick(id) {
-      const s = useStudentStore()
-      s.setActive(id)
-      uni.showToast({ title: '已切换', icon: 'success' })
-      setTimeout(() => uni.navigateBack(), 400)
+    select(s) {
+      haptic.success()
+      this.student.setActive(s.id)
     },
-    avatarChar(name) {
-      if (!name) return '👶'
-      return name.slice(-2)
+    onDone() {
+      uni.navigateBack()
     },
-    genderLabel(g) {
-      return GenderLabel[g] || ''
+    emojiOf(s) {
+      const AVATARS = ['🐰', '🐯', '🐻', '🦊', '🐼', '🐨', '🐸', '🐵', '🐱', '🐶']
+      let h = 0
+      for (let i = 0; i < (s.name || '').length; i++) {
+        h = (h << 5) - h + (s.name || '').charCodeAt(i)
+        h |= 0
+      }
+      return AVATARS[Math.abs(h) % AVATARS.length]
     },
-    formatBirth(d) {
-      if (!d) return ''
-      return `生日 ${formatDate(d)}`
+    genderOf(s) {
+      return s.gender === 'male' ? '男' : s.gender === 'female' ? '女' : '保密'
+    },
+    ageOf(s) {
+      return s.birthday ? date.age(s.birthday) + ' 岁' : ''
     }
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.page { padding: 24rpx; }
-.row {
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-  padding: 24rpx;
-  &.active {
-    border: 2rpx solid #5B8FF9;
-    background: #f0f5ff;
+.switch-student {
+  min-height: 100vh;
+  background: $bg-page;
+  position: relative;
+  overflow: hidden;
+
+  &__bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
   }
-}
-.avatar {
-  width: 80rpx;
-  height: 80rpx;
-  border-radius: 50%;
-  background: #5B8FF9;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28rpx;
-  font-weight: 600;
-}
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-.check {
-  color: #5B8FF9;
-  font-size: 36rpx;
-  font-weight: 700;
+
+  &__circle {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0.4;
+    animation: float 6s ease-in-out infinite;
+
+    &--1 {
+      width: 320rpx;
+      height: 320rpx;
+      background: radial-gradient(circle, $primary-light 0%, transparent 70%);
+      top: -80rpx;
+      right: -100rpx;
+    }
+    &--2 {
+      width: 240rpx;
+      height: 240rpx;
+      background: radial-gradient(circle, $accent-light 0%, transparent 70%);
+      top: 100rpx;
+      left: -80rpx;
+      animation-delay: 1.5s;
+    }
+  }
+
+  &__inner {
+    position: relative;
+    padding: $spacing-md;
+    min-height: 100vh;
+  }
+
+  &__header {
+    padding: $spacing-xl $spacing-md $spacing-lg;
+    text-align: center;
+  }
+
+  &__title {
+    display: block;
+    font-size: $font-2xl;
+    font-weight: $font-weight-bold;
+    color: $text-primary;
+    margin-bottom: $spacing-xs;
+  }
+
+  &__sub {
+    display: block;
+    font-size: $font-sm;
+    color: $text-secondary;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-sm;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    padding: $spacing-md;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+    border: 4rpx solid transparent;
+    transition: all $transition-fast;
+
+    &--active {
+      border-color: $primary;
+      box-shadow: $shadow-button;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  &__item-avatar {
+    width: 96rpx;
+    height: 96rpx;
+    border-radius: 50%;
+    background: linear-gradient(135deg, $primary-light, $primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: $spacing-md;
+    overflow: hidden;
+  }
+
+  &__item-img {
+    width: 100%;
+    height: 100%;
+  }
+
+  &__item-emoji {
+    font-size: 56rpx;
+  }
+
+  &__item-info {
+    flex: 1;
+  }
+
+  &__item-name {
+    display: block;
+    font-size: $font-lg;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    margin-bottom: 4rpx;
+  }
+
+  &__item-meta {
+    display: block;
+    font-size: $font-xs;
+    color: $text-secondary;
+    margin-bottom: 4rpx;
+  }
+
+  &__item-gender {
+    font-size: $font-xs;
+    color: $text-tertiary;
+  }
+
+  &__item-check {
+    width: 48rpx;
+    height: 48rpx;
+    border-radius: 50%;
+    background: $primary;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28rpx;
+    font-weight: bold;
+  }
+
+  &__empty {
+    padding: $spacing-2xl;
+    text-align: center;
+    color: $text-tertiary;
+    font-size: $font-sm;
+  }
+
+  &__done {
+    margin-top: $spacing-xl;
+    padding: $spacing-md;
+    background: linear-gradient(135deg, $primary, $primary-light);
+    color: #fff;
+    border-radius: $radius-pill;
+    text-align: center;
+    box-shadow: $shadow-button;
+
+    & > text {
+      color: #fff;
+      font-size: $font-base;
+      font-weight: $font-weight-semibold;
+    }
+  }
 }
 </style>

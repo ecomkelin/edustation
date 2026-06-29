@@ -1,10 +1,19 @@
-import http from '@/utils/request'
+/**
+ * Student API - 我的孩子 + 学习画像
+ * R-0472 / R-0401 / R-0406
+ */
+import { http } from './request'
 
 export const studentApi = {
-  // 家长端：当前机构下的子女
-  me: (params) => http.get('/students/me', params),
-  // 详情
-  detail: (id) => http.get(`/students/${id}`),
-  // 列出（运营端用得多，家长端不直接用）
-  list: (params) => http.get('/students', params)
+  me(params = {}) {
+    return http.get('/students/me', { data: params })
+  },
+
+  detail(id) {
+    return http.get(`/students/${id}`)
+  },
+
+  profile(id) {
+    return http.get(`/students/${id}/profile`)
+  }
 }

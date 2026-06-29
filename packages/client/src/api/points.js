@@ -1,8 +1,19 @@
-import http from '@/utils/request'
+/**
+ * Points API - 积分 (C 端)
+ * R-2000 transactions / R-2072 me / R-2060 earn
+ */
+import { http } from './request'
 
 export const pointsApi = {
-  me: () => http.get('/points/me'),
-  // 内部触发入账（分享/签到）；家长端不直接调，但留作 future use
-  earn: (data) => http.post('/points/earn', data),
-  transactions: (params) => http.get('/points/transactions', params)
+  me() {
+    return http.get('/points/me')
+  },
+
+  transactions(params = {}) {
+    return http.get('/points/transactions', { data: params })
+  },
+
+  earn(data) {
+    return http.post('/points/earn', data)
+  }
 }

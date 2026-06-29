@@ -1,6 +1,15 @@
-import http from '@/utils/request'
+/**
+ * CourseProduct API - 课程产品
+ * R-1000 list / R-1001 detail
+ */
+import { http } from './request'
 
 export const courseProductApi = {
-  list: (params) => http.get('/course-products', params),
-  detail: (id) => http.get(`/course-products/${id}`)
+  list(params = {}) {
+    return http.get('/course-products', { data: params })
+  },
+
+  detail(id) {
+    return http.get(`/course-products/${id}`)
+  }
 }

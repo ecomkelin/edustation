@@ -1,9 +1,9 @@
 {
   "name": "EduStation",
   "appid": "__UNI__EDUSTATION",
-  "description": "EduStation 校外培训管理客户端",
-  "versionName": "0.1.0",
-  "versionCode": "1",
+  "description": "校外培训机构家长端 - 让孩子爱上学习",
+  "versionName": "1.0.0",
+  "versionCode": "100",
   "transformPx": false,
   "app-plus": {
     "usingComponents": true,
@@ -15,91 +15,38 @@
       "autoclose": true,
       "delay": 0
     },
-    "modules": {
-      "Push": {
-        "version": "3.0.0",
-        "provider": "unipush"
-      },
-      "Share": {},
-      "OAuth": {}
-    },
+    "modules": {},
     "distribute": {
       "android": {
         "permissions": [
-          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
-          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
-          "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
-          "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
-          "<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
-          "<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
-          "<uses-permission android:name=\"android.permission.VIBRATE\"/>",
-          "<uses-permission android:name=\"android.permission.WAKE_LOCK\"/>",
-          "<uses-permission android:name=\"android.permission.RECEIVE_BOOT_COMPLETED\"/>",
-          "<uses-permission android:name=\"android.permission.GET_ACCOUNTS\"/>",
-          "<uses-permission android:name=\"com.google.android.c2dm.permission.RECEIVE\"/>",
-          "<uses-feature android:name=\"android.hardware.camera\"/>",
-          "<uses-feature android:name=\"android.hardware.camera.autofocus\"/>"
-        ],
-        "minSdkVersion": 21,
-        "targetSdkVersion": 30
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>"
+        ]
       },
-      "ios": {
-        "privacyDescription": {
-          "NSPhotoLibraryUsageDescription": "需要访问相册以上传课堂作品",
-          "NSPhotoLibraryAddUsageDescription": "需要保存图片到相册",
-          "NSCameraUsageDescription": "需要使用相机拍摄作品",
-          "NSMicrophoneUsageDescription": "需要使用麦克风录制作品"
-        },
-        "idfa": false
-      },
-      "sdkConfigs": {
-        "push": {
-          "unipush": {
-            "appid": "",
-            "appkey": "",
-            "appsecret": ""
-          }
-        }
-      }
+      "ios": {},
+      "sdkConfigs": {}
     }
   },
   "quickapp": {},
   "mp-weixin": {
-    "appid": "wx0000000000000000",
+    "appid": "",
     "setting": {
-      "urlCheck": false,
-      "es6": true,
-      "minified": true,
-      "postcss": true
+      "urlCheck": false
     },
-    "usingComponents": true,
-    "permission": {
-      "scope.userLocation": {
-        "desc": "您的位置信息将用于定位附近的培训机构"
-      }
-    },
-    "requiredPrivateInfos": [],
-    "__usePrivacyCheck__": true
+    "usingComponents": true
   },
   "h5": {
-    "title": "EduStation 客户端",
+    "title": "EduStation · 校外培训家长端",
     "router": {
-      "mode": "hash",
+      "mode": "history",
       "base": "/"
     },
     "devServer": {
-      "port": 9000,
       "https": false
     },
-    "sdkConfigs": {
-      "push": {
-        "unipush": {
-          "appid": "",
-          "appkey": "",
-          "appsecret": ""
-        }
+    "optimization": {
+      "treeShaking": {
+        "enable": true
       }
     }
   },
   "vueVersion": "3"
-}

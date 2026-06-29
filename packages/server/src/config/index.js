@@ -86,7 +86,8 @@ module.exports = {
     // pass 有效期 (ms) — 拿到 pass 后多久内必须完成登录
     passTtlMs: Number(process.env.CAPTCHA_PASS_TTL_MS || 60 * 1000), // 60 s
     // 容差: 拖动位置和正确位置的允许偏差 (px)
-    tolerance: Number(process.env.CAPTCHA_TOLERANCE || 5),
+    // H5 端 touch/mouse 拖动精度有限(尤其手机屏), 5px 太严会让正常用户反复失败
+    tolerance: Number(process.env.CAPTCHA_TOLERANCE || 10),
     // 背景 SVG 尺寸
     width: 320,
     height: 160,

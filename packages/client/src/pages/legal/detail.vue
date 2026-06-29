@@ -1,127 +1,169 @@
+<!--
+  协议详情 - 渲染 markdown
+-->
 <template>
-  <view class="page">
-    <view v-if="loading" class="empty-state">加载中…</view>
-    <view v-else-if="!data.title" class="empty-state">协议不存在</view>
-    <view v-else>
-      <view class="header card">
-        <text class="title">{{ data.title }}</text>
-        <view class="meta">
-          <text class="tag">v{{ data.version }}</text>
-          <text v-if="data.effectiveAt" class="text-12 text-muted">{{ data.effectiveAt }} 起生效</text>
-        </view>
-        <text v-if="data.summary" class="summary">{{ data.summary }}</text>
-      </view>
-
-      <view class="content card">
-        <!-- 后端预编译的 HTML, rich-text 跨端 (mp-weixin / h5 / app-plus) 一致渲染 -->
-        <rich-text :nodes="data.contentHtml" />
-      </view>
-
-      <view class="text-center text-12 text-muted footer-tip">
-        本协议解释权归 EduStation 平台运营方所有
-      </view>
+  <view class="legal-detail">
+    <view v-if="loading" class="legal-detail__loading">
+      <view class="legal-detail__loading-circle" />
+      <text>加载中...</text>
     </view>
+    <scroll-view v-else scroll-y class="legal-detail__body">
+      <text class="legal-detail__title">{{ title }}</text>
+      <view class="legal-detail__html" v-html="renderedHtml" />
+    </scroll-view>
   </view>
 </template>
 
 <script>
 import { legalApi } from '@/api/legal'
-import { useAuthStore } from '@/stores/auth'
-
 export default {
   data() {
     return {
-      data: {
-        title: '',
-        version: '',
-        effectiveAt: '',
-        summary: '',
-        contentHtml: ''
-      },
-      loading: true
+      loading: true,
+      title: '协议',
+      key: '',
+      scope: 'platform',
+      orgId: '',
+      content: ''
+    }
+  },
+  computed: {
+    renderedHtml() {
+      return this._render(this.content)
     }
   },
   onLoad(query) {
-    const key = query.key
-    const scope = query.scope || 'platform'
-    this.load(key, scope)
+    this.key = query.key || 'user-agreement'
+    this.title = decodeURIComponent(query.title || '协议详情')
+    this.scope = query.scope || 'platform'
+    this.orgId = query.orgId || ''
+    this.load()
   },
   methods: {
-    async load(key, scope) {
+    async load() {
       this.loading = true
       try {
         let res
-        if (scope === 'platform') {
-          res = await legalApi.getPlatform(key)
-          this.data = {
-            title: res.data?.title || '',
-            version: res.data?.version || '',
-            effectiveAt: res.data?.effectiveAt || '',
-            summary: res.data?.summary || '',
-            contentHtml: res.data?.html || ''
-          }
+        if (this.scope === 'org' && this.orgId) {
+          res = await legalApi.orgDoc(this.orgId, this.key)
         } else {
-          const auth = useAuthStore()
-          res = await legalApi.getOrgDoc(auth.currentOrgId, key)
-          this.data = {
-            title: res.data?.title || '',
-            version: res.data?.version || '',
-            effectiveAt: res.data?.updatedAt
-              ? new Date(res.data.updatedAt).toISOString().slice(0, 10)
-              : '',
-            summary: '',
-            contentHtml: res.data?.contentHtml || ''
-          }
+          res = await legalApi.platformDoc(this.key)
         }
-        // 同步 navigationBarTitle
-        if (this.data.title) {
-          uni.setNavigationBarTitle({ title: this.data.title })
-        }
-      } catch (_) {
-        this.data = { title: '', version: '', effectiveAt: '', summary: '', contentHtml: '' }
+        this.content = res?.content || res?.html || res?.text || ''
+        if (!this.content) this.content = '# 协议\n\n该协议内容暂未提供。'
+      } catch (e) {
+        this.content = '# 加载失败\n\n' + (e.message || '请稍后再试')
       } finally {
         this.loading = false
       }
+    },
+    _escape(s) {
+      return String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]))
+    },
+    _render(md) {
+      if (!md) return ''
+      const lines = md.split('\n')
+      let html = ''
+      let inList = false
+      for (const line of lines) {
+        const t = line.trim()
+        if (!t) {
+          if (inList) { html += '</ul>'; inList = false }
+          html += '<br/>'
+          continue
+        }
+        if (t.startsWith('# ')) {
+          if (inList) { html += '</ul>'; inList = false }
+          html += `<h2>${this._escape(t.slice(2))}</h2>`
+        } else if (t.startsWith('## ')) {
+          if (inList) { html += '</ul>'; inList = false }
+          html += `<h3>${this._escape(t.slice(3))}</h3>`
+        } else if (t.match(/^[-*] /)) {
+          if (!inList) { html += '<ul>'; inList = true }
+          let li = this._escape(t.slice(2))
+          li = li.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          html += `<li>${li}</li>`
+        } else {
+          if (inList) { html += '</ul>'; inList = false }
+          let p = this._escape(t)
+          p = p.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          html += `<p>${p}</p>`
+        }
+      }
+      if (inList) html += '</ul>'
+      return html
     }
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.page { padding: 24rpx; padding-bottom: 48rpx; }
-.header {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  .title { font-size: 36rpx; font-weight: 600; color: #1f2937; }
-  .meta {
-    display: flex;
-    align-items: center;
-    gap: 12rpx;
-    margin-top: 4rpx;
+.legal-detail {
+  min-height: 100vh;
+  background: $bg-page;
+
+  &__loading {
+    @include flex-center;
+    flex-direction: column;
+    padding: $spacing-2xl;
+    color: $text-secondary;
   }
-  .tag {
-    background: #eef2ff;
-    color: #5B8FF9;
-    font-size: 22rpx;
-    padding: 2rpx 12rpx;
-    border-radius: 8rpx;
+
+  &__loading-circle {
+    width: 80rpx;
+    height: 80rpx;
+    border: 6rpx solid $divider;
+    border-top-color: $primary;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: $spacing-md;
   }
-  .summary {
-    margin-top: 12rpx;
-    padding: 12rpx 16rpx;
-    background: #fafafa;
-    border-left: 4rpx solid #5B8FF9;
-    color: #4b5563;
-    font-size: 26rpx;
-    line-height: 1.6;
+
+  &__body {
+    padding: $spacing-lg $spacing-md;
+    min-height: 100vh;
+  }
+
+  &__title {
+    display: block;
+    font-size: $font-2xl;
+    font-weight: $font-weight-bold;
+    color: $text-primary;
+    text-align: center;
+    margin-bottom: $spacing-lg;
+  }
+
+  &__html {
+    color: $text-primary;
+    font-size: $font-base;
+    line-height: 1.8;
+
+    :deep(h2) {
+      font-size: $font-xl;
+      font-weight: $font-weight-semibold;
+      margin: $spacing-lg 0 $spacing-sm;
+      color: $primary;
+    }
+    :deep(h3) {
+      font-size: $font-md;
+      font-weight: $font-weight-semibold;
+      margin: $spacing-md 0 $spacing-sm;
+    }
+    :deep(p) {
+      margin: $spacing-sm 0;
+    }
+    :deep(ul) {
+      padding-left: $spacing-md;
+      margin: $spacing-sm 0;
+    }
+    :deep(li) {
+      margin: $spacing-xs 0;
+      list-style: disc;
+    }
+    :deep(strong) {
+      color: $primary;
+      font-weight: $font-weight-semibold;
+    }
   }
 }
-.content {
-  font-size: 28rpx;
-  line-height: 1.8;
-  color: #1f2937;
-}
-.text-center { text-align: center; }
-.footer-tip { margin-top: 24rpx; }
 </style>

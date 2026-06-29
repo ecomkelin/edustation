@@ -3,20 +3,23 @@
     {
       "path": "pages/tabbar/home",
       "style": {
-        "navigationBarTitleText": "课表",
+        "navigationBarTitleText": "家",
+        "enablePullDownRefresh": true,
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/tabbar/discover",
+      "style": {
+        "navigationBarTitleText": "探索",
         "enablePullDownRefresh": true
       }
     },
     {
       "path": "pages/tabbar/pet",
       "style": {
-        "navigationBarTitleText": "宠物乐园"
-      }
-    },
-    {
-      "path": "pages/tabbar/share",
-      "style": {
-        "navigationBarTitleText": "分享得积分"
+        "navigationBarTitleText": "宠物乐园",
+        "enablePullDownRefresh": true
       }
     },
     {
@@ -33,34 +36,67 @@
       }
     },
     {
-      "path": "pages/student/switch",
+      "path": "pages/auth/reset-password",
       "style": {
-        "navigationBarTitleText": "切换孩子",
-        "navigationBarBackgroundColor": "#ffffff"
+        "navigationBarTitleText": "修改密码",
+        "navigationStyle": "custom"
       }
     },
     {
-      "path": "pages/lessonSchedule/detail",
+      "path": "pages/student/switch",
+      "style": {
+        "navigationBarTitleText": "切换孩子",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/student/profile",
+      "style": {
+        "navigationBarTitleText": "学习画像"
+      }
+    },
+    {
+      "path": "pages/schedule/detail",
       "style": {
         "navigationBarTitleText": "课程详情"
       }
     },
     {
-      "path": "pages/studentWork/list",
+      "path": "pages/schedule/calendar",
       "style": {
-        "navigationBarTitleText": "作品墙"
+        "navigationBarTitleText": "完整课表"
       }
     },
     {
-      "path": "pages/studentWork/detail",
+      "path": "pages/attendance/detail",
+      "style": {
+        "navigationBarTitleText": "考勤详情"
+      }
+    },
+    {
+      "path": "pages/work/list",
+      "style": {
+        "navigationBarTitleText": "作品墙",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/work/detail",
       "style": {
         "navigationBarTitleText": "作品详情"
       }
     },
     {
+      "path": "pages/work/upload",
+      "style": {
+        "navigationBarTitleText": "上传作品"
+      }
+    },
+    {
       "path": "pages/order/list",
       "style": {
-        "navigationBarTitleText": "我的订单"
+        "navigationBarTitleText": "我的订单",
+        "enablePullDownRefresh": true
       }
     },
     {
@@ -70,51 +106,149 @@
       }
     },
     {
+      "path": "pages/order/pay",
+      "style": {
+        "navigationBarTitleText": "订单支付"
+      }
+    },
+    {
+      "path": "pages/order/refund",
+      "style": {
+        "navigationBarTitleText": "申请退款"
+      }
+    },
+    {
       "path": "pages/studentProduct/list",
       "style": {
-        "navigationBarTitleText": "我的课包"
+        "navigationBarTitleText": "我的课包",
+        "enablePullDownRefresh": true
       }
     },
     {
-      "path": "pages/courseProduct/list",
+      "path": "pages/course/product-list",
       "style": {
-        "navigationBarTitleText": "课程产品"
+        "navigationBarTitleText": "课程",
+        "enablePullDownRefresh": true
       }
     },
     {
-      "path": "pages/courseProduct/detail",
+      "path": "pages/course/product-detail",
       "style": {
-        "navigationBarTitleText": "产品详情"
+        "navigationBarTitleText": "课程详情"
       }
     },
     {
-      "path": "pages/courseInstance/detail",
+      "path": "pages/course/instance-detail",
       "style": {
         "navigationBarTitleText": "开班详情"
       }
     },
     {
-      "path": "pages/courseEnrollment/list",
+      "path": "pages/course/enrollment-list",
       "style": {
         "navigationBarTitleText": "我的报名"
       }
     },
     {
-      "path": "pages/points/transaction",
+      "path": "pages/points/wallet",
       "style": {
-        "navigationBarTitleText": "积分流水"
+        "navigationBarTitleText": "我的积分"
       }
     },
     {
-      "path": "pages/points/exchange",
+      "path": "pages/points/transactions",
       "style": {
-        "navigationBarTitleText": "积分商城"
+        "navigationBarTitleText": "积分流水",
+        "enablePullDownRefresh": true
       }
     },
     {
-      "path": "pages/legal/index",
+      "path": "pages/pet/adopt",
       "style": {
-        "navigationBarTitleText": "协议与帮助"
+        "navigationBarTitleText": "领养宠物"
+      }
+    },
+    {
+      "path": "pages/pet/hatch",
+      "style": {
+        "navigationBarTitleText": "破壳",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/pet/equip",
+      "style": {
+        "navigationBarTitleText": "换装"
+      }
+    },
+    {
+      "path": "pages/pet/feed",
+      "style": {
+        "navigationBarTitleText": "喂食"
+      }
+    },
+    {
+      "path": "pages/pet/shop",
+      "style": {
+        "navigationBarTitleText": "宠物商店",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/pet/events",
+      "style": {
+        "navigationBarTitleText": "宠物事件",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/access/pickups",
+      "style": {
+        "navigationBarTitleText": "接送授权"
+      }
+    },
+    {
+      "path": "pages/access/pickup-create",
+      "style": {
+        "navigationBarTitleText": "新建授权"
+      }
+    },
+    {
+      "path": "pages/access/events",
+      "style": {
+        "navigationBarTitleText": "进出记录",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/access/face-enroll",
+      "style": {
+        "navigationBarTitleText": "录入人脸"
+      }
+    },
+    {
+      "path": "pages/access/consent",
+      "style": {
+        "navigationBarTitleText": "人脸识别同意书"
+      }
+    },
+    {
+      "path": "pages/agent/chat",
+      "style": {
+        "navigationBarTitleText": "智能助手",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/agent/history",
+      "style": {
+        "navigationBarTitleText": "助手历史"
+      }
+    },
+    {
+      "path": "pages/legal/list",
+      "style": {
+        "navigationBarTitleText": "协议与条款"
       }
     },
     {
@@ -126,7 +260,14 @@
     {
       "path": "pages/org/home",
       "style": {
-        "navigationBarTitleText": "机构主页"
+        "navigationBarTitleText": "机构主页",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/share/share",
+      "style": {
+        "navigationBarTitleText": "分享得积分"
       }
     },
     {
@@ -140,37 +281,51 @@
       "style": {
         "navigationBarTitleText": "联系我们"
       }
+    },
+    {
+      "path": "pages/help/feedback",
+      "style": {
+        "navigationBarTitleText": "意见反馈"
+      }
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "EduStation",
-    "navigationBarBackgroundColor": "#ffffff",
-    "backgroundColor": "#f7f8fa"
+    "navigationBarBackgroundColor": "#FFFAF5",
+    "backgroundColor": "#FFFAF5",
+    "backgroundTextStyle": "dark",
+    "app-plus": {
+      "background": "#FFFAF5"
+    }
   },
   "tabBar": {
-    "color": "#999999",
-    "selectedColor": "#5B8FF9",
-    "backgroundColor": "#ffffff",
-    "borderStyle": "black",
+    "color": "#B5B5B5",
+    "selectedColor": "#FF8A65",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "fontSize": "10px",
+    "iconWidth": "22px",
+    "spacing": "3px",
+    "height": "56px",
     "list": [
       {
         "pagePath": "pages/tabbar/home",
-        "text": "课表",
+        "text": "家",
         "iconPath": "static/tabbar/home.png",
         "selectedIconPath": "static/tabbar/home-active.png"
       },
       {
-        "pagePath": "pages/tabbar/pet",
-        "text": "宠物乐园",
-        "iconPath": "static/tabbar/pet.png",
-        "selectedIconPath": "static/tabbar/pet-active.png"
+        "pagePath": "pages/tabbar/discover",
+        "text": "探索",
+        "iconPath": "static/tabbar/discover.png",
+        "selectedIconPath": "static/tabbar/discover-active.png"
       },
       {
-        "pagePath": "pages/tabbar/share",
-        "text": "分享",
-        "iconPath": "static/tabbar/share.png",
-        "selectedIconPath": "static/tabbar/share-active.png"
+        "pagePath": "pages/tabbar/pet",
+        "text": "宠物",
+        "iconPath": "static/tabbar/pet.png",
+        "selectedIconPath": "static/tabbar/pet-active.png"
       },
       {
         "pagePath": "pages/tabbar/me",

@@ -1,48 +1,36 @@
+/**
+ * Auth Store - 登录态管理
+ *
+ * 设计要点 (参照 CLAUDE.md §5/§6):
+ *  - accessToken 走 uni.storage (非 httpOnly,前端可用)
+ *  - refreshToken 完全由后端 httpOnly cookie 管理,前端不感知
+ *  - uni.request withCredentials:true 让 cookie 自动带上
+ *  - requirePasswordChange 时强制跳改密页 (路由守卫)
+ *  - 当前机构切换: 写到 storage + 调 /auth/me 同步 pendingConsents
+ */
 import { defineStore } from 'pinia'
 import { authApi } from '@/api/auth'
 import { storage, StorageKeys } from '@/utils/storage'
 
-/**
- * 家长端登录态管理。
- *
- * 设计：
- *  - accessToken 走 storage（非 httpOnly，存到本地；refreshToken 必须由后端通过
- *    httpOnly cookie 下发，uni.request withCredentials:true 让 cookie 自动携带）。
- *  - 持久化只存 accessToken / user / orgs / currentOrgId，refresh token 不落本地。
- *  - restore() 启动时调用：先尝试 refresh，refresh 失败再清理并跳登录。
- */
-function readLs() {
-  const raw = storage.get(StorageKeys.AUTH)
-  if (!raw) return null
-  try {
-    return typeof raw === 'string' ? JSON.parse(raw) : raw
-  } catch (_) {
-    return null
-  }
-}
-
-function writeLs(state) {
-  if (state) storage.set(StorageKeys.AUTH, JSON.stringify(state))
-  else storage.remove(StorageKeys.AUTH)
+function readAuth() {
+  return storage.get(StorageKeys.AUTH) || {}
 }
 
 export const useAuthStore = defineStore('auth', {
   state: () => {
-    const saved = readLs() || {}
+    const saved = readAuth()
     return {
       accessToken: saved.accessToken || '',
       user: saved.user || null,
       orgs: saved.orgs || [],
       currentOrgId: saved.currentOrgId || '',
-      // 法律协议 (2026-06): 平台 + 当前机构内未对齐版本的协议清单
-      // App.vue watch 该字段 > 0 时弹层强制接受
       pendingConsents: Array.isArray(saved.pendingConsents) ? saved.pendingConsents : []
     }
   },
   getters: {
     isAuthenticated: (s) => !!s.accessToken && !!s.user,
     isPlatformAdmin: (s) => !!s.user && s.user.isPlatformAdmin,
-    // 家长在多机构场景下取主机构
+    requirePasswordChange: (s) => !!s.user && s.user.requirePasswordChange,
     mainOrg() {
       if (!this.orgs || !this.orgs.length) return null
       return this.orgs.find((o) => o.isMain) || this.orgs[0]
@@ -50,32 +38,36 @@ export const useAuthStore = defineStore('auth', {
     hasPendingConsents: (s) => Array.isArray(s.pendingConsents) && s.pendingConsents.length > 0
   },
   actions: {
-    async login({ mobile, password }) {
-      const res = await authApi.login({ mobile, password })
-      this.accessToken = res.data.accessToken
-      this.user = res.data.user
-      // 法律协议 (2026-06): 平台级待同意清单 (login 时尚未选 org, 只有平台级)
-      this.pendingConsents = Array.isArray(res.data.pendingConsents) ? res.data.pendingConsents : []
+    /**
+     * 登录
+     */
+    async login({ mobile, password, captchaPass }) {
+      const res = await authApi.login({ mobile, password, captchaPass })
+      this.accessToken = res.accessToken
+      this.user = res.user
+      this.pendingConsents = Array.isArray(res.pendingConsents) ? res.pendingConsents : []
+      // 拉 /me 拿完整 orgs + 权限 + 机构级 pendingConsents
       const me = await authApi.me()
-      this.orgs = me.data.orgs || []
+      this.user = me
+      this.orgs = me.orgs || []
       if (this.orgs.length) {
         const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
         this.currentOrgId = main.org ? main.org.id : main.id
       }
-      // 用 /me 返回的更全的 pendingConsents (含机构级) 覆盖
-      if (Array.isArray(me.data.pendingConsents)) {
-        this.pendingConsents = me.data.pendingConsents
+      if (Array.isArray(me.pendingConsents)) {
+        this.pendingConsents = me.pendingConsents
       }
       storage.set(StorageKeys.ORG_ID, this.currentOrgId)
       this.persist()
       return this
     },
 
+    /** 刷新 accessToken (由 request.js 自动调) */
     async refresh() {
       const res = await authApi.refresh()
-      this.accessToken = res.data.accessToken
+      this.accessToken = res.accessToken
       this.persist()
-      return res.data
+      return res
     },
 
     async logout() {
@@ -89,11 +81,10 @@ export const useAuthStore = defineStore('auth', {
 
     async fetchMe() {
       const me = await authApi.me()
-      this.user = me.data
-      this.orgs = me.data.orgs || []
-      // 法律协议 (2026-06): 同步 pendingConsents (按 x-org-id 含机构级)
-      if (Array.isArray(me.data.pendingConsents)) {
-        this.pendingConsents = me.data.pendingConsents
+      this.user = me
+      this.orgs = me.orgs || []
+      if (Array.isArray(me.pendingConsents)) {
+        this.pendingConsents = me.pendingConsents
       }
       if (!this.currentOrgId && this.orgs.length) {
         const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
@@ -101,7 +92,7 @@ export const useAuthStore = defineStore('auth', {
         storage.set(StorageKeys.ORG_ID, this.currentOrgId)
       }
       this.persist()
-      return me.data
+      return me
     },
 
     setOrg(orgId) {
@@ -110,8 +101,32 @@ export const useAuthStore = defineStore('auth', {
       this.persist()
     },
 
+    /** 更新我的资料 (头像/姓名等) */
+    async updateMe(data) {
+      const res = await authApi.updateMe(data)
+      // updateMe 返回完整 user,与 /me 一致
+      this.user = res || this.user
+      this.persist()
+      return res
+    },
+
+    async changePassword({ oldPassword, newPassword }) {
+      const res = await authApi.changePassword({ oldPassword, newPassword })
+      // 改密成功,清除 requirePasswordChange 标志
+      if (this.user) {
+        this.user.requirePasswordChange = false
+        this.persist()
+      }
+      return res
+    },
+
+    clearPendingConsents() {
+      this.pendingConsents = []
+      this.persist()
+    },
+
     persist() {
-      writeLs({
+      storage.set(StorageKeys.AUTH, {
         accessToken: this.accessToken,
         user: this.user,
         orgs: this.orgs,
@@ -128,20 +143,14 @@ export const useAuthStore = defineStore('auth', {
       this.pendingConsents = []
       storage.remove(StorageKeys.ORG_ID)
       storage.remove(StorageKeys.ACTIVE_STUDENT)
-      writeLs(null)
-    },
-
-    /** 法律协议 (2026-06): 接受页提交成功后清空 */
-    clearPendingConsents() {
-      this.pendingConsents = []
-      this.persist()
+      storage.remove(StorageKeys.AUTH)
     },
 
     /**
-     * 启动时恢复登录态：
-     *  1) 有本地 token -> 直接 /me；
-     *  2) 无本地 token -> 尝试 refresh（cookie 可能还在 7 天内）；
-     *  3) 失败 -> clear()。
+     * 启动时恢复登录态:
+     *  1) 有本地 token -> /me 同步;
+     *  2) 无本地 token -> refresh 一次;
+     *  3) 失败 -> 清空 + 跳登录.
      */
     async restore() {
       try {
@@ -152,7 +161,7 @@ export const useAuthStore = defineStore('auth', {
           await this.fetchMe()
         }
         return this.user
-      } catch (e) {
+      } catch (_) {
         this.clear()
         return null
       }

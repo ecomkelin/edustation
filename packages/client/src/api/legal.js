@@ -1,19 +1,33 @@
-import http from '@/utils/request'
-
 /**
- * 法律协议 API (client / uni-app 端)
- *
- * 后端路由 /api/v1/legal/* 见 packages/server/src/modules/legal/legal.routes.js
+ * Legal API - 协议
+ * R-3172 pending / R-3173 consents / R-3174 consents history
+ * R-3100 platform / R-3101 platform/:key
+ * R-3131 orgs/:orgId/legal-docs/:key
  */
+import { http } from './request'
+
 export const legalApi = {
-  // ── 平台级(公开) ──
-  listPlatform: () => http.get('/legal/platform'),
-  getPlatform: (key) => http.get(`/legal/platform/${key}`),
+  platform() {
+    return http.get('/legal/platform', { skipRefresh: true })
+  },
 
-  // ── 我的 pending / 同意记录(鉴权) ──
-  myPending: () => http.get('/legal/me/pending'),
-  recordConsent: (data) => http.post('/legal/me/consents', data),
+  platformDoc(key) {
+    return http.get(`/legal/platform/${key}`, { skipRefresh: true })
+  },
 
-  // ── 公开读机构协议 (家长 C 端用) ──
-  getOrgDoc: (orgId, key) => http.get(`/legal/orgs/${orgId}/legal-docs/${key}`)
+  orgDoc(orgId, key) {
+    return http.get(`/legal/orgs/${orgId}/legal-docs/${key}`, { skipRefresh: true })
+  },
+
+  pending() {
+    return http.get('/legal/me/pending')
+  },
+
+  sign(data) {
+    return http.post('/legal/me/consents', data)
+  },
+
+  history(params = {}) {
+    return http.get('/legal/me/consents', { data: params })
+  }
 }

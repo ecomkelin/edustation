@@ -2,11 +2,69 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#FF8A65" />
+    <title>EduStation · 校外培训家长端</title>
     <script>
-      var coverSupport = 'CSS' in window && typeof CSS.supports === 'function' && (CSS.supports('top: env(a)') || CSS.supports('top: constant(a)'))
-      document.write('<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no' + (coverSupport ? ',viewport-fit=cover' : '') + '" />')
+      // rem 适配 (设计稿 750rpx)
+      document.addEventListener('DOMContentLoaded', function () {
+        var docEl = document.documentElement
+        var resize = function () {
+          var width = docEl.clientWidth || window.innerWidth
+          // 限制最大宽度, 桌面端体验
+          if (width > 540) width = 540
+          docEl.style.fontSize = (width / 20) + 'px'
+        }
+        resize()
+        window.addEventListener('resize', resize)
+      })
     </script>
-    <title>EduStation 客户端</title>
+    <style>
+      html,
+      body,
+      #app {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #fffaf5;
+      }
+      body {
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          'PingFang SC',
+          'Helvetica Neue',
+          'Microsoft YaHei',
+          Arial,
+          sans-serif;
+        color: #2d2d2d;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      /* 桌面端居中显示 (移动端 UI) */
+      @media (min-width: 541px) {
+        body {
+          background: linear-gradient(135deg, #fff5ed 0%, #ffe4d3 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        #app {
+          width: 390px !important;
+          height: 90vh !important;
+          max-height: 844px !important;
+          margin: 0 auto;
+          box-shadow: 0 20px 60px rgba(255, 138, 101, 0.25);
+          border-radius: 24px;
+          overflow: hidden;
+          position: relative;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

@@ -1,10 +1,27 @@
-import http from '@/utils/request'
+/**
+ * Order API - 订单
+ * R-1700 list / R-1701 detail / R-1721 pay / R-1722 refund / R-1723 cancel
+ */
+import { http } from './request'
 
 export const orderApi = {
-  list: (params) => http.get('/orders', params),
-  detail: (id) => http.get(`/orders/${id}`),
-  // 家长端仅"创建订单 + 标记支付"两个写操作
-  create: (data) => http.post('/orders', data),
-  pay: (id, data) => http.post(`/orders/${id}/pay`, data),
-  cancel: (id, data) => http.post(`/orders/${id}/cancel`, data)
+  list(params = {}) {
+    return http.get('/orders', { data: params })
+  },
+
+  detail(id) {
+    return http.get(`/orders/${id}`)
+  },
+
+  pay(id, data = {}) {
+    return http.post(`/orders/${id}/pay`, data)
+  },
+
+  refund(id, data) {
+    return http.post(`/orders/${id}/refund`, data)
+  },
+
+  cancel(id) {
+    return http.post(`/orders/${id}/cancel`)
+  }
 }

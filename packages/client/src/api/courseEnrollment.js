@@ -1,11 +1,23 @@
-import http from '@/utils/request'
+/**
+ * CourseEnrollment API - 课程报名
+ * R-1200 list / R-1201 detail / R-1202 create / R-1213 status
+ */
+import { http } from './request'
 
 export const courseEnrollmentApi = {
-  // 家长查自己孩子的报名
-  list: (params) => http.get('/course-enrollments', params),
-  detail: (id) => http.get(`/course-enrollments/${id}`),
-  // 家长端：报名
-  create: (data) => http.post('/course-enrollments', data),
-  // 退班/休学
-  changeStatus: (id, data) => http.put(`/course-enrollments/${id}/status`, data)
+  list(params = {}) {
+    return http.get('/course-enrollments', { data: params })
+  },
+
+  detail(id) {
+    return http.get(`/course-enrollments/${id}`)
+  },
+
+  create(data) {
+    return http.post('/course-enrollments', data)
+  },
+
+  setStatus(id, status, remark) {
+    return http.put(`/course-enrollments/${id}/status`, { status, remark })
+  }
 }

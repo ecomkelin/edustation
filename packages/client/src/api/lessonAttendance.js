@@ -1,9 +1,19 @@
-import http from '@/utils/request'
+/**
+ * LessonAttendance API - 考勤
+ * R-1500 list / R-1501 detail (推测) / R-1530 works
+ */
+import { http } from './request'
 
 export const lessonAttendanceApi = {
-  list: (params) => http.get('/lesson-attendances', params),
-  detail: (id) => http.get(`/lesson-attendances/${id}`),
-  // 家长端不直接调这些写操作（消课由老师在 admin 端操作）；
-  // 这里保留详情/列表入口供家长查看考勤记录
-  works: (id) => http.get(`/lesson-attendances/${id}/works`)
+  list(params = {}) {
+    return http.get('/lesson-attendances', { data: params })
+  },
+
+  detail(id) {
+    return http.get(`/lesson-attendances/${id}`)
+  },
+
+  works(id) {
+    return http.get(`/lesson-attendances/${id}/works`)
+  }
 }

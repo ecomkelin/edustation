@@ -1,353 +1,769 @@
+<!--
+  宠物乐园 Tab - 三态:未领养/蛋/已破壳
+-->
 <template>
-  <view class="page">
-    <active-student-header />
+  <view class="pet-home">
+    <view class="pet-home__top">
+      <view class="pet-home__bg-circle pet-home__bg-circle--1" />
+      <view class="pet-home__bg-circle pet-home__bg-circle--2" />
 
-    <!-- 蛋态 -->
-    <view v-if="isEgg" class="state-card egg-card">
-      <view class="egg-emoji">🥚</view>
-      <text class="state-title">{{ eggTierLabel }} 蛋</text>
-      <text class="state-subtitle">破壳后将随机获得一只{{ eggTierLabel }}宠物</text>
-      <view class="hatch-btn-wrap">
-        <button class="primary-btn" :loading="loading" @tap="onHatch">破壳</button>
-      </view>
-    </view>
-
-    <!-- 活态 -->
-    <view v-else-if="isAlive" class="alive-wrap">
-      <view class="state-card alive-card">
-        <view class="pet-image" :class="`bg-${pet?.equipped?.background || 'none'}`">
-          <text class="pet-emoji">{{ speciesEmoji }}</text>
-          <view v-if="halo" class="halo">{{ haloEmoji }}</view>
-        </view>
-        <view class="pet-info">
-          <text class="pet-name">{{ pet?.nickname || speciesRecord?.name || '小宠物' }}</text>
-          <view class="tier-badge" :class="`tier-${tier}`">{{ tierLabel }} · Lv.{{ level }}</view>
-        </view>
-        <view class="bars">
-          <view class="bar-row">
-            <text class="bar-label">经验</text>
-            <view class="bar"><view class="bar-fill exp-bar" :style="{ width: expPercent + '%' }" /></view>
-            <text class="bar-text">{{ exp }} / {{ nextExpToLevel || tierUpThreshold }}</text>
+      <view class="pet-home__topbar safe-area-top">
+        <text class="pet-home__title">🐾 宠物乐园</text>
+        <view class="pet-home__topbar-right">
+          <view class="pet-home__icon-btn press" @tap="goEvents">
+            <text>📜</text>
           </view>
-          <view class="bar-row">
-            <text class="bar-label">饱腹</text>
-            <view class="bar"><view class="bar-fill hunger-bar" :style="{ width: hunger + '%' }" /></view>
-            <text class="bar-text">{{ hunger }} / 100</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- 喂食 -->
-      <view class="section">
-        <text class="section-title">喂食</text>
-        <view class="action-row">
-          <view v-for="ft in foodTypes" :key="ft.key"
-                class="action-card" @tap="onFeed(ft.key)">
-            <text class="action-emoji">{{ ft.emoji }}</text>
-            <text class="action-name">{{ ft.label }}</text>
-            <text class="action-cost">-{{ costFor(ft.key) }} 积分</text>
-            <text class="action-gain">+{{ rewardFor(ft.key).exp }} 经验</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- 操作 -->
-      <view class="section">
-        <text class="section-title">操作</text>
-        <view class="ops-row">
-          <view class="op-btn" @tap="goEquip">
-            <text class="op-emoji">🎨</text>
-            <text class="op-label">换装</text>
-          </view>
-          <view class="op-btn" @tap="onSwap">
-            <text class="op-emoji">🥚</text>
-            <text class="op-label">换一只</text>
-            <text class="op-cost">-{{ swapCost }} 积分</text>
-          </view>
-          <view v-if="canTierDown" class="op-btn" @tap="onTierDownShow = true">
-            <text class="op-emoji">⬇️</text>
-            <text class="op-label">降阶</text>
+          <view class="pet-home__icon-btn press" @tap="goShop">
+            <text>🛍️</text>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 降阶弹窗 -->
-    <view v-if="onTierDownShow" class="modal-mask" @tap="onTierDownShow = false">
-      <view class="modal" @tap.stop>
-        <text class="modal-title">主动降阶</text>
-        <text class="modal-subtitle">降阶后装饰保留，已装备的高阶装饰将自动卸下</text>
-        <view class="tier-options">
-          <view v-for="t in pet?.possibleTierDowns || []" :key="t"
-                class="tier-opt" @tap="onTierDownConfirm(t)">
-            {{ tierLabelOf(t) }}
+    <scroll-view scroll-y class="pet-home__body">
+      <!-- 加载中 -->
+      <view v-if="loading" class="pet-home__loading">
+        <view class="pet-home__loading-circle" />
+        <text>召唤小宠物中...</text>
+      </view>
+
+      <!-- 未报班 (不能领养) -->
+      <view v-else-if="blockReason === 'notEnrolled'" class="pet-home__guide">
+        <view class="pet-home__guide-art">
+          <text class="pet-home__guide-emoji">🌱</text>
+        </view>
+        <text class="pet-home__guide-title">先报名一门课程吧</text>
+        <text class="pet-home__guide-desc">
+          报名后,孩子就可以领养属于自己的宠物伙伴啦
+        </text>
+        <view class="pet-home__guide-btn press" @tap="goDiscover">
+          <text>去看看课程</text>
+        </view>
+      </view>
+
+      <!-- 未领养 -->
+      <view v-else-if="!pet" class="pet-home__guide">
+        <view class="pet-home__guide-art">
+          <text class="pet-home__guide-emoji">🥚</text>
+        </view>
+        <text class="pet-home__guide-title">领养孩子的第一位小伙伴</text>
+        <text class="pet-home__guide-desc">
+          选择一个蛋,让它陪伴孩子一起成长、学习、变强
+        </text>
+        <view class="pet-home__guide-btn press" @tap="goAdopt">
+          <text>立即领养 ›</text>
+        </view>
+      </view>
+
+      <!-- 蛋态 -->
+      <view v-else-if="pet.state === 'egg'" class="pet-home__pet">
+        <view class="pet-home__egg">
+          <view class="pet-home__egg-emoji anim-bounce">🥚</view>
+          <view class="pet-home__egg-label">{{ tierLabel }} · 待破壳</view>
+        </view>
+        <view class="pet-home__hatch-btn press" @tap="goHatch">
+          <text>✨ 破壳看看</text>
+        </view>
+      </view>
+
+      <!-- 已破壳 -->
+      <view v-else class="pet-home__pet">
+        <view class="pet-home__portrait-wrap">
+          <view
+            v-if="speciesRecord && speciesRecord.visualType === 'svg'"
+            class="pet-home__portrait-svg"
+            v-html="sanitizeSvg(speciesRecord.svgContent)"
+          />
+          <text v-else class="pet-home__portrait-emoji anim-float">
+            {{ speciesEmoji }}
+          </text>
+          <view class="pet-home__tier-badge" :style="{ background: tierColor }">
+            <text>{{ pet.tier }} 阶</text>
           </view>
         </view>
-        <button class="secondary-btn" @tap="onTierDownShow = false">取消</button>
+
+        <view class="pet-home__name-row">
+          <text class="pet-home__name">{{ pet.nickname || speciesRecord?.name || '我的宠物' }}</text>
+          <text class="pet-home__level">Lv.{{ pet.level }}</text>
+        </view>
+
+        <!-- 饱腹度 -->
+        <view class="pet-home__stat">
+          <view class="pet-home__stat-head">
+            <text class="pet-home__stat-label">🍖 饱腹度</text>
+            <text class="pet-home__stat-value">{{ pet.currentHunger }}/{{ pet.maxHunger }}</text>
+          </view>
+          <view class="pet-home__stat-bar">
+            <view
+              class="pet-home__stat-fill pet-home__stat-fill--hunger"
+              :style="{ width: hungerPercent + '%' }"
+            />
+          </view>
+        </view>
+
+        <!-- 经验条 -->
+        <view class="pet-home__stat">
+          <view class="pet-home__stat-head">
+            <text class="pet-home__stat-label">⭐ 经验</text>
+            <text class="pet-home__stat-value">{{ pet.experience }}/{{ expToNext }}</text>
+          </view>
+          <view class="pet-home__stat-bar">
+            <view
+              class="pet-home__stat-fill pet-home__stat-fill--exp"
+              :style="{ width: expPercent + '%' }"
+            />
+          </view>
+        </view>
+
+        <!-- 装备 -->
+        <view class="pet-home__equip">
+          <view class="pet-home__equip-title">🎀 当前装备</view>
+          <view class="pet-home__equip-grid">
+            <view
+              v-for="(item, slot) in equippedMap"
+              :key="slot"
+              class="pet-home__equip-slot"
+              :class="{ 'pet-home__equip-slot--empty': !item }"
+              @tap="goEquip"
+            >
+              <text v-if="item" class="pet-home__equip-emoji">{{ item.icon || '🎀' }}</text>
+              <text v-else class="pet-home__equip-empty">+</text>
+              <text class="pet-home__equip-name">{{ slotLabel(slot) }}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 操作按钮 -->
+        <view class="pet-home__actions">
+          <view class="pet-home__action press" @tap="goFeed">
+            <view class="pet-home__action-icon pet-home__action-icon--feed">🍖</view>
+            <text>喂食</text>
+          </view>
+          <view class="pet-home__action press" @tap="goEquip">
+            <view class="pet-home__action-icon pet-home__action-icon--equip">🎀</view>
+            <text>换装</text>
+          </view>
+          <view class="pet-home__action press" @tap="goShop">
+            <view class="pet-home__action-icon pet-home__action-icon--shop">🛍️</view>
+            <text>商店</text>
+          </view>
+          <view class="pet-home__action press" @tap="showMore = !showMore">
+            <view class="pet-home__action-icon pet-home__action-icon--more">⋯</view>
+            <text>更多</text>
+          </view>
+        </view>
+
+        <!-- 更多菜单 -->
+        <view v-if="showMore" class="pet-home__more anim-fade-in-up">
+          <view class="pet-home__more-item press" @tap="onSwapEgg">
+            <text>🔄 换蛋 (随机物种)</text>
+          </view>
+          <view class="pet-home__more-item press" @tap="onTierDown">
+            <text>⬇️ 主动降阶</text>
+          </view>
+          <view class="pet-home__more-item press" @tap="onRename">
+            <text>✏️ 改昵称</text>
+          </view>
+        </view>
       </view>
-    </view>
+
+      <view class="pet-home__bottom-spacer" />
+    </scroll-view>
   </view>
 </template>
 
 <script>
-import ActiveStudentHeader from '@/components/active-student-header.vue'
-import { usePetStore } from '@/stores/pet'
-import { usePointsStore } from '@/stores/points'
-import { mapState } from 'pinia'
-import { PET_TIER_LABELS, FOOD_TYPE_LABELS } from '@/utils/constants'
+import { petApi } from '@/api/pet'
+import { useStudentStore } from '@/stores/student'
+import { toast } from '@/components/common/Toast'
+import { haptic } from '@/utils/haptic'
+import { PET_SPECIES_EMOJI, PetTierLabel } from '@/utils/constants'
 
-const FOOD_EMOJI = { normal: '🥫', premium: '🍖', super: '🌟' }
-const FOOD_TYPES = [
-  { key: 'normal', label: '普通' },
-  { key: 'premium', label: '高级' },
-  { key: 'super', label: '特级' }
-]
-const HALO_EMOJI = { halo_basic: '✨', halo_sparkle: '⭐', halo_glow: '💫', halo_rainbow: '🌈', halo_divine: '👑', halo_solar: '☀️' }
-const SPECIES_EMOJI = {
-  cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
-  fox_red: '🦊', panda_baby: '🐼', penguin_baby: '🐧', owl_horned: '🦉',
-  wolf_arctic: '🐺', deer_white: '🦌', hawk_red: '🦅', dolphin_blue: '🐬',
-  dragon_emperor: '🐉', phoenix_fire: '🔥', unicorn_rainbow: '🦄', griffin_gold: '🦅'
+const SLOT_LABELS = {
+  hat: '帽子',
+  scarf: '围巾',
+  clothes: '衣服',
+  accessory: '配饰',
+  halo: '光环',
+  background: '背景'
 }
 
 export default {
-  components: { ActiveStudentHeader },
   data() {
-    return { loading: false, onTierDownShow: false }
+    return {
+      loading: true,
+      pet: null,
+      speciesRecord: null,
+      equippedMap: {},
+      showMore: false,
+      blockReason: ''
+    }
   },
   computed: {
-    ...mapState(usePetStore, ['pet']),
-    ...mapState(usePointsStore, ['balance']),
-    isEgg() { return this.pet?.state === 'egg' },
-    isAlive() { return this.pet?.state === 'alive' },
-    tier() { return this.pet?.tier },
-    level() { return this.pet?.level },
-    exp() { return this.pet?.experience },
-    nextExpToLevel() { return this.pet?.nextExpToLevel },
-    tierUpThreshold() { return this.pet?.tierUpThreshold },
-    hunger() { return this.pet?.currentHunger },
-    speciesRecord() { return this.pet?.speciesRecord },
-    speciesEmoji() {
-      return SPECIES_EMOJI[this.pet?.species] || this.speciesRecord?.name?.[0] || '🐾'
+    student() {
+      return useStudentStore()
     },
-    tierLabel() { return PET_TIER_LABELS[this.tier] || '' },
-    eggTierLabel() { return PET_TIER_LABELS[this.pet?.eggTier] || 'C 级' },
-    foodTypes() { return FOOD_TYPES },
-    costFor(key) { return this.pet?.currentFoodCost?.[key] ?? 0 },
-    rewardFor(key) {
-      // 服务端不返回，客户端按需通过 pet.feed 反馈展示
-      return { exp: '?' }
+    tierLabel() {
+      return this.pet ? PetTierLabel[this.pet.tier || this.pet.eggTier || 'C'] : ''
     },
-    swapCost() { return this.pet?.currentSwapCost || 0 },
-    canTierDown() { return (this.pet?.possibleTierDowns || []).length > 0 },
-    halo() { return this.pet?.equipped?.halo },
-    haloEmoji() { return HALO_EMOJI[this.halo] || '' },
+    tierColor() {
+      const colors = { C: '#9CA3AF', B: '#7CD9B7', A: '#5B9EE6', S: '#F5C148' }
+      return colors[this.pet?.tier || this.pet?.eggTier || 'C']
+    },
+    hungerPercent() {
+      if (!this.pet) return 0
+      return Math.max(0, Math.min(100, (this.pet.currentHunger / this.pet.maxHunger) * 100))
+    },
+    expToNext() {
+      if (!this.pet) return 100
+      const L = this.pet.level
+      const tier = this.pet.tier || 'C'
+      const formula = { C: 50 + L * 20, B: 80 + L * 30, A: 120 + L * 50, S: 200 + L * 80 }
+      return formula[tier] || 100
+    },
     expPercent() {
-      if (!this.nextExpToLevel) return 0
-      return Math.min(100, (this.exp / this.nextExpToLevel) * 100)
+      if (!this.pet) return 0
+      return Math.max(0, Math.min(100, (this.pet.experience / this.expToNext) * 100))
+    },
+    speciesEmoji() {
+      const key = this.pet?.species
+      return (key && PET_SPECIES_EMOJI[key]) || '🐾'
     }
   },
   onShow() {
-    this.refresh()
+    this.load()
   },
   methods: {
-    tierLabelOf(t) { return PET_TIER_LABELS[t] || t },
-    goEquip() { uni.navigateTo({ url: '/pages/pet/equip' }) },
-    async refresh() {
+    async load() {
       this.loading = true
+      this.blockReason = ''
       try {
-        const pet = usePetStore()
-        await pet.fetchMe()
-        const pts = usePointsStore()
-        await pts.fetchMe()
-      } catch (_) {} finally {
-        this.loading = false
-      }
-    },
-    async onHatch() {
-      try {
-        const pet = usePetStore()
-        this.loading = true
-        await pet.hatch()
-        uni.showToast({ title: '破壳成功！', icon: 'success' })
+        const res = await petApi.me()
+        this.pet = res || null
+        // 拉 species 信息
+        if (this.pet && this.pet.species) {
+          try {
+            const list = await petApi.species({ tier: this.pet.tier, isActive: true })
+            const items = Array.isArray(list) ? list : list.items || list.data || []
+            this.speciesRecord = items.find((s) => s.key === this.pet.species) || null
+          } catch (_) {}
+        }
+        this._buildEquippedMap()
       } catch (e) {
-        // 错误已由 request.js toast
+        if (e.code === 'notEnrolled' || e.statusCode === 422) {
+          this.blockReason = 'notEnrolled'
+        }
+        this.pet = null
       } finally {
         this.loading = false
       }
     },
-    async onFeed(foodType) {
-      if ((this.balance || 0) < this.costFor(foodType)) {
-        return uni.showToast({ title: '积分不足', icon: 'none' })
-      }
-      try {
-        const pet = usePetStore()
-        const r = await pet.feed(foodType)
-        if (r?.tierUp) {
-          uni.showToast({ title: '升阶了！', icon: 'success' })
-        } else if (r?.levelUp) {
-          uni.showToast({ title: '升级了！', icon: 'success' })
-        } else {
-          uni.showToast({ title: '喂食成功', icon: 'success' })
+
+    _buildEquippedMap() {
+      if (!this.pet) return
+      const slots = ['hat', 'scarf', 'clothes', 'accessory', 'halo', 'background']
+      const eq = this.pet.equipped || {}
+      this.equippedMap = {}
+      slots.forEach((s) => {
+        const key = eq[s]
+        if (key) this.equippedMap[s] = { icon: '🎀', name: key }
+        else this.equippedMap[s] = null
+      })
+    },
+
+    sanitizeSvg(svg) {
+      if (!svg) return ''
+      // 简易防 XSS - 移除 script / onerror
+      return String(svg)
+        .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+        .replace(/on\w+="[^"]*"/gi, '')
+    },
+
+    slotLabel(s) {
+      return SLOT_LABELS[s] || s
+    },
+
+    goAdopt() {
+      uni.navigateTo({ url: '/pages/pet/adopt' })
+    },
+    goHatch() {
+      uni.navigateTo({ url: '/pages/pet/hatch' })
+    },
+    goFeed() {
+      uni.navigateTo({ url: '/pages/pet/feed' })
+    },
+    goEquip() {
+      uni.navigateTo({ url: '/pages/pet/equip' })
+    },
+    goShop() {
+      uni.navigateTo({ url: '/pages/pet/shop' })
+    },
+    goEvents() {
+      uni.navigateTo({ url: '/pages/pet/events' })
+    },
+    goDiscover() {
+      uni.switchTab({ url: '/pages/tabbar/discover' })
+    },
+
+    async onSwapEgg() {
+      haptic.tap()
+      uni.showModal({
+        title: '换蛋',
+        content: `当前阶位 ${this.pet.tier} 阶换蛋需要消耗积分,确定要换吗?`,
+        success: async (res) => {
+          if (!res.confirm) return
+          try {
+            await petApi.swapEgg()
+            haptic.success()
+            toast.success('已换新蛋!')
+            this.load()
+          } catch (e) {
+            toast.error(e.message || '换蛋失败')
+          }
         }
-        const pts = usePointsStore()
-        await pts.fetchMe()
-      } catch (_) {}
+      })
     },
-    async onSwap() {
-      if ((this.balance || 0) < this.swapCost) {
-        return uni.showToast({ title: '积分不足', icon: 'none' })
-      }
-      try {
-        const pet = usePetStore()
-        this.loading = true
-        await pet.swapEgg()
-        uni.showToast({ title: '已置换为新蛋', icon: 'success' })
-        const pts = usePointsStore()
-        await pts.fetchMe()
-      } catch (e) {} finally {
-        this.loading = false
-      }
+
+    onTierDown() {
+      uni.showActionSheet({
+        itemList: ['C 阶', 'B 阶', 'A 阶'],
+        success: async (res) => {
+          const tiers = ['C', 'B', 'A']
+          const target = tiers[res.tapIndex]
+          try {
+            await petApi.tierDown({ targetTier: target })
+            haptic.success()
+            toast.success('已降阶')
+            this.load()
+          } catch (e) {
+            toast.error(e.message || '操作失败')
+          }
+        }
+      })
     },
-    async onTierDownConfirm(targetTier) {
-      this.onTierDownShow = false
-      try {
-        const pet = usePetStore()
-        this.loading = true
-        await pet.tierDown(targetTier)
-        uni.showToast({ title: '已降阶为蛋', icon: 'success' })
-      } catch (e) {} finally {
-        this.loading = false
-      }
+
+    onRename() {
+      uni.showModal({
+        title: '改昵称',
+        editable: true,
+        placeholderText: '新昵称',
+        success: async (res) => {
+          if (!res.confirm || !res.content) return
+          // rename 端点暂未提供 - 提示 TODO
+          toast.text('改名功能待开放')
+        }
+      })
     }
   }
 }
 </script>
 
 <style lang="scss" scoped>
-.page { padding: 24rpx; padding-bottom: 160rpx; }
-.state-card {
-  padding: 48rpx 24rpx;
-  border-radius: 24rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16rpx;
-}
-.egg-card {
-  background: linear-gradient(135deg, #FFE9C7 0%, #FFD4A3 100%);
-  margin-top: 24rpx;
-}
-.egg-emoji { font-size: 200rpx; line-height: 1; }
-.state-title { font-size: 36rpx; font-weight: 700; color: #663C00; }
-.state-subtitle { font-size: 26rpx; color: #8B5A00; }
-.hatch-btn-wrap { margin-top: 16rpx; }
-.primary-btn {
-  background: #f5222d;
-  color: #fff;
-  font-size: 32rpx;
-  padding: 16rpx 64rpx;
-  border-radius: 48rpx;
-}
-.alive-card { background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); position: relative; }
-.pet-image {
-  position: relative;
-  width: 200rpx;
-  height: 200rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255,255,255,0.6);
-  border-radius: 50%;
-}
-.pet-emoji { font-size: 120rpx; }
-.halo {
-  position: absolute;
-  top: -10rpx;
-  right: -10rpx;
-  font-size: 60rpx;
-  animation: spin 4s linear infinite;
-}
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.pet-info { display: flex; flex-direction: column; align-items: center; gap: 8rpx; }
-.pet-name { font-size: 36rpx; font-weight: 700; color: #1A237E; }
-.tier-badge {
-  padding: 4rpx 16rpx;
-  border-radius: 16rpx;
-  font-size: 22rpx;
-  color: #fff;
-  &.tier-C { background: #9E9E9E; }
-  &.tier-B { background: #2196F3; }
-  &.tier-A { background: #9C27B0; }
-  &.tier-S { background: #FF6D00; }
-}
-.bars { width: 100%; display: flex; flex-direction: column; gap: 12rpx; margin-top: 8rpx; }
-.bar-row { display: flex; align-items: center; gap: 12rpx; }
-.bar-label { font-size: 24rpx; color: #666; min-width: 80rpx; }
-.bar { flex: 1; height: 16rpx; background: rgba(255,255,255,0.5); border-radius: 8rpx; overflow: hidden; }
-.bar-fill { height: 100%; transition: width 0.3s; }
-.exp-bar { background: #4CAF50; }
-.hunger-bar { background: #FF9800; }
-.bar-text { font-size: 22rpx; color: #666; min-width: 120rpx; text-align: right; }
+.pet-home {
+  min-height: 100vh;
+  background: $bg-page;
 
-.section { margin-top: 32rpx; }
-.section-title { font-size: 28rpx; font-weight: 600; color: #333; margin-bottom: 12rpx; display: block; }
-.action-row { display: flex; gap: 16rpx; }
-.action-card {
-  flex: 1;
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx 8rpx;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4rpx;
-}
-.action-emoji { font-size: 56rpx; }
-.action-name { font-size: 26rpx; font-weight: 600; }
-.action-cost { font-size: 22rpx; color: #f5222d; }
-.action-gain { font-size: 20rpx; color: #4CAF50; }
-.ops-row { display: flex; gap: 16rpx; }
-.op-btn {
-  flex: 1;
-  background: #fff;
-  border-radius: 16rpx;
-  padding: 24rpx 8rpx;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4rpx;
-}
-.op-emoji { font-size: 56rpx; }
-.op-label { font-size: 26rpx; font-weight: 600; }
-.op-cost { font-size: 20rpx; color: #999; }
+  &__top {
+    background: linear-gradient(180deg, #FFE4D3 0%, $bg-page 100%);
+    padding-bottom: $spacing-md;
+    position: relative;
+    overflow: hidden;
+  }
 
-.modal-mask {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 100;
-}
-.modal {
-  width: 80%; background: #fff; border-radius: 24rpx; padding: 32rpx;
-  display: flex; flex-direction: column; gap: 16rpx;
-}
-.modal-title { font-size: 32rpx; font-weight: 700; text-align: center; }
-.modal-subtitle { font-size: 24rpx; color: #666; text-align: center; }
-.tier-options { display: flex; flex-wrap: wrap; gap: 12rpx; justify-content: center; }
-.tier-opt {
-  padding: 12rpx 24rpx;
-  background: #f0f0f0;
-  border-radius: 16rpx;
-  font-size: 28rpx;
-}
-.secondary-btn {
-  background: #f0f0f0; color: #333;
-  font-size: 28rpx; padding: 12rpx; border-radius: 16rpx;
+  &__bg-circle {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0.5;
+    animation: float 6s ease-in-out infinite;
+    pointer-events: none;
+
+    &--1 {
+      width: 280rpx;
+      height: 280rpx;
+      background: radial-gradient(circle, $primary-light 0%, transparent 70%);
+      top: -80rpx;
+      left: -60rpx;
+    }
+    &--2 {
+      width: 220rpx;
+      height: 220rpx;
+      background: radial-gradient(circle, #FFD0B8 0%, transparent 70%);
+      top: 40rpx;
+      right: -40rpx;
+      animation-delay: 1.5s;
+    }
+  }
+
+  &__topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: $spacing-md;
+    position: relative;
+  }
+
+  &__title {
+    font-size: $font-2xl;
+    font-weight: $font-weight-bold;
+    color: $text-primary;
+  }
+
+  &__topbar-right {
+    display: flex;
+    gap: $spacing-xs;
+  }
+
+  &__icon-btn {
+    width: 72rpx;
+    height: 72rpx;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(8rpx);
+    font-size: 36rpx;
+  }
+
+  &__body {
+    padding: 0 $spacing-md;
+    height: calc(100vh - 140rpx);
+  }
+
+  &__loading {
+    @include flex-center;
+    flex-direction: column;
+    padding: $spacing-2xl;
+    color: $text-secondary;
+    font-size: $font-sm;
+  }
+
+  &__loading-circle {
+    width: 80rpx;
+    height: 80rpx;
+    border: 6rpx solid $divider;
+    border-top-color: $primary;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: $spacing-md;
+  }
+
+  // 引导页 (未领养/未报班)
+  &__guide {
+    @include flex-center;
+    flex-direction: column;
+    padding: $spacing-2xl $spacing-md;
+    text-align: center;
+    margin-top: $spacing-2xl;
+  }
+
+  &__guide-art {
+    width: 240rpx;
+    height: 240rpx;
+    background: linear-gradient(135deg, $primary-lighter, $primary-light);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: $spacing-lg;
+    box-shadow: 0 12rpx 32rpx rgba(255, 138, 101, 0.24);
+  }
+
+  &__guide-emoji {
+    font-size: 120rpx;
+    animation: float 3s ease-in-out infinite;
+  }
+
+  &__guide-title {
+    font-size: $font-2xl;
+    font-weight: $font-weight-bold;
+    color: $text-primary;
+    margin-bottom: $spacing-xs;
+  }
+
+  &__guide-desc {
+    font-size: $font-sm;
+    color: $text-secondary;
+    line-height: 1.6;
+    margin-bottom: $spacing-lg;
+    max-width: 480rpx;
+  }
+
+  &__guide-btn {
+    padding: $spacing-sm $spacing-xl;
+    background: linear-gradient(135deg, $primary, $primary-light);
+    color: #fff;
+    border-radius: $radius-pill;
+    box-shadow: $shadow-button;
+  }
+
+  &__guide-btn > text {
+    color: #fff;
+    font-size: $font-base;
+    font-weight: $font-weight-semibold;
+  }
+
+  // 宠物卡片
+  &__pet {
+    margin-top: $spacing-md;
+  }
+
+  &__egg {
+    @include flex-center;
+    flex-direction: column;
+    padding: $spacing-2xl;
+  }
+
+  &__egg-emoji {
+    font-size: 280rpx;
+    line-height: 1;
+    filter: drop-shadow(0 12rpx 32rpx rgba(255, 138, 101, 0.4));
+  }
+
+  &__egg-label {
+    margin-top: $spacing-md;
+    font-size: $font-md;
+    color: $text-secondary;
+  }
+
+  &__hatch-btn {
+    margin: $spacing-lg $spacing-2xl;
+    padding: $spacing-md;
+    background: linear-gradient(135deg, $primary, $primary-light);
+    color: #fff;
+    border-radius: $radius-pill;
+    text-align: center;
+    box-shadow: $shadow-button;
+  }
+
+  &__hatch-btn > text {
+    color: #fff;
+    font-size: $font-lg;
+    font-weight: $font-weight-semibold;
+  }
+
+  &__portrait-wrap {
+    @include flex-center;
+    margin: $spacing-md auto;
+    position: relative;
+    width: 320rpx;
+    height: 320rpx;
+    background: linear-gradient(135deg, $primary-lighter, $accent-light);
+    border-radius: 50%;
+    box-shadow: 0 16rpx 40rpx rgba(255, 138, 101, 0.3);
+  }
+
+  &__portrait-svg {
+    width: 80%;
+    height: 80%;
+  }
+
+  &__portrait-emoji {
+    font-size: 200rpx;
+    line-height: 1;
+  }
+
+  &__tier-badge {
+    position: absolute;
+    top: -8rpx;
+    right: -8rpx;
+    padding: 8rpx 20rpx;
+    border-radius: $radius-pill;
+    color: #fff;
+    font-size: $font-sm;
+    font-weight: $font-weight-semibold;
+    box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.16);
+  }
+
+  &__name-row {
+    @include flex-center;
+    margin: $spacing-md 0 $spacing-lg;
+    gap: $spacing-sm;
+  }
+
+  &__name {
+    font-size: $font-2xl;
+    font-weight: $font-weight-bold;
+    color: $text-primary;
+  }
+
+  &__level {
+    padding: 4rpx 16rpx;
+    background: linear-gradient(135deg, $gold, #FFE4A1);
+    color: #fff;
+    border-radius: $radius-pill;
+    font-size: $font-xs;
+    font-weight: $font-weight-semibold;
+    box-shadow: 0 2rpx 8rpx rgba(245, 193, 72, 0.32);
+  }
+
+  // 状态条
+  &__stat {
+    margin-bottom: $spacing-md;
+  }
+
+  &__stat-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: $spacing-xs;
+  }
+
+  &__stat-label {
+    font-size: $font-sm;
+    color: $text-primary;
+    font-weight: $font-weight-medium;
+  }
+
+  &__stat-value {
+    font-size: $font-sm;
+    color: $text-secondary;
+  }
+
+  &__stat-bar {
+    height: 16rpx;
+    background: $divider-light;
+    border-radius: 8rpx;
+    overflow: hidden;
+  }
+
+  &__stat-fill {
+    height: 100%;
+    border-radius: 8rpx;
+    transition: width $transition-base;
+
+    &--hunger {
+      background: linear-gradient(90deg, $warning 0%, $primary 70%, $accent 100%);
+    }
+
+    &--exp {
+      background: linear-gradient(90deg, $gold 0%, #FFE4A1 100%);
+    }
+  }
+
+  // 装备
+  &__equip {
+    background: $bg-card;
+    border-radius: $radius-md;
+    padding: $spacing-md;
+    margin: $spacing-md 0;
+    box-shadow: $shadow-card;
+  }
+
+  &__equip-title {
+    font-size: $font-base;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    margin-bottom: $spacing-sm;
+  }
+
+  &__equip-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $spacing-sm;
+  }
+
+  &__equip-slot {
+    @include flex-center;
+    flex-direction: column;
+    padding: $spacing-sm $spacing-xs;
+    background: $bg-page;
+    border-radius: $radius-sm;
+    transition: all $transition-fast;
+
+    &--empty {
+      background: $divider-light;
+      opacity: 0.7;
+    }
+
+    &:active {
+      transform: scale(0.96);
+    }
+  }
+
+  &__equip-emoji {
+    font-size: 56rpx;
+    margin-bottom: 4rpx;
+  }
+
+  &__equip-empty {
+    font-size: 40rpx;
+    color: $text-tertiary;
+    margin-bottom: 4rpx;
+  }
+
+  &__equip-name {
+    font-size: $font-xs;
+    color: $text-secondary;
+  }
+
+  // 操作
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: $spacing-sm;
+    margin-top: $spacing-lg;
+  }
+
+  &__action {
+    @include flex-center;
+    flex-direction: column;
+    padding: $spacing-sm $spacing-xs;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+
+    &:active {
+      transform: scale(0.95);
+    }
+  }
+
+  &__action-icon {
+    width: 80rpx;
+    height: 80rpx;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 44rpx;
+    margin-bottom: $spacing-xs;
+
+    &--feed {
+      background: $primary-lighter;
+    }
+    &--equip {
+      background: #EDE3FA;
+    }
+    &--shop {
+      background: #FFF1D0;
+    }
+    &--more {
+      background: $divider-light;
+    }
+  }
+
+  &__more {
+    margin-top: $spacing-sm;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+    overflow: hidden;
+  }
+
+  &__more-item {
+    padding: $spacing-md;
+    border-bottom: 1rpx solid $divider-light;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:active {
+      background: $bg-page;
+    }
+  }
+
+  &__bottom-spacer {
+    height: $spacing-xl;
+  }
 }
 </style>

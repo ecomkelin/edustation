@@ -1,209 +1,226 @@
 /**
- * 全局常量（与 server shared/enums.js 保持一致）
- * 客户端只关心家长端展示所需的子集
+ * 业务枚举常量 - 与 shared/enums.js 保持同步
+ * 运行时用于 UI 展示;后端是 source of truth
  */
 
-export const Gender = Object.freeze({
-  MALE: 'male',
-  FEMALE: 'female',
-  OTHER: 'other'
-})
+// === 宠物 ===
+export const PetTier = {
+  C: 'C',
+  B: 'B',
+  A: 'A',
+  S: 'S'
+}
+export const PetTierLabel = { C: 'C 阶', B: 'B 阶', A: 'A 阶', S: 'S 阶' }
+export const PetTierColor = {
+  C: '#9CA3AF', // 灰
+  B: '#7CD9B7', // 绿
+  A: '#5B9EE6', // 蓝
+  S: '#F5C148'  // 金
+}
 
-export const GenderLabel = Object.freeze({
-  male: '男',
-  female: '女',
-  other: '其他'
-})
+export const PetState = {
+  EGG: 'egg',
+  ALIVE: 'alive',
+  DEAD: 'dead'
+}
+export const PetStateLabel = { egg: '蛋', alive: '已破壳', dead: '沉睡中' }
 
-export const LessonScheduleStatus = Object.freeze({
-  SCHEDULED: 'scheduled',
-  IN_PROGRESS: 'in_progress',
-  COMPLETED: 'completed',
-  ARCHIVED: 'archived',
-  CANCELLED: 'cancelled'
-})
-
-export const LessonScheduleStatusLabel = Object.freeze({
-  scheduled: '未开始',
-  in_progress: '进行中',
-  completed: '已结束',
-  archived: '已归档',
-  cancelled: '已取消'
-})
-
-export const AttendanceStatus = Object.freeze({
-  SCHEDULED: 'scheduled',
-  CHECKED_IN: 'checked_in',
-  COMPLETED: 'completed',
-  NO_SHOW: 'no_show',
-  LEAVE: 'leave'
-})
-
-export const AttendanceStatusLabel = Object.freeze({
-  scheduled: '已排课',
-  checked_in: '已签到',
-  completed: '已消课',
-  no_show: '未到',
-  leave: '请假'
-})
-
-export const OrderStatus = Object.freeze({
-  PENDING: 'pending',
-  PAID: 'paid',
-  CANCELLED: 'cancelled',
-  REFUNDED: 'refunded'
-})
-
-export const OrderStatusLabel = Object.freeze({
-  pending: '待支付',
-  paid: '已支付',
-  cancelled: '已取消',
-  refunded: '已退款'
-})
-
-export const CourseInstanceStatus = Object.freeze({
-  PLANNING: 'planning',
-  ENROLLING: 'enrolling',
-  ACTIVE: 'active',
-  CLOSED: 'closed'
-})
-
-export const CourseInstanceStatusLabel = Object.freeze({
-  planning: '规划中',
-  enrolling: '招生中',
-  active: '进行中',
-  closed: '已结班'
-})
-
-export const CourseEnrollmentStatus = Object.freeze({
-  ENROLLED: 'enrolled',
-  ARCHIVED: 'archived',
-  DROPPED: 'dropped',
-  WITHDREW: 'withdrew'
-})
-
-export const CourseEnrollmentStatusLabel = Object.freeze({
-  enrolled: '在读',
-  archived: '已归档',
-  dropped: '退班',
-  withdrew: '休学'
-})
-
-export const PaymentMethod = Object.freeze({
-  WECHAT: 'wechat',
-  ALIPAY: 'alipay',
-  CASH: 'cash',
-  OTHER: 'other'
-})
-
-export const PaymentMethodLabel = Object.freeze({
-  wechat: '微信',
-  alipay: '支付宝',
-  cash: '现金',
-  other: '其他'
-})
-
-export const PetType = Object.freeze({
-  CAT: 'cat',
-  DOG: 'dog',
-  RABBIT: 'rabbit'
-})
-
-export const PetTypeLabel = Object.freeze({
-  cat: '猫咪',
-  dog: '狗狗',
-  rabbit: '兔子'
-})
-
-export const PetEmoji = Object.freeze({
-  cat: '🐱',
-  dog: '🐶',
-  rabbit: '🐰'
-})
-
-// === pet-system-v2 (2026-06-21) ===
-export const PetTier = Object.freeze({ C: 'C', B: 'B', A: 'A', S: 'S' })
-export const PET_TIERS = Object.values(PetTier)
-export const PET_TIER_LABELS = Object.freeze({
-  C: 'C 级',
-  B: 'B 级',
-  A: 'A 级',
-  S: 'S 级'
-})
-
-export const PetState = Object.freeze({ EGG: 'egg', ALIVE: 'alive', DEAD: 'dead' })
-export const PET_STATE_LABELS = Object.freeze({
-  egg: '蛋',
-  alive: '存活',
-  dead: '死亡'
-})
-
-export const FoodType = Object.freeze({ NORMAL: 'normal', PREMIUM: 'premium', SUPER: 'super' })
-export const FOOD_TYPE_LABELS = Object.freeze({
-  normal: '普通',
-  premium: '高级',
-  super: '特级'
-})
-
-export const PetSlot = Object.freeze({
-  HAT: 'hat', SCARF: 'scarf', CLOTHES: 'clothes',
-  ACCESSORY: 'accessory', HALO: 'halo', BACKGROUND: 'background'
-})
-export const PET_SLOT_LABELS = Object.freeze({
+export const PetSlot = {
+  HAT: 'hat',
+  SCARF: 'scarf',
+  CLOTHES: 'clothes',
+  ACCESSORY: 'accessory',
+  HALO: 'halo',
+  BACKGROUND: 'background'
+}
+export const PetSlotLabel = {
   hat: '帽子',
   scarf: '围巾',
   clothes: '衣服',
-  accessory: '饰品',
+  accessory: '配饰',
   halo: '光环',
   background: '背景'
-})
+}
 
-// 种类 → emoji（与 shared/petSpecies.js 对齐）
-export const PET_SPECIES_EMOJI = Object.freeze({
-  cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
-  fox_red: '🦊', panda_baby: '🐼', penguin_baby: '🐧', owl_horned: '🦉',
-  wolf_arctic: '🐺', deer_white: '🦌', hawk_red: '🦅', dolphin_blue: '🐬',
-  dragon_emperor: '🐉', phoenix_fire: '🔥', unicorn_rainbow: '🦄', griffin_gold: '🦅'
-})
+// 兜底 emoji (visualType 找不到记录时)
+export const PET_SPECIES_EMOJI = {
+  cat_orange: '🐱',
+  cat_white: '😺',
+  cat_black: '🐈‍⬛',
+  dog_brown: '🐶',
+  rabbit_pink: '🐰',
+  fox_red: '🦊',
+  bear_brown: '🐻',
+  panda_black: '🐼',
+  penguin: '🐧',
+  owl: '🦉',
+  dragon_green: '🐲',
+  unicorn: '🦄',
+  axolotl: '🦎',
+  hamster: '🐹',
+  parrot: '🦜',
+  frog_green: '🐸'
+}
 
-export const StudentProductSource = Object.freeze({
+// === 考勤 ===
+export const AttendanceStatus = {
+  SCHEDULED: 'scheduled',
+  ARRIVED: 'arrived',
+  COMPLETED: 'completed',
+  NO_SHOW: 'no_show',
+  LEAVE: 'leave',
+  MADEUP: 'madeup'
+}
+export const AttendanceStatusLabel = {
+  scheduled: '待上课',
+  arrived: '已签到',
+  completed: '已完成',
+  no_show: '缺席',
+  leave: '请假',
+  madeup: '已补课'
+}
+export const AttendanceStatusColor = {
+  scheduled: '#9CA3AF',
+  arrived: '#5B9EE6',
+  completed: '#7CD9B7',
+  no_show: '#FF6B6B',
+  leave: '#F5C148',
+  madeup: '#B89AE6'
+}
+
+// === 订单 ===
+export const OrderStatus = {
+  PENDING: 'pending',
+  PAID: 'paid',
+  PARTIALLY_REFUNDED: 'partially_refunded',
+  CANCELLED: 'cancelled',
+  REFUNDED: 'refunded'
+}
+export const OrderStatusLabel = {
+  pending: '待支付',
+  paid: '已支付',
+  partially_refunded: '部分退款',
+  cancelled: '已取消',
+  refunded: '已退款'
+}
+export const OrderStatusColor = {
+  pending: '#FF8A65',
+  paid: '#7CD9B7',
+  partially_refunded: '#F5C148',
+  cancelled: '#9CA3AF',
+  refunded: '#FF6B6B'
+}
+
+// === 课包来源 ===
+export const StudentProductSource = {
   ORDER: 'order',
   GIFT: 'gift'
-})
-
-export const StudentProductSourceLabel = Object.freeze({
+}
+export const StudentProductSourceLabel = {
   order: '购买',
   gift: '赠课'
-})
-
-/**
- * 课包选包排序：FIFO（expireDate 升序）。返回排序后的副本。
- * 客户端的 List 页面、首页"剩余课时"卡片都可以使用。
- */
-export function sortStudentProductsFifo(list = []) {
-  return [...list].sort((a, b) => {
-    const ea = a.expireDate ? new Date(a.expireDate).getTime() : Number.POSITIVE_INFINITY
-    const eb = b.expireDate ? new Date(b.expireDate).getTime() : Number.POSITIVE_INFINITY
-    return ea - eb
-  })
 }
 
-/**
- * 把"剩余有效课时"汇总：过滤 isActive=true、remainingLessons>0、且未过期
- */
-export function summarizeRemainingLessons(list = []) {
-  const now = Date.now()
-  return list
-    .filter((sp) => sp.isActive && sp.remainingLessons > 0)
-    .filter((sp) => !sp.expireDate || new Date(sp.expireDate).getTime() >= now)
-    .reduce((acc, sp) => acc + (sp.remainingLessons || 0), 0)
+// === 积分触发 ===
+export const PointsTriggerEmoji = {
+  manual_earn: '✨',
+  manual_deduct: '⚠️',
+  order_earn: '🎁',
+  attendance_earn: '📚',
+  streak_earn: '🔥',
+  share_earn: '💌',
+  birthday_earn: '🎂',
+  pet: '🍖',
+  redemption: '🎀',
+  refund: '↩️'
+}
+export const PointsTriggerLabel = {
+  manual_earn: '管理员加分',
+  manual_deduct: '管理员扣分',
+  order_earn: '购课奖励',
+  attendance_earn: '出勤奖励',
+  streak_earn: '连续出勤',
+  share_earn: '分享奖励',
+  birthday_earn: '生日奖励',
+  pet: '宠物相关',
+  redemption: '兑换消耗',
+  refund: '退款冲正'
 }
 
-export const WeekdayLabel = ['日', '一', '二', '三', '四', '五', '六']
+// === 课程报名状态 ===
+export const EnrollmentStatus = {
+  ENROLLED: 'enrolled',
+  COMPLETED: 'completed',
+  DROPPED: 'dropped',
+  WITHDREW: 'withdrew'
+}
+export const EnrollmentStatusLabel = {
+  enrolled: '在读',
+  completed: '已结课',
+  dropped: '已分班',
+  withdrew: '已退班'
+}
 
-export const WxShareSceneLabel = {
-  WXSceneSession: '微信好友',
-  WXSceneTimeline: '朋友圈',
-  'WXSceneSession:': '微信好友',
-  'WXSceneTimeline:': '朋友圈'
+// === 课程开班状态 ===
+export const CourseInstanceStatus = {
+  PLANNING: 'planning',
+  ENROLLING: 'enrolling',
+  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled'
+}
+export const CourseInstanceStatusLabel = {
+  planning: '筹备中',
+  enrolling: '招生中',
+  active: '进行中',
+  completed: '已结课',
+  cancelled: '已取消'
+}
+
+// === 接送授权事件类型 ===
+export const AccessEventType = {
+  ENTRY: 'entry',
+  EXIT: 'exit',
+  DENIED: 'denied'
+}
+export const AccessEventTypeLabel = {
+  entry: '进入',
+  exit: '离开',
+  denied: '拒绝'
+}
+
+export const PersonType = {
+  STUDENT: 'student',
+  AUTHORIZED_PICKUP: 'authorizedPickup',
+  STAFF: 'staff',
+  UNKNOWN: 'unknown'
+}
+export const PersonTypeLabel = {
+  student: '学员',
+  authorizedPickup: '接送人',
+  staff: '员工',
+  unknown: '陌生人'
+}
+
+// === 周几 ===
+export const WeekdayLabel = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+export const WeekdayShort = ['日', '一', '二', '三', '四', '五', '六']
+
+// === 时段问候 ===
+export function greetingByHour(h = new Date().getHours()) {
+  if (h < 6) return '凌晨好'
+  if (h < 11) return '早上好'
+  if (h < 14) return '中午好'
+  if (h < 18) return '下午好'
+  if (h < 22) return '晚上好'
+  return '夜深了'
+}
+
+// === 角色关系（学生 + 家长）===
+export const GuardianRelation = {
+  FATHER: '父亲',
+  MOTHER: '母亲',
+  GRANDFATHER: '爷爷',
+  GRANDMOTHER: '奶奶',
+  OTHER: '其他'
 }

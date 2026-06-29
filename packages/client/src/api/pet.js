@@ -1,22 +1,49 @@
-import http from '@/utils/request'
-
 /**
- * Pet API（2026-06-21 pet-system-v2 客户端）
+ * Pet API - 宠物 (C 端)
+ * R-2272 me / R-2200 events / R-2206 species / R-2207 items
+ * R-2263 adopt / R-2264 hatch / R-2265 feed / R-2266 equip
+ * R-2267 swap-egg / R-2268 tier-down
  */
-export const petApi = {
-  me: () => http.get('/pet/me'),
-  species: () => http.get('/pet/species'),
-  items: () => http.get('/pet/items'),
-  events: (params) => http.get('/pet/events', { params }),
-  adopt: () => http.post('/pet/adopt', {}),
-  hatch: () => http.post('/pet/hatch', {}),
-  feed: (foodType) => http.post('/pet/feed', { foodType }),
-  swapEgg: () => http.post('/pet/swap-egg', {}),
-  tierDown: (targetTier) => http.post('/pet/tier-down', { targetTier }),
-  equip: (slot, itemKey) => http.post('/pet/equip', { slot, itemKey }),
+import { http } from './request'
 
-  // ─── 2026-06-22 pet-shop：宠物商城 ───
-  shopList: (params) => http.get('/pet/shop', { params }),
-  buyItem: (itemKey) => http.post('/pet/shop/buy-item', { itemKey }),
-  buyConsumable: (consumableKey) => http.post('/pet/shop/buy-consumable', { consumableKey })
+export const petApi = {
+  me() {
+    return http.get('/pet/me')
+  },
+
+  events(params = {}) {
+    return http.get('/pet/events', { data: params })
+  },
+
+  species(params = {}) {
+    return http.get('/pet/species', { data: params })
+  },
+
+  items(params = {}) {
+    return http.get('/pet/items', { data: params })
+  },
+
+  adopt(data = {}) {
+    return http.post('/pet/adopt', data)
+  },
+
+  hatch() {
+    return http.post('/pet/hatch', {})
+  },
+
+  feed(data) {
+    return http.post('/pet/feed', data)
+  },
+
+  equip(data) {
+    return http.post('/pet/equip', data)
+  },
+
+  swapEgg(data = {}) {
+    return http.post('/pet/swap-egg', data)
+  },
+
+  tierDown(data) {
+    return http.post('/pet/tier-down', data)
+  }
 }

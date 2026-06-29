@@ -1,66 +1,124 @@
 /**
- * 分享工具：
- *  - uni-app 内置 share API（小程序/朋友圈）；
- *  - 微信小程序场景：onShareAppMessage / onShareTimeline 在 page 级别声明；
- *  - 阶段 2 实现：统一 share 工具 + 上报 /points/earn(type=share)；
- *  - 阶段 3 后服务端真实落账（此阶段 /points/earn 是 stub）。
+ * 分享工具 - 海报生成 + 复制链接
+ * H5: 走 canvas + clipboard
+ * 微信小程序: 走 onShareAppMessage
+ * App: 走 uni.share
  */
 
-import { pointsApi } from '@/api/points'
-
-/**
- * 在小程序/H5/App 中触发"分享给好友"。
- * 由调用方传入自定义的 title/path/imageUrl。
- */
-export function shareToWeixin({ title = 'EduStation', path = '/pages/tabbar/home', imageUrl = '' } = {}) {
-  // #ifdef MP-WEIXIN
-  return new Promise((resolve) => {
-    uni.showShareMenu({ withShareTicket: true, success: () => resolve(true), fail: () => resolve(false) })
-  })
+/** 复制到剪贴板 */
+export async function copyText(text) {
+  // #ifdef H5
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch (_) {
+    // fallback
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    let ok = false
+    try {
+      ok = document.execCommand('copy')
+    } catch (_) {
+      ok = false
+    }
+    document.body.removeChild(el)
+    return ok
+  }
   // #endif
-  // #ifndef MP-WEIXIN
-  return Promise.resolve(false)
+  // #ifndef H5
+  return new Promise((resolve) => {
+    uni.setClipboardData({
+      data: text,
+      success: () => resolve(true),
+      fail: () => resolve(false)
+    })
+  })
   // #endif
 }
 
 /**
- * 分享成功回调后通知后端。
- * 服务端在 /points/earn(type=share,refId) 中加积分（stub 阶段不入账）。
+ * 生成邀请链接 - 当前阶段 stub (后端 share_earn trigger 未实装)
  */
-export async function reportShareSuccess({ scene = 'weixin', refId = '' } = {}) {
-  try {
-    const res = await pointsApi.earn({
-      amount: 10,
-      type: 'share',
-      refId,
-      remark: `分享给好友(${scene})`
-    })
-    return res.data
-  } catch (e) {
-    console.warn('[share] report fail', e)
-    return null
+export function makeInviteLink(userId, orgId) {
+  const base = 'https://h5.example.com/invite'
+  return `${base}?u=${userId}&o=${orgId}`
+}
+
+/**
+ * 数字滚动动画 - requestAnimationFrame 实现 (用于积分变化)
+ * @param {Object} opts - { from, to, duration, onUpdate, onComplete }
+ */
+export function animateNumber(opts) {
+  const { from = 0, to, duration = 800, onUpdate, onComplete } = opts
+  if (typeof to !== 'number') {
+    onUpdate && onUpdate(from)
+    onComplete && onComplete()
+    return
+  }
+  const start = Date.now()
+  const diff = to - from
+  const tick = () => {
+    const elapsed = Date.now() - start
+    const progress = Math.min(1, elapsed / duration)
+    // ease-out cubic
+    const eased = 1 - Math.pow(1 - progress, 3)
+    const current = Math.round(from + diff * eased)
+    onUpdate && onUpdate(current)
+    if (progress < 1) {
+      // #ifdef H5
+      requestAnimationFrame(tick)
+      // #endif
+      // #ifndef H5
+      setTimeout(tick, 16)
+      // #endif
+    } else {
+      onComplete && onComplete()
+    }
+  }
+  tick()
+}
+
+/**
+ * 简易 debounce
+ */
+export function debounce(fn, delay = 300) {
+  let timer = null
+  return function (...args) {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => fn.apply(this, args), delay)
   }
 }
 
 /**
- * 通过剪贴板复制带追踪参数的邀请链接（拼团/邀请码场景备用）。
- * @param {string} base - 业务链接
- * @param {string} trackId - 追踪 id
+ * 简易 throttle
  */
-export async function copyInviteLink(base, trackId) {
-  const url = `${base}${base.includes('?') ? '&' : '?'}track=${trackId}`
-  // #ifdef H5
+export function throttle(fn, gap = 300) {
+  let last = 0
+  return function (...args) {
+    const now = Date.now()
+    if (now - last >= gap) {
+      last = now
+      fn.apply(this, args)
+    }
+  }
+}
+
+/**
+ * 防重复点击 - 用于按钮
+ */
+let _lastClick = 0
+export function preventRepeatClick(delay = 600) {
   return new Promise((resolve) => {
-    try {
-      navigator.clipboard.writeText(url).then(() => resolve(true)).catch(() => resolve(false))
-    } catch (_) {
+    const now = Date.now()
+    if (now - _lastClick < delay) {
       resolve(false)
+    } else {
+      _lastClick = now
+      resolve(true)
     }
   })
-  // #endif
-  // #ifndef H5
-  return new Promise((resolve) => {
-    uni.setClipboardData({ data: url, success: () => resolve(true), fail: () => resolve(false) })
-  })
-  // #endif
 }

@@ -1,0 +1,284 @@
+// ============================================================================
+// 全局重置 - 抹平 uni-app 默认样式
+// ============================================================================
+
+@use './variables.scss' as *;
+@use './mixins.scss' as *;
+@use './animations.scss' as *;
+
+page {
+  background: $bg-page;
+  color: $text-primary;
+  font-size: $font-base;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'PingFang SC',
+    'Helvetica Neue',
+    'Microsoft YaHei',
+    sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// 通用容器
+.container {
+  min-height: 100vh;
+  background: $bg-page;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.section {
+  padding: $spacing-lg $spacing-md;
+}
+
+.section-title {
+  font-size: $font-lg;
+  font-weight: $font-weight-semibold;
+  color: $text-primary;
+  margin-bottom: $spacing-md;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  &__more {
+    font-size: $font-sm;
+    color: $text-tertiary;
+    font-weight: $font-weight-normal;
+  }
+}
+
+// 文字工具类
+.t-xs {
+  font-size: $font-xs;
+}
+.t-sm {
+  font-size: $font-sm;
+}
+.t-base {
+  font-size: $font-base;
+}
+.t-md {
+  font-size: $font-md;
+}
+.t-lg {
+  font-size: $font-lg;
+}
+.t-xl {
+  font-size: $font-xl;
+}
+.t-2xl {
+  font-size: $font-2xl;
+}
+.t-primary-text {
+  color: $text-primary;
+}
+.t-secondary {
+  color: $text-secondary;
+}
+.t-tertiary {
+  color: $text-tertiary;
+}
+.t-primary {
+  color: $primary;
+}
+.t-warning {
+  color: $warning;
+}
+.t-accent {
+  color: $accent;
+}
+.t-gold {
+  color: $gold;
+}
+
+.t-bold {
+  font-weight: $font-weight-bold;
+}
+.t-semibold {
+  font-weight: $font-weight-semibold;
+}
+.t-medium {
+  font-weight: $font-weight-medium;
+}
+
+.t-ellipsis {
+  @include single-ellipsis;
+}
+.t-ellipsis-2 {
+  @include multi-ellipsis(2);
+}
+.t-center {
+  text-align: center;
+}
+
+// Flex
+.flex {
+  display: flex;
+}
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.flex-1 {
+  flex: 1;
+}
+.flex-center {
+  @include flex-center;
+}
+.flex-between {
+  @include flex-between;
+}
+.flex-start {
+  @include flex-start;
+}
+.flex-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+// 间距
+.gap-4 {
+  gap: 8rpx;
+}
+.gap-8 {
+  gap: 16rpx;
+}
+.gap-12 {
+  gap: 24rpx;
+}
+.gap-16 {
+  gap: 32rpx;
+}
+.gap-24 {
+  gap: 48rpx;
+}
+
+.mt-8 {
+  margin-top: 16rpx;
+}
+.mt-12 {
+  margin-top: 24rpx;
+}
+.mt-16 {
+  margin-top: 32rpx;
+}
+.mt-24 {
+  margin-top: 48rpx;
+}
+.mb-8 {
+  margin-bottom: 16rpx;
+}
+.mb-12 {
+  margin-bottom: 24rpx;
+}
+.mb-16 {
+  margin-bottom: 32rpx;
+}
+.mb-24 {
+  margin-bottom: 48rpx;
+}
+
+.p-12 {
+  padding: 24rpx;
+}
+.p-16 {
+  padding: 32rpx;
+}
+.px-12 {
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+}
+.px-16 {
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+}
+.py-12 {
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+}
+
+// 标签 chip 基础
+.tag {
+  @include tag-base;
+  background: $primary-lighter;
+  color: $primary-dark;
+}
+.tag-warn {
+  background: $warning-light;
+  color: $warning;
+}
+.tag-success {
+  background: $accent-light;
+  color: darken($accent, 20%);
+}
+.tag-info {
+  background: #E5F0FA;
+  color: $info;
+}
+.tag-gold {
+  background: #FFF1D0;
+  color: darken($gold, 15%);
+}
+.tag-purple {
+  background: #EDE3FA;
+  color: $purple;
+}
+.tag-ghost {
+  background: $divider-light;
+  color: $text-secondary;
+}
+
+// 卡片基础
+.card {
+  @include card;
+  padding: $spacing-md;
+}
+
+.divider {
+  height: 1rpx;
+  background: $divider;
+  margin: $spacing-sm 0;
+}
+.divider-light {
+  height: 1rpx;
+  background: $divider-light;
+}
+
+// 安全区
+.safe-area-top {
+  padding-top: $safe-top;
+}
+.safe-area-bottom {
+  padding-bottom: $safe-bottom;
+}
+
+// 滚动
+.scroll-x {
+  overflow-x: auto;
+  white-space: nowrap;
+  @include scrollbar-hidden;
+}
+.scroll-y {
+  overflow-y: auto;
+  @include scrollbar-hidden;
+}
+
+// 隐藏
+.hidden {
+  display: none !important;
+}
+
+// 按下回弹
+.press {
+  @include press;
+}
+.press-soft {
+  @include press-soft;
+}

@@ -1,8 +1,8 @@
 {
   "name": "@edustation/client",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "EduStation 客户端 (uni-app) — 阶段 2 实现",
+  "description": "EduStation C 端 (家长/学生) — 重新设计：暖橙主题、情感化 UI/UX",
   "scripts": {
     "dev:h5": "uni",
     "dev:mp-weixin": "uni -p mp-weixin",
@@ -17,6 +17,7 @@
     "@dcloudio/uni-components": "3.0.0-alpha-5010220260604001",
     "@dcloudio/uni-h5": "3.0.0-alpha-5010220260604001",
     "@dcloudio/uni-mp-weixin": "3.0.0-alpha-5010220260604001",
+    "dayjs": "^1.11.10",
     "pinia": "2.0.36",
     "vue": "3.4.21"
   },
