@@ -173,6 +173,7 @@
 </template>
 
 <script>
+import { mapState } from 'pinia'
 import { petApi } from '@/api/pet'
 import { useStudentStore } from '@/stores/student'
 import { toast } from '@/components/common/Toast'
@@ -200,6 +201,7 @@ export default {
     }
   },
   computed: {
+    ...mapState(useStudentStore, ['activeStudentId']),
     student() {
       return useStudentStore()
     },
@@ -238,6 +240,17 @@ export default {
       this.loading = true
       this.blockReason = ''
       try {
+        // /pet/me 后端 activeStudent middleware 严格校验 x-active-student-id;
+        // 没选孩子就别发,否则 400 '缺少 studentId / x-active-student-id'
+        // (冷启动/HMR/手动清缓存时 storage 还没 setActive)
+        if (!this.activeStudentId) {
+          await this.student.fetchMyStudents().catch(() => null)
+        }
+        if (!this.activeStudentId) {
+          // storage 真的没孩子记录 — show "未领养" 而不是报 400
+          this.pet = null
+          return
+        }
         const res = await petApi.me()
         this.pet = res || null
         // 拉 species 信息
@@ -428,6 +441,10 @@ export default {
   &__body {
     padding: 0 $spacing-md;
     height: calc(100vh - 140rpx);
+    /* 2026-07-01 桌面端铺满后兜底:防止 scroll-view 在 H5 桌面模式宽度继承异常 → 右侧裁切 */
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
 
   &__loading {

@@ -93,6 +93,7 @@
 <script>
 import { mapState } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { useStudentStore } from '@/stores/student'
 import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
 import OrgFooter from '@/components/layout/OrgFooter.vue'
 import { pointsApi } from '@/api/points'
@@ -111,8 +112,12 @@ export default {
   },
   computed: {
     ...mapState(useAuthStore, ['user']),
+    ...mapState(useStudentStore, ['activeStudentId']),
     auth() {
       return useAuthStore()
+    },
+    student() {
+      return useStudentStore()
     },
     menus() {
       return [
@@ -143,10 +148,13 @@ export default {
     async loadStats() {
       // 并行加载
       const tasks = []
-      tasks.push(pointsApi.me().then((r) => (this.stats.points = r.balance || 0)).catch(() => {}))
+      // /points/me 后端要求必传 student (代表当前激活孩子),没选孩子就别发
+      if (this.activeStudentId) {
+        tasks.push(pointsApi.me().then((r) => (this.stats.points = r.balance || 0)).catch(() => {}))
+      }
       tasks.push(
         studentProductApi
-          .list({ isActive: true })
+          .me({ isActive: true })
           .then((res) => {
             const items = Array.isArray(res) ? res : res.items || res.data || []
             this.stats.lessonsLeft = items.reduce((s, p) => s + (p.remainingLessons || 0), 0)
@@ -155,7 +163,7 @@ export default {
       )
       tasks.push(
         orderApi
-          .list({ pageSize: 1 })
+          .me({ pageSize: 1 })
           .then((res) => {
             this.stats.orderCount = res.total || res.totalCount || 0
           })

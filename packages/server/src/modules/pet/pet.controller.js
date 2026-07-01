@@ -33,7 +33,7 @@ exports.me = async (req, res) => {
 
 // GET /api/v1/pet/species — 种类图鉴
 exports.species = async (req, res) => {
-  res.json(ApiResponse.ok(petCatalog.listSpecies()))
+  res.json(ApiResponse.ok(await petCatalog.listSpecies(req.query || {})))
 }
 
 // GET /api/v1/pet/items — 装饰图鉴 + 解锁/装备状态

@@ -49,7 +49,7 @@ async function _listGlobal({ Model, baseFilter = {}, keyword }) {
 
 /* ─── Species ─────────────────────────────────── */
 
-async function listSpecies({ tier, isActive, keyword }) {
+async function listSpecies({ tier, isActive, keyword } = {}) {
   const filterKey = JSON.stringify({ tier, isActive, keyword })
   return withCache(`species:global:${filterKey}`, async () => {
     const base = {}

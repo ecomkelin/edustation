@@ -1053,6 +1053,91 @@ async function calendar({ orgId, from, to, teacher, room, courseInstance, status
 }
 
 /**
+ * C 端家长: 当前 active child 的课表 (R-1492 2026-07-01)
+ *  - 绕过 permission code (家长不是员工)
+ *  - 入口约定: 仅传 studentId (=req.activeStudentId), courseInstance/teacher/room 等不过滤
+ *  - 业务范围: 通过 CourseEnrollment.status='enrolled' 拿到该孩子所在开班;
+ *    仅返回这些开班下属的 LessonSchedule,自动防越权读到别家孩子
+ *  - 字段形状跟 admin calendar() 完全一致,前端可用同一渲染逻辑
+ *
+ * @param {Object} args
+ * @param {String} args.orgId
+ * @param {String} args.studentId  // 必填, controller 已强制 = req.activeStudentId
+ * @param {String|Date} [args.from]
+ * @param {String|Date} [args.to]
+ * @param {Boolean|String} [args.isTrialLesson]  // 招生试听 (本期不展开,留口)
+ * @param {String} [args.status]                 // 状态过滤
+ * @returns {Promise<Array>}
+ */
+async function calendarForStudent({ orgId, studentId, from, to, isTrialLesson, status }) {
+  if (!orgId) throw ApiError.badRequest('缺少 orgId')
+  if (!studentId) throw ApiError.badRequest('缺少 studentId')
+
+  // 1) 通过 CourseEnrollment 反查孩子所在的开班 ID 列表
+  const enrollments = await CourseEnrollment.find({
+    org: orgId,
+    student: studentId,
+    status: CourseEnrollmentStatus.ENROLLED
+  })
+    .select('courseInstance')
+    .lean()
+
+  if (!enrollments.length) return []
+  const courseInstanceIds = enrollments.map((e) => e.courseInstance)
+
+  // 2) 基础过滤: 课程实例 + 日期范围 + 状态
+  const filter = { org: orgId, courseInstance: { $in: courseInstanceIds } }
+
+  if (isTrialLesson === 'true' || isTrialLesson === true) filter.isTrialLesson = true
+  else if (isTrialLesson === 'false' || isTrialLesson === false) filter.isTrialLesson = { $ne: true }
+
+  if (status) {
+    const arr = String(status).split(',').map((s) => s.trim()).filter(Boolean)
+    filter.status = arr.length > 1 ? { $in: arr } : arr[0]
+  }
+  if (from || to) {
+    filter.plannedStartTime = {}
+    if (from) filter.plannedStartTime.$gte = parseBoundary(from, 'start')
+    if (to) filter.plannedStartTime.$lte = parseBoundary(to, 'end')
+  }
+
+  // 3) 跟 admin calendar 同样的 populate + 字段裁剪
+  const items = await LessonSchedule.find(filter)
+    .populate('courseInstance', 'name status')
+    .populate('teacher', 'realName')
+    .populate('room', 'name')
+    .sort({ plannedStartTime: 1 })
+    .lean()
+
+  return items.map((s) => ({
+    id: String(s._id),
+    title: s.title || (s.courseInstance && s.courseInstance.name) || '排课',
+    // 2026-07-01: 同时返回 start/end (FullCalendar 习惯) 和 plannedStartTime/plannedEndTime
+    // (项目其它接口的命名),避免调用方拿到字段名时踩坑。home.vue 等老代码用的是 plannedStartTime
+    start: s.plannedStartTime,
+    end: s.plannedEndTime,
+    plannedStartTime: s.plannedStartTime,
+    plannedEndTime: s.plannedEndTime,
+    status: s.status,
+    lessonNo: s.lessonNo,
+    teacher: s.teacher && { id: String(s.teacher._id), realName: s.teacher.realName, mobile: s.teacher.mobile },
+    room: s.room && { id: String(s.room._id), name: s.room.name, location: s.room.location },
+    courseInstance: s.courseInstance && {
+      id: String(s.courseInstance._id),
+      name: s.courseInstance.name,
+      status: s.courseInstance.status,
+      isTrial: s.courseInstance.isTrial,
+      startDate: s.courseInstance.startDate,
+      estimatedEndDate: s.courseInstance.estimatedEndDate,
+      maxStudents: s.courseInstance.maxStudents,
+      schedulePlan: s.courseInstance.schedulePlan,
+      syllabusSnapshot: s.courseInstance.syllabusSnapshot,
+      syllabusOverride: s.courseInstance.syllabusOverride
+    }
+  }))
+}
+
+/**
  * 冲突预检（独立端点）：给定一个时间段 + 老师/教室/课程实例，
  * 返回所有冲突排课（用于编辑对话框的"实时校验"）
  */
@@ -1210,6 +1295,7 @@ async function previewSyncAttendances({ id, orgId }) {
 
 module.exports = {
   list, detail, create, update, remove, removableCheck, calendar,
+  calendarForStudent,
   preview, generate, prepare, start, finish, archive, checkConflicts,
   detectConflict,
   generateAttendancesForSchedule,

@@ -47,6 +47,28 @@ page {
     color: $text-tertiary;
     font-weight: $font-weight-normal;
   }
+
+  // 2026-07-01: "查看完整课表" 这类可点击的尾巴,从灰文字升级成药丸 CTA,
+  // 让家长一眼能识别;与 discover.vue 的纯展示 __more (X门课程) 不冲突,
+  // 用 --cta 修饰符显式启用
+  // 2026-07-01 v2:缩小尺寸 + 右侧内收距,避免贴 viewport 边缘、与标题"挤"在一起
+  &__more--cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6rpx;
+    padding: 4rpx 14rpx;
+    margin-right: 8rpx;
+    background: $primary-lighter;
+    color: $primary;
+    font-size: $font-xs;
+    font-weight: $font-weight-medium;
+    border-radius: $radius-pill;
+
+    &:active {
+      background: $primary-light;
+      transform: scale(0.98);
+    }
+  }
 }
 
 // 文字工具类

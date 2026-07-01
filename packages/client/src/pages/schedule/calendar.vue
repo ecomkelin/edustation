@@ -171,8 +171,11 @@ export default {
       try {
         const start = new Date(this.year, this.month - 1, 1)
         const end = new Date(this.year, this.month, 0)
-        const res = await lessonScheduleApi.calendar({
-          student: useStudentStore().activeStudentId || undefined,
+        // 2026-07-01: 改调 C 端 /lesson-schedules/me/calendar
+        //   旧 .calendar() 走 admin 端点 + requirePermission('lessonSchedule.read'),
+        //   家长无权限码 → 403 → monthLessons=[] → "这一天没有课程"
+        //   me 端点跳过权限码,只靠 activeStudent middleware 验监护人
+        const res = await lessonScheduleApi.myCalendar({
           from: date.fmtDate(start),
           to: date.fmtDate(end),
           isTrialLesson: false

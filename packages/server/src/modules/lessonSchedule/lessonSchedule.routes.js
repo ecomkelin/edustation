@@ -8,6 +8,12 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
+// C 端家长: /lesson-schedules/me/calendar — 仅认证 + 机构 + active student
+// 不走 requirePermission(家长无员工权限码;activeStudent 已校验监护人身份)
+router.use(mws.activeStudent)
+// R-1492 GET /lesson-schedules/me/calendar (C 端"我的课表")
+router.get('/me/calendar', asyncHandler(c.calendarForStudent))
+
 // R-1450 GET /lesson-schedules/calendar
 router.get('/calendar', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.calendar))
 // 冲突预检（独立 GET，方便编辑对话框在保存前调用）

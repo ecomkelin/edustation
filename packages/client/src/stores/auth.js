@@ -46,6 +46,9 @@ export const useAuthStore = defineStore('auth', {
       this.accessToken = res.accessToken
       this.user = res.user
       this.pendingConsents = Array.isArray(res.pendingConsents) ? res.pendingConsents : []
+      // ⚠️ 立刻把 token 落 storage,否则下面 authApi.me() 在 request.js 里读不到
+      //    (request.js 是从 storage 读 Authorization,不是从 Pinia 内存)
+      this.persist()
       // 拉 /me 拿完整 orgs + 权限 + 机构级 pendingConsents
       const me = await authApi.me()
       this.user = me

@@ -11,12 +11,13 @@
     <title>EduStation · 校外培训家长端</title>
     <script>
       // rem 适配 (设计稿 750rpx)
+      // 2026-07-01:不再 clamp 540,rootFontSize 直接跟随真实 viewport 宽度。
+      // 让桌面端铺满整个屏幕,uni-app rpx 自动按设计稿等比缩放;
+      // 同时去掉 #app 的 390px 手机壳,让真·全宽
       document.addEventListener('DOMContentLoaded', function () {
         var docEl = document.documentElement
         var resize = function () {
           var width = docEl.clientWidth || window.innerWidth
-          // 限制最大宽度, 桌面端体验
-          if (width > 540) width = 540
           docEl.style.fontSize = (width / 20) + 'px'
         }
         resize()
@@ -31,6 +32,7 @@
         margin: 0;
         padding: 0;
         background: #fffaf5;
+        overflow-x: hidden;   /* 2026-07-01 防桌面端任何 rpx 元素溢出导致横向滚动 */
       }
       body {
         font-family:
@@ -45,23 +47,10 @@
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
-      /* 桌面端居中显示 (移动端 UI) */
+      /* 桌面端渐变背景(无 #app 宽度约束) */
       @media (min-width: 541px) {
         body {
           background: linear-gradient(135deg, #fff5ed 0%, #ffe4d3 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        #app {
-          width: 390px !important;
-          height: 90vh !important;
-          max-height: 844px !important;
-          margin: 0 auto;
-          box-shadow: 0 20px 60px rgba(255, 138, 101, 0.25);
-          border-radius: 24px;
-          overflow: hidden;
-          position: relative;
         }
       }
     </style>

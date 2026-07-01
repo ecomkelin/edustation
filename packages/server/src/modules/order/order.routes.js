@@ -8,6 +8,14 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
+// C 端家长：/orders/me — 仅认证 + 机构 + active student
+// 不走 requirePermission(家长无员工权限码；activeStudent middleware 已校验是监护人)
+// 注意：/me 必须定义在 /:id 之前，否则会被 :id 路由吞掉
+router.use(mws.activeStudent)
+// R-2078 GET /orders/me (C 端"我的订单")
+router.get('/me', asyncHandler(c.mine))
+
+// 业务端 (管理员/教务/老师):
 // R-1700 GET /orders
 router.get('/', mws.requirePermission('order.read'), asyncHandler(c.list))
 // R-1701 GET /orders/:id

@@ -305,10 +305,14 @@ async function setBlocked(id, orgId, isBlocked, reason) {
 
 /**
  * 家长视角：查自己孩子
+ *
+ * 2026-07-01:必须 select _id,客户端用 id 调 setActive/请求头 x-active-student-id;
+ * 之前 select 只 name/gender/birthday/notes 漏了 id,客户端拿不到孩子 ObjectId,
+ * 导致 storage[ACTIVE_STUDENT] 永远 undefined,所有需要 activeStudent 的端点 400。
  */
 async function listForGuardian({ orgId, userId }) {
   return Student.find({ org: orgId, guardians: userId, isActive: true, isBlocked: { $ne: true } })
-    .select('name gender birthday notes')
+    .select('_id name gender birthday grade school avatar notes')
     .lean()
 }
 

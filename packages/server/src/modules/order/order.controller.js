@@ -5,6 +5,11 @@ const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, ...req.query })))
 exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(req.params.id, req.orgId)))
+
+// C 端 /orders/me (R-2078 2026-07-01): 当前 active child 的 Order
+// 复用 service.list,强制 student=req.activeStudentId,避免越权
+exports.mine = async (req, res) =>
+  res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, student: req.activeStudentId, ...req.query })))
 exports.create = async (req, res) => {
   // 新结构：{ student, items: [{ courseProduct, quantity }], actualPrice, paymentMethod, paidAmount, remark, agreements }
   // - 仅传 items  → 创建 pending 订单（客户端下单 / 家长端未来使用）

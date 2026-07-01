@@ -29,7 +29,7 @@
       <view class="home__section">
         <view class="section-title">
           <text>📚 今日课程</text>
-          <text class="section-title__more" @tap="goCalendar">查看完整课表 ›</text>
+          <text class="section-title__more section-title__more--cta" @tap="goCalendar">📅 完整课表</text>
         </view>
 
         <view v-if="loading" class="home__loading">
@@ -117,7 +117,7 @@
           </view>
         </view>
         <view v-else class="home__day-empty">
-          <text>{{ selectedDay.isToday ? '今天没有课哦' : selectedDay.name + '没有课' }}</text>
+          <text>{{ !selectedDay ? '' : (selectedDay.isToday ? '今天没有课哦' : selectedDay.name + '没有课') }}</text>
         </view>
       </view>
 
@@ -223,6 +223,10 @@ export default {
         .filter((l) => date.fmtDate(l.plannedStartTime) === this.selectedDate)
         .sort((a, b) => new Date(a.plannedStartTime) - new Date(b.plannedStartTime))
     },
+    selectedDay() {
+      if (!this.selectedDate) return null
+      return this.weekDays.find((d) => d.date === this.selectedDate) || null
+    },
     quickEntries() {
       return [
         { label: '我的课包', icon: '🎒', bg: '#FFE4D3', url: '/pages/studentProduct/list' },
@@ -257,8 +261,7 @@ export default {
         const now = new Date()
         const start = date.startOfWeek()
         const end = date.addDays(start, 14) // 取两周更稳
-        const res = await lessonScheduleApi.calendar({
-          student: this.activeStudentId || undefined,
+        const res = await lessonScheduleApi.myCalendar({
           from: date.fmtDate(start),
           to: date.fmtDate(end),
           isTrialLesson: false

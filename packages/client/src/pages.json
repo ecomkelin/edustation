@@ -3,7 +3,7 @@
     {
       "path": "pages/tabbar/home",
       "style": {
-        "navigationBarTitleText": "家",
+        "navigationBarTitleText": "首页",
         "enablePullDownRefresh": true,
         "navigationStyle": "custom"
       }
@@ -311,7 +311,7 @@
     "list": [
       {
         "pagePath": "pages/tabbar/home",
-        "text": "家",
+        "text": "首页",
         "iconPath": "static/tabbar/home.png",
         "selectedIconPath": "static/tabbar/home-active.png"
       },

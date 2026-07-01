@@ -32,7 +32,8 @@ export const useStudentStore = defineStore('student', {
         if (res && Array.isArray(res.items)) list = res.items
         else if (res && Array.isArray(res.data)) list = res.data
         else if (!Array.isArray(res)) list = []
-        this.list = list
+        // 2026-07-01:服务端返 _id (mongoose lean),统一映射到 id 字段,后续 setActive/activeStudent/getter 都按 id 走
+        this.list = list.map((s) => (s && s._id ? { ...s, id: String(s._id) } : s))
         if (!this.activeStudentId && this.list.length) {
           this.setActive(this.list[0].id)
         } else if (

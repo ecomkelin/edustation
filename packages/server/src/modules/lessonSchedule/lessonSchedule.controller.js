@@ -10,6 +10,15 @@ exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update(req.
 exports.remove = async (req, res) => res.json(ApiResponse.ok(await s.remove({ id: req.params.id, orgId: req.orgId })))
 exports.removableCheck = async (req, res) => res.json(ApiResponse.ok(await s.removableCheck({ id: req.params.id, orgId: req.orgId })))
 exports.calendar = async (req, res) => res.json(ApiResponse.ok(await s.calendar({ orgId: req.orgId, ...req.query })))
+
+// C 端 /lesson-schedules/me/calendar (R-1492 2026-07-01): 当前 active child 的课表
+// 强制 student=req.activeStudentId(防越权读到其他孩子),仅返回该孩子 enrolled 开班下的排课
+exports.calendarForStudent = async (req, res) =>
+  res.json(ApiResponse.ok(await s.calendarForStudent({
+    orgId: req.orgId,
+    studentId: req.activeStudentId,
+    ...req.query
+  })))
 exports.preview = async (req, res) => res.json(ApiResponse.ok(await s.preview({ orgId: req.orgId, ...req.body })))
 exports.generate = async (req, res) => res.status(201).json(ApiResponse.created(await s.generate({ orgId: req.orgId, ...req.body })))
 exports.start = async (req, res) => res.json(ApiResponse.ok(await s.start({ id: req.params.id, orgId: req.orgId })))
