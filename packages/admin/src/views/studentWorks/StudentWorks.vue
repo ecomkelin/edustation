@@ -5,24 +5,83 @@
       学员在课上的作品（图片/视频/描述）。作品一旦创建即不可改（考勤锚定 + 学科/开班快照），需改请删除重建。
     </p>
 
+    <!-- 顶部 KPI（2026-07-01 新增；走 R-1606） -->
+    <el-row :gutter="12" class="kpi-row">
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="本期作品数" :value="stats.total" :extra="`对比上一期 ${stats.prevTotal}`" accent="blue" />
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="已评数" :value="stats.ratedCount" :extra="`上一期 ${stats.prevRatedCount}`" accent="green" />
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="平均等级" :value="stats.avgLevel != null ? stats.avgLevel + ' / 5' : '—'" extra="仅计已评" accent="orange" />
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="未评数" :value="stats.unratedCount" extra="待员工评定" accent="red" />
+      </el-col>
+    </el-row>
+
+    <!-- 工具栏：左侧视图切换，右侧操作 -->
     <div class="toolbar">
-      <el-button type="primary" :icon="Plus" @click="openCreate">新增作品</el-button>
+      <div class="toolbar-left">
+        <el-radio-group v-model="viewMode" size="small">
+          <el-radio-button label="list">列表</el-radio-button>
+          <el-radio-button label="card">卡片</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="toolbar-right">
+        <el-button :icon="Download" @click="onExport">导出 CSV</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">新增作品</el-button>
+      </div>
     </div>
 
-    <el-form :inline="true" :model="filter" @submit.prevent="load" class="filter-form">
+    <el-form :inline="true" :model="filter" @submit.prevent="reloadAll" class="filter-form">
       <el-form-item label="学科">
-        <el-select v-model="filter.subject" clearable filterable placeholder="全部学科" style="width: 180px" @change="load">
+        <el-select v-model="filter.subject" clearable filterable placeholder="全部学科" style="width: 160px" @change="reloadAll">
           <el-option v-for="s in subjects" :key="s._id" :label="s.name" :value="s._id" />
         </el-select>
       </el-form-item>
       <el-form-item label="开班">
-        <el-select v-model="filter.courseInstance" clearable filterable placeholder="全部开班" style="width: 200px" @change="load">
+        <el-select v-model="filter.courseInstance" clearable filterable placeholder="全部开班" style="width: 180px" @change="reloadAll">
           <el-option v-for="c in courseInstances" :key="c._id" :label="c.name || c.courseProduct?.name || c._id" :value="c._id" />
         </el-select>
       </el-form-item>
       <el-form-item label="学生">
-        <el-select v-model="filter.student" clearable filterable placeholder="全部学生" style="width: 180px" @change="load">
+        <el-select v-model="filter.student" clearable filterable placeholder="全部学生" style="width: 160px" @change="reloadAll">
           <el-option v-for="s in students" :key="s._id" :label="s.name" :value="s._id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="等级">
+        <el-select v-model="filter.levels" multiple collapse-tags clearable placeholder="全部等级" style="width: 160px" @change="reloadAll">
+          <el-option v-for="lv in [1,2,3,4,5]" :key="lv" :label="`${lv} ★`" :value="lv" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="上传者">
+        <el-select v-model="filter.uploadedBy" clearable filterable placeholder="全部上传者" style="width: 160px" @change="reloadAll">
+          <el-option v-for="u in userOptions" :key="u._id" :label="u.realName || u.mobile" :value="u._id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="创建时间">
+        <el-date-picker
+          v-model="filter.dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始"
+          end-placeholder="结束"
+          value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
+          style="width: 280px"
+          :shortcuts="dateShortcuts"
+          @change="reloadAll"
+        />
+      </el-form-item>
+      <el-form-item label="排序">
+        <el-select v-model="filter.sort" style="width: 160px" @change="reloadAll">
+          <el-option label="最新在前" value="-createdAt" />
+          <el-option label="最旧在前" value="createdAt" />
+          <el-option label="等级高分" value="-level" />
+          <el-option label="等级低分" value="level" />
+          <el-option label="标题 A→Z" value="title" />
+          <el-option label="标题 Z→A" value="-title" />
         </el-select>
       </el-form-item>
       <el-form-item>
@@ -30,7 +89,15 @@
       </el-form-item>
     </el-form>
 
-    <el-table :data="items" v-loading="loading" style="margin-top: 12px" @row-click="openDetail" row-class-name="row-clickable">
+    <!-- 列表视图：仅在 viewMode==='list' 渲染 -->
+    <el-table
+      v-if="viewMode === 'list'"
+      :data="items"
+      v-loading="loading"
+      style="margin-top: 12px"
+      @row-click="openDetail"
+      row-class-name="row-clickable"
+    >
       <el-table-column label="缩略图" width="100">
         <template #default="{ row }">
           <el-image
@@ -109,6 +176,56 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- 卡片视图：grid 2-4 列响应式 -->
+    <div v-else v-loading="loading" class="card-grid">
+      <div v-if="!items.length" class="card-grid-empty">暂无作品</div>
+      <div
+        v-for="row in items"
+        :key="row._id"
+        class="work-card"
+        @click="openDetail(row)"
+      >
+        <el-image
+          v-if="row.fileUrls && row.fileUrls[0]"
+          :src="row.fileUrls[0]"
+          :preview-src-list="row.fileUrls"
+          :initial-index="0"
+          fit="cover"
+          class="work-card-img"
+          :preview-teleported="true"
+        />
+        <div v-else class="work-card-noimg">无图</div>
+        <div class="work-card-body">
+          <div class="work-card-title">{{ row.title }}</div>
+          <div class="work-card-meta">
+            <span>{{ row.student && row.student.name || '—' }}</span>
+            <span class="work-card-level">
+              <span v-if="row.level" class="level-stars">
+                <span v-for="i in row.level" :key="i" class="star">★</span>
+              </span>
+              <span v-else class="text-muted text-12">未评</span>
+            </span>
+          </div>
+          <div class="work-card-time">
+            {{ row.lessonSchedule && row.lessonSchedule.plannedStartTime ? formatDate(row.lessonSchedule.plannedStartTime, 'MM-DD HH:mm') : '—' }}
+          </div>
+          <div class="work-card-actions" @click.stop>
+            <el-button size="small" link type="primary" @click.stop="openEdit(row)">编辑</el-button>
+            <DestructiveConfirm
+              v-if="canDelete"
+              :target="`作品 ${row.title}`"
+              warning="中风险"
+              :precheck-notes="['该作品未被其他业务引用']"
+              :precheck="() => studentWorkApi.removableCheck(row._id).then((r) => r.data)"
+              @confirm="(p) => onRemoveConfirm(row, p)"
+            >
+              <el-button size="small" link type="danger">删除</el-button>
+            </DestructiveConfirm>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <el-pagination
       v-model:current-page="filter.page"
@@ -313,11 +430,13 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, computed } from 'vue'
-import { Plus, Folder } from '@element-plus/icons-vue'
+import { onMounted, reactive, ref, computed, watch } from 'vue'
+import { Plus, Folder, Download } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import KpiCard from '@/components/KpiCard.vue'
 import { studentWorkApi } from '@/api/studentWork'
+import { userApi } from '@/api/user'
 import FilePicker from '@/components/FilePicker.vue'
 import { storageApi } from '@/api/storage'
 import { handleRemoveError } from '@/utils/removable'
@@ -331,20 +450,67 @@ import { formatDate } from '@/utils/format'
 
 const auth = useAuthStore()
 
+// 顶部 KPI 状态
+const stats = reactive({ total: 0, ratedCount: 0, unratedCount: 0, avgLevel: null, prevTotal: 0, prevRatedCount: 0 })
+
+// 视图切换
+const viewMode = ref('list')
+
+// 列表数据
 const loading = ref(false)
 const items = ref([])
 const total = ref(0)
 const subjects = ref([])
 const courseInstances = ref([])
 const students = ref([])
+const userOptions = ref([])
 
+// 过滤器（2026-07-01 增强：加 levels/uploadedBy/dateRange/sort）
 const filter = reactive({
   subject: '',
   courseInstance: '',
   student: '',
+  levels: [],
+  uploadedBy: '',
+  dateRange: [],
+  sort: '-createdAt',
   page: 1,
   pageSize: 20
 })
+
+// el-date-picker 快捷选项
+const dateShortcuts = [
+  {
+    text: '本月',
+    value: () => {
+      const now = new Date()
+      return [new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), now]
+    }
+  },
+  {
+    text: '近 7 天',
+    value: () => {
+      const now = new Date()
+      const d = new Date(now.getTime() - 7 * 24 * 3600 * 1000)
+      return [d, now]
+    }
+  },
+  {
+    text: '近 30 天',
+    value: () => {
+      const now = new Date()
+      const d = new Date(now.getTime() - 30 * 24 * 3600 * 1000)
+      return [d, now]
+    }
+  },
+  {
+    text: '本月至今',
+    value: () => {
+      const now = new Date()
+      return [new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0), now]
+    }
+  }
+]
 
 const detailVisible = ref(false)
 const detail = ref(null)
@@ -353,27 +519,45 @@ const detail = ref(null)
 const canDelete = computed(() => !!auth.isPlatformAdmin)
 
 const editVisible = ref(false)
-const editForm = ref(null) // { _id, title, description, level }
+const editForm = ref(null)
 const editSaving = ref(false)
 
 // 新增作品（三步选择：课程 → 学生 → 考勤）
 const createVisible = ref(false)
 const createSaving = ref(false)
-const ciOptions = ref([]) // [{ _id, label }]  开班
+const ciOptions = ref([])
 const ciLoading = ref(false)
-const studentOptions = ref([]) // [{ _id, name }] 该课程下报过名的学生
+const studentOptions = ref([])
 const studentLoading = ref(false)
-const attendanceOptions = ref([]) // [{ _id, label }] 该学生+该课程的考勤
+const attendanceOptions = ref([])
 const attendanceLoading = ref(false)
-const createForm = ref(null) // { courseInstance, student, lessonAttendance, title, description, level, fileList }
+const createForm = ref(null)
+
+// 过滤器 → 请求参数。把多选等级数组拆成 [minLevel, maxLevel]：
+// 仅 1 档：minLevel = levels[0]; 多档：minLevel = min, maxLevel = max。
+function buildParams() {
+  const params = { page: filter.page, pageSize: filter.pageSize, sort: filter.sort || '-createdAt' }
+  if (filter.subject) params.subject = filter.subject
+  if (filter.courseInstance) params.courseInstance = filter.courseInstance
+  if (filter.student) params.student = filter.student
+  if (filter.uploadedBy) params.uploadedBy = filter.uploadedBy
+  if (filter.levels && filter.levels.length) {
+    const sorted = [...filter.levels].sort((a, b) => a - b)
+    params.minLevel = sorted[0]
+    if (sorted.length > 1) params.maxLevel = sorted[sorted.length - 1]
+  }
+  if (Array.isArray(filter.dateRange) && filter.dateRange.length === 2 && filter.dateRange[0] && filter.dateRange[1]) {
+    // el-date-picker 的 value-format 已固定 'YYYY-MM-DDTHH:mm:ss.SSSZ' (ISO 字符串)
+    params.createdAtFrom = filter.dateRange[0]
+    params.createdAtTo = filter.dateRange[1]
+  }
+  return params
+}
 
 async function load() {
   loading.value = true
   try {
-    const params = { page: filter.page, pageSize: filter.pageSize }
-    if (filter.subject) params.subject = filter.subject
-    if (filter.courseInstance) params.courseInstance = filter.courseInstance
-    if (filter.student) params.student = filter.student
+    const params = buildParams()
     const res = await studentWorkApi.list(params)
     items.value = res.data?.items || []
     total.value = res.data?.total || 0
@@ -385,12 +569,64 @@ async function load() {
   }
 }
 
+async function loadStats() {
+  // KPI 只关心当前过滤下的总数 / 等级分布，时间范围仍是 filter.dateRange
+  try {
+    const params = {}
+    if (filter.subject) params.subject = filter.subject
+    if (filter.courseInstance) params.courseInstance = filter.courseInstance
+    if (filter.student) params.student = filter.student
+    if (filter.uploadedBy) params.uploadedBy = filter.uploadedBy
+    if (Array.isArray(filter.dateRange) && filter.dateRange.length === 2 && filter.dateRange[0] && filter.dateRange[1]) {
+      params.createdAtFrom = filter.dateRange[0]
+      params.createdAtTo = filter.dateRange[1]
+    }
+    const res = await studentWorkApi.stats(params)
+    Object.assign(stats, res.data || stats)
+  } catch (_) {
+    // stats 失败不阻塞列表
+  }
+}
+
+function reloadAll() {
+  filter.page = 1
+  load()
+  loadStats()
+}
+
 function resetFilters() {
   filter.subject = ''
   filter.courseInstance = ''
   filter.student = ''
+  filter.levels = []
+  filter.uploadedBy = ''
+  filter.dateRange = []
+  filter.sort = '-createdAt'
   filter.page = 1
   load()
+  loadStats()
+}
+
+// CSV 导出（仿 AuditLogs.onExport: fetch + Blob + <a download>，绕开 axios 拦截器对下载的影响）
+function onExport() {
+  const params = buildParams()
+  delete params.page
+  delete params.pageSize
+  const url = studentWorkApi.buildExportCsvUrl(params)
+  fetch(url, {
+    headers: { Authorization: `Bearer ${auth.accessToken}` },
+    credentials: 'include'
+  })
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const blob = await r.blob()
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `student-works-${Date.now()}.csv`
+      link.click()
+      URL.revokeObjectURL(link.href)
+    })
+    .catch((e) => ElMessage.error('导出失败: ' + e.message))
 }
 
 async function openDetail(row) {
@@ -408,7 +644,6 @@ function openEdit(row) {
     _id: row._id,
     title: row.title,
     description: row.description || '',
-    // el-rate 的 v-model 要求 number；null 时给 0 + 在 submit 时清掉
     level: row.level || 0
   }
   editVisible.value = true
@@ -426,20 +661,19 @@ async function submitEdit() {
       title: String(editForm.value.title).trim(),
       description: editForm.value.description
     }
-    // el-rate 用 0 表示"未评"；区分"不传"和"传 0"——传 0 等价于显式清空
     payload.level = editForm.value.level || null
 
     await studentWorkApi.update(editForm.value._id, payload)
     ElMessage.success('保存成功')
     editVisible.value = false
     load()
-    // 同步更新详情 dialog（如果打开着）
+    loadStats()
     if (detail.value && detail.value._id === editForm.value._id) {
       const res = await studentWorkApi.detail(editForm.value._id)
       detail.value = res.data || null
     }
   } catch (e) {
-    // 错误已由 http.js 的 ElMessage 弹出
+    // http.js 已弹 ElMessage
   } finally {
     editSaving.value = false
   }
@@ -453,6 +687,7 @@ async function onRemoveConfirm(row, { password }) {
       detailVisible.value = false
     }
     load()
+    loadStats()
   } catch (e) {
     await handleRemoveError(e, '无法删除 · 中风险', `作品 ${row.title}`)
   }
@@ -479,10 +714,9 @@ async function openCreate() {
 async function loadCourseInstances() {
   ciLoading.value = true
   try {
-    // 用现有的 courseInstanceApi；后端 list 直接返回数组
     const res = await courseInstanceApi.list({ pageSize: 200 }, { silent: true })
-    const items = Array.isArray(res.data) ? res.data : (res.data?.items || [])
-    ciOptions.value = items.map((c) => ({
+    const arr = Array.isArray(res.data) ? res.data : (res.data?.items || [])
+    ciOptions.value = arr.map((c) => ({
       _id: c._id,
       label: [c.name || c.courseProduct?.name, c.courseProduct?.name].filter(Boolean).join(' / ') || c._id
     }))
@@ -495,7 +729,6 @@ async function loadCourseInstances() {
 
 async function onCourseChange(courseInstanceId) {
   if (!createForm.value) return
-  // 清空下游
   createForm.value.student = ''
   createForm.value.lessonAttendance = ''
   studentOptions.value = []
@@ -504,14 +737,12 @@ async function onCourseChange(courseInstanceId) {
 
   studentLoading.value = true
   try {
-    // 查这门课下"在读"的学生（status=enrolled）
     const res = await courseEnrollmentApi.list({
       courseInstance: courseInstanceId,
       status: 'enrolled',
       pageSize: 500
     }, { silent: true })
     const items = res.data?.items || []
-    // 去重（同一学生可能多次报名）
     const seen = new Set()
     const uniq = []
     for (const e of items) {
@@ -542,14 +773,13 @@ async function loadAttendances() {
   if (!createForm.value) return
   attendanceLoading.value = true
   try {
-    // 后端 lessonAttendance.list 新加 courseInstance 参数（service.js 已支持）
     const res = await lessonAttendanceApi.list({
       courseInstance: createForm.value.courseInstance,
       student: createForm.value.student,
       pageSize: 200
     }, { silent: true })
-    const items = Array.isArray(res.data) ? res.data : (res.data?.items || [])
-    attendanceOptions.value = items.map((a) => ({
+    const arr = Array.isArray(res.data) ? res.data : (res.data?.items || [])
+    attendanceOptions.value = arr.map((a) => ({
       _id: a._id,
       label: [
         a.lessonSchedule?.plannedStartTime ? formatDate(a.lessonSchedule.plannedStartTime, 'YYYY-MM-DD HH:mm') : '',
@@ -579,14 +809,12 @@ async function submitCreate() {
   if (!createForm.value || !canSubmitCreate.value) return
   createSaving.value = true
   try {
-    // 1) 上传新文件
     const files = (createForm.value.fileList || []).map((f) => f.raw || f).filter(Boolean)
     let uploadedIds = []
     if (files.length) {
       const upRes = await storageApi.uploadMany({ files, scope: 'work' })
       uploadedIds = (upRes.data?.items || []).map((i) => i.id)
     }
-    // 2) 合并：从文件库选 + 新上传
     const fileIds = [...(createForm.value.pickedFileIds || []), ...uploadedIds]
     if (!fileIds.length) {
       ElMessage.error('请至少上传或选择一个文件')
@@ -603,6 +831,7 @@ async function submitCreate() {
     ElMessage.success('作品已上传')
     createVisible.value = false
     load()
+    loadStats()
   } catch (e) {
     // http.js 已弹 ElMessage
   } finally {
@@ -610,9 +839,6 @@ async function submitCreate() {
   }
 }
 
-// 从文件库选作品文件（多选）。与 fileList 平行存储，submitCreate 时合并。
-// 已知 trade-off：用户上传后未点提交就关弹窗，新上传的文件会成孤儿 —— 与 Orgs 的 stagedLogoIds 同样限制，
-// 后续可镜像 stagedWorkIds 修复，本期不做。
 const workPicker = ref(false)
 function onPickWorks(files) {
   if (!createForm.value) return
@@ -628,21 +854,25 @@ function onPickWorks(files) {
 }
 
 onMounted(async () => {
-  // 并行拉取过滤器下拉数据。silent=true：无权限时下拉为空，不弹错误 toast（页面其它功能照常）
-  const [s, c, st] = await Promise.allSettled([
+  const [s, c, st, u] = await Promise.allSettled([
     subjectApi.list({ pageSize: 200 }, { silent: true }),
     courseInstanceApi.list({ pageSize: 200 }, { silent: true }),
-    studentApi.list({ pageSize: 200 }, { silent: true })
+    studentApi.list({ pageSize: 200 }, { silent: true }),
+    userApi.list({ pageSize: 200 }, { silent: true })
   ])
   if (s.status === 'fulfilled') {
-    // 响应统一被 ApiResponse.ok 包成 {success, data: ...}; http 拦截器 return body.
-    // subject 端点 data 是裸 array; courseInstance/student data 是 {items, total} 分页.
     const v = s.value
     subjects.value = Array.isArray(v?.data) ? v.data : []
   }
   if (c.status === 'fulfilled') courseInstances.value = c.value.data?.items || []
   if (st.status === 'fulfilled') students.value = st.value.data?.items || []
+  if (u.status === 'fulfilled') {
+    // userApi.list 响应可能是 {items} 或裸数组
+    const v = u.value
+    userOptions.value = Array.isArray(v?.data) ? v.data : (v?.data?.items || [])
+  }
   load()
+  loadStats()
 })
 </script>
 
@@ -652,20 +882,31 @@ onMounted(async () => {
   font-size: 13px;
   margin: 0 0 12px;
 }
-.student-works-page .toolbar {
-  margin: 0 0 8px;
+.kpi-row {
+  margin-bottom: 12px;
+}
+.toolbar {
+  margin: 8px 0;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+}
+.toolbar-right {
+  display: flex;
+  gap: 8px;
 }
 .filter-form {
   background: #fafbfc;
   padding: 12px;
   border-radius: 6px;
   margin-bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
 }
-.row-clickable {
-  cursor: pointer;
+.filter-form .el-form-item {
+  margin-bottom: 8px;
 }
+.row-clickable { cursor: pointer; }
 .cell-strong { font-weight: 500; color: #1f2937; }
 .text-muted { color: #9ca3af; }
 .text-12 { font-size: 12px; }
@@ -690,4 +931,72 @@ onMounted(async () => {
 .level-stars { display: inline-flex; gap: 1px; font-size: 14px; }
 .level-stars .star { color: #f59e0b; }
 .level-stars .star.empty { color: #e5e7eb; }
+
+/* 卡片视图 */
+.card-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.card-grid-empty {
+  grid-column: 1 / -1;
+  padding: 40px;
+  text-align: center;
+  color: #9ca3af;
+}
+.work-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.work-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+.work-card-img {
+  width: 100%;
+  height: 160px;
+  display: block;
+}
+.work-card-noimg {
+  width: 100%;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+.work-card-body {
+  padding: 10px 12px;
+}
+.work-card-title {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-card-meta {
+  margin-top: 4px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #6b7280;
+}
+.work-card-time {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+.work-card-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 4px;
+}
 </style>

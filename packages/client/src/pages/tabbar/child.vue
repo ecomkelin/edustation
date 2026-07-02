@@ -29,7 +29,7 @@
       <view class="home__section">
         <view class="section-title">
           <text>📚 今日课程</text>
-          <text class="section-title__more section-title__more--cta" @tap="goCalendar">📅 完整课表</text>
+          <text class="section-title__more" @tap="goCalendar">查看完整课表 ›</text>
         </view>
 
         <view v-if="loading" class="home__loading">
@@ -78,6 +78,82 @@
         </view>
       </view>
 
+      <!-- 宠物概略 (2026-07-02 加回首页) -->
+      <view class="home__section">
+        <view class="section-title">
+          <text>🐾 我的宠物</text>
+          <text v-if="pet" class="section-title__more" @tap="goPetDetail">去照顾 ›</text>
+        </view>
+
+        <!-- 加载中 -->
+        <view v-if="petLoading && !pet && !petBlockReason" class="home__pet-loading">
+          <text>召唤中…</text>
+        </view>
+
+        <!-- 未报名: 引导去探索 -->
+        <view v-else-if="petBlockReason === 'notEnrolled'" class="home__pet-empty press" @tap="goPage('/pages/tabbar/org')">
+          <text class="home__pet-empty-emoji">🌱</text>
+          <view class="home__pet-empty-info">
+            <text class="home__pet-empty-title">先报名一门课程吧</text>
+            <text class="home__pet-empty-desc">报名后孩子就能领养宠物伙伴 ›</text>
+          </view>
+        </view>
+
+        <!-- 未领养: 引导去领养 -->
+        <view v-else-if="!pet" class="home__pet-empty press" @tap="goPetAdopt">
+          <text class="home__pet-empty-emoji">🥚</text>
+          <view class="home__pet-empty-info">
+            <text class="home__pet-empty-title">领养孩子的第一位小伙伴</text>
+            <text class="home__pet-empty-desc">选一个蛋,让它陪伴孩子一起成长 ›</text>
+          </view>
+        </view>
+
+        <!-- 蛋态 -->
+        <view v-else-if="pet.state === 'egg'" class="home__pet-card press" @tap="goPetDetail">
+          <view class="home__pet-portrait">
+            <text class="home__pet-portrait-emoji">🥚</text>
+          </view>
+          <view class="home__pet-info">
+            <view class="home__pet-name-row">
+              <text class="home__pet-name">{{ petName }}</text>
+              <text class="home__pet-state">待破壳</text>
+            </view>
+            <text class="home__pet-tier-tag" :style="{ color: petTierColor }">{{ petTier }} 阶</text>
+            <text class="home__pet-cta">✨ 点击破壳看看 ›</text>
+          </view>
+        </view>
+
+        <!-- 已破壳: 主卡 (头像 + 名字 + 阶位 + 双进度条) -->
+        <view v-else class="home__pet-card press" @tap="goPetDetail">
+          <view class="home__pet-portrait">
+            <text class="home__pet-portrait-emoji">{{ petEmoji }}</text>
+            <view class="home__pet-tier-badge" :style="{ background: petTierColor }">
+              <text>{{ petTier }}</text>
+            </view>
+          </view>
+          <view class="home__pet-info">
+            <view class="home__pet-name-row">
+              <text class="home__pet-name">{{ petName }}</text>
+              <text class="home__pet-state">Lv.{{ pet.level || 1 }}</text>
+            </view>
+            <view class="home__pet-stat">
+              <text class="home__pet-stat-label">🍖 饱腹</text>
+              <view class="home__pet-stat-bar">
+                <view class="home__pet-stat-fill home__pet-stat-fill--hunger" :style="{ width: petHungerPercent + '%' }" />
+              </view>
+              <text class="home__pet-stat-val">{{ pet.currentHunger || 0 }}/{{ pet.maxHunger || 100 }}</text>
+            </view>
+            <view class="home__pet-stat">
+              <text class="home__pet-stat-label">⭐ 经验</text>
+              <view class="home__pet-stat-bar">
+                <view class="home__pet-stat-fill home__pet-stat-fill--exp" :style="{ width: petExpPercent + '%' }" />
+              </view>
+              <text class="home__pet-stat-val">{{ pet.experience || 0 }}/{{ petExpToNext }}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
       <!-- 本周课表 (周历) -->
       <view class="home__section">
         <view class="section-title">
@@ -117,7 +193,7 @@
           </view>
         </view>
         <view v-else class="home__day-empty">
-          <text>{{ !selectedDay ? '' : (selectedDay.isToday ? '今天没有课哦' : selectedDay.name + '没有课') }}</text>
+          <text>{{ selectedDay.isToday ? '今天没有课哦' : selectedDay.name + '没有课' }}</text>
         </view>
       </view>
 
@@ -165,10 +241,11 @@ import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { pointsApi } from '@/api/points'
 import { petApi } from '@/api/pet'
 import { date } from '@/utils/date'
-import { greetingByHour } from '@/utils/constants'
+import { greetingByHour, PET_SPECIES_EMOJI } from '@/utils/constants'
 import { haptic } from '@/utils/haptic'
 
 const TIER_EMOJI = { C: '🥚', B: '🐣', A: '🦊', S: '🐉' }
+const TIER_COLOR = { C: '#9CA3AF', B: '#7CD9B7', A: '#5B9EE6', S: '#F5C148' }
 
 export default {
   components: { ActiveStudentHeader, EmptyState, PendingConsents },
@@ -178,7 +255,12 @@ export default {
       weekLessons: [],
       selectedDate: '',
       showConsents: false,
-      pendingList: []
+      pendingList: [],
+      // 宠物概略卡 (2026-07-02 加回首页, 合并自原 pet.vue)
+      petLoading: false,
+      pet: null,
+      petSpecies: null,
+      petBlockReason: ''
     }
   },
   computed: {
@@ -223,10 +305,6 @@ export default {
         .filter((l) => date.fmtDate(l.plannedStartTime) === this.selectedDate)
         .sort((a, b) => new Date(a.plannedStartTime) - new Date(b.plannedStartTime))
     },
-    selectedDay() {
-      if (!this.selectedDate) return null
-      return this.weekDays.find((d) => d.date === this.selectedDate) || null
-    },
     quickEntries() {
       return [
         { label: '我的课包', icon: '🎒', bg: '#FFE4D3', url: '/pages/studentProduct/list' },
@@ -234,6 +312,46 @@ export default {
         { label: '积分钱包', icon: '💰', bg: '#FFF1D0', url: '/pages/points/wallet' },
         { label: '接送授权', icon: '🚪', bg: '#C8F0DF', url: '/pages/access/pickups' }
       ]
+    },
+    // 宠物概略 (2026-07-02 加)
+    petTier() {
+      return this.pet?.tier || this.pet?.eggTier || 'C'
+    },
+    petTierColor() {
+      return TIER_COLOR[this.petTier] || TIER_COLOR.C
+    },
+    petHungerPercent() {
+      if (!this.pet) return 0
+      const max = this.pet.maxHunger || 100
+      return Math.max(0, Math.min(100, ((this.pet.currentHunger || 0) / max) * 100))
+    },
+    petExpToNext() {
+      if (!this.pet) return 100
+      const L = this.pet.level || 1
+      const tier = this.petTier
+      const formula = { C: 50 + L * 20, B: 80 + L * 30, A: 120 + L * 50, S: 200 + L * 80 }
+      return formula[tier] || 100
+    },
+    petExpPercent() {
+      if (!this.pet) return 0
+      return Math.max(0, Math.min(100, ((this.pet.experience || 0) / this.petExpToNext) * 100))
+    },
+    petEmoji() {
+      if (!this.pet) return '🐾'
+      // 已破壳用 speciesRecord (admin 维护的 svg 优先), 否则按 species key 查 emoji
+      if (this.pet.state !== 'egg' && this.petSpecies && this.petSpecies.visualType !== 'svg' && this.petSpecies.icon) {
+        return this.petSpecies.icon
+      }
+      const key = this.pet.species
+      return (key && PET_SPECIES_EMOJI[key]) || TIER_EMOJI[this.petTier] || '🐾'
+    },
+    petName() {
+      return this.pet?.nickname || this.petSpecies?.name || TIER_EMOJI[this.petTier] || '我的宠物'
+    },
+    petStateLabel() {
+      if (!this.pet) return ''
+      if (this.pet.state === 'egg') return '🥚 待破壳'
+      return `Lv.${this.pet.level || 1} · ${this.petTier} 阶`
     }
   },
   watch: {
@@ -261,6 +379,8 @@ export default {
         const now = new Date()
         const start = date.startOfWeek()
         const end = date.addDays(start, 14) // 取两周更稳
+        // 2026-07-02 fix: 改用 C 端 myCalendar (R-1492),不走 admin /calendar
+        // admin /calendar 需要 lessonSchedule.read 权限码,家长没有 → 返空 → 今日课永远空
         const res = await lessonScheduleApi.myCalendar({
           from: date.fmtDate(start),
           to: date.fmtDate(end),
@@ -277,6 +397,36 @@ export default {
         this.weekLessons = []
       } finally {
         this.loading = false
+      }
+      // 宠物概略 (并行)
+      this.loadPet()
+    },
+
+    async loadPet() {
+      this.petLoading = true
+      this.petBlockReason = ''
+      try {
+        const res = await petApi.me()
+        this.pet = res || null
+        if (this.pet && this.pet.species) {
+          try {
+            const list = await petApi.species({ tier: this.pet.tier, isActive: true })
+            const items = Array.isArray(list) ? list : list.items || list.data || []
+            this.petSpecies = items.find((s) => s.key === this.pet.species) || null
+          } catch (_) {
+            this.petSpecies = null
+          }
+        } else {
+          this.petSpecies = null
+        }
+      } catch (e) {
+        if (e && (e.code === 'notEnrolled' || e.statusCode === 422)) {
+          this.petBlockReason = 'notEnrolled'
+        }
+        this.pet = null
+        this.petSpecies = null
+      } finally {
+        this.petLoading = false
       }
     },
 
@@ -349,6 +499,14 @@ export default {
       auth.clearPendingConsents()
       this.showConsents = false
       haptic.success()
+    },
+
+    // 宠物概略导航 (2026-07-02 加, 2026-07-02 同日精简: 只展示, 点击进详情页)
+    goPetDetail() {
+      uni.navigateTo({ url: '/pages/pet/feed' })
+    },
+    goPetAdopt() {
+      uni.navigateTo({ url: '/pages/pet/adopt' })
     }
   }
 }
@@ -702,6 +860,158 @@ export default {
 
   &__bottom-spacer {
     height: $spacing-xl;
+  }
+
+  // 宠物概略 (2026-07-02 加)
+  &__pet-loading {
+    padding: $spacing-xl;
+    text-align: center;
+    color: $text-tertiary;
+    font-size: $font-sm;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+  }
+
+  &__pet-empty {
+    display: flex;
+    align-items: center;
+    padding: $spacing-md;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+  }
+  &__pet-empty-emoji {
+    font-size: 64rpx;
+    margin-right: $spacing-md;
+  }
+  &__pet-empty-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  &__pet-empty-title {
+    font-size: $font-md;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    margin-bottom: 4rpx;
+  }
+  &__pet-empty-desc {
+    font-size: $font-xs;
+    color: $text-secondary;
+  }
+
+  &__pet-card {
+    display: flex;
+    align-items: center;
+    padding: $spacing-md;
+    background: linear-gradient(135deg, $primary-lighter, #FFE4D3);
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+  }
+
+  &__pet-portrait {
+    width: 120rpx;
+    height: 120rpx;
+    background: $bg-card;
+    border-radius: 24rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: $spacing-md;
+    position: relative;
+    flex-shrink: 0;
+  }
+  &__pet-portrait-emoji {
+    font-size: 72rpx;
+  }
+  &__pet-tier-badge {
+    position: absolute;
+    bottom: -8rpx;
+    right: -8rpx;
+    width: 36rpx;
+    height: 36rpx;
+    border-radius: 50%;
+    @include flex-center;
+    color: #fff;
+    font-size: $font-xs;
+    font-weight: $font-weight-bold;
+    box-shadow: $shadow-card;
+  }
+  &__pet-tier-badge > text { color: inherit; }
+
+  &__pet-info {
+    flex: 1;
+    min-width: 0;
+  }
+  &__pet-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $spacing-xs;
+  }
+  &__pet-name {
+    font-size: $font-md;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    @include multi-ellipsis(1);
+    flex: 1;
+    margin-right: $spacing-xs;
+  }
+  &__pet-state {
+    font-size: $font-xs;
+    color: $text-secondary;
+    flex-shrink: 0;
+  }
+  &__pet-tier-tag {
+    font-size: $font-xs;
+    font-weight: $font-weight-semibold;
+    margin-bottom: $spacing-xs;
+    display: block;
+  }
+  &__pet-cta {
+    font-size: $font-sm;
+    color: $primary-dark;
+    font-weight: $font-weight-medium;
+  }
+
+  &__pet-stat {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6rpx;
+  }
+  &__pet-stat-label {
+    width: 80rpx;
+    font-size: $font-xs;
+    color: $text-secondary;
+    flex-shrink: 0;
+  }
+  &__pet-stat-bar {
+    flex: 1;
+    height: 12rpx;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: $radius-pill;
+    overflow: hidden;
+    margin: 0 $spacing-xs;
+  }
+  &__pet-stat-fill {
+    height: 100%;
+    border-radius: $radius-pill;
+    transition: width 0.3s ease;
+
+    &--hunger {
+      background: linear-gradient(90deg, #FFA07A, #FF8A65);
+    }
+    &--exp {
+      background: linear-gradient(90deg, #7CD9B7, #5B9EE6);
+    }
+  }
+  &__pet-stat-val {
+    width: 100rpx;
+    font-size: $font-xs;
+    color: $text-secondary;
+    text-align: right;
+    flex-shrink: 0;
   }
 }
 </style>

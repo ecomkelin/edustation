@@ -67,7 +67,12 @@ async function list({ orgId, lessonSchedule, courseInstance, student, status }) 
     filter.lessonSchedule = lessonSchedule
   }
   if (student) filter.student = student
-  if (status) filter.status = status
+  if (status) {
+    // 支持单值 或 ',' 分隔多值 (C 端 /me 默认传 status=scheduled,completed,madeup,leave)
+    const arr = String(status).split(',').map((s) => s.trim()).filter(Boolean)
+    if (arr.length === 1) filter.status = arr[0]
+    else if (arr.length > 1) filter.status = { $in: arr }
+  }
   return LessonAttendance.find(filter)
     .populate('student', 'name')
     .populate('studentProduct', 'remainingLessons totalLessons expireDate isActive source giftReason giftedBy giftedAt')

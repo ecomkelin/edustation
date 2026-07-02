@@ -3,11 +3,48 @@
 const s = require('./studentWork.service')
 const ApiResponse = require('@utils/ApiResponse')
 
+/**
+ * 列表：透传所有 query 参数到 service.list；
+ * service 层负责白名单校验。
+ */
 exports.list = async (req, res) =>
   res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, ...req.query })))
 
+/**
+ * 单条详情。
+ */
 exports.detail = async (req, res) =>
   res.json(ApiResponse.ok(await s.detail({ id: req.params.id, orgId: req.orgId })))
+
+/**
+ * R-1670 GET /student-works/me (2026-07-01 立项)
+ * C 端家长：当前 active child 的全部作品。
+ * 复用 service.list，强制 student=req.activeStudentId，避免越权读到别人孩子的作品。
+ */
+exports.mine = async (req, res) =>
+  res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, student: req.activeStudentId, ...req.query })))
+
+/**
+ * R-1606 GET /student-works/stats (2026-07-01 立项)
+ * 顶部 KPI 聚合：本期作品数 / 已评数 / 未评数 / 平均等级，对比上一期。
+ * 不传 createdAtFrom/createdAtTo 时默认本期=本月1号~当前；上一期=上月同时长。
+ */
+exports.stats = async (req, res) =>
+  res.json(ApiResponse.ok(await s.stats({ orgId: req.orgId, ...req.query })))
+
+/**
+ * R-1640 GET /student-works/export.csv (2026-07-01 立项)
+ * CSV 导出 (BOM + ; 分隔, Excel 友好)。复用 AuditLogs.exportCsv 范式。
+ * 不分页，按当前过滤条件把所有作品写到 CSV（最多 MAX_PAGE_SIZE 行以保护后端）。
+ */
+exports.exportCsv = async (req, res) => {
+  const csv = await s.exportCsv({ orgId: req.orgId, ...req.query })
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="student-works-${Date.now()}.csv"`)
+  // BOM 让 Excel 识别 UTF-8
+  res.write('﻿')
+  res.end(csv)
+}
 
 /**
  * 创建作品（JSON 入参，不再接 multipart）。
@@ -17,7 +54,7 @@ exports.detail = async (req, res) =>
  *   - title: 必填
  *   - description / level: 可选
  *   - fileIds: 必填，数组，每项是 File._id
- *     （前端先调 POST /api/v1/storage/upload-many?scope=work 拿到 fileIds 后再调本端点）
+ *     （前端先调 POST /api/v1/storage/upload?scope=work 拿到 fileIds 后再调本端点）
  *
  * 行为：
  *   1. 校验 fileIds 全部属于 req.orgId

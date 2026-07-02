@@ -34,24 +34,8 @@ const MAX_SUMMARY_LEN = 200
 const SUMMARY_MIN_INTERVAL_MS = 60_000 // 摘要更新最小间隔 (1 分钟), 避免高频重算
 const MAX_CONVERSATIONS_PER_USER = 30 // 非超管单用户会话上限
 
-/* ─── 列表 (非超管: 默认排除软删) ──────────── */
+/* ─── 数当前活跃会话数 (排除软删), 用于创建前判定是否到上限 ──────────── */
 
-async function list({ userId, orgId, limit = 50, includeArchived = false, includeDeleted = false }) {
-  const filter = { user: userId, org: orgId }
-  if (!includeArchived) filter.isArchived = { $ne: true }
-  if (!includeDeleted) filter.isDeleted = { $ne: true }
-  // (2026-06-18) 置顶的会话排最前: isPinned desc → lastMessageAt desc
-  //  - 用聚合管道方式排序需要改写, 这里直接 sort: isPinned=true 排第一靠 { isPinned: -1 } 即可
-  const items = await AgentConversation.find(filter)
-    .sort({ isPinned: -1, lastMessageAt: -1, updatedAt: -1 })
-    .limit(Math.min(limit, 200))
-    .lean()
-  return { items }
-}
-
-/**
- * 数当前活跃会话数 (排除软删), 用于创建前判定是否到上限
- */
 async function countActiveForUser({ userId, orgId }) {
   return AgentConversation.countDocuments({
     user: userId,
@@ -172,6 +156,118 @@ async function softRemove({ id, userId, orgId }) {
 }
 
 /* ─── 平台超管: 跨用户/跨机构查询 + 批量软删 ─── */
+
+/* ─── 平台客服专用 (2026-07-02 立项 C 端 4 tab 重构) ──────── */
+
+/**
+ * support-mode 持久会话: 每个 user 在每个 org 下只有 1 个由系统创建的 "客服助理" 会话,
+ * 标记 `meta.supportUser = true` + `isPinned = true`,标题固定 "客服助手"。
+ * 与普通会话隔离:
+ *   - 不计入 30 上限 (system 永久)
+ *   - 在 `GET /agent/conversations` (R-2810) 普通会话列表**默认过滤掉**,避免污染用户视角
+ *   - 单独由 R-2832 GET /agent/chat/support/history 拉
+ *
+ * 该会话由前端"消息 tab" 顶部 sticky "AI 客服"卡点入,无 R-2811 主动创建路径。
+ */
+async function findOrCreateSupport({ userId, orgId }) {
+  if (!userId || !orgId) throw ApiError.badRequest('userId / orgId 必填')
+  const existing = await AgentConversation.findOne({
+    user: userId,
+    org: orgId,
+    'meta.supportUser': true,
+    isDeleted: { $ne: true }
+  }).lean()
+  if (existing) return existing
+  const doc = await AgentConversation.create({
+    org: orgId,
+    user: userId,
+    title: '客服助手',
+    isPinned: true,
+    meta: { supportUser: true, kind: 'platform-support' },
+    messageCount: 0,
+    userMessageCount: 0,
+    toolCallCount: 0,
+    firstMessageAt: null,
+    lastMessageAt: Date.now()
+  })
+  return doc.toObject()
+}
+
+/**
+ * R-2831 清空 support 会话的全部消息,但保留 conversation 记录
+ * (下次点开"AI 客服"还是同一个会话,只是空白开始)
+ */
+async function resetSupport({ userId, orgId }) {
+  const conv = await AgentConversation.findOne({
+    user: userId,
+    org: orgId,
+    'meta.supportUser': true,
+    isDeleted: { $ne: true }
+  })
+  if (!conv) {
+    // support 会话还没建,清空 = 直接 idempotent 返 ok
+    return { ok: true, clearedCount: 0 }
+  }
+  const before = await AgentMessage.countDocuments({
+    conversation: conv._id,
+    isDeleted: { $ne: true }
+  })
+  await AgentMessage.updateMany(
+    { conversation: conv._id },
+    { $set: { isDeleted: true, deletedAt: new Date() } }
+  )
+  // 重置统计字段,但保留 conversation 行
+  await AgentConversation.updateOne(
+    { _id: conv._id },
+    { $set: {
+      messageCount: 0,
+      userMessageCount: 0,
+      toolCallCount: 0,
+      firstMessageAt: null,
+      lastMessageAt: new Date()
+    } }
+  )
+  return { ok: true, conversationId: String(conv._id), clearedCount: before }
+}
+
+/**
+ * R-2832 拉 support 会话 + 全部消息 (按 seq 升序)
+ *   - 没找到 support 会话时:返 { conversation: null, messages: [] },前端惰性建
+ */
+async function getSupportHistory({ userId, orgId }) {
+  if (!userId || !orgId) throw ApiError.badRequest('userId / orgId 必填')
+  const conv = await AgentConversation.findOne({
+    user: userId,
+    org: orgId,
+    'meta.supportUser': true,
+    isDeleted: { $ne: true }
+  }).lean()
+  if (!conv) return { conversation: null, messages: [] }
+  const messages = await AgentMessage.listByConversation({
+    conversationId: conv._id,
+    userId,
+    orgId,
+    includeDeleted: false
+  })
+  return { ...conv, messages }
+}
+
+/**
+ * 修改 list() 默认过滤掉 `meta.supportUser = true` 的会话
+ * — support 会话由前端"消息 tab"专门入口处理,不应进入普通列表
+ */
+async function list({ userId, orgId, limit = 50, includeArchived = false, includeDeleted = false }) {
+  const filter = { user: userId, org: orgId, 'meta.supportUser': { $ne: true } }
+  if (!includeArchived) filter.isArchived = { $ne: true }
+  if (!includeDeleted) filter.isDeleted = { $ne: true }
+  // (2026-06-18) 置顶的会话排最前: isPinned desc → lastMessageAt desc
+  //  - 用聚合管道方式排序需要改写, 这里直接 sort: isPinned=true 排第一靠 { isPinned: -1 } 即可
+  const items = await AgentConversation.find(filter)
+    .sort({ isPinned: -1, lastMessageAt: -1, updatedAt: -1 })
+    .limit(Math.min(limit, 200))
+    .lean()
+  return { items }
+}
 
 /**
  * 平台超管: 跨用户/跨机构分页列出所有会话
@@ -453,6 +549,10 @@ module.exports = {
   addUserMessage,
   addAssistantMessage,
   addToolResultMessage,
+  // 平台客服 (2026-07-02 立项 C 端 4 tab 重构)
+  findOrCreateSupport,
+  resetSupport,
+  getSupportHistory,
   // 平台超管
   platformList,
   platformGetDetail,

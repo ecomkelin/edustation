@@ -1,24 +1,23 @@
 {
   "pages": [
     {
-      "path": "pages/tabbar/home",
+      "path": "pages/tabbar/child",
       "style": {
-        "navigationBarTitleText": "首页",
+        "navigationBarTitleText": "孩子",
         "enablePullDownRefresh": true,
         "navigationStyle": "custom"
       }
     },
     {
-      "path": "pages/tabbar/discover",
+      "path": "pages/tabbar/chat",
       "style": {
-        "navigationBarTitleText": "探索",
-        "enablePullDownRefresh": true
+        "navigationBarTitleText": "消息"
       }
     },
     {
-      "path": "pages/tabbar/pet",
+      "path": "pages/tabbar/org",
       "style": {
-        "navigationBarTitleText": "宠物乐园",
+        "navigationBarTitleText": "探索",
         "enablePullDownRefresh": true
       }
     },
@@ -233,16 +232,9 @@
       }
     },
     {
-      "path": "pages/agent/chat",
+      "path": "pages/tabbar/chat-detail",
       "style": {
-        "navigationBarTitleText": "智能助手",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/agent/history",
-      "style": {
-        "navigationBarTitleText": "助手历史"
+        "navigationBarTitleText": "对话"
       }
     },
     {
@@ -310,22 +302,22 @@
     "height": "56px",
     "list": [
       {
-        "pagePath": "pages/tabbar/home",
-        "text": "首页",
-        "iconPath": "static/tabbar/home.png",
-        "selectedIconPath": "static/tabbar/home-active.png"
+        "pagePath": "pages/tabbar/child",
+        "text": "孩子",
+        "iconPath": "static/tabbar/child.png",
+        "selectedIconPath": "static/tabbar/child-active.png"
       },
       {
-        "pagePath": "pages/tabbar/discover",
+        "pagePath": "pages/tabbar/chat",
+        "text": "消息",
+        "iconPath": "static/tabbar/chat.png",
+        "selectedIconPath": "static/tabbar/chat-active.png"
+      },
+      {
+        "pagePath": "pages/tabbar/org",
         "text": "探索",
         "iconPath": "static/tabbar/discover.png",
         "selectedIconPath": "static/tabbar/discover-active.png"
-      },
-      {
-        "pagePath": "pages/tabbar/pet",
-        "text": "宠物",
-        "iconPath": "static/tabbar/pet.png",
-        "selectedIconPath": "static/tabbar/pet-active.png"
       },
       {
         "pagePath": "pages/tabbar/me",

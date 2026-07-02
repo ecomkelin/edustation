@@ -70,4 +70,15 @@ router.get('/admin/conversations/:id', v.adminGetConversation, mws.validateReque
 // R-2822 POST /agent/admin/conversations/batch-delete
 router.post('/admin/conversations/batch-delete', v.adminBatchDelete, mws.validateRequest, asyncHandler(c.adminBatchDelete))
 
+/* ─── 平台客服 (support-mode, 2026-07-02 立项 C 端 4 tab 重构) ─── */
+// 每个家长在每个机构下唯一 1 个"客服助理"永久会话,供 C 端"消息 tab" 顶部 sticky 卡点入
+// (2026-07-02) 不开新 PERM,沿用现有 agent 鉴权链 (登入 + org 上下文),因为前端全包在 app 内
+// 不暴露独立 PERM 是有意为之 — 这套接口对家长是低风险,前端 pin-up "AI 客服"卡本身就是权限 UI 入口
+// R-2830 POST /agent/chat/support — SSE 流式 (复用 chatStream logic + 客服 systemPrompt)
+router.post('/chat/support', v.chatStreamWithConv, mws.validateRequest, asyncHandler(c.support))
+// R-2831 POST /agent/chat/support/reset — 清空会话消息 (保留 conv 行)
+router.post('/chat/support/reset', asyncHandler(c.supportReset))
+// R-2832 GET /agent/chat/support/history — 拉取会话历史
+router.get('/chat/support/history', asyncHandler(c.supportHistory))
+
 module.exports = router

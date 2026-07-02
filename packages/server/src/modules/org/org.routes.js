@@ -21,6 +21,13 @@ router.use(mws.requireOrg)
 // (R-0930/R-0931 在 orgPromotion.routes.js 内标注)
 router.use('/:id/promotion', orgPromoRouter)
 
+// R-0932 GET /orgs/:id/public (2026-07-02 立项)
+// 公开机构主页:登入家长可访问 (无 PERM, 不需 employee 权限码)
+// 走 OrgService.public:仅返回白名单字段 (logo / name / address / 联系方式 / promotion 摘要),
+// 隐藏 socialCreditCode / legalPerson / licenseNumber / principal 等 PII
+// 同样在 platform-admin gate 之前挂载,C 端家长调得到
+router.get('/:id/public', asyncHandler(c.public))
+
 router.use((req, res, next) => {
   if (!req.user) return next(ApiError.unauthorized())
   if (!req.user.isPlatformAdmin) return next(ApiError.forbidden('仅平台超管可管理机构'))

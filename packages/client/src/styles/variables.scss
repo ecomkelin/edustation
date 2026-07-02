@@ -15,6 +15,8 @@ $accent: #7CD9B7;        // 薄荷绿 - 饱腹/正向
 $accent-light: #C8F0DF;
 $warning: #FF6B6B;       // 珊瑚红 - 警告/饥饿
 $warning-light: #FFD3D3;
+$danger: #E53935;        // 危险红 (必填星号 / 不可恢复操作提示)
+$danger-light: #FFCDD2;
 $info: #5B9EE6;          // 信息蓝 (次要)
 $gold: #F5C148;          // 金色 (S阶徽章/积分奖励)
 $purple: #B89AE6;        // 紫 (AI 助手/特殊)
@@ -59,6 +61,7 @@ $font-3xl: 56rpx;
 $font-display: 72rpx;
 
 // === 字重 ===
+$font-weight-light: 300;
 $font-weight-normal: 400;
 $font-weight-medium: 500;
 $font-weight-semibold: 600;

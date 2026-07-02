@@ -42,3 +42,31 @@ exports.candidatePrincipals = async (req, res) => {
   const data = await service.candidatePrincipals(req.params.id)
   res.json(ApiResponse.ok(data))
 }
+
+/**
+ * R-0932 GET /orgs/:id/public (2026-07-02 立项)
+ * 公开机构主页:登入家长可访问 (无 PERM, 不需 employee 权限码)
+ *
+ * 输入:
+ *   - path :id (hex 24) — 机构 _id
+ *
+ * 输出 (service.public 内做白名单过滤):
+ *   - 基础字段: name, nameAbbreviation, type (String enum), logo, address, establishedDate
+ *   - 地区: region (仅 name + code,不暴露完整 region 对象)
+ *   - 联系方式: contactPerson, contactPhone (C 端家长可见, 但前端展示时建议配合号码脱敏)
+ *   - 推广摘要: 拼装 R-0930 当前生效的 OrgPromotion 字段
+ *     { promotionSummary: { banner, headline, subheadline, highlights[], campusStory, brandIntro, hotline, contactPerson, contactPhone, ctaText, ctaUrl, images[] } }
+ *
+ * 不输出 (PII / 合规):
+ *   - socialCreditCode / legalPerson / licenseNumber (平台超管专属)
+ *   - principal (User ObjectId)
+ *   - meta (Mixed)
+ *   - timestamps
+ *
+ * 停用机构 (isActive=false) 仍返 200 (前端可展示"该机构暂未开放"),但同 orgId 后续
+ * 写接口会失败。
+ */
+exports.public = async (req, res) => {
+  const data = await service.public(req.params.id)
+  res.json(ApiResponse.ok(data))
+}

@@ -447,3 +447,228 @@ exports.adminBatchDelete = async (req, res) => {
 
 // (2026-06-18) 移除 adminBatchRestore: 物理删后不可恢复, 平台超管不再提供恢复端点
 // 旧的 softRemove / 软删流程只服务于"用户自己删除可 30 天反悔"的场景
+
+/* ─── 平台客服 (support-mode, 2026-07-02 立项 C 端 4 tab 重构) ────────
+ *
+ * 设计原则:
+ *   - 每个家长在每个机构下唯一 1 个"客服助理"永久会话 (meta.supportUser=true)
+ *   - 不参与普通会话列表 (conv list 默认过滤掉 meta.supportUser)
+ *   - 不受 30 上限约束 (system 永久)
+ *   - 单独由前端"消息 tab"顶部 sticky 卡点入
+ *
+ * 在 chatStream 之外的差异:
+ *   - resolveConv 走 findOrCreateSupport (固定身份, 不传 conversationId)
+ *   - systemPrompt 默认注入"客服助理"风格 (家长可覆盖)
+ *
+ * 实现策略 (避免与 chatStream 重复 200+ 行):
+ *   - 抽 `runChatStreamSSE(req, res, opts)` 私有 helper (含持久化 + 完整 SSE 循环)
+ *   - exports.chatStream 和 exports.support 都用同一个 helper, 只换 resolveConv + systemPrompt
+ *   - 第一次重构就放进 controller 顶部 (helper 在 exports.chatStream 之前声明)
+ *
+ * R-2830 GET /agent/chat/support/history 单独处理 (返历史消息, 不是流)
+ * R-2831 POST /agent/chat/support/reset 单独处理 (清消息, 不是流)
+ * ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * 共用 SSE 流式会话 helper (2026-07-02 抽离,服务于 chatStream + support)
+ */
+async function runChatStreamSSE(req, res, opts) {
+  const { resolveConv, buildSystemPrompt, persistKey } = opts
+  stream.sseInit(res)
+  const ac = new AbortController()
+  stream.onClientClose(req, () => ac.abort())
+
+  let conversationId = req.body.conversationId
+  try {
+    const conv = await resolveConv()
+    conversationId = String(conv._id)
+    req._conversationId = conversationId
+  } catch (e) {
+    // 会话创建/取出失败: 仍然继续流 (不阻断主功能)
+    console.warn(`[agent.${persistKey}] resolve conv failed:`, e.message)
+  }
+
+  // 端点注入专属 systemPrompt (如 support 客服风格), 仅当请求未指定时
+  if (buildSystemPrompt && !req.body.systemPrompt) {
+    try {
+      req.body.systemPrompt = buildSystemPrompt()
+    } catch (e) {
+      console.warn(`[agent.${persistKey}] buildSystemPrompt failed:`, e.message)
+    }
+  }
+
+  // 同步把最新 user 消息落库 (含附件)
+  const userBlocks = []
+  const lastUserMsg = (req.body.messages || []).filter((m) => m.role === 'user').pop()
+  if (lastUserMsg && lastUserMsg.content) {
+    if (typeof lastUserMsg.content === 'string') {
+      userBlocks.push({ type: 'text', content: lastUserMsg.content })
+    } else if (Array.isArray(lastUserMsg.content)) {
+      for (const c of lastUserMsg.content) {
+        if (typeof c === 'string') userBlocks.push({ type: 'text', content: c.text || '' })
+        else if (c && c.type === 'text') userBlocks.push({ type: 'text', content: c.text || '' })
+      }
+    }
+  }
+  for (const a of req.body.attachments || []) {
+    userBlocks.push({ type: 'file', fileId: a.fileId, fileName: a.fileName, mime: a.mime, size: a.size || 0 })
+  }
+  if (conversationId && userBlocks.length > 0) {
+    try {
+      await convSvc.addUserMessage({ conversationId, userId: req.user.id, orgId: req.orgId, blocks: userBlocks })
+    } catch (e) {
+      console.warn(`[agent.${persistKey}] persist user message failed:`, e.message)
+    }
+  }
+
+  // 累积 assistant 内容 (流结束一并落库)
+  let assistantTextBuf = ''
+  let assistantToolCalls = []
+  let assistantModel = ''
+  let assistantLatencyMs = null
+  let assistantUsage = null
+  let assistantHasError = false
+  let assistantErrorMsg = ''
+
+  try {
+    const aiTools = toolsModule.toOpenAITools()
+    const iter = s.chatStream({
+      messages: req.body.messages || [],
+      attachments: req.body.attachments || [],
+      tools: aiTools,
+      systemPrompt: req.body.systemPrompt,
+      temperature: req.body.temperature,
+      maxTokens: req.body.maxTokens,
+      currentUser: req.user,
+      orgId: req.orgId,
+      signal: ac.signal,
+      conversationId
+    })
+    for await (const evt of iter) {
+      if (ac.signal.aborted) break
+      if (evt.event === 'start') {
+        assistantModel = evt.data.model || ''
+      } else if (evt.event === 'content') {
+        assistantTextBuf += evt.data.delta || ''
+      } else if (evt.event === 'tool_call') {
+        if (evt.data && evt.data.id) {
+          const idx = assistantToolCalls.findIndex((t) => t.id === evt.data.id)
+          const tc = {
+            id: evt.data.id,
+            name: evt.data.name,
+            args: evt.data.args,
+            summary: evt.data.summary,
+            requiresConfirmation: !!evt.data.requiresConfirmation,
+            requiredPermission: evt.data.requiredPermission,
+            status: evt.data.requiresConfirmation ? 'pending' : 'executing'
+          }
+          if (idx >= 0) assistantToolCalls[idx] = tc
+          else assistantToolCalls.push(tc)
+        }
+      } else if (evt.event === 'tool_result') {
+        const tc = assistantToolCalls.find((t) => t.id === evt.data.id)
+        if (tc) {
+          tc.result = evt.data.result
+          tc.error = evt.data.error
+          tc.summary = evt.data.summary || tc.summary
+          tc.status = evt.data.ok === false ? 'error' : 'done'
+        }
+      } else if (evt.event === 'done') {
+        assistantLatencyMs = evt.data.latencyMs || null
+        assistantUsage = evt.data.usage || null
+        if (evt.data.aborted === 'confirmation_required') {
+          assistantTextBuf = assistantTextBuf // 保留
+        }
+      } else if (evt.event === 'error') {
+        assistantHasError = true
+        assistantErrorMsg = evt.data.message || '调用失败'
+      }
+      stream.sseWrite(res, evt.event, evt.data)
+    }
+  } catch (e) {
+    assistantHasError = true
+    assistantErrorMsg = e.message || 'internal error'
+    try {
+      stream.sseWrite(res, 'error', { code: e.code || 500, message: assistantErrorMsg })
+    } catch (_) {}
+  } finally {
+    if (conversationId && (assistantTextBuf || assistantToolCalls.length > 0 || assistantHasError)) {
+      const blocks = []
+      if (assistantTextBuf) blocks.push({ type: 'text', content: assistantTextBuf })
+      for (const tc of assistantToolCalls) {
+        blocks.push({
+          type: 'tool_call',
+          id: tc.id, name: tc.name, args: tc.args, summary: tc.summary,
+          requiresConfirmation: tc.requiresConfirmation, requiredPermission: tc.requiredPermission,
+          status: tc.status, result: tc.result, error: tc.error
+        })
+      }
+      if (assistantHasError && !assistantTextBuf) blocks.push({ type: 'error', content: assistantErrorMsg })
+      try {
+        await convSvc.addAssistantMessage({
+          conversationId, userId: req.user.id, orgId: req.orgId, blocks,
+          toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : null,
+          hasError: assistantHasError, errorMessage: assistantErrorMsg,
+          model: assistantModel, latencyMs: assistantLatencyMs, usage: assistantUsage
+        })
+      } catch (e) {
+        console.warn(`[agent.${persistKey}] persist assistant message failed:`, e.message)
+      }
+    }
+    stream.sseEnd(res)
+  }
+}
+
+/**
+ * 平台客服 systemPrompt (2026-07-02 立项)
+ */
+function buildSupportSystemPrompt(req) {
+  // req.orgName 由前端 header 透传 (orgContext middleware 已在 cookie/header 注入);这里兜底
+  const orgName = (req && req.orgName) || '本校'
+  return [
+    `你是「${orgName} · 客服助理」，负责回答家长关于课程、孩子学习情况和本校招生信息的问题。`,
+    '你可以访问该家长在本校的订单、孩子、作品、考勤等数据，**通过 tool use 读取**，**禁止编造**不在工具返回值中的细节。',
+    '回答风格：',
+    '1. 简洁中文，亲切自然',
+    '2. 涉及孩子具体数据时必须引用对应 tool 的返回值',
+    '3. 如果家长问的问题超出权限或没有数据，坦率说明并引导其联系教务老师',
+    '4. 严禁在回复中透露其他家庭或孩子的信息',
+    '5. 不回答与本校业务无关的外部问题（如股市、天气）'
+  ].join('\n')
+}
+
+/**
+ * R-2830 POST /agent/chat/support (2026-07-02 立项)
+ * 平台客服专用 SSE 流式入口: 每个家长登入后看到的就是 1 个"客服助手"会话。
+ * 与普通 chat/stream (R-2803) 的差别仅是 resolveConv + 系统提示注入。
+ */
+exports.support = async (req, res) => runChatStreamSSE(req, res, {
+  resolveConv: () => convSvc.findOrCreateSupport({
+    userId: req.user.id, orgId: req.orgId,
+    isPlatformAdmin: !!req.user.isPlatformAdmin
+  }),
+  buildSystemPrompt: () => buildSupportSystemPrompt(req),
+  persistKey: 'support'
+})
+
+/**
+ * R-2832 GET /agent/chat/support/history
+ * 拉取 support 会话的历史消息 (按 seq 升序),无 support 会话时返 { conversation: null, messages: [] }
+ */
+exports.supportHistory = async (req, res) => {
+  const data = await convSvc.getSupportHistory({
+    userId: req.user.id, orgId: req.orgId
+  })
+  res.json(ApiResponse.ok(data))
+}
+
+/**
+ * R-2831 POST /agent/chat/support/reset
+ * 清空 support 会话的全部消息 (软删),保留 conversation 行 (下次点开"AI 客服"还是同一个会话)
+ */
+exports.supportReset = async (req, res) => {
+  const data = await convSvc.resetSupport({
+    userId: req.user.id, orgId: req.orgId
+  })
+  res.json(ApiResponse.ok(data))
+}

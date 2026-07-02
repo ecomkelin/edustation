@@ -248,4 +248,93 @@ async function candidatePrincipals(id) {
     }))
 }
 
-module.exports = { list, detail, create, update, toggleActive, candidatePrincipals }
+/**
+ * R-0932 公开机构主页 (2026-07-02 立项)
+ *
+ * 输入:
+ *   - id (Org._id)
+ *
+ * 行为:
+ *   1. 校验 id 合法, 找到 org (停用也算找到, 但前端自行判断是否展示)
+ *   2. populate region (只取 name + code, 不暴露 full region)
+ *   3. 并发拉 OrgPromotion (lazy require, 避免循环引用)
+ *   4. 输出白名单字段 + 拼装 promotionSummary
+ *
+ * 不输出 (PII / 合规):
+ *   - socialCreditCode, legalPerson, licenseNumber (平台超管专属)
+ *   - principal (User ref)
+ *   - meta (Mixed)
+ *
+ * 返回:
+ *   {
+ *     id, name, nameAbbreviation, type, logo, address,
+ *     establishedDate, isActive,     // 基础信息
+ *     region: { name, code },        // 简化 Region (无 parent 链)
+ *     contact: { person, phone },    // 联系方式
+ *     promotionSummary: {
+ *       description, brandStory, teachingFeatures, facultyIntro,
+ *       businessHours, businessScope,
+ *       hotline, serviceWechat, serviceQq, email, website, wechatPublic,
+ *       douyin, xiaohongshu, videoAccount,
+ *       longitude, latitude, nearbyLandmark,
+ *       registeredCapital, honors
+ *     }
+ *   }
+ */
+async function publicOrg(id) {
+  if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('机构 id 不合法')
+  const org = await Org.findById(id)
+    .populate({ path: 'region', select: 'name code level' })
+    .lean()
+  if (!org) throw ApiError.notFound('机构不存在')
+
+  // lazy require 防循环依赖
+  const OrgPromotion = require('@models/OrgPromotion.model')
+  const promo = await OrgPromotion.findOne({ org: org._id }).lean()
+
+  // 拼装白名单 (避免直接 spread 全字段, 防止后续 schema 加新字段自动外漏)
+  const out = {
+    id: String(org._id),
+    name: org.name,
+    nameAbbreviation: org.nameAbbreviation,
+    type: org.type,
+    logo: org.logo,
+    address: org.address || '',
+    establishedDate: org.establishedDate,
+    isActive: org.isActive,
+    region: org.region
+      ? { name: org.region.name, code: org.region.code, level: org.region.level }
+      : null,
+    contact: {
+      person: org.contactPerson || '',
+      phone: org.contactPhone || ''
+    },
+    promotionSummary: promo
+      ? {
+          description: promo.description || '',
+          brandStory: promo.brandStory || '',
+          teachingFeatures: promo.teachingFeatures || [],
+          facultyIntro: promo.facultyIntro || '',
+          businessHours: promo.businessHours || '',
+          businessScope: promo.businessScope || [],
+          hotline: promo.hotline || '',
+          serviceWechat: promo.serviceWechat || '',
+          serviceQq: promo.serviceQq || '',
+          email: promo.email || '',
+          website: promo.website || '',
+          wechatPublic: promo.wechatPublic || '',
+          douyin: promo.douyin || '',
+          xiaohongshu: promo.xiaohongshu || '',
+          videoAccount: promo.videoAccount || '',
+          longitude: promo.longitude,
+          latitude: promo.latitude,
+          nearbyLandmark: promo.nearbyLandmark || '',
+          registeredCapital: promo.registeredCapital || '',
+          honors: promo.honors || []
+        }
+      : null
+  }
+  return out
+}
+
+module.exports = { list, detail, create, update, toggleActive, candidatePrincipals, public: publicOrg }

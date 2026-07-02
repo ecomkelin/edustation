@@ -219,6 +219,7 @@ Auth 列简写:
 | R-0917 | POST | /orgs/:id/toggle-active | ADMIN | — | 启用/停用 | 机构禁物理删除 |
 | R-0930 | GET | /orgs/:id/promotion | PERM | org-promotion.read | 推广信息 | orgPromotion 子路由 |
 | R-0931 | PUT | /orgs/:id/promotion | PERM | org-promotion.write | 更新推广信息 | |
+| R-0932 | GET | /orgs/:id/public | AUTH | — | 公开机构主页 | C 端家长; 白名单字段 (隐藏合规 PII) |
 | R-0953 | GET | /orgs/:id/candidate-principals | ADMIN | — | 候选法人 | 平台超管 |
 
 ### MM=10 courseProduct (URL: /course-products)
@@ -303,18 +304,29 @@ Auth 列简写:
 | R-1529 | PUT | /lesson-attendances/:id/evaluation | PERM | lessonAttendance.write | 更新课评 | |
 | R-1530 | GET | /lesson-attendances/:id/works | PERM | studentWork.read | 考勤关联作品 | |
 | R-1542 | POST | /lesson-attendances/bulk-mark | PERM | lessonAttendance.write | 批量登记 | 一次保存整节课 |
+| R-1536 | GET | /lesson-attendances/me | GUARD | — | 我的考勤 | C 端家长; active student 上下文; 默认 status∈{scheduled,completed,madeup,leave} 适合上传作品 |
 | R-1562 | POST | /lesson-attendances/:id/makeup | PERM | lessonAttendance.write | 补课 | 补建 completed 记录 |
 
 ### MM=16 studentWork (URL: /student-works)
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-1600 | GET | /student-works | PERM | studentWork.read | 列表 | 支持多维过滤 |
+| R-1600 | GET | /student-works | PERM | studentWork.read | 列表 | 多维过滤 + 日期/等级/上传者/排序,详见 §16.1 |
 | R-1601 | GET | /student-works/:id | PERM | studentWork.read | 详情 | C 端 detail 用 |
 | R-1602 | POST | /student-works | PERM | studentWork.write | 上传作品 | JSON 入参 + 预上传 fileIds |
 | R-1603 | PATCH | /student-works/:id | PERM | studentWork.write | 更新 | 4 snapshot 字段不可改 |
 | R-1604 | DELETE | /student-works/:id | ADMIN_PWD | — | 物理删除 | 高风险, 无业务引用 |
 | R-1605 | GET | /student-works/:id/removable-check | PERM | studentWork.read | 删除预检 | 始终可删 |
+| R-1606 | GET | /student-works/stats | PERM | studentWork.read | KPI 聚合 | 本期/上一期 total·ratedCount·avgLevel·unratedCount |
+| R-1640 | GET | /student-works/export.csv | PERM | studentWork.read | CSV 导出 | BOM + ; 分隔 (Excel 友好); 仿 AuditLogs.exportCsv |
+| R-1670 | GET | /student-works/me | GUARD | — | 我的作品 | C 端家长; active student 上下文 |
+
+**§16.1 R-1600 新增 Query 参数**（2026-07-01）:
+
+- `createdAtFrom` / `createdAtTo`：ISO 字符串日期范围（任一传即生效）
+- `minLevel` / `maxLevel`：等级闭区间 1~5
+- `uploadedBy`：上传者 User._id
+- `sort`：默认 `-createdAt`；可选 `-createdAt / createdAt / -updatedAt / updatedAt / -level / level / title / -title`
 
 ### MM=17 order (URL: /orders)
 
@@ -509,6 +521,9 @@ Auth 列简写:
 | R-2820 | GET | /agent/admin/conversations | ADMIN | — | 平台会话列表 | 平台超管 |
 | R-2821 | GET | /agent/admin/conversations/:id | ADMIN | — | 平台会话详情 | 平台超管 |
 | R-2822 | POST | /agent/admin/conversations/batch-delete | ADMIN | — | 平台批量软删 | 平台超管 |
+| R-2830 | POST | /agent/chat/support | AUTH | — | 平台客服 SSE | C 端 4 tab 永久会话 (meta.supportUser=true) |
+| R-2831 | POST | /agent/chat/support/reset | AUTH | — | 清空客服会话 | 保留 conv 行, 清消息 |
+| R-2832 | GET  | /agent/chat/support/history | AUTH | — | 客服会话历史 | 含 messages; 无会话时返 conversation=null |
 
 ### MM=29 accessControl (URL: /access-control)
 

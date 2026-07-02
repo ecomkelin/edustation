@@ -8,6 +8,16 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
+// ─── C 端家长：/me — 当前 active child 的考勤 ─────────────
+// 注意：/me 必须定义在 /:id/* 之前，否则会被 :id 路由吞掉
+// R-1536 GET /lesson-attendances/me（2026-07-01 立项）
+//   复用 requirePermission (家长无员工权限码; activeStudent middleware 已校验是监护人)
+//   默认仅返可上传作品的考勤 (status ∈ {scheduled, completed, madeup, leave})，
+//   时间倒序，方便家长挑最近的课上传。
+router.use(mws.activeStudent)
+router.get('/me', asyncHandler(c.mine))
+
+// ─── Admin 业务端 ──────────────────────────────────────────────
 // R-1500 GET /lesson-attendances
 router.get('/', mws.requirePermission('lessonAttendance.read'), asyncHandler(c.list))
 // 教务手动添加单条考勤（preparing 之后补报名 / 补名单）

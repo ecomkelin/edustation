@@ -120,11 +120,12 @@ export default {
       return useStudentStore()
     },
     menus() {
+      // (2026-07-02 4 tab 重构) 智能助手 → tab2 chat.vue; 机构主页 → tab3 org.vue
+      // 新增「我的孩子」入口 (管理多孩), 跳 /pages/student/switch
       return [
+        { label: '我的孩子', icon: '👨‍👩‍👧', bg: '#FFE4D3', url: '/pages/student/switch' },
         { label: '接送授权', icon: '🚪', bg: '#C8F0DF', url: '/pages/access/pickups' },
         { label: '进出记录', icon: '📋', bg: '#E5F0FA', url: '/pages/access/events' },
-        { label: '智能助手', icon: '🤖', bg: '#EDE3FA', url: '/pages/agent/chat' },
-        { label: '机构主页', icon: '🏫', bg: '#FFE4D3', url: '/pages/org/home' },
         { label: '分享得积分', icon: '💌', bg: '#FFF1D0', url: '/pages/share/share' },
         { label: '协议条款', icon: '📜', bg: '#FFE4D3', url: '/pages/legal/list' },
         { label: '常见问题', icon: '❓', bg: '#C8F0DF', url: '/pages/help/faq' },
