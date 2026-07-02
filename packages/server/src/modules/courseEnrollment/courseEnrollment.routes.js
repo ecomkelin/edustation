@@ -8,6 +8,10 @@ const asyncHandler = require('@utils/asyncHandler')
 
 router.use(mws.authenticate, mws.requireOrg)
 
+// R-1214 GET /course-enrollments/me
+// 家长无 employee 权限码;activeStudent middleware 已校验是当前孩子的监护人
+router.get('/me', mws.activeStudent, asyncHandler(c.mine))
+
 // R-1200 GET /course-enrollments
 router.get('/', mws.requirePermission('courseEnrollment.read'), asyncHandler(c.list))
 // R-1201 GET /course-enrollments/:id

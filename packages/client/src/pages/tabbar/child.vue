@@ -28,59 +28,6 @@
       <!-- 2026-07-02 fix: scroll-view 内 padding 在 H5 下不传给子节点,
            包一层 wrapper view 承载 padding 让 section 真正缩进 -->
       <view class="home__body-inner">
-      <!-- 今日课程 -->
-      <view class="home__section">
-        <view class="section-title">
-          <text>📚 今日课程</text>
-          <text class="section-title__more" @tap="goCalendar">查看完整课表 ›</text>
-        </view>
-
-        <view v-if="loading" class="home__loading">
-          <view v-for="i in 2" :key="i" class="home__lesson-skeleton" />
-        </view>
-
-        <empty-state
-          v-else-if="!todayLessons.length"
-          title="今天没有课哦"
-          desc="享受轻松的一天,明天见！"
-          emoji="🌈"
-          bg-color="#FFE4D3"
-        />
-
-        <view v-else class="home__lessons">
-          <view
-            v-for="lesson in todayLessons"
-            :key="lesson._id"
-            class="home__lesson press"
-            @tap="goLessonDetail(lesson._id)"
-          >
-            <view class="home__lesson-time">
-              <text class="home__lesson-time-h">{{ formatTime(lesson.plannedStartTime) }}</text>
-              <text class="home__lesson-time-dur">{{ durationLabel(lesson) }}</text>
-            </view>
-            <view class="home__lesson-divider" />
-            <view class="home__lesson-info">
-              <text class="home__lesson-title">{{ lesson.courseInstance?.name || lesson.subject?.name || '课程' }}</text>
-              <view class="home__lesson-meta">
-                <text>👨‍🏫 {{ lesson.teacher?.realName || '老师' }}</text>
-                <text>📍 {{ lesson.room?.name || '教室待定' }}</text>
-              </view>
-              <view v-if="isFuture(lesson.plannedStartTime)" class="home__lesson-countdown">
-                <text>⏰ {{ countdownText(lesson.plannedStartTime) }}</text>
-              </view>
-              <view v-else class="home__lesson-status">
-                <view class="tag" :class="statusClass(lesson.status)">
-                  <text>{{ statusLabel(lesson.status) }}</text>
-                </view>
-              </view>
-            </view>
-            <view class="home__lesson-arrow">
-              <text>›</text>
-            </view>
-          </view>
-        </view>
-      </view>
-
       <!-- 宠物概略 (2026-07-02 加回首页) -->
       <view class="home__section">
         <view class="section-title">
@@ -161,6 +108,8 @@
       <view class="home__section">
         <view class="section-title">
           <text>📅 本周课表</text>
+          <!-- 2026-07-02: 从原"今日课程" section-title 挪过来, 跟点击意图对齐 (看完整一周课表) -->
+          <text class="section-title__more section-title__more--cta" @tap="goCalendar">查看完整课表 ›</text>
         </view>
 
         <scroll-view scroll-x class="home__week" show-scrollbar="false">
@@ -197,6 +146,91 @@
         </view>
         <view v-else class="home__day-empty">
           <text>{{ selectedDay?.isToday ? '今天没有课哦' : (selectedDay?.name || '该日') + '没有课' }}</text>
+        </view>
+      </view>
+
+      <!-- 我的课程&课包 (2026-07-02: 替换原"今日课程" section, 用户要求"看自己报了哪些课、买了哪些课包"; 同日按用户反馈挪到本周课表下面) -->
+      <view class="home__section">
+        <view class="section-title">
+          <text>📦 我的课程&课包</text>
+        </view>
+
+        <!-- tab 切换 -->
+        <view class="home__mine-tabs">
+          <view
+            :class="['home__mine-tab', { active: mineTab === 'course' }]"
+            @tap="setMineTab('course')"
+          >
+            <text>我报名的课程 ({{ enrollments.length }})</text>
+          </view>
+          <view
+            :class="['home__mine-tab', { active: mineTab === 'package' }]"
+            @tap="setMineTab('package')"
+          >
+            <text>我的课包 ({{ studentProducts.length }})</text>
+          </view>
+        </view>
+
+        <!-- 课程列表 -->
+        <view v-if="mineTab === 'course'" class="home__mine-list">
+          <view v-if="enrollmentsLoading" class="home__loading">
+            <text>召唤中…</text>
+          </view>
+          <view v-else-if="!enrollments.length" class="home__mine-empty">
+            <text>还没有报名任何课程 ›</text>
+          </view>
+          <view
+            v-for="e in enrollments"
+            v-else
+            :key="e._id"
+            class="home__mine-card press"
+          >
+            <text class="home__mine-card-name">{{ e.courseInstance?.name || '课程' }}</text>
+            <view class="home__mine-card-meta">
+              <text>👨‍🏫 {{ e.courseInstance?.teacher?.realName || '老师' }}</text>
+              <text>📍 {{ e.courseInstance?.room?.name || '教室待定' }}</text>
+            </view>
+            <view class="home__mine-card-progress">
+              <view class="home__mine-card-bar">
+                <view
+                  class="home__mine-card-bar-fill"
+                  :style="{ width: mineProgress(e.attendedLessons, e.totalLessons) }"
+                />
+              </view>
+              <text>已上 {{ e.attendedLessons || 0 }}/{{ e.totalLessons || 0 }} 节</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 课包列表 -->
+        <view v-else class="home__mine-list">
+          <view v-if="packagesLoading" class="home__loading">
+            <text>召唤中…</text>
+          </view>
+          <view v-else-if="!studentProducts.length" class="home__mine-empty">
+            <text>还没有购买任何课包 ›</text>
+          </view>
+          <view
+            v-for="p in studentProducts"
+            v-else
+            :key="p._id"
+            class="home__mine-card press"
+          >
+            <text class="home__mine-card-name">{{ p.coursePackageName || p.coursePackage?.name || '课包' }}</text>
+            <view class="home__mine-card-meta">
+              <text>🎒 {{ p.totalLessons || 0 }} 课时</text>
+              <text>· 来源 {{ sourceLabel(p.source) }}</text>
+            </view>
+            <view class="home__mine-card-progress">
+              <view class="home__mine-card-bar">
+                <view
+                  class="home__mine-card-bar-fill"
+                  :style="{ width: mineProgress(p.remainingLessons, p.totalLessons) }"
+                />
+              </view>
+              <text>剩余 {{ p.remainingLessons || 0 }}/{{ p.totalLessons || 0 }} 课时</text>
+            </view>
+          </view>
         </view>
       </view>
 
@@ -244,6 +278,8 @@ import PendingConsents from '@/components/auth/PendingConsents.vue'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { pointsApi } from '@/api/points'
 import { petApi } from '@/api/pet'
+import { studentProductApi } from '@/api/studentProduct'
+import { courseEnrollmentApi } from '@/api/courseEnrollment'
 import { date } from '@/utils/date'
 import { greetingByHour, PET_SPECIES_EMOJI } from '@/utils/constants'
 import { haptic } from '@/utils/haptic'
@@ -264,7 +300,13 @@ export default {
       petLoading: false,
       pet: null,
       petSpecies: null,
-      petBlockReason: ''
+      petBlockReason: '',
+      // 我的课程&课包 (2026-07-02 替换原"今日课程" section)
+      mineTab: 'course',
+      enrollments: [],
+      enrollmentsLoading: false,
+      studentProducts: [],
+      packagesLoading: false
     }
   },
   computed: {
@@ -409,6 +451,74 @@ export default {
       }
       // 宠物概略 (并行)
       this.loadPet()
+      // 我的课程&课包 (并行)
+      this.loadMine()
+    },
+
+    // 2026-07-02: 加载"我报名的课程" + "我的课包",并行两个端点 (R-1214 + R-2079)
+    async loadMine() {
+      this.loadEnrollments()
+      this.loadPackages()
+    },
+
+    async loadEnrollments() {
+      this.enrollmentsLoading = true
+      try {
+        const res = await courseEnrollmentApi.me({})
+        let list = []
+        if (Array.isArray(res)) list = res
+        else if (res && Array.isArray(res.items)) list = res.items
+        else if (res && Array.isArray(res.data)) list = res.data
+        this.enrollments = list
+      } catch (e) {
+        console.warn('[child.loadEnrollments]', e)
+        this.enrollments = []
+      } finally {
+        this.enrollmentsLoading = false
+      }
+    },
+
+    async loadPackages() {
+      this.packagesLoading = true
+      try {
+        const res = await studentProductApi.me({})
+        let list = []
+        if (Array.isArray(res)) list = res
+        else if (res && Array.isArray(res.items)) list = res.items
+        else if (res && Array.isArray(res.data)) list = res.data
+        this.studentProducts = list
+      } catch (e) {
+        console.warn('[child.loadPackages]', e)
+        this.studentProducts = []
+      } finally {
+        this.packagesLoading = false
+      }
+    },
+
+    // tab 切换 (haptic 反馈 + 滚动置顶)
+    setMineTab(tab) {
+      if (this.mineTab === tab) return
+      haptic.tap()
+      this.mineTab = tab
+    },
+
+    // 进度条百分比 (避免除零)
+    mineProgress(value, total) {
+      const v = Number(value) || 0
+      const t = Number(total) || 0
+      if (t <= 0) return '0%'
+      return Math.min(100, Math.round((v / t) * 100)) + '%'
+    },
+
+    // 课包来源文案
+    sourceLabel(s) {
+      const map = {
+        purchase: '购买',
+        gift: '赠课',
+        reward: '奖励',
+        manual: '手动开通'
+      }
+      return map[s] || s || '其他'
     },
 
     async loadPet() {
@@ -923,6 +1033,96 @@ export default {
     background: linear-gradient(135deg, $primary-lighter, #FFE4D3);
     border-radius: $radius-md;
     box-shadow: $shadow-card;
+  }
+
+  // 我的课程&课包 (2026-07-02: 替换原"今日课程" section)
+  &__mine-tabs {
+    display: flex;
+    background: $bg-card;
+    border-radius: $radius-md;
+    padding: 4rpx;
+    margin-bottom: $spacing-md;
+    box-shadow: $shadow-card;
+  }
+
+  &__mine-tab {
+    flex: 1;
+    text-align: center;
+    padding: 12rpx 0;
+    font-size: $font-sm;
+    color: $text-secondary;
+    border-radius: $radius-sm;
+    transition: all $transition-fast;
+
+    &.active {
+      background: linear-gradient(135deg, $primary, $primary-light);
+      color: #fff;
+      font-weight: $font-weight-medium;
+      box-shadow: 0 2rpx 8rpx rgba(255, 138, 101, 0.3);
+    }
+  }
+
+  &__mine-list {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-sm;
+  }
+
+  &__mine-card {
+    padding: $spacing-md;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+  }
+
+  &__mine-card-name {
+    display: block;
+    font-size: $font-lg;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    margin-bottom: $spacing-xs;
+  }
+
+  &__mine-card-meta {
+    display: flex;
+    gap: $spacing-sm;
+    font-size: $font-sm;
+    color: $text-secondary;
+    margin-bottom: $spacing-sm;
+  }
+
+  &__mine-card-progress {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+  }
+
+  &__mine-card-bar {
+    flex: 1;
+    height: 12rpx;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: $radius-pill;
+    overflow: hidden;
+  }
+
+  &__mine-card-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, $primary, $primary-light);
+    border-radius: $radius-pill;
+    transition: width $transition-base;
+  }
+
+  &__mine-card-progress text {
+    font-size: $font-xs;
+    color: $text-tertiary;
+    flex-shrink: 0;
+  }
+
+  &__mine-empty {
+    padding: $spacing-xl $spacing-md;
+    text-align: center;
+    color: $text-tertiary;
+    font-size: $font-sm;
   }
 
   &__pet-portrait {

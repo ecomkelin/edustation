@@ -259,6 +259,7 @@ Auth 列简写:
 | R-1204 | DELETE | /course-enrollments/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
 | R-1205 | GET | /course-enrollments/:id/removable-check | PERM | courseEnrollment.read | 删除预检 | |
 | R-1213 | PUT | /course-enrollments/:id/status | PERM | courseEnrollment.write | 状态变更 | enrolled/withdrawn |
+| R-1214 | GET | /course-enrollments/me | C-END | (activeStudent) | 我的报名列表 | 排除 withdrawn |
 
 ### MM=13 room (URL: /rooms)
 
