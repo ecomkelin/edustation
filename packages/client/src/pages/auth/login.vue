@@ -202,7 +202,7 @@ export default {
         haptic.success()
         toast.success('欢迎回来!')
         setTimeout(() => {
-          uni.reLaunch({ url: '/pages/tabbar/home' })
+          uni.reLaunch({ url: '/pages/tabbar/child' })
         }, 400)
       } catch (e) {
         this.failCount++

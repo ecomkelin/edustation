@@ -9,6 +9,8 @@
     </view>
 
     <scroll-view scroll-y class="discover__body" @scrolltolower="onLower">
+      <!-- 2026-07-02 fix: scroll-view padding 在 H5 下不传子, 包 wrapper -->
+      <view class="discover__body-inner">
       <!-- 机构信息卡 -->
       <view class="discover__org" v-if="orgPromotion">
         <view class="discover__org-banner">
@@ -91,6 +93,7 @@
       </view>
 
       <view class="discover__bottom-spacer" />
+      </view>
     </scroll-view>
   </view>
 </template>
@@ -188,7 +191,8 @@ export default {
   padding-top: env(safe-area-inset-top);
 
   &__header {
-    padding: $spacing-md $spacing-md $spacing-sm;
+    // 2026-07-02 与 child.vue 同步用 $spacing-lg 防 430px viewport 右侧贴边
+    padding: $spacing-md $spacing-lg $spacing-sm;
     background: linear-gradient(180deg, #FFE4D3 0%, $bg-page 100%);
   }
 
@@ -207,8 +211,13 @@ export default {
   }
 
   &__body {
-    padding: 0 $spacing-md;
+    // 2026-07-02: scroll-view 的 padding 在 H5 下不传给子节点,
+    // 真实缩进交给内层 wrapper (discover__body-inner), scroll-view 自身只管滚动
     height: calc(100vh - 120rpx);
+  }
+
+  &__body-inner {
+    padding: 0 $spacing-lg;
   }
 
   &__org {

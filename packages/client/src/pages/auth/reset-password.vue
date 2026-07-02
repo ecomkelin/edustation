@@ -164,7 +164,7 @@ export default {
         // 强制场景: 跳首页; 普通场景: 退栈
         setTimeout(() => {
           if (this.isForce) {
-            uni.reLaunch({ url: '/pages/tabbar/home' })
+            uni.reLaunch({ url: '/pages/tabbar/child' })
           } else {
             uni.navigateBack()
           }

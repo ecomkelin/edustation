@@ -25,6 +25,9 @@
 
     <!-- 主体内容 -->
     <scroll-view scroll-y class="home__body" @scrolltolower="onLower">
+      <!-- 2026-07-02 fix: scroll-view 内 padding 在 H5 下不传给子节点,
+           包一层 wrapper view 承载 padding 让 section 真正缩进 -->
+      <view class="home__body-inner">
       <!-- 今日课程 -->
       <view class="home__section">
         <view class="section-title">
@@ -193,7 +196,7 @@
           </view>
         </view>
         <view v-else class="home__day-empty">
-          <text>{{ selectedDay.isToday ? '今天没有课哦' : selectedDay.name + '没有课' }}</text>
+          <text>{{ selectedDay?.isToday ? '今天没有课哦' : (selectedDay?.name || '该日') + '没有课' }}</text>
         </view>
       </view>
 
@@ -218,6 +221,7 @@
       </view>
 
       <view class="home__bottom-spacer" />
+      </view>
     </scroll-view>
 
     <!-- 协议墙 -->
@@ -304,6 +308,11 @@ export default {
       return this.weekLessons
         .filter((l) => date.fmtDate(l.plannedStartTime) === this.selectedDate)
         .sort((a, b) => new Date(a.plannedStartTime) - new Date(b.plannedStartTime))
+    },
+    // 2026-07-02 fix: 模板 line 196 用 selectedDay.isToday/name, 但 data 只声明了 selectedDate (字符串)
+    // 从 weekDays 里反查选中的 day 对象, 模板就不报 undefined 了
+    selectedDay() {
+      return this.weekDays.find((d) => d.date === this.selectedDate) || null
     },
     quickEntries() {
       return [
@@ -552,7 +561,8 @@ export default {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: $spacing-md $spacing-md $spacing-sm;
+    // 2026-07-02 与 body 同步用 $spacing-lg 防止右侧贴边
+    padding: $spacing-md $spacing-lg $spacing-sm;
     position: relative;
   }
 
@@ -589,13 +599,18 @@ export default {
   }
 
   &__top-content {
-    padding: 0 $spacing-md;
+    padding: 0 $spacing-lg;
     position: relative;
   }
 
   &__body {
-    padding: 0 $spacing-md;
+    // 2026-07-02: scroll-view 的 padding 在 H5 下不传给子节点,
+    // 真实缩进交给内层 wrapper (home__body-inner), scroll-view 自身只管滚动
     height: calc(100vh - 280rpx);
+  }
+
+  &__body-inner {
+    padding: 0 $spacing-lg;
   }
 
   &__section {
