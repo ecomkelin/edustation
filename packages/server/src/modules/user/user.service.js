@@ -172,6 +172,8 @@ async function list({ orgId, keyword, userType, position, region, isActive, role
     region: r.user.region ? String(r.user.region) : null,
     isActive: r.user.isActive,
     isMain: r.isMain,
+    // 2026-06 加: C 端名师团队显示 (Org.showTeacherTeam 总开关 + 行级勾选)
+    showAsTeacher: !!r.showAsTeacher,
     positions: (r.positions || []).map((pp) => ({
       id: String(pp._id),
       name: pp.name,
@@ -378,6 +380,31 @@ async function setPositions(userId, orgId, positions) {
 }
 
 /**
+ * 切换某员工作为"对外名师" (2026-06 加)。
+ * 写入 UserOrgRel.showAsTeacher; 兜底校验 rel.positions 里没有任何 clientLevel > 0 (家长岗)。
+ * 显示与否最终由 org.service.public() 配合 Org.showTeacherTeam 总开关决定。
+ */
+async function setTeacherFlag(userId, orgId, showAsTeacher) {
+  const rel = await UserOrgRel.findOne({ user: userId, org: orgId })
+    .populate({ path: 'positions', select: 'clientLevel' })
+    .lean()
+  if (!rel) throw ApiError.notFound('用户不属于该机构')
+  // 兜底: 任何 clientLevel > 0 的岗位(家长岗) → 不允许设为对外名师
+  if (showAsTeacher) {
+    const positions = Array.isArray(rel.positions) ? rel.positions : []
+    const isGuardian = positions.some((p) => Number(p.clientLevel) > 0)
+    if (isGuardian) {
+      throw ApiError.badRequest('仅机构员工可被设为对外名师, 家长身份不允许')
+    }
+  }
+  await UserOrgRel.updateOne(
+    { _id: rel._id },
+    { $set: { showAsTeacher: !!showAsTeacher } }
+  )
+  return { id: userId, orgId, showAsTeacher: !!showAsTeacher }
+}
+
+/**
  * 按手机号查找 user（不限制 org）。
  * 同时返回该 user 在当前 org 的 rel 情况，方便前端判断能否 attach。
  */
@@ -456,4 +483,4 @@ async function setBlocked(userId, isBlocked, reason) {
   return u
 }
 
-module.exports = { list, listUnaffiliated, updateUnaffiliated, detail, create, update, remove, removableCheck, changePassword, resetPassword, setPositions, lookupByMobile, attachToOrg, setBlocked }
+module.exports = { list, listUnaffiliated, updateUnaffiliated, detail, create, update, remove, removableCheck, changePassword, resetPassword, setPositions, setTeacherFlag, lookupByMobile, attachToOrg, setBlocked }

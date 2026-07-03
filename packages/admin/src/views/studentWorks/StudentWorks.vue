@@ -860,16 +860,26 @@ onMounted(async () => {
     studentApi.list({ pageSize: 200 }, { silent: true }),
     userApi.list({ pageSize: 200 }, { silent: true })
   ])
-  if (s.status === 'fulfilled') {
-    const v = s.value
-    subjects.value = Array.isArray(v?.data) ? v.data : []
+  // 2026-07-03:防御性 sanitize — 后端 .populate 后 _id 一定存在,但偶尔 raw subdoc / 某些端点
+  //  返回的 item 可能没有 _id (比如 archived org 默认排除某些字段)。
+  //  没有 _id 的 item 会让 <el-option :value="s._id"> 传 undefined,
+  //  Vue prop 校验抛 "Invalid prop: ... Expected String|Number|Boolean|Object, got Undefined null"
+  //  — 这个 warning 进了某个全局 handler 被错误序列化成 "Class constructor ObjectId"
+  function safeId(item) {
+    if (!item) return null
+    return item._id || item.id || null
   }
-  if (c.status === 'fulfilled') courseInstances.value = c.value.data?.items || []
-  if (st.status === 'fulfilled') students.value = st.value.data?.items || []
+  function normalize(list) {
+    return (list || [])
+      .filter((x) => safeId(x) != null)
+      .map((x) => ({ ...x, _id: safeId(x) }))
+  }
+  if (s.status === 'fulfilled') subjects.value = normalize(Array.isArray(s.value?.data) ? s.value.data : [])
+  if (c.status === 'fulfilled') courseInstances.value = normalize(c.value?.data?.items || [])
+  if (st.status === 'fulfilled') students.value = normalize(st.value?.data?.items || [])
   if (u.status === 'fulfilled') {
-    // userApi.list 响应可能是 {items} 或裸数组
     const v = u.value
-    userOptions.value = Array.isArray(v?.data) ? v.data : (v?.data?.items || [])
+    userOptions.value = normalize(Array.isArray(v?.data) ? v.data : (v?.data?.items || []))
   }
   load()
   loadStats()

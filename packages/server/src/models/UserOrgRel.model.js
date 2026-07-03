@@ -26,7 +26,11 @@ const UserOrgRelSchema = new Schema(
     // 该用户在本机构下持有的岗位列表（数组：一个员工可同时是"教务+老师"等）
     positions: [{ type: Schema.Types.ObjectId, ref: 'Position' }],
     // 是否主机构：true 表示登录后默认进入这家；同一用户多个机构时仅一个 isMain=true
-    isMain: { type: Boolean, default: false }
+    isMain: { type: Boolean, default: false },
+    // 是否作为"名师"对外展示（C 端机构主页 + 课程产品页老师栏；2026-06 加）
+    // 仅在 showAsTeacher=true 且 user.roleScope='staff' (service 兜底) 时才会被
+    // org.service.public() 查到, 纯家长(guardian)员工绝不会被展示。
+    showAsTeacher: { type: Boolean, default: false }
     // 注: 家长沟通画像字段 (commStyle/familyBg/childFocus/followUp 等) 已搬到 Parent 表
     //   原因: Parent 自身就按 org 隔离, 潜客阶段 (parent.user=null) 也能写, 不依赖 user 绑定
   },

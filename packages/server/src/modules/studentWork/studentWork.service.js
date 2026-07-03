@@ -243,13 +243,20 @@ async function stats({
   const prevFrom = new Date(from.getTime() - ms)
 
   // 公共 $match 子句（不含日期）
-  const baseMatch = { org: mongoose.Types.ObjectId(orgId) }
-  if (lessonAttendance) baseMatch.lessonAttendance = mongoose.Types.ObjectId(lessonAttendance)
-  if (lessonSchedule) baseMatch.lessonSchedule = mongoose.Types.ObjectId(lessonSchedule)
-  if (courseInstance) baseMatch.courseInstance = mongoose.Types.ObjectId(courseInstance)
-  if (subject) baseMatch.subject = mongoose.Types.ObjectId(subject)
-  if (student) baseMatch.student = mongoose.Types.ObjectId(student)
-  if (uploadedBy) baseMatch.uploadedBy = mongoose.Types.ObjectId(uploadedBy)
+  // 2026-07-03: 全部加 `new` — mongoose v8 + bson v6 的 ObjectId 是 ES6 class,
+  //   不加 new 会抛 "Class constructor ObjectId cannot be invoked without 'new'",
+  //   /stats 在客户端就被这个错误串到红 toast("Class constructor ObjectId..." 误导)。
+  // 验证: mongoose 8.24.0 / bson 6.10.4 → ObjectId("...") 直接 ERR,
+  //       new ObjectId("...") 才能构造。
+  // 同时加 isValidObjectId 防御: query param 漏值/格式错时不至 500, 这条忽略即可
+  const oid = (v) => (mongoose.isValidObjectId(v) ? new mongoose.Types.ObjectId(v) : null)
+  const baseMatch = { org: oid(orgId) }
+  if (lessonAttendance) baseMatch.lessonAttendance = oid(lessonAttendance)
+  if (lessonSchedule) baseMatch.lessonSchedule = oid(lessonSchedule)
+  if (courseInstance) baseMatch.courseInstance = oid(courseInstance)
+  if (subject) baseMatch.subject = oid(subject)
+  if (student) baseMatch.student = oid(student)
+  if (uploadedBy) baseMatch.uploadedBy = oid(uploadedBy)
 
   // group by null 出汇总
   const groupPipeline = (gte, lte) => [

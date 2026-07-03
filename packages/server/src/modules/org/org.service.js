@@ -303,9 +303,13 @@ async function publicOrg(id) {
     })
       .select('key name org')
       .lean(),
-    // 教师: UserOrgRel (isMain + status active) → populate User 取公共画像
-    UserOrgRel.find({ org: org._id, isMain: true })
+    // 教师: UserOrgRel (showAsTeacher=true) → populate User 取公共画像
+    // 注意: 不限定 isMain, 因为兼职老师 isMain=false (main 留给校长/管理员),
+    // 但作为该机构的"名师"展示与主岗无关。
+    // 同时 populate rel.positions 拿 clientLevel, 用来在 service 层 filter 掉纯家长 (clientLevel > 0)
+    UserOrgRel.find({ org: org._id, showAsTeacher: true })
       .populate({ path: 'user', select: 'realName avatar title bio isActive' })
+      .populate({ path: 'positions', select: 'clientLevel name' })
       .lean(),
     // 上架课程产品: isActive=true, 按创建时间倒序, 取前 20 防止首屏过载
     // 注意: CourseProduct 字段名是 subjects (数组复数) 不是 subject
@@ -369,16 +373,28 @@ async function publicOrg(id) {
       }
       return Array.from(map.values())
     })(),
-    // 教师列表 (UserOrgRel isMain, populate user 取公共画像)
-    teachers: (teacherRels || [])
-      .filter((r) => r.user && r.user.isActive !== false)
-      .map((r) => ({
-        id: String(r.user._id),
-        realName: r.user.realName || '老师',
-        avatar: r.user.avatar || '',
-        title: r.user.title || '',
-        bio: r.user.bio || ''
-      })),
+    // 教师列表 (三层防护: 总开关 + 行级勾选 + 岗位 clientLevel 兜底拦截纯家长)
+    // 1) Org.showTeacherTeam 总开关: false 直接不放
+    // 2) query 已经加了 showAsTeacher=true (上面)
+    // 3) service 兜底: rel.positions 里只要有一个 clientLevel > 0 (家长岗), 就排除
+    //    (员工岗 clientLevel=0; 混合岗按"含家长岗"处理 → 不展示)
+    teachers: org.showTeacherTeam
+      ? (teacherRels || [])
+          .filter((r) => {
+            if (!r.user || r.user.isActive === false) return false
+            const positions = Array.isArray(r.positions) ? r.positions : []
+            // 兜底拦截纯家长 (或兼任家长岗的复合身份)
+            const isGuardian = positions.some((p) => Number(p.clientLevel) > 0)
+            return !isGuardian
+          })
+          .map((r) => ({
+            id: String(r.user._id),
+            realName: r.user.realName || '老师',
+            avatar: r.user.avatar || '',
+            title: r.user.title || '',
+            bio: r.user.bio || ''
+          }))
+      : [],
     // 课程产品 (即"课包"; isActive, 限前 20 按 createdAt 倒序)
     // CourseProduct.subjects 是数组; 业务上首页只展示第 1 个作为代表
     products: (products || []).map((p) => {

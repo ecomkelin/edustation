@@ -92,6 +92,20 @@
           <el-tag v-if="row.isMain" type="success" size="small">主</el-tag>
         </template>
       </el-table-column>
+      <!-- 2026-06 加: 对外名师开关 (UserOrgRel.showAsTeacher), C 端名师团队列用 -->
+      <el-table-column label="对外名师" width="100">
+        <template #default="{ row }">
+          <el-switch
+            :model-value="!!row.showAsTeacher"
+            :disabled="!canSetTeacher(row)"
+            :loading="row._teacherSaving"
+            inline-prompt
+            active-text="是"
+            inactive-text="否"
+            @change="(v) => onToggleTeacher(row, v)"
+          />
+        </template>
+      </el-table-column>
       <el-table-column label="启用" width="80">
         <template #default="{ row }">
           <el-tag :type="row.isActive ? 'success' : 'info'">{{ row.isActive ? '是' : '否' }}</el-tag>
@@ -670,6 +684,32 @@ async function onRemoveFromOrgConfirm(row, { password }) {
 }
 
 // 黑名单切换: 仅超管可操作
+// 2026-06 加: 名师 switch 逻辑
+// 业务规则: 任何 clientLevel > 0 的岗位(家长岗) → 该用户是"家长/混合身份" → 不可设为名师
+// 后端 service 还会再兜底 (若前端被绕过会 400)
+function canSetTeacher(row) {
+  if (!row || !Array.isArray(row.positions)) return false
+  return !row.positions.some((p) => Number(p.clientLevel) > 0)
+}
+
+async function onToggleTeacher(row, val) {
+  const prev = !!row.showAsTeacher
+  row.showAsTeacher = val
+  row._teacherSaving = true
+  try {
+    const r = await userApi.setTeacherFlag(row.id, val)
+    // r.data 已是业务 data,后端回 {id, orgId, showAsTeacher}
+    row.showAsTeacher = !!(r && (r.showAsTeacher !== undefined ? r.showAsTeacher : val))
+    ElMessage.success(val ? '已设为对外名师' : '已取消对外名师')
+  } catch (e) {
+    // 失败回滚 UI
+    row.showAsTeacher = prev
+    ElMessage.error(e?.response?.data?.message || '切换失败')
+  } finally {
+    row._teacherSaving = false
+  }
+}
+
 async function toggleBlock(row) {
   const next = !row.isBlocked
   const action = next ? '禁用' : '解禁'

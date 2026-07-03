@@ -13,6 +13,9 @@ export const userApi = {
   changePassword: (id, data) => http.post(`/users/${id}/change-password`, data),
   resetPassword: (id, data) => http.post(`/users/${id}/reset-password`, data),
   setPositions: (id, positions) => http.put(`/users/${id}/positions`, { positions }),
+  // 2026-06 加: 切换员工作为"对外名师" (UserOrgRel.showAsTeacher)
+  setTeacherFlag: (id, showAsTeacher) =>
+    http.put(`/users/${id}/teacher-flag`, { showAsTeacher: !!showAsTeacher }),
   attachToOrg: (id, data) => http.post(`/users/${id}/org`, data),
   setBlocked: (id, isBlocked, reason = '') =>
     http.put(`/users/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked: true, reason }),

@@ -48,6 +48,15 @@ exports.setPositions = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+/**
+ * 切换某员工作为"对外名师"。
+ * 仅写 UserOrgRel.showAsTeacher; user.roleScope='guardian' 时强制返回 400 (兜底对齐 service)。
+ */
+exports.setTeacherFlag = async (req, res) => {
+  const data = await service.setTeacherFlag(req.params.id, req.orgId, req.body.showAsTeacher)
+  res.json(ApiResponse.ok(data))
+}
+
 exports.lookupByMobile = async (req, res) => {
   const data = await service.lookupByMobile(req.query.mobile, req.orgId)
   res.json(ApiResponse.ok(data))

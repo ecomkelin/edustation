@@ -41,7 +41,10 @@ router.put('/:id/block', mws.requirePlatformAdmin, v.setBlocked, mws.validateReq
 router.put('/:id/unblock', mws.requirePlatformAdmin, v.setBlocked, mws.validateRequest, asyncHandler(c.setBlocked))
 // R-0212 PUT /users/:id/positions
 router.put('/:id/positions', mws.requirePermission('user.write'), v.setPositions, mws.validateRequest, asyncHandler(c.setPositions))
-// R-0213 POST /users/:id/org
+// 2026-06 加 R-0213 PUT /users/:id/teacher-flag — 切换员工作为"对外名师"
+// 走 user.write 权限 (教务/管理员即可); service 兜底拦截 roleScope='guardian'
+router.put('/:id/teacher-flag', mws.requirePermission('user.write'), v.setTeacherFlag, mws.validateRequest, asyncHandler(c.setTeacherFlag))
+// R-0214 POST /users/:id/org
 router.post('/:id/org', mws.requirePermission('user.write'), v.attachToOrg, mws.validateRequest, asyncHandler(c.attachToOrg))
 
 module.exports = router

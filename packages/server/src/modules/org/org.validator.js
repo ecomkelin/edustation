@@ -37,7 +37,9 @@ const update = [
   body('contactPerson').optional().isString().isLength({ max: 50 }),
   body('contactPhone').optional().isString().isLength({ max: 50 }),
   body('address').optional().isString().isLength({ max: 200 }),
-  body('isActive').optional().isBoolean()
+  body('isActive').optional().isBoolean(),
+  // 2026-06 加: C 端对外展示总开关 (机构 admin 即可改, service 不卡权限)
+  body('showTeacherTeam').optional().isBoolean()
 ]
 
 const idParam = [param('id').isMongoId()]

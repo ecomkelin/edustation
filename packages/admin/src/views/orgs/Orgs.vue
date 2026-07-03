@@ -217,6 +217,22 @@
           />
           <span class="form-tip">2026-06 起，开设时间可由平台超管修改</span>
         </el-form-item>
+
+        <!-- C 端展示配置 (2026-06 上线) -->
+        <el-divider content-position="left">C 端对外展示</el-divider>
+
+        <el-form-item label="名师团队展示">
+          <el-switch
+            v-model="form.showTeacherTeam"
+            active-text="对外展示"
+            inactive-text="隐藏"
+            inline-prompt
+          />
+          <span class="form-tip">
+            开启后，机构主页会展示勾选"名师"的员工；
+            关闭则整块不显示。具体哪些员工作为名师，在成员管理中勾选。
+          </span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
@@ -342,7 +358,9 @@ function emptyForm() {
     contactPhone: '',
     address: '',
     establishedDate: '',
-    logo: ''
+    logo: '',
+    // 2026-06 C 端对外展示: 总开关 (细分到员工的"名师"勾选见成员管理)
+    showTeacherTeam: false
   }
 }
 
@@ -489,7 +507,9 @@ async function submit() {
       contactPerson: form.contactPerson,
       contactPhone: form.contactPhone,
       address: form.address,
-      logo: form.logo || ''
+      logo: form.logo || '',
+      // 2026-06 C 端总开关
+      showTeacherTeam: !!form.showTeacherTeam
     }
     if (form.establishedDate) {
       payload.establishedDate = new Date(form.establishedDate).toISOString()

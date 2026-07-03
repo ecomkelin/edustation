@@ -21,6 +21,15 @@ async function bootstrap() {
   // 1.3 站点配置单例 (备案号 / 运营主体 / 版权年份). 已存在则 no-op
   await require('@modules/siteConfig/siteConfig.service').ensureSingleton()
 
+  // 1.4 名师团队总开关 + 行级 showAsTeacher 回填 (2026-06)
+  // 老数据默认无值会导致机构主页"什么都没显示", 这里把已有 Org 总开关设为 true,
+  // 已有 staff UserOrgRel 自动勾上 (纯家长保持不勾). 新数据走 admin 显式管理.
+  const teacherBackfill = await require('@utils/teacherBackfillSeed')()
+  if (teacherBackfill.orgsUpdated || teacherBackfill.staffRelsSet || teacherBackfill.guardianRelsKept) {
+    // eslint-disable-next-line no-console
+    console.log('[teacher-backfill]', JSON.stringify(teacherBackfill))
+  }
+
   // 1.5 注册 pet-system-v2 饥饿衰减 + 死亡 cron (2026-06-21)
   // require 即触发 setInterval(...).unref()，参照 captcha.service 模式
   require('@modules/pet/petCron')

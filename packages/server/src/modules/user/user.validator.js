@@ -36,6 +36,12 @@ const setPositions = [
   body('positions.*').isMongoId()
 ]
 
+// 2026-06 加: 切换"对外名师"开关 (UserOrgRel.showAsTeacher)
+// 只接受 boolean; service 还会兜底校验 user.roleScope='staff' (纯家长禁止展示)
+const setTeacherFlag = [
+  body('showAsTeacher').isBoolean().withMessage('showAsTeacher 必须是 boolean')
+]
+
 const attachToOrg = [
   body('positions').optional().isArray(),
   body('positions.*').optional().isMongoId(),
@@ -55,4 +61,4 @@ const updateUnaffiliated = [
   body('isActive').optional().isBoolean()
 ]
 
-module.exports = { create, update, updateUnaffiliated, changePassword, resetPassword, setPositions, attachToOrg, setBlocked }
+module.exports = { create, update, updateUnaffiliated, changePassword, resetPassword, setPositions, setTeacherFlag, attachToOrg, setBlocked }

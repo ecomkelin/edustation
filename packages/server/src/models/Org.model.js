@@ -69,6 +69,10 @@ const OrgSchema = new Schema(
     isActive: { type: Boolean, default: true },
     // 机构 logo URL（走统一 storage：上传到 /storage/upload?scope=org，拿到 url 后写入）
     logo: { type: String, default: null },
+    // 是否在 C 端展示"名师团队"section（per-org 总开关；2026-06 加）
+    // 双层防护：本字段=false 直接不放；=true 时还要配合 UserOrgRel.showAsTeacher=true
+    //   且 user.roleScope='staff' 才会展示（兜底拦截纯家长）
+    showTeacherTeam: { type: Boolean, default: false },
     // 扩展字段
     meta: { type: Schema.Types.Mixed, default: {} }
   },
