@@ -28,6 +28,24 @@
       <!-- 2026-07-02 fix: scroll-view 内 padding 在 H5 下不传给子节点,
            包一层 wrapper view 承载 padding 让 section 真正缩进 -->
       <view class="home__body-inner">
+
+      <!-- 2026-07-03: 孩子维度数据 stat (剩余课时/积分 来自 me.vue) -->
+      <view class="home__quickstats">
+        <view class="home__quickstat press" @tap="goStudentProducts">
+          <text class="home__quickstat-val">{{ stats.lessonsLeft || 0 }}</text>
+          <text class="home__quickstat-lbl">剩余课时</text>
+        </view>
+        <view class="home__quickstat press" @tap="goPoints">
+          <text class="home__quickstat-val">{{ stats.points || 0 }}</text>
+          <text class="home__quickstat-lbl">积分</text>
+        </view>
+        <!-- 2026-07-03: 「我的课程」改为「机构」, 跳 R-0932 公开机构主页 (展示推广+学科+老师+课包) -->
+        <view class="home__quickstat press" @tap="goOrg">
+          <text class="home__quickstat-val">🏫</text>
+          <text class="home__quickstat-lbl">机构</text>
+        </view>
+      </view>
+
       <!-- 宠物概略 (2026-07-02 加回首页) -->
       <view class="home__section">
         <view class="section-title">
@@ -157,39 +175,23 @@
         </view>
       </view>
 
-      <!-- 我的课程&课包 (2026-07-02: 替换原"今日课程" section, 用户要求"看自己报了哪些课、买了哪些课包"; 同日按用户反馈挪到本周课表下面) -->
+      <!-- 我的课程 (2026-07-03 简化: 首页顶部已有剩余课时对应课包统计, 这里只展示当前孩子报名的课程) -->
       <view class="home__section">
         <view class="section-title">
-          <text>📦 我的课程&课包</text>
+          <text>📚 我的课程</text>
+          <!-- 2026-07-03 用户反馈: 标题右侧加"全部课程"按钮, 跳独立全量列表页 -->
+          <text class="section-title__more section-title__more--cta" @tap="goMyCoursesAll">全部课程 ›</text>
         </view>
 
-        <!-- tab 切换 -->
-        <view class="home__mine-tabs">
-          <view
-            :class="['home__mine-tab', { active: mineTab === 'course' }]"
-            @tap="setMineTab('course')"
-          >
-            <text>我报名的课程 ({{ enrollments.length }})</text>
-          </view>
-          <view
-            :class="['home__mine-tab', { active: mineTab === 'package' }]"
-            @tap="setMineTab('package')"
-          >
-            <text>我的课包 ({{ studentProducts.length }})</text>
-          </view>
+        <view v-if="enrollmentsLoading" class="home__loading">
+          <text>召唤中…</text>
         </view>
-
-        <!-- 课程列表 -->
-        <view v-if="mineTab === 'course'" class="home__mine-list">
-          <view v-if="enrollmentsLoading" class="home__loading">
-            <text>召唤中…</text>
-          </view>
-          <view v-else-if="!enrollments.length" class="home__mine-empty">
-            <text>还没有报名任何课程 ›</text>
-          </view>
+        <view v-else-if="!enrollments.length" class="home__mine-empty">
+          <text>还没有报名任何课程 ›</text>
+        </view>
+        <view v-else class="home__mine-list">
           <view
             v-for="e in enrollments"
-            v-else
             :key="e._id"
             class="home__mine-card press"
             @tap="goCourseDetail(e.courseInstance?._id || e.courseInstance)"
@@ -207,37 +209,6 @@
                 />
               </view>
               <text>已上 {{ e.attendedLessons || 0 }}/{{ e.totalLessons || 0 }} 节</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- 课包列表 -->
-        <view v-else class="home__mine-list">
-          <view v-if="packagesLoading" class="home__loading">
-            <text>召唤中…</text>
-          </view>
-          <view v-else-if="!studentProducts.length" class="home__mine-empty">
-            <text>还没有购买任何课包 ›</text>
-          </view>
-          <view
-            v-for="p in studentProducts"
-            v-else
-            :key="p._id"
-            class="home__mine-card press"
-          >
-            <text class="home__mine-card-name">{{ p.coursePackageName || p.coursePackage?.name || '课包' }}</text>
-            <view class="home__mine-card-meta">
-              <text>🎒 {{ p.totalLessons || 0 }} 课时</text>
-              <text>· 来源 {{ sourceLabel(p.source) }}</text>
-            </view>
-            <view class="home__mine-card-progress">
-              <view class="home__mine-card-bar">
-                <view
-                  class="home__mine-card-bar-fill"
-                  :style="{ width: mineProgress(p.remainingLessons, p.totalLessons) }"
-                />
-              </view>
-              <text>剩余 {{ p.remainingLessons || 0 }}/{{ p.totalLessons || 0 }} 课时</text>
             </view>
           </view>
         </view>
@@ -317,6 +288,7 @@ import { studentWorkApi } from '@/api/studentWork'
 import { date } from '@/utils/date'
 import { greetingByHour, PET_SPECIES_EMOJI } from '@/utils/constants'
 import { haptic } from '@/utils/haptic'
+import { toast } from '@/components/common/Toast'
 
 const TIER_EMOJI = { C: '🥚', B: '🐣', A: '🦊', S: '🐉' }
 const TIER_COLOR = { C: '#9CA3AF', B: '#7CD9B7', A: '#5B9EE6', S: '#F5C148' }
@@ -335,12 +307,12 @@ export default {
       pet: null,
       petSpecies: null,
       petBlockReason: '',
-      // 我的课程&课包 (2026-07-02 替换原"今日课程" section)
-      mineTab: 'course',
+      // 我的课程 (2026-07-03 简化, 只剩当前孩子报名的课程; 2026-07-02 替换原"今日课程" section)
       enrollments: [],
       enrollmentsLoading: false,
-      studentProducts: [],
-      packagesLoading: false,
+      // 2026-07-03: 顶部孩子 stat (剩余课时 + 积分, 从原 me.vue 移过来)
+      stats: { lessonsLeft: 0, points: 0 },
+      statsLoading: false,
       // 2026-07-03 作品墙: 最近 4 个作品缩略图 (R-1670 me)
       works: [],
       worksLoading: false
@@ -350,6 +322,15 @@ export default {
     ...mapState(useAuthStore, ['user', 'pendingConsents']),
     ...mapGetters(useAuthStore, ['hasPendingConsents']),
     ...mapState(useStudentStore, ['activeStudentId']),
+
+    auth() {
+      return useAuthStore()
+    },
+
+    // 2026-07-03: 当前激活机构 (顶部"机构"stat 跳转用)
+    orgId() {
+      return this.auth.currentOrgId
+    },
 
     userName() {
       return this.user?.realName || this.user?.mobile?.slice(-4) || '朋友'
@@ -499,18 +480,15 @@ export default {
       }
       // 宠物概略 (并行)
       this.loadPet()
-      // 我的课程&课包 (并行)
-      this.loadMine()
+      // 我的课程 (并行)
+      this.loadEnrollments()
       // 作品墙 (并行, 2026-07-03)
       this.loadWorks()
+      // 孩子 stat (并行, 2026-07-03)
+      this.loadStats()
     },
 
-    // 2026-07-02: 加载"我报名的课程" + "我的课包",并行两个端点 (R-1214 + R-2079)
-    async loadMine() {
-      this.loadEnrollments()
-      this.loadPackages()
-    },
-
+    // 2026-07-03 简化: 只加载当前孩子报名的课程 (R-1214); 课包顶部 stat 已有, 此模块不重复展示
     async loadEnrollments() {
       this.enrollmentsLoading = true
       try {
@@ -528,47 +506,12 @@ export default {
       }
     },
 
-    async loadPackages() {
-      this.packagesLoading = true
-      try {
-        const res = await studentProductApi.me({})
-        let list = []
-        if (Array.isArray(res)) list = res
-        else if (res && Array.isArray(res.items)) list = res.items
-        else if (res && Array.isArray(res.data)) list = res.data
-        this.studentProducts = list
-      } catch (e) {
-        console.warn('[child.loadPackages]', e)
-        this.studentProducts = []
-      } finally {
-        this.packagesLoading = false
-      }
-    },
-
-    // tab 切换 (haptic 反馈 + 滚动置顶)
-    setMineTab(tab) {
-      if (this.mineTab === tab) return
-      haptic.tap()
-      this.mineTab = tab
-    },
-
     // 进度条百分比 (避免除零)
     mineProgress(value, total) {
       const v = Number(value) || 0
       const t = Number(total) || 0
       if (t <= 0) return '0%'
       return Math.min(100, Math.round((v / t) * 100)) + '%'
-    },
-
-    // 课包来源文案
-    sourceLabel(s) {
-      const map = {
-        purchase: '购买',
-        gift: '赠课',
-        reward: '奖励',
-        manual: '手动开通'
-      }
-      return map[s] || s || '其他'
     },
 
     // 2026-07-02: 课程卡点击进 CourseInstance 详情 (R-1101 + R-1215)
@@ -595,6 +538,54 @@ export default {
       } finally {
         this.worksLoading = false
       }
+    },
+
+    // 2026-07-03: 孩子维度 stat — 剩余课时 (从 studentProductApi.me 聚合) + 积分 (pointsApi.me)
+    async loadStats() {
+      this.statsLoading = true
+      const tasks = []
+      // /points/me 后端强制 activeStudent, 没选孩子就别发
+      if (this.activeStudentId) {
+        tasks.push(
+          pointsApi.me().then((r) => (this.stats.points = r?.balance || 0)).catch(() => {})
+        )
+      }
+      tasks.push(
+        studentProductApi
+          .me({ isActive: true })
+          .then((res) => {
+            const items = Array.isArray(res) ? res : res?.items || res?.data || []
+            this.stats.lessonsLeft = items.reduce((s, p) => s + (p.remainingLessons || 0), 0)
+          })
+          .catch(() => {})
+      )
+      await Promise.all(tasks).finally(() => { this.statsLoading = false })
+    },
+
+    // 2026-07-03: 顶部 stat 跳转
+    goStudentProducts() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/studentProduct/list' })
+    },
+    goPoints() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/points/wallet' })
+    },
+    // 2026-07-03: 「机构」顶部 stat — 公开主页跳转 (R-0932 /orgs/:id/public)
+    goOrg() {
+      haptic.tap()
+      const orgId = this.orgId
+      if (!orgId) {
+        toast.warn('尚未选择机构')
+        return
+      }
+      uni.navigateTo({ url: '/pages/org/home?id=' + orgId })
+    },
+
+    // 2026-07-03: 「我的课程」section 标题右侧"全部课程"按钮 — 跳独立全量列表 (含 4 状态 tab)
+    goMyCoursesAll() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/course/enrollment-list' })
     },
 
     // 取作品首图 (fileUrls[0]), 简单空守卫
@@ -829,6 +820,42 @@ export default {
 
   &__body-inner {
     padding: 0 $spacing-lg;
+  }
+
+  // 2026-07-03: 顶部孩子 stat 卡 (剩余课时/积分/我的课程) — 跟 me.vue stat 区分, 这里 3 列
+  &__quickstats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: $spacing-sm;
+    padding: $spacing-md;
+    margin-top: $spacing-md;
+    background: $bg-card;
+    border-radius: $radius-md;
+    box-shadow: $shadow-card;
+  }
+  &__quickstat {
+    text-align: center;
+    padding: $spacing-sm $spacing-xs;
+    border-radius: $radius-sm;
+    transition: all $transition-fast;
+
+    &:active {
+      background: rgba(255, 138, 101, 0.08);
+      transform: scale(0.98);
+    }
+  }
+  &__quickstat-val {
+    display: block;
+    font-size: $font-xl;
+    font-weight: $font-weight-bold;
+    color: $primary;
+    line-height: 1.2;
+    margin-bottom: 4rpx;
+  }
+  &__quickstat-lbl {
+    display: block;
+    font-size: $font-xs;
+    color: $text-tertiary;
   }
 
   &__section {
@@ -1164,33 +1191,7 @@ export default {
     box-shadow: $shadow-card;
   }
 
-  // 我的课程&课包 (2026-07-02: 替换原"今日课程" section)
-  &__mine-tabs {
-    display: flex;
-    background: $bg-card;
-    border-radius: $radius-md;
-    padding: 4rpx;
-    margin-bottom: $spacing-md;
-    box-shadow: $shadow-card;
-  }
-
-  &__mine-tab {
-    flex: 1;
-    text-align: center;
-    padding: 12rpx 0;
-    font-size: $font-sm;
-    color: $text-secondary;
-    border-radius: $radius-sm;
-    transition: all $transition-fast;
-
-    &.active {
-      background: linear-gradient(135deg, $primary, $primary-light);
-      color: #fff;
-      font-weight: $font-weight-medium;
-      box-shadow: 0 2rpx 8rpx rgba(255, 138, 101, 0.3);
-    }
-  }
-
+  // 我的课程 (2026-07-03 简化: 单列表, 无 tab)
   &__mine-list {
     display: flex;
     flex-direction: column;

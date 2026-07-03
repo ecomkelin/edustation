@@ -33,21 +33,12 @@
     </view>
 
     <scroll-view scroll-y class="me__body">
-      <!-- 学习数据 -->
+      <!-- 学习数据 (2026-07-03: 剩余课时/积分 移到首页顶部; 订单数保留, 我的课程保留) -->
       <view class="me__stats">
-        <view class="me__stat press" @tap="goPage('/pages/studentProduct/list')">
-          <text class="me__stat-val">{{ stats.lessonsLeft }}</text>
-          <text class="me__stat-lbl">剩余课时</text>
-        </view>
         <view class="me__stat press" @tap="goPage('/pages/order/list')">
           <text class="me__stat-val">{{ stats.orderCount }}</text>
           <text class="me__stat-lbl">订单数</text>
         </view>
-        <view class="me__stat press" @tap="goPage('/pages/points/wallet')">
-          <text class="me__stat-val">{{ stats.points }}</text>
-          <text class="me__stat-lbl">积分</text>
-        </view>
-        <!-- 2026-07-02: 我的课程入口 → switchTab child tab, 在 child tab 点课程卡进详情 -->
         <view class="me__stat press" @tap="goMyCourses">
           <text class="me__stat-val">📚</text>
           <text class="me__stat-lbl">我的课程</text>
@@ -101,8 +92,6 @@ import { useAuthStore } from '@/stores/auth'
 import { useStudentStore } from '@/stores/student'
 import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
 import OrgFooter from '@/components/layout/OrgFooter.vue'
-import { pointsApi } from '@/api/points'
-import { studentProductApi } from '@/api/studentProduct'
 import { orderApi } from '@/api/order'
 import { maskPhone } from '@/utils/format'
 import { toast } from '@/components/common/Toast'
@@ -112,7 +101,7 @@ export default {
   components: { ActiveStudentHeader, OrgFooter },
   data() {
     return {
-      stats: { lessonsLeft: 0, orderCount: 0, points: 0 }
+      stats: { orderCount: 0 }
     }
   },
   computed: {
@@ -152,30 +141,13 @@ export default {
   },
   methods: {
     async loadStats() {
-      // 并行加载
-      const tasks = []
-      // /points/me 后端要求必传 student (代表当前激活孩子),没选孩子就别发
-      if (this.activeStudentId) {
-        tasks.push(pointsApi.me().then((r) => (this.stats.points = r.balance || 0)).catch(() => {}))
+      // 2026-07-03: 剩余课时 + 积分 移到首页顶部 (孩子维度); 这里只保留订单数
+      try {
+        const res = await orderApi.me({ pageSize: 1 })
+        this.stats.orderCount = res?.total || res?.totalCount || 0
+      } catch (e) {
+        console.warn('[me.loadStats] orderApi.me', e)
       }
-      tasks.push(
-        studentProductApi
-          .me({ isActive: true })
-          .then((res) => {
-            const items = Array.isArray(res) ? res : res.items || res.data || []
-            this.stats.lessonsLeft = items.reduce((s, p) => s + (p.remainingLessons || 0), 0)
-          })
-          .catch(() => {})
-      )
-      tasks.push(
-        orderApi
-          .me({ pageSize: 1 })
-          .then((res) => {
-            this.stats.orderCount = res.total || res.totalCount || 0
-          })
-          .catch(() => {})
-      )
-      await Promise.all(tasks)
     },
 
     onMenuTap(item) {
@@ -343,8 +315,8 @@ export default {
 
   &__stats {
     display: grid;
-    // 2026-07-02: 从 3 列改 4 列, 给"我的课程"入口腾位置
-    grid-template-columns: repeat(4, 1fr);
+    // 2026-07-03: 改为 2 列 (剩余课时/积分挪到首页), 只剩订单数 + 我的课程
+    grid-template-columns: repeat(2, 1fr);
     gap: $spacing-sm;
     background: $bg-card;
     border-radius: $radius-md;

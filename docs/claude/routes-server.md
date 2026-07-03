@@ -219,7 +219,7 @@ Auth 列简写:
 | R-0917 | POST | /orgs/:id/toggle-active | ADMIN | — | 启用/停用 | 机构禁物理删除 |
 | R-0930 | GET | /orgs/:id/promotion | PERM | org-promotion.read | 推广信息 | orgPromotion 子路由 |
 | R-0931 | PUT | /orgs/:id/promotion | PERM | org-promotion.write | 更新推广信息 | |
-| R-0932 | GET | /orgs/:id/public | AUTH | — | 公开机构主页 | C 端家长; 白名单字段 (隐藏合规 PII) |
+| R-0932 | GET | /orgs/:id/public | AUTH | — | 公开机构主页 | C 端家长; 白名单字段 (隐藏合规 PII); 2026-07-03 扩展 subjects[]/teachers[]/products[] 3 段 (并发 Category/UserOrgRel/CourseProduct) |
 | R-0953 | GET | /orgs/:id/candidate-principals | ADMIN | — | 候选法人 | 平台超管 |
 
 ### MM=10 courseProduct (URL: /course-products)
@@ -259,7 +259,7 @@ Auth 列简写:
 | R-1204 | DELETE | /course-enrollments/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
 | R-1205 | GET | /course-enrollments/:id/removable-check | PERM | courseEnrollment.read | 删除预检 | |
 | R-1213 | PUT | /course-enrollments/:id/status | PERM | courseEnrollment.write | 状态变更 | enrolled/withdrawn |
-| R-1214 | GET | /course-enrollments/me | C-END | (activeStudent) | 我的报名列表 | 排除 withdrawn |
+| R-1214 | GET | /course-enrollments/me | C-END | (activeStudent) | 我的报名列表 | 默认排除 withdrawn; 2026-07-03 spread req.query 支持 page/pageSize/status 过滤 |
 | R-1215 | GET | /course-enrollments/me/by-instance/:courseInstanceId | C-END | (activeStudent) | 单课进度 (已上/计划总/剩余) | 聚合 LessonSchedule+Attendance |
 
 ### MM=13 room (URL: /rooms)
@@ -662,3 +662,5 @@ Auth 列简写:
 | 2026-06-25 | 订单退款端点 R-1722 上线 (支持部分退款 + SP 软停用) | R-1722 | add |
 | 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |
 | 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |
+| 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
+| 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |

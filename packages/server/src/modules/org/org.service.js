@@ -249,7 +249,7 @@ async function candidatePrincipals(id) {
 }
 
 /**
- * R-0932 公开机构主页 (2026-07-02 立项)
+ * R-0932 公开机构主页 (2026-07-02 立项, 2026-07-03 扩展学科/老师/课包)
  *
  * 输入:
  *   - id (Org._id)
@@ -258,12 +258,14 @@ async function candidatePrincipals(id) {
  *   1. 校验 id 合法, 找到 org (停用也算找到, 但前端自行判断是否展示)
  *   2. populate region (只取 name + code, 不暴露 full region)
  *   3. 并发拉 OrgPromotion (lazy require, 避免循环引用)
- *   4. 输出白名单字段 + 拼装 promotionSummary
+ *   4. 并发拉学科 (Category, model=Subject) + 教师列表 (User, roleScope=staff) + 上架课程产品 (CourseProduct)
+ *   5. 输出白名单字段 + 拼装 promotionSummary
  *
  * 不输出 (PII / 合规):
  *   - socialCreditCode, legalPerson, licenseNumber (平台超管专属)
  *   - principal (User ref)
  *   - meta (Mixed)
+ *   - 教师 mobile / passwordHash / position 等敏感字段
  *
  * 返回:
  *   {
@@ -271,14 +273,10 @@ async function candidatePrincipals(id) {
  *     establishedDate, isActive,     // 基础信息
  *     region: { name, code },        // 简化 Region (无 parent 链)
  *     contact: { person, phone },    // 联系方式
- *     promotionSummary: {
- *       description, brandStory, teachingFeatures, facultyIntro,
- *       businessHours, businessScope,
- *       hotline, serviceWechat, serviceQq, email, website, wechatPublic,
- *       douyin, xiaohongshu, videoAccount,
- *       longitude, latitude, nearbyLandmark,
- *       registeredCapital, honors
- *     }
+ *     promotionSummary: { ... },
+ *     subjects: [{key, name}],       // 学科字典 (per-org 切片 + 平台默认合并, dedup by key)
+ *     teachers: [{id, realName, avatar, title, bio}],
+ *     products: [{id, name, subject, cover, totalLessons, price, originalPrice, promotionActive, promotionPrice}]
  *   }
  */
 async function publicOrg(id) {
@@ -290,7 +288,33 @@ async function publicOrg(id) {
 
   // lazy require 防循环依赖
   const OrgPromotion = require('@models/OrgPromotion.model')
-  const promo = await OrgPromotion.findOne({ org: org._id }).lean()
+  const Category = require('@models/Category.model')
+  const UserOrgRel = require('@models/UserOrgRel.model')
+  const CourseProduct = require('@models/CourseProduct.model')
+
+  const [promo, subjectCats, teacherRels, products] = await Promise.all([
+    OrgPromotion.findOne({ org: org._id }).lean(),
+    // 学科: per-org Category (model=Subject) + platform 默认 (org=null OR $exists:false),
+    // dedup by key, 机构优先
+    Category.find({
+      model: 'Subject',
+      isActive: true,
+      $or: [{ org: org._id }, { org: null }, { org: { $exists: false } }]
+    })
+      .select('key name org')
+      .lean(),
+    // 教师: UserOrgRel (isMain + status active) → populate User 取公共画像
+    UserOrgRel.find({ org: org._id, isMain: true })
+      .populate({ path: 'user', select: 'realName avatar title bio isActive' })
+      .lean(),
+    // 上架课程产品: isActive=true, 按创建时间倒序, 取前 20 防止首屏过载
+    // 注意: CourseProduct 字段名是 subjects (数组复数) 不是 subject
+    CourseProduct.find({ org: org._id, isActive: true })
+      .populate({ path: 'subjects', select: 'key name' })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean()
+  ])
 
   // 拼装白名单 (避免直接 spread 全字段, 防止后续 schema 加新字段自动外漏)
   const out = {
@@ -332,7 +356,45 @@ async function publicOrg(id) {
           registeredCapital: promo.registeredCapital || '',
           honors: promo.honors || []
         }
-      : null
+      : null,
+    // 学科字典 (dedup by key: 机构 per-org 覆盖平台默认)
+    subjects: (() => {
+      const map = new Map()
+      for (const c of subjectCats) {
+        if (!c.key) continue
+        // 机构优先 (org === orgId 的覆盖 org=null 的)
+        if (!map.has(c.key) || String(c.org) === String(org._id)) {
+          map.set(c.key, { key: c.key, name: c.name })
+        }
+      }
+      return Array.from(map.values())
+    })(),
+    // 教师列表 (UserOrgRel isMain, populate user 取公共画像)
+    teachers: (teacherRels || [])
+      .filter((r) => r.user && r.user.isActive !== false)
+      .map((r) => ({
+        id: String(r.user._id),
+        realName: r.user.realName || '老师',
+        avatar: r.user.avatar || '',
+        title: r.user.title || '',
+        bio: r.user.bio || ''
+      })),
+    // 课程产品 (即"课包"; isActive, 限前 20 按 createdAt 倒序)
+    // CourseProduct.subjects 是数组; 业务上首页只展示第 1 个作为代表
+    products: (products || []).map((p) => {
+      const firstSubject = Array.isArray(p.subjects) ? p.subjects[0] : null
+      return {
+        id: String(p._id),
+        name: p.name,
+        subject: firstSubject ? { key: firstSubject.key, name: firstSubject.name } : null,
+        subjectKeys: Array.isArray(p.subjects) ? p.subjects.map((s) => s.key).filter(Boolean) : [],
+        totalLessons: p.totalLessons || 0,
+        price: p.price || 0,
+        originalPrice: p.originalPrice || p.price || 0,
+        promotionActive: !!p.promotionActive,
+        promotionPrice: p.promotionPrice || 0
+      }
+    })
   }
   return out
 }
