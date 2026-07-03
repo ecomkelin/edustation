@@ -12,6 +12,11 @@ router.use(mws.authenticate, mws.requireOrg)
 // 家长无 employee 权限码;activeStudent middleware 已校验是当前孩子的监护人
 router.get('/me', mws.activeStudent, asyncHandler(c.mine))
 
+// R-1215 GET /course-enrollments/me/by-instance/:courseInstanceId
+// 当前激活孩子在指定 CourseInstance 下的个人进度 (已上/计划总/剩余/最近考勤)
+// 路由顺序: /me/by-instance/... 必须在 /me 之后、/:id 之前
+router.get('/me/by-instance/:courseInstanceId', mws.activeStudent, asyncHandler(c.myProgress))
+
 // R-1200 GET /course-enrollments
 router.get('/', mws.requirePermission('courseEnrollment.read'), asyncHandler(c.list))
 // R-1201 GET /course-enrollments/:id

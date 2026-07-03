@@ -9,7 +9,7 @@ const StudentProduct = require('@models/StudentProduct.model')
 const Student = require('@models/Student.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
-const { CourseEnrollmentStatus, CourseInstanceStatus, AttendanceStatus } = require('@shared/enums')
+const { CourseEnrollmentStatus, CourseInstanceStatus, AttendanceStatus, LessonScheduleStatus } = require('@shared/enums')
 const { invalidate: invalidateReportCache } = require('@modules/report/reportCache')
 
 function toObjectId(v) {
@@ -767,8 +767,100 @@ async function backfillEnrollmentsMainProduct({ orgId }) {
   return { scanned: broken.length, fixed, skipped }
 }
 
+/**
+ * R-1215: 当前激活孩子在指定 CourseInstance 下的个人进度
+ * 聚合 LessonSchedule (计划总) + LessonAttendance (已上) → 单课进度
+ *
+ * 设计要点:
+ * - scheduledCount 排除 cancelled (已取消) + archived (已归档, 业务上不再展示)
+ * - 用 try/catch 包 countDocuments, 任意子查询失败返 0, 详情页不被聚合挂掉
+ * - lastAttendedAt 取最近一次 completed 考勤的实际结束时间, populate lessonSchedule 拿 lessonNo
+ *
+ * 返回: { enrollment, progress: { scheduledCount, attendedCount, remainingScheduled, attendanceRate, lastAttendedAt, lastLessonNo } }
+ */
+async function myProgress({ orgId, student, courseInstanceId }) {
+  const ciId = toObjectId(courseInstanceId)
+
+  // 1. 校验 enrollment 存在 + 非 withdrawn (与 R-1214 /me 列表口径一致)
+  const enrollment = await CourseEnrollment.findOne({
+    org: orgId,
+    student,
+    courseInstance: ciId,
+    status: { $ne: CourseEnrollmentStatus.WITHDREW }
+  })
+    .select('_id student courseInstance studentProduct status enrolledAt')
+    .populate('studentProduct', 'remainingLessons totalLessons expireDate isActive source')
+    .lean()
+
+  if (!enrollment) {
+    throw ApiError.notFound('您未报名此课程, 或已退课')
+  }
+
+  // 2. 计划内总课次 (排除 cancelled + archived)
+  let scheduledCount = 0
+  try {
+    scheduledCount = await LessonSchedule.countDocuments({
+      org: orgId,
+      courseInstance: ciId,
+      status: {
+        $nin: [LessonScheduleStatus.CANCELLED, LessonScheduleStatus.ARCHIVED]
+      }
+    })
+  } catch (e) {
+    console.warn('[courseEnrollment.myProgress] scheduledCount failed', e?.message)
+  }
+
+  // 3. 已上 (个人考勤 status='completed')
+  let attendedCount = 0
+  try {
+    attendedCount = await LessonAttendance.countDocuments({
+      org: orgId,
+      student,
+      courseInstance: ciId,
+      status: AttendanceStatus.COMPLETED
+    })
+  } catch (e) {
+    console.warn('[courseEnrollment.myProgress] attendedCount failed', e?.message)
+  }
+
+  // 4. 最近一次考勤
+  let lastAttended = null
+  try {
+    lastAttended = await LessonAttendance.findOne({
+      org: orgId,
+      student,
+      courseInstance: ciId,
+      status: AttendanceStatus.COMPLETED
+    })
+      .sort({ actualEndTime: -1, updatedAt: -1 })
+      .select('actualEndTime lessonSchedule')
+      .populate('lessonSchedule', 'lessonNo plannedStartTime')
+      .lean()
+  } catch (e) {
+    console.warn('[courseEnrollment.myProgress] lastAttended failed', e?.message)
+  }
+
+  const remainingScheduled = Math.max(0, scheduledCount - attendedCount)
+  const attendanceRate = scheduledCount > 0
+    ? Math.round((attendedCount / scheduledCount) * 100)
+    : 0
+
+  return {
+    enrollment,
+    progress: {
+      scheduledCount,
+      attendedCount,
+      remainingScheduled,
+      attendanceRate,
+      lastAttendedAt: lastAttended?.actualEndTime || null,
+      lastLessonNo: lastAttended?.lessonSchedule?.lessonNo || null
+    }
+  }
+}
+
 module.exports = {
   list, detail, create, update, setStatus, remove, removableCheck,
   countEnrolled, countEnrolledByInstances, assertCanEnroll,
-  bindStudentProductToEnrollments, backfillEnrollmentsMainProduct
+  bindStudentProductToEnrollments, backfillEnrollmentsMainProduct,
+  myProgress
 }

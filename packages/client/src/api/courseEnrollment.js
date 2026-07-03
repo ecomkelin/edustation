@@ -14,6 +14,11 @@ export const courseEnrollmentApi = {
     return http.get('/course-enrollments/me', { data: params })
   },
 
+  // R-1215: C 端 "单课进度" (学生维度的已上/计划总/剩余/最近考勤)
+  myProgress(courseInstanceId, params = {}) {
+    return http.get(`/course-enrollments/me/by-instance/${courseInstanceId}`, { data: params })
+  },
+
   detail(id) {
     return http.get(`/course-enrollments/${id}`)
   },

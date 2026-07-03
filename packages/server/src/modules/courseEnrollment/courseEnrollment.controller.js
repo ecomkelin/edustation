@@ -10,6 +10,12 @@ exports.mine = async (req, res) => res.json(ApiResponse.ok(await s.list({
   student: req.activeStudentId,
   status: { $ne: 'withdrawn' }   // 排除已退报名
 })))
+// R-1215: C 端 "单课进度" — 聚合 LessonSchedule + LessonAttendance, 学生维度
+exports.myProgress = async (req, res) => res.json(ApiResponse.ok(await s.myProgress({
+  orgId: req.orgId,
+  student: req.activeStudentId,
+  courseInstanceId: req.params.courseInstanceId
+})))
 exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(req.params.id, req.orgId)))
 exports.create = async (req, res) => res.status(201).json(ApiResponse.created(await s.create({ orgId: req.orgId, ...req.body })))
 exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update(req.params.id, req.orgId, req.body)))

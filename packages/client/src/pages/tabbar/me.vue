@@ -47,6 +47,11 @@
           <text class="me__stat-val">{{ stats.points }}</text>
           <text class="me__stat-lbl">积分</text>
         </view>
+        <!-- 2026-07-02: 我的课程入口 → switchTab child tab, 在 child tab 点课程卡进详情 -->
+        <view class="me__stat press" @tap="goMyCourses">
+          <text class="me__stat-val">📚</text>
+          <text class="me__stat-lbl">我的课程</text>
+        </view>
       </view>
 
       <!-- 功能入口 -->
@@ -222,6 +227,12 @@ export default {
       uni.navigateTo({ url })
     },
 
+    // 2026-07-02: 我的课程 → 跳 child tab (uni.switchTab 不能传 navigateTo 路径)
+    // 用户在 child tab 滚动到"我的课程&课包"区点课程卡进 CourseInstance 详情
+    goMyCourses() {
+      uni.switchTab({ url: '/pages/tabbar/child' })
+    },
+
     maskPhone
   }
 }
@@ -333,7 +344,8 @@ export default {
 
   &__stats {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    // 2026-07-02: 从 3 列改 4 列, 给"我的课程"入口腾位置
+    grid-template-columns: repeat(4, 1fr);
     gap: $spacing-sm;
     background: $bg-card;
     border-radius: $radius-md;

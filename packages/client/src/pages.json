@@ -309,7 +309,8 @@
       },
       {
         "pagePath": "pages/tabbar/chat",
-        "text": "消息",
+        // 2026-07-02: "消息" 改成 "chat" 跟 chat.vue 业务名对齐; 图标也换了 (放大镜→对话气泡)
+        "text": "chat",
         "iconPath": "static/tabbar/chat.png",
         "selectedIconPath": "static/tabbar/chat-active.png"
       },

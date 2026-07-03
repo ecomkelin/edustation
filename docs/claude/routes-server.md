@@ -260,6 +260,7 @@ Auth 列简写:
 | R-1205 | GET | /course-enrollments/:id/removable-check | PERM | courseEnrollment.read | 删除预检 | |
 | R-1213 | PUT | /course-enrollments/:id/status | PERM | courseEnrollment.write | 状态变更 | enrolled/withdrawn |
 | R-1214 | GET | /course-enrollments/me | C-END | (activeStudent) | 我的报名列表 | 排除 withdrawn |
+| R-1215 | GET | /course-enrollments/me/by-instance/:courseInstanceId | C-END | (activeStudent) | 单课进度 (已上/计划总/剩余) | 聚合 LessonSchedule+Attendance |
 
 ### MM=13 room (URL: /rooms)
 

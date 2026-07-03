@@ -76,7 +76,15 @@
         <!-- 已破壳: 主卡 (头像 + 名字 + 阶位 + 双进度条) -->
         <view v-else class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
-            <text class="home__pet-portrait-emoji">{{ petEmoji }}</text>
+            <!-- 2026-07-02: species.visualType='svg' 时直接渲染 svgContent (跟 admin PetClassroomDisplay 对齐),
+                 否则走 emoji fallback -->
+            <image
+              v-if="petSvgSrc"
+              class="home__pet-portrait-svg"
+              :src="petSvgSrc"
+              mode="aspectFit"
+            />
+            <text v-else class="home__pet-portrait-emoji">{{ petEmoji }}</text>
             <view class="home__pet-tier-badge" :style="{ background: petTierColor }">
               <text>{{ petTier }}</text>
             </view>
@@ -184,6 +192,7 @@
             v-else
             :key="e._id"
             class="home__mine-card press"
+            @tap="goCourseDetail(e.courseInstance?._id || e.courseInstance)"
           >
             <text class="home__mine-card-name">{{ e.courseInstance?.name || '课程' }}</text>
             <view class="home__mine-card-meta">
@@ -234,22 +243,46 @@
         </view>
       </view>
 
-      <!-- 快捷入口 -->
+      <!-- 作品墙 (2026-07-03: 替换原快捷入口; 显示最近 4 个作品 + 右上"个人成长记录"入口) -->
       <view class="home__section">
         <view class="section-title">
-          <text>🎯 快捷入口</text>
+          <text>🎨 作品墙</text>
+          <!-- 个人成长记录: 后台未开发, 点 toast 敬请期待 -->
+          <text class="section-title__more" @tap="goGrowthRecord">个人成长记录 ›</text>
         </view>
-        <view class="home__quick">
-          <view
-            v-for="item in quickEntries"
-            :key="item.label"
-            class="home__quick-item press"
-            @tap="goPage(item.url)"
-          >
-            <view class="home__quick-icon" :style="{ background: item.bg }">
-              <text class="home__quick-emoji">{{ item.icon }}</text>
+
+        <view v-if="worksLoading" class="home__loading">
+          <text>召唤中…</text>
+        </view>
+        <view v-else-if="!works.length" class="home__works-empty press" @tap="goWorksAll">
+          <text class="home__works-empty-emoji">🎨</text>
+          <text class="home__works-empty-title">还没有作品</text>
+          <text class="home__works-empty-desc">孩子上课后,作品会出现在这里 ›</text>
+        </view>
+        <view v-else>
+          <view class="home__works-grid">
+            <view
+              v-for="w in works"
+              :key="w._id"
+              class="home__works-tile press"
+              @tap="goWorkDetail(w._id)"
+            >
+              <image
+                v-if="firstFile(w)"
+                class="home__works-img"
+                :src="firstFile(w)"
+                mode="aspectFill"
+              />
+              <view v-else class="home__works-img-fallback">
+                <text>🎨</text>
+              </view>
+              <view v-if="w.title" class="home__works-title">
+                <text>{{ w.title }}</text>
+              </view>
             </view>
-            <text class="home__quick-label">{{ item.label }}</text>
+          </view>
+          <view class="home__works-more press" @tap="goWorksAll">
+            <text>查看全部作品 ›</text>
           </view>
         </view>
       </view>
@@ -280,6 +313,7 @@ import { pointsApi } from '@/api/points'
 import { petApi } from '@/api/pet'
 import { studentProductApi } from '@/api/studentProduct'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
+import { studentWorkApi } from '@/api/studentWork'
 import { date } from '@/utils/date'
 import { greetingByHour, PET_SPECIES_EMOJI } from '@/utils/constants'
 import { haptic } from '@/utils/haptic'
@@ -306,7 +340,10 @@ export default {
       enrollments: [],
       enrollmentsLoading: false,
       studentProducts: [],
-      packagesLoading: false
+      packagesLoading: false,
+      // 2026-07-03 作品墙: 最近 4 个作品缩略图 (R-1670 me)
+      works: [],
+      worksLoading: false
     }
   },
   computed: {
@@ -356,14 +393,6 @@ export default {
     selectedDay() {
       return this.weekDays.find((d) => d.date === this.selectedDate) || null
     },
-    quickEntries() {
-      return [
-        { label: '我的课包', icon: '🎒', bg: '#FFE4D3', url: '/pages/studentProduct/list' },
-        { label: '作品墙', icon: '🎨', bg: '#E5F0FA', url: '/pages/work/list' },
-        { label: '积分钱包', icon: '💰', bg: '#FFF1D0', url: '/pages/points/wallet' },
-        { label: '接送授权', icon: '🚪', bg: '#C8F0DF', url: '/pages/access/pickups' }
-      ]
-    },
     // 宠物概略 (2026-07-02 加)
     petTier() {
       return this.pet?.tier || this.pet?.eggTier || 'C'
@@ -395,6 +424,25 @@ export default {
       }
       const key = this.pet.species
       return (key && PET_SPECIES_EMOJI[key]) || TIER_EMOJI[this.petTier] || '🐾'
+    },
+
+    // 2026-07-02: species.visualType='svg' 时, 把 svgContent 转 data URI 让 image 渲染
+    // base64 编码避免引号转义问题, 跟 admin PetClassroomDisplay v-html 等效
+    petSvgSrc() {
+      if (!this.petSpecies || this.petSpecies.visualType !== 'svg' || !this.petSpecies.svgContent) return ''
+      // uni-app image 不支持 v-html, 转 base64 data URI
+      try {
+        // #ifdef H5
+        // H5 端 base64 编码有 btoa, 走 btoa
+        if (typeof btoa === 'function') {
+          return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(this.petSpecies.svgContent)))
+        }
+        // #endif
+        // 其他端 (小程序) 用 encodeURIComponent + 手写 base64
+        return 'data:image/svg+xml;base64,' + this._b64encode(this.petSpecies.svgContent)
+      } catch (e) {
+        return ''
+      }
     },
     petName() {
       return this.pet?.nickname || this.petSpecies?.name || TIER_EMOJI[this.petTier] || '我的宠物'
@@ -453,6 +501,8 @@ export default {
       this.loadPet()
       // 我的课程&课包 (并行)
       this.loadMine()
+      // 作品墙 (并行, 2026-07-03)
+      this.loadWorks()
     },
 
     // 2026-07-02: 加载"我报名的课程" + "我的课包",并行两个端点 (R-1214 + R-2079)
@@ -521,6 +571,57 @@ export default {
       return map[s] || s || '其他'
     },
 
+    // 2026-07-02: 课程卡点击进 CourseInstance 详情 (R-1101 + R-1215)
+    goCourseDetail(id) {
+      if (!id) return
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/course/instance-detail?id=' + id })
+    },
+
+    // 2026-07-03: 作品墙模块 — 加载最近 4 个作品 (R-1670 /student-works/me)
+    async loadWorks() {
+      this.worksLoading = true
+      try {
+        const res = await studentWorkApi.me({ page: 1, pageSize: 4, sort: '-createdAt' })
+        // http 拦截器可能返 res.data 或直接 res, 兼容 [memory: http-interceptor-actually-unpacked]
+        const data = res?.data || res || {}
+        this.works = Array.isArray(data.items) ? data.items
+          : Array.isArray(data.data) ? data.data
+          : Array.isArray(data) ? data
+          : []
+      } catch (e) {
+        console.warn('[child.loadWorks]', e)
+        this.works = []
+      } finally {
+        this.worksLoading = false
+      }
+    },
+
+    // 取作品首图 (fileUrls[0]), 简单空守卫
+    firstFile(w) {
+      if (!w || !Array.isArray(w.fileUrls) || !w.fileUrls.length) return ''
+      return w.fileUrls[0] || ''
+    },
+
+    // 跳作品详情
+    goWorkDetail(id) {
+      if (!id) return
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/work/detail?id=' + id })
+    },
+
+    // 跳完整作品墙
+    goWorksAll() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/work/list' })
+    },
+
+    // 2026-07-03: 个人成长记录入口 — 后台未开发, toast 敬请期待
+    goGrowthRecord() {
+      haptic.tap()
+      uni.showToast({ title: '个人成长记录 · 敬请期待', icon: 'none' })
+    },
+
     async loadPet() {
       this.petLoading = true
       this.petBlockReason = ''
@@ -556,6 +657,13 @@ export default {
 
     formatTime: (d) => (d ? new Date(d).toTimeString().slice(0, 5) : ''),
     isFuture: (d) => d && new Date(d) > new Date(),
+
+    // 简易 base64 编码 (用于 SVG data URI; 小程序无 btoa 时兜底)
+    _b64encode(str) {
+      if (typeof btoa === 'function') return btoa(unescape(encodeURIComponent(str)))
+      // 简易 fallback: 用 encodeURIComponent 替代 (image 组件多数实现能识别 URL-encoded data URI)
+      return encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode('0x' + p1))
+    },
     countdownText: (d) => date.countdownLabel(d),
 
     durationLabel(lesson) {
@@ -941,46 +1049,67 @@ export default {
     font-size: $font-sm;
   }
 
-  // 快捷入口
-  &__quick {
+  // 作品墙 (2026-07-03: 替换原快捷入口)
+  &__works-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: $spacing-sm;
+    margin-bottom: $spacing-md;
   }
-
-  &__quick-item {
-    display: flex;
+  &__works-tile {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: $bg-card;
+    border-radius: $radius-md;
+    overflow: hidden;
+    box-shadow: $shadow-card;
+  }
+  &__works-img {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  &__works-img-fallback {
+    width: 100%;
+    height: 100%;
+    @include flex-center;
+    font-size: 64rpx;
+    background: $bg-page;
+  }
+  &__works-title {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: $spacing-xs $spacing-sm;
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.5));
+    color: #fff;
+    font-size: $font-xs;
+    line-height: 1.4;
+  }
+  &__works-more {
+    text-align: center;
+    padding: $spacing-sm 0;
+    font-size: $font-sm;
+    color: $primary;
+  }
+  &__works-empty {
+    @include flex-center;
     flex-direction: column;
-    align-items: center;
-    padding: $spacing-sm $spacing-xs;
+    padding: $spacing-xl $spacing-md;
     background: $bg-card;
     border-radius: $radius-md;
     box-shadow: $shadow-card;
-    transition: all $transition-fast;
-
-    &:active {
-      transform: scale(0.95);
-    }
   }
-
-  &__quick-icon {
-    width: 96rpx;
-    height: 96rpx;
-    border-radius: 24rpx;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: $spacing-xs;
-  }
-
-  &__quick-emoji {
-    font-size: 48rpx;
-  }
-
-  &__quick-label {
-    font-size: $font-xs;
+  &__works-empty-emoji { font-size: 64rpx; margin-bottom: $spacing-sm; }
+  &__works-empty-title {
+    font-size: $font-base;
     color: $text-primary;
-    text-align: center;
+    margin-bottom: 4rpx;
+  }
+  &__works-empty-desc {
+    font-size: $font-sm;
+    color: $text-tertiary;
   }
 
   &__bottom-spacer {
@@ -1139,6 +1268,10 @@ export default {
   }
   &__pet-portrait-emoji {
     font-size: 72rpx;
+  }
+  &__pet-portrait-svg {
+    width: 100rpx;
+    height: 100rpx;
   }
   &__pet-tier-badge {
     position: absolute;
