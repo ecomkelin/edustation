@@ -363,20 +363,20 @@
         "article.write"
       ],
       "permissionLabels": {
-        "article.read": { "label": "查看科普文章", "description": "浏览平台发布的所有科普文章 (含草稿)" },
-        "article.write": { "label": "编辑科普文章", "description": "新建/编辑/上下架科普文章 (平台超管专属, 跨机构对所有家长可见)" }
+        "article.read": { "label": "查看科普文章", "description": "浏览本机构发布的科普文章 (含草稿)" },
+        "article.write": { "label": "编辑科普文章", "description": "新建/编辑/上下架本机构的科普文章 (C 端仅本机构家长可见)" }
       }
     },
     {
       "key": "game",
-      "label": "平台小游戏",
+      "label": "小游戏",
       "permissions": [
         "game.read",
         "game.write"
       ],
       "permissionLabels": {
-        "game.read": { "label": "查看小游戏", "description": "浏览平台发布的所有小游戏 (含草稿)" },
-        "game.write": { "label": "编辑小游戏", "description": "新建/编辑/上下架小游戏 (平台超管专属, 跨机构对所有家长可见)" }
+        "game.read": { "label": "查看小游戏", "description": "浏览本机构发布的小游戏 (含草稿)" },
+        "game.write": { "label": "编辑小游戏", "description": "新建/编辑/上下架本机构的小游戏 (C 端仅本机构家长可见)" }
       }
     },
     {
@@ -387,8 +387,8 @@
         "video.write"
       ],
       "permissionLabels": {
-        "video.read": { "label": "查看科普视频", "description": "浏览平台发布的所有科普视频 (含草稿)" },
-        "video.write": { "label": "编辑科普视频", "description": "新建/编辑/上下架科普视频 (平台超管专属, 跨机构对所有家长可见)" }
+        "video.read": { "label": "查看科普视频", "description": "浏览本机构发布的科普视频 (含草稿)" },
+        "video.write": { "label": "编辑科普视频", "description": "新建/编辑/上下架本机构的科普视频 (C 端仅本机构家长可见)" }
       }
     }
   ]

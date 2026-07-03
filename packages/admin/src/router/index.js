@@ -74,12 +74,12 @@ const routes = [
       { path: 'system/unaffiliated-users', component: () => import('@/views/system/UnaffiliatedUsers.vue'), meta: { platform: true } },
       // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
       { path: 'system/audit-logs', component: () => import('@/views/audit/AuditLogs.vue'), meta: { platform: true } },
-      // 内容 - 科普文章 (2026-07-03 MM=36): 平台超管发, C 端展示
-      { path: 'content/articles', component: () => import('@/views/content/ContentArticles.vue'), meta: { platform: true } },
-      // 内容 - 平台小游戏 (2026-07-03 MM=37): 平台超管发
-      { path: 'content/games', component: () => import('@/views/content/ContentGames.vue'), meta: { platform: true } },
-      // 内容 - 平台科普视频 (2026-07-03 MM=38): 平台超管发, C 端展示
-      { path: 'content/videos', component: () => import('@/views/content/ContentVideos.vue'), meta: { platform: true } },
+      // 内容 - 科普文章 (2026-07-03 MM=36, 2026-07-03 下放 per-org): 普通机构 admin 也有权
+      { path: 'content/articles', component: () => import('@/views/content/ContentArticles.vue') },
+      // 内容 - 平台小游戏 (2026-07-03 MM=37, 2026-07-03 下放 per-org)
+      { path: 'content/games', component: () => import('@/views/content/ContentGames.vue') },
+      // 内容 - 平台科普视频 (2026-07-03 MM=38, 2026-07-03 下放 per-org)
+      { path: 'content/videos', component: () => import('@/views/content/ContentVideos.vue') },
       // 协议接受页 (强制拦截目标; 不可被 pendingConsents 守卫拦截, 否则死循环)
       { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },
       // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)

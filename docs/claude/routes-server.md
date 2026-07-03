@@ -666,6 +666,7 @@ Auth 列简写:
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
 | 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
 | 2026-07-03 | 内容模块 MM=38 video 上线 (科普视频平台级; 8 端点; 与 Article/Game 一致评级; C 端 explore tab 视频 section 默认 1 个 (R-3800 featured) + 文章 4 个 (1 头条+3 列表) + 游戏 加载更多式分页; seed 6 段 mp4 demo) | R-3800 ~ R-3807 | add |
+| 2026-07-03 | 内容模块 MM=36/37/38 下放 per-org: service filter org=null → org=req.orgId (强制 x-org-id); 写操作 requirePlatformAdmin → requirePermission('xx.write'); admin 菜单移到「机构管理 → 科普内容」; C 端 explore.vue 无改动靠 x-org-id 自动隔离; seed Org.find 循环每个启用 Org 各一份 | R-3602~3605/R-3703~3706/R-3804~3807 + 所有公开 GET | modify |
 
 ### MM=36 article (URL: /articles)
 
@@ -673,10 +674,10 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-3600 | GET | /articles | — | — | C 端公开列表 (已发布 + 分页) | query: category/page/pageSize; 不返 contentHtml |
 | R-3601 | GET | /articles/:id | — | — | C 端公开详情 (+1 viewCount 原子更新) | 只返 isPublished=true; 404 if 草稿/已下架 |
-| R-3602 | GET | /articles/admin/list | ADMIN | article.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize |
-| R-3603 | POST | /articles/admin | ADMIN | — (platform-admin) | 后台创建 | body 必填 title/contentMarkdown; 服务端 marked 编译 contentHtml |
-| R-3604 | PUT | /articles/admin/:id | ADMIN | — (platform-admin) | 后台更新 | contentMarkdown 改 → 重编译 contentHtml |
-| R-3605 | DELETE | /articles/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除, 草稿可恢复 |
+| R-3602 | GET | /articles/admin/list | ADMIN | article.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; 强制 org=req.orgId |
+| R-3603 | POST | /articles/admin | ADMIN | article.write | 后台创建 | body 必填 title/contentMarkdown; 服务端 marked 编译 contentHtml; org 注入 req.orgId |
+| R-3604 | PUT | /articles/admin/:id | ADMIN | article.write | 后台更新 | contentMarkdown 改 → 重编译 contentHtml; filter 含 org 防跨越权 |
+| R-3605 | DELETE | /articles/admin/:id | ADMIN | article.write | 软下架 (isPublished=false) | filter 含 org 防跨越权; 不物理删除 |
 
 ### MM=37 game (URL: /games)
 
@@ -685,10 +686,10 @@ Auth 列简写:
 | R-3700 | GET | /games | — | — | C 端公开列表 (已发布 + 分页) | query: tag/difficulty/page/pageSize |
 | R-3701 | GET | /games/:id | — | — | C 端公开详情 | |
 | R-3702 | POST | /games/:id/play | AUTH | — | C 端启动计数 (+1, 原子) | 失败不影响前端继续; 跨机构对所有家长可见 |
-| R-3703 | GET | /games/admin/list | ADMIN | game.read | 后台列表 (含草稿) | query: isPublished/keyword/page/pageSize |
-| R-3704 | POST | /games/admin | ADMIN | — (platform-admin) | 后台创建 | launchUrl 必填且 https:// |
-| R-3705 | PUT | /games/admin/:id | ADMIN | — (platform-admin) | 后台更新 | |
-| R-3706 | DELETE | /games/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除 |
+| R-3703 | GET | /games/admin/list | ADMIN | game.read | 后台列表 (含草稿) | query: isPublished/keyword/page/pageSize; 强制 org=req.orgId |
+| R-3704 | POST | /games/admin | ADMIN | game.write | 后台创建 | launchUrl 必填且 https://; org 注入 req.orgId |
+| R-3705 | PUT | /games/admin/:id | ADMIN | game.write | 后台更新 | filter 含 org 防跨越权 |
+| R-3706 | DELETE | /games/admin/:id | ADMIN | game.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除 |
 
 ### MM=38 video (URL: /videos)
 
@@ -701,7 +702,7 @@ Auth 列简写:
 | R-3801 | GET | /videos | — | — | C 端公开全量列表 (已发布 + 分页) | query: category/page/pageSize (max 50) |
 | R-3802 | GET | /videos/:id | — | — | C 端公开详情 | bumpViewCount 原子 +1 |
 | R-3803 | POST | /videos/:id/play | AUTH | — | C 端播放计数 (+1, 原子) | 失败不影响前端; bumpViewCount 复用 |
-| R-3804 | GET | /videos/admin/list | ADMIN | video.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize |
-| R-3805 | POST | /videos/admin | ADMIN | — (platform-admin) | 后台创建 | videoUrl 必填且 https:// |
-| R-3806 | PUT | /videos/admin/:id | ADMIN | — (platform-admin) | 后台更新 | |
-| R-3807 | DELETE | /videos/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除, 草稿可恢复 |
+| R-3804 | GET | /videos/admin/list | ADMIN | video.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; 强制 org=req.orgId |
+| R-3805 | POST | /videos/admin | ADMIN | video.write | 后台创建 | videoUrl 必填且 https://; org 注入 req.orgId |
+| R-3806 | PUT | /videos/admin/:id | ADMIN | video.write | 后台更新 | filter 含 org 防跨越权 |
+| R-3807 | DELETE | /videos/admin/:id | ADMIN | video.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除 |

@@ -26,9 +26,11 @@ router.get('/', v.list, mws.validateRequest, asyncHandler(c.list))
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
 
 // R-3803 POST /videos/:id/play — C 端播放/启动计数 (+1, 需鉴权)
+// 视频下放到 per-org 后, 计数也要按 org 隔离, 强制 x-org-id
 router.post(
   '/:id/play',
   mws.authenticate,
+  mws.requireOrg,
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.play)
@@ -47,23 +49,23 @@ router.get(
   asyncHandler(c.adminList)
 )
 
-// R-3805 admin POST /videos/admin — 后台创建
+// R-3805 admin POST /videos/admin — 后台创建 (per-org, 2026-07-03 下放)
 router.post(
   '/admin',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.write'),
   v.create,
   mws.validateRequest,
   asyncHandler(c.create)
 )
 
-// R-3806 admin PUT /videos/admin/:id — 后台更新
+// R-3806 admin PUT /videos/admin/:id — 后台更新 (per-org, 2026-07-03 下放)
 router.put(
   '/admin/:id',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.write'),
   v.idParam,
   v.update,
   mws.validateRequest,
@@ -75,7 +77,7 @@ router.delete(
   '/admin/:id',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.write'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)

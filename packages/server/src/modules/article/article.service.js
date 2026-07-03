@@ -8,15 +8,17 @@ const { compileMarkdownSafe } = require('@utils/markdown')
 
 /**
  * 关键点:
- *   - C 端只返 isPublished=true 的; admin 端不过滤
+ *   - 2026-07-03 内容下放到 per-org: 所有 filter 加 org = <req.orgId>
+ *   - public/admin 端都强制 req.orgId (调用方从 x-org-id 拿); null/undefined 直接 400
  *   - markdown -> html 在 service 层做一次, 前端详情页直接 v-html contentHtml
  *   - publicList 不返 contentHtml (避免大字段); publicDetail 单独返
  *   - viewCount 用 $inc 原子更, 不加事务
  */
 
-async function publicList({ category, page, pageSize }) {
+async function publicList({ orgId, category, page, pageSize }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize })
-  const filter = { isPublished: true, org: null }
+  const filter = { isPublished: true, org: orgId }
   if (category) filter.category = category
   const [items, total] = await Promise.all([
     Article.find(filter, { contentMarkdown: 0, contentHtml: 0 })
@@ -29,9 +31,10 @@ async function publicList({ category, page, pageSize }) {
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function publicDetail(id) {
+async function publicDetail({ id, orgId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
-  const doc = await Article.findOne({ _id: id, isPublished: true, org: null })
+  const doc = await Article.findOne({ _id: id, isPublished: true, org: orgId })
     .populate('coverFile', 'url mime size')
     .lean()
   if (!doc) throw ApiError.notFound('文章不存在或已下架')
@@ -45,9 +48,10 @@ async function bumpViewCount(id) {
 
 // ───── admin 端 ─────
 
-async function adminList({ isPublished, category, keyword, page, pageSize }) {
+async function adminList({ orgId, isPublished, category, keyword, page, pageSize }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize })
-  const filter = { org: null }
+  const filter = { org: orgId }
   if (isPublished !== undefined && isPublished !== '') {
     filter.isPublished = isPublished === 'true' || isPublished === true
   }
@@ -64,10 +68,12 @@ async function adminList({ isPublished, category, keyword, page, pageSize }) {
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function create({ payload, userId }) {
+async function create({ orgId, payload, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const contentMarkdown = payload.contentMarkdown || ''
   const contentHtml = compileMarkdownSafe(contentMarkdown)
   const doc = await Article.create({
+    org: orgId,
     title: payload.title,
     summary: payload.summary || '',
     contentMarkdown,
@@ -82,7 +88,8 @@ async function create({ payload, userId }) {
   return doc.toObject()
 }
 
-async function update({ id, payload, userId }) {
+async function update({ id, orgId, payload, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
   const update = { updatedBy: userId }
   if (payload.title !== undefined) update.title = payload.title
@@ -98,20 +105,26 @@ async function update({ id, payload, userId }) {
     // 从草稿 → 发布时设 publishedAt = now; 已发布保留原时间
     if (payload.isPublished) update.publishedAt = new Date()
   }
-  const doc = await Article.findByIdAndUpdate(id, update, { new: true }).lean()
-  if (!doc) throw ApiError.notFound('文章不存在')
+  // filter 加 org 防止跨越权
+  const doc = await Article.findOneAndUpdate(
+    { _id: id, org: orgId },
+    update,
+    { new: true }
+  ).lean()
+  if (!doc) throw ApiError.notFound('文章不存在或无权修改')
   return doc
 }
 
 // 软下架: isPublished=false (避免物理删除, 草稿态可恢复)
-async function softRemove({ id, userId }) {
+async function softRemove({ id, orgId, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
-  const doc = await Article.findByIdAndUpdate(
-    id,
+  const doc = await Article.findOneAndUpdate(
+    { _id: id, org: orgId },
     { isPublished: false, updatedBy: userId },
     { new: true }
   ).lean()
-  if (!doc) throw ApiError.notFound('文章不存在')
+  if (!doc) throw ApiError.notFound('文章不存在或无权操作')
   return { ok: true, id: String(doc._id) }
 }
 

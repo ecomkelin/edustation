@@ -41,7 +41,11 @@ const DEFAULT_POSITIONS = [
       'agent.read', 'agent.write',
       'accessControl.read', 'accessControl.write', 'accessControl.pickup',
       // 财务模块 (2026-06-25 立项): 管理员可看可写
-      'finance.read', 'finance.write'
+      'finance.read', 'finance.write',
+      // 内容模块下放 per-org (2026-07-03): 管理员发布本机构科普
+      'article.read', 'article.write',
+      'game.read', 'game.write',
+      'video.read', 'video.write'
     ]
   },
   {
@@ -66,7 +70,9 @@ const DEFAULT_POSITIONS = [
       'agent.read', 'agent.write',
       'accessControl.read', 'accessControl.write', 'accessControl.pickup',
       // 财务模块 (2026-06-25): 教务可看账, 不可记账
-      'finance.read'
+      'finance.read',
+      // 内容模块下放 per-org (2026-07-03): 教务只看本机构科普, 不可编辑
+      'article.read', 'game.read', 'video.read'
     ]
   },
   {

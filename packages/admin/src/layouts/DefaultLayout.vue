@@ -201,12 +201,7 @@ const menuGroups = [
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读
           { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
-          // 科普文章 (2026-07-03 MM=36): 平台超管发布, 跨机构对所有家长可见
-          { path: '/content/articles', label: '科普文章', icon: Reading, requirePlatform: true, perm: 'article.read' },
-          // 平台小游戏 (2026-07-03 MM=37): 平台超管发布
-          { path: '/content/games', label: '小游戏', icon: MagicStick, requirePlatform: true, perm: 'game.read' },
-          // 平台科普视频 (2026-07-03 MM=38): 平台超管发布, 跨机构对所有家长可见
-          { path: '/content/videos', label: '科普视频', icon: Picture, requirePlatform: true, perm: 'video.read' },
+          // 2026-07-03 内容模块下放 per-org: 科普文章/小游戏/科普视频 3 项已移走 (见机构管理 → 科普内容 子组)
           // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
           { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看
@@ -254,6 +249,18 @@ const menuGroups = [
           { path: '/rooms', label: '教室', icon: Box, perm: 'room.read' },
           { path: '/subjects', label: '学科', icon: Notebook, perm: 'subject.read' },
           { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
+        ]
+      },
+      // 2026-07-03 内容模块下放 per-org: 新增科普内容子组 (取代原系统管理→平台配置里的 3 项)
+      //   管理员持 article/game/video 全 6 个码, 教务持 3 个 read
+      //   老师/财务/家长 不挂 (后续单独开权限组)
+      {
+        label: '科普内容',
+        icon: Reading,
+        children: [
+          { path: '/content/articles', label: '科普文章', icon: Reading, perm: 'article.read' },
+          { path: '/content/games',    label: '小游戏',   icon: MagicStick, perm: 'game.read' },
+          { path: '/content/videos',   label: '科普视频', icon: Picture,   perm: 'video.read' }
         ]
       }
     ]

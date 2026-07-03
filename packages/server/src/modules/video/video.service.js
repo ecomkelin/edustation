@@ -7,23 +7,24 @@ const { normalizePagination } = require('@utils/pagination')
 
 /**
  * 关键点:
- *   - C 端只返 isPublished=true 的; admin 端不过滤
- *   - publicFeatured 返最新 1 个 (供探索 tab 英雄位)
- *   - publicList 全部按 publishedAt desc 倒序分页
- *   - 启动计数用 $inc 原子 +1, 失败不抛 (UI 不依赖)
+ *   - 2026-07-03 内容下放到 per-org: 所有 filter 加 org = <req.orgId>
+ *   - public/admin 端都强制 req.orgId; null/undefined 直接 400
+ *   - viewCount 用 $inc 原子 +1, 失败不抛 (UI 不依赖)
  */
 
-async function publicFeatured() {
-  const doc = await Video.findOne({ isPublished: true, org: null })
+async function publicFeatured({ orgId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
+  const doc = await Video.findOne({ isPublished: true, org: orgId })
     .populate('coverFile', 'url mime size')
     .sort({ publishedAt: -1 })
     .lean()
-  return doc // 可能为 null, 客户端做空态兜底
+  return doc
 }
 
-async function publicList({ category, page, pageSize }) {
+async function publicList({ orgId, category, page, pageSize }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize, defaultPageSize: 12 })
-  const filter = { isPublished: true, org: null }
+  const filter = { isPublished: true, org: orgId }
   if (category) filter.category = category
   const [items, total] = await Promise.all([
     Video.find(filter)
@@ -37,19 +38,21 @@ async function publicList({ category, page, pageSize }) {
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function publicDetail(id) {
+async function publicDetail({ id, orgId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
-  const doc = await Video.findOne({ _id: id, isPublished: true, org: null })
+  const doc = await Video.findOne({ _id: id, isPublished: true, org: orgId })
     .populate('coverFile', 'url mime size')
     .lean()
   if (!doc) throw ApiError.notFound('视频不存在或已下架')
   return doc
 }
 
-async function bumpViewCount(id) {
+async function bumpViewCount({ id, orgId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
   const doc = await Video.findOneAndUpdate(
-    { _id: id, isPublished: true, org: null },
+    { _id: id, isPublished: true, org: orgId },
     { $inc: { viewCount: 1 } },
     { new: true }
   ).lean()
@@ -59,9 +62,10 @@ async function bumpViewCount(id) {
 
 // ───── admin 端 ─────
 
-async function adminList({ isPublished, category, keyword, page, pageSize }) {
+async function adminList({ orgId, isPublished, category, keyword, page, pageSize }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize })
-  const filter = { org: null }
+  const filter = { org: orgId }
   if (isPublished !== undefined && isPublished !== '') {
     filter.isPublished = isPublished === 'true' || isPublished === true
   }
@@ -79,9 +83,11 @@ async function adminList({ isPublished, category, keyword, page, pageSize }) {
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function create({ payload, userId }) {
+async function create({ orgId, payload, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!payload.videoUrl) throw ApiError.badRequest('videoUrl 必填')
   const doc = await Video.create({
+    org: orgId,
     title: payload.title,
     intro: payload.intro || '',
     videoUrl: payload.videoUrl,
@@ -98,7 +104,8 @@ async function create({ payload, userId }) {
   return doc.toObject()
 }
 
-async function update({ id, payload, userId }) {
+async function update({ id, orgId, payload, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
   const update = { updatedBy: userId }
   if (payload.title !== undefined) update.title = payload.title
@@ -113,20 +120,24 @@ async function update({ id, payload, userId }) {
     update.isPublished = !!payload.isPublished
     if (payload.isPublished) update.publishedAt = new Date()
   }
-  const doc = await Video.findByIdAndUpdate(id, update, { new: true }).lean()
-  if (!doc) throw ApiError.notFound('视频不存在')
+  const doc = await Video.findOneAndUpdate(
+    { _id: id, org: orgId },
+    update,
+    { new: true }
+  ).lean()
+  if (!doc) throw ApiError.notFound('视频不存在或无权修改')
   return doc
 }
 
-// 软下架: isPublished=false (避免物理删除, 草稿态可恢复)
-async function softRemove({ id, userId }) {
+async function softRemove({ id, orgId, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
-  const doc = await Video.findByIdAndUpdate(
-    id,
+  const doc = await Video.findOneAndUpdate(
+    { _id: id, org: orgId },
     { isPublished: false, updatedBy: userId },
     { new: true }
   ).lean()
-  if (!doc) throw ApiError.notFound('视频不存在')
+  if (!doc) throw ApiError.notFound('视频不存在或无权操作')
   return { ok: true, id: String(doc._id) }
 }
 

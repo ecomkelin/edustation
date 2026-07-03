@@ -20,6 +20,7 @@
 const Article = require('@models/Article.model')
 const Game = require('@models/Game.model')
 const Video = require('@models/Video.model')
+const Org = require('@models/Org.model')
 const { compileMarkdownSafe } = require('@utils/markdown')
 
 const ARTICLES = [
@@ -462,14 +463,14 @@ const VIDEOS = [
   }
 ]
 
-async function upsertArticles() {
+async function upsertArticles(orgId) {
   const ops = ARTICLES.map((a) => ({
     updateOne: {
-      // 用 org+title 做唯一键 (org=null 平台级, title 视为 dup 判重)
-      filter: { org: null, title: a.title },
+      // 2026-07-03 下放 per-org: filter & $set 的 org 改用传入 orgId; (org+title) 天然唯一
+      filter: { org: orgId, title: a.title },
       update: {
         $set: {
-          org: null,
+          org: orgId,
           title: a.title,
           summary: a.summary,
           contentMarkdown: a.markdown,
@@ -489,13 +490,13 @@ async function upsertArticles() {
   return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
 }
 
-async function upsertGames() {
+async function upsertGames(orgId) {
   const ops = GAMES.map((g) => ({
     updateOne: {
-      filter: { org: null, name: g.name },
+      filter: { org: orgId, name: g.name },
       update: {
         $set: {
-          org: null,
+          org: orgId,
           name: g.name,
           intro: g.intro,
           launchUrl: g.launchUrl,
@@ -515,13 +516,13 @@ async function upsertGames() {
   return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
 }
 
-async function upsertVideos() {
+async function upsertVideos(orgId) {
   const ops = VIDEOS.map((v) => ({
     updateOne: {
-      filter: { org: null, title: v.title },
+      filter: { org: orgId, title: v.title },
       update: {
         $set: {
-          org: null,
+          org: orgId,
           title: v.title,
           intro: v.intro,
           videoUrl: v.videoUrl,
@@ -542,17 +543,25 @@ async function upsertVideos() {
   return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
 }
 
+/**
+ * 2026-07-03 per-org 化: 给每个启用 Org 各塞一份 8 articles + 3 games + 6 videos
+ * 同一份内容分发到所有 org, 机构 admin 拿到后可在后台编辑/上下架
+ * Org.find({ isActive: true }) 跟 [school.seed.js](school.seed.js) 范式一致
+ */
 async function run() {
-  const aR = await upsertArticles()
+  const orgs = await Org.find({ isActive: true }).select('_id name').lean()
   // eslint-disable-next-line no-console
-  console.log('[seed][content] articles:', aR)
-  const gR = await upsertGames()
-  // eslint-disable-next-line no-console
-  console.log('[seed][content] games:', gR)
-  const vR = await upsertVideos()
-  // eslint-disable-next-line no-console
-  console.log('[seed][content] videos:', vR)
-  return { articles: aR, games: gR, videos: vR }
+  console.log(`[seed][content] per-org loop start, target=${orgs.length} orgs`)
+  const summary = []
+  for (const o of orgs) {
+    const aR = await upsertArticles(o._id)
+    const gR = await upsertGames(o._id)
+    const vR = await upsertVideos(o._id)
+    // eslint-disable-next-line no-console
+    console.log(`[seed][content] org=${o.name}: articles=${aR.upserted + aR.modified} games=${gR.upserted + gR.modified} videos=${vR.upserted + vR.modified}`)
+    summary.push({ org: o.name, articles: aR, games: gR, videos: vR })
+  }
+  return summary
 }
 
 module.exports = { run, ARTICLES, GAMES, VIDEOS }

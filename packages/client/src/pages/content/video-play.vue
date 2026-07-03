@@ -153,6 +153,9 @@ export default {
         }
         this.played = true
       } catch (e) {
+        // 静默失败: 计数不影响播放体验 (404/400 都忽略)
+        // 只在 dev 模式打印
+        if (process.env.NODE_ENV === 'development') console.debug('[videoPlay.bumpPlay]', e?.message)
         this.played = true
       }
     },

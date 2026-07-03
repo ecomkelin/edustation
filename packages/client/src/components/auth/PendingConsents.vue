@@ -66,6 +66,7 @@
 <script>
 import { legalApi } from '@/api/legal'
 import AgreementModal from './AgreementModal.vue'
+import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
 
 export default {
@@ -102,7 +103,8 @@ export default {
     },
     metaOf(item) {
       const parts = []
-      if (item.scope) parts.push(item.scope === 'platform' ? '平台协议' : '机构协议')
+      // ⚠️ item.type 是协议分类 (platform / org), item.scope 是触发场景 (login/order/none)
+      if (item.type) parts.push(item.type === 'platform' ? '平台协议' : '机构协议')
       if (item.version) parts.push('v' + item.version)
       if (item.effectiveAt) parts.push('生效于 ' + (item.effectiveAt || '').slice(0, 10))
       return parts.join(' · ')
@@ -127,13 +129,12 @@ export default {
     },
 
     async _fetchContent(item) {
-      if (item.scope === 'platform') {
-        return legalApi.platformDoc(item.key)
+      // 用 type 区分(后端返回的 scope 是 'login/order/none' 不是分类)
+      if (item.type === 'org' && item.org) {
+        return legalApi.orgDoc(item.org, item.key)
       }
-      if (item.orgId) {
-        return legalApi.orgDoc(item.orgId, item.key)
-      }
-      return {}
+      // 平台协议或者没 org 字段的兜底走 platform
+      return legalApi.platformDoc(item.key)
     },
 
     async onSignOne(version) {
@@ -143,12 +144,15 @@ export default {
         await legalApi.sign({
           key: this.current.key,
           version,
-          scope: this.current.scope || 'platform'
+          type: this.current.type || 'platform',
+          orgId: this.current.org || null
         })
         this.signed[this.current.key] = version
         this.current = null
       } catch (e) {
-        this.current = null
+        // 失败时不要静默: 保留 current 让用户能重试, 同时 toast 错误
+        toast.error(e.message || '签署失败,请重试')
+        haptic.error()
       }
     },
 

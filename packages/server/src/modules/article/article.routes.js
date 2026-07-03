@@ -43,35 +43,35 @@ router.get(
   asyncHandler(c.adminList)
 )
 
-// R-3603 admin POST /articles — 后台创建
+// R-3603 admin POST /articles/admin — 后台创建 (per-org, 2026-07-03 下放)
 router.post(
   '/admin',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin, // 平台超管专属 (org=null 平台级内容)
+  mws.requirePermission('article.write'),
   v.create,
   mws.validateRequest,
   asyncHandler(c.create)
 )
 
-// R-3604 admin PUT /articles/:id — 后台更新
+// R-3604 admin PUT /articles/admin/:id — 后台更新 (per-org, 2026-07-03 下放)
 router.put(
   '/admin/:id',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.write'),
   v.idParam,
   v.update,
   mws.validateRequest,
   asyncHandler(c.update)
 )
 
-// R-3605 admin DELETE /articles/:id — 后台下架 (软删 isPublished=false)
+// R-3605 admin DELETE /articles/admin/:id — 后台下架 (软删 isPublished=false)
 router.delete(
   '/admin/:id',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.write'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)

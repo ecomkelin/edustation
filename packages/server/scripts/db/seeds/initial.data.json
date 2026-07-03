@@ -444,7 +444,10 @@
       "code": "",
       "sort": 1,
       "isActive": true,
-      "meta": { "defaultValue": 1600, "direction": "in" },
+      "meta": {
+        "defaultValue": 1600,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -459,7 +462,10 @@
       "code": "",
       "sort": 2,
       "isActive": true,
-      "meta": { "defaultValue": 5, "direction": "in" },
+      "meta": {
+        "defaultValue": 5,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -474,7 +480,10 @@
       "code": "",
       "sort": 3,
       "isActive": true,
-      "meta": { "defaultValue": 5, "direction": "in" },
+      "meta": {
+        "defaultValue": 5,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -489,7 +498,10 @@
       "code": "",
       "sort": 4,
       "isActive": true,
-      "meta": { "defaultValue": 10, "direction": "in" },
+      "meta": {
+        "defaultValue": 10,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -504,7 +516,10 @@
       "code": "",
       "sort": 5,
       "isActive": true,
-      "meta": { "defaultValue": -5, "direction": "out" },
+      "meta": {
+        "defaultValue": -5,
+        "direction": "out"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -519,7 +534,10 @@
       "code": "",
       "sort": 6,
       "isActive": true,
-      "meta": { "defaultValue": -20, "direction": "out" },
+      "meta": {
+        "defaultValue": -20,
+        "direction": "out"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -534,7 +552,10 @@
       "code": "",
       "sort": 1,
       "isActive": true,
-      "meta": { "defaultValue": 1600, "direction": "in" },
+      "meta": {
+        "defaultValue": 1600,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -549,7 +570,10 @@
       "code": "",
       "sort": 2,
       "isActive": true,
-      "meta": { "defaultValue": 5, "direction": "in" },
+      "meta": {
+        "defaultValue": 5,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -564,7 +588,10 @@
       "code": "",
       "sort": 3,
       "isActive": true,
-      "meta": { "defaultValue": 5, "direction": "in" },
+      "meta": {
+        "defaultValue": 5,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -579,7 +606,10 @@
       "code": "",
       "sort": 4,
       "isActive": true,
-      "meta": { "defaultValue": 10, "direction": "in" },
+      "meta": {
+        "defaultValue": 10,
+        "direction": "in"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -594,7 +624,10 @@
       "code": "",
       "sort": 5,
       "isActive": true,
-      "meta": { "defaultValue": -5, "direction": "out" },
+      "meta": {
+        "defaultValue": -5,
+        "direction": "out"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -609,7 +642,10 @@
       "code": "",
       "sort": 6,
       "isActive": true,
-      "meta": { "defaultValue": -20, "direction": "out" },
+      "meta": {
+        "defaultValue": -20,
+        "direction": "out"
+      },
       "createdAt": "2026-06-21T00:00:00.000Z",
       "updatedAt": "2026-06-21T00:00:00.000Z",
       "__v": 0
@@ -952,7 +988,13 @@
         "legal.read",
         "legal.write",
         "finance.read",
-        "finance.write"
+        "finance.write",
+        "article.read",
+        "article.write",
+        "game.read",
+        "game.write",
+        "video.read",
+        "video.write"
       ],
       "isSystem": true,
       "clientLevel": 0,
@@ -990,7 +1032,10 @@
         "report.read",
         "legal.read",
         "legal.write",
-        "finance.read"
+        "finance.read",
+        "article.read",
+        "game.read",
+        "video.read"
       ],
       "isSystem": false,
       "clientLevel": 0,
@@ -1111,7 +1156,13 @@
         "legal.read",
         "legal.write",
         "finance.read",
-        "finance.write"
+        "finance.write",
+        "article.read",
+        "article.write",
+        "game.read",
+        "game.write",
+        "video.read",
+        "video.write"
       ],
       "isSystem": false,
       "clientLevel": 0,

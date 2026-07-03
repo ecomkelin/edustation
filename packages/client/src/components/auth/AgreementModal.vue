@@ -12,9 +12,9 @@
         <text class="agreement-modal__close" @click="onCancel">×</text>
       </view>
 
-      <scroll-view scroll-y class="agreement-modal__body">
+      <view class="agreement-modal__body">
         <view class="agreement-modal__html" v-html="renderedHtml" />
-      </scroll-view>
+      </view>
 
       <view class="agreement-modal__footer">
         <!-- H5 下 @tap 偶尔失效 (尤其 PC Chrome), 改用原生 @click + 阻止冒泡 -->
@@ -207,7 +207,11 @@ export default {
   }
 
   &__body {
-    flex: 1;
+    flex: 1 1 auto;
+    min-height: 0; // flex 子项能缩到 0 才允许内部滚动
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     padding: $spacing-md;
   }
 
@@ -285,8 +289,12 @@ export default {
   }
 
   &__footer {
+    flex-shrink: 0; // 永远不被挤压
     padding: $spacing-md;
+    padding-bottom: calc(#{$spacing-md} + env(safe-area-inset-bottom, 0));
     border-top: 1rpx solid $divider-light;
+    background: $bg-card;
+    z-index: 2;
   }
 
   &__checkbox {

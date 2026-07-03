@@ -239,6 +239,7 @@ async function computePendingConsents({ userId, orgId }) {
           pending.push({
             key: d.key,
             type: 'org',
+            org: d.org,  // 带上 org ObjectId, 前端签署和拉正文都要用
             scope: 'login',
             version: d.version,
             title: d.title,

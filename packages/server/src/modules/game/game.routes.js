@@ -44,35 +44,35 @@ router.get(
   asyncHandler(c.adminList)
 )
 
-// R-3704 admin POST /games — 后台创建
+// R-3704 admin POST /games/admin — 后台创建 (per-org, 2026-07-03 下放)
 router.post(
   '/admin',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('game.write'),
   v.create,
   mws.validateRequest,
   asyncHandler(c.create)
 )
 
-// R-3705 admin PUT /games/:id — 后台更新
+// R-3705 admin PUT /games/admin/:id — 后台更新 (per-org, 2026-07-03 下放)
 router.put(
   '/admin/:id',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('game.write'),
   v.idParam,
   v.update,
   mws.validateRequest,
   asyncHandler(c.update)
 )
 
-// R-3706 admin DELETE /games/:id — 后台下架
+// R-3706 admin DELETE /games/admin/:id — 后台下架
 router.delete(
   '/admin/:id',
   mws.authenticate,
   mws.requireOrg,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('game.write'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)

@@ -23,8 +23,24 @@ export const legalApi = {
     return http.get('/legal/me/pending')
   },
 
-  sign(data) {
-    return http.post('/legal/me/consents', data)
+  /**
+   * 签署协议 (单条)
+   * 后端 /legal/me/consents 是批量数组接口, C 端一次签 1 份时自动包成数组
+   * @param {Object} arg
+   * @param {string} arg.key    - 协议 key (如 'user-agreement')
+   * @param {string} arg.version - 版本号 (semver 'x.y.z')
+   * @param {'platform'|'org'} arg.type - 协议类型 (平台还是机构)
+   * @param {string|null} arg.orgId - 机构协议时的 org ObjectId, 平台协议为 null
+   */
+  sign({ key, version, type = 'platform', orgId = null }) {
+    return http.post('/legal/me/consents', {
+      consents: [{
+        key,
+        version,
+        type,
+        org: orgId || null
+      }]
+    })
   },
 
   history(params = {}) {

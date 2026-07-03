@@ -5,9 +5,17 @@ const Game = require('@models/Game.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 
-async function publicList({ tag, difficulty, page, pageSize }) {
+/**
+ * 关键点:
+ *   - 2026-07-03 内容下放到 per-org: 所有 filter 加 org = <req.orgId>
+ *   - public/admin 端都强制 req.orgId; null/undefined 直接 400
+ *   - playCount 用 $inc 原子更, 不加事务
+ */
+
+async function publicList({ orgId, tag, difficulty, page, pageSize }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize, defaultPageSize: 12 })
-  const filter = { isPublished: true, org: null }
+  const filter = { isPublished: true, org: orgId }
   if (tag) filter.tags = tag
   if (difficulty) filter.difficulty = difficulty
   const [items, total] = await Promise.all([
@@ -22,9 +30,10 @@ async function publicList({ tag, difficulty, page, pageSize }) {
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function publicDetail(id) {
+async function publicDetail({ id, orgId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
-  const doc = await Game.findOne({ _id: id, isPublished: true, org: null })
+  const doc = await Game.findOne({ _id: id, isPublished: true, org: orgId })
     .populate('coverFile', 'url mime size')
     .lean()
   if (!doc) throw ApiError.notFound('游戏不存在或已下架')
@@ -32,10 +41,11 @@ async function publicDetail(id) {
 }
 
 // 启动计数, 不强制登录
-async function bumpPlayCount({ id }) {
+async function bumpPlayCount({ id, orgId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
   const doc = await Game.findOneAndUpdate(
-    { _id: id, isPublished: true, org: null },
+    { _id: id, isPublished: true, org: orgId },
     { $inc: { playCount: 1 } },
     { new: true }
   ).lean()
@@ -45,9 +55,10 @@ async function bumpPlayCount({ id }) {
 
 // ───── admin 端 ─────
 
-async function adminList({ isPublished, keyword, page, pageSize }) {
+async function adminList({ orgId, isPublished, keyword, page, pageSize }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize })
-  const filter = { org: null }
+  const filter = { org: orgId }
   if (isPublished !== undefined && isPublished !== '') {
     filter.isPublished = isPublished === 'true' || isPublished === true
   }
@@ -64,9 +75,11 @@ async function adminList({ isPublished, keyword, page, pageSize }) {
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function create({ payload, userId }) {
+async function create({ orgId, payload, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!payload.launchUrl) throw ApiError.badRequest('launchUrl 必填')
   const doc = await Game.create({
+    org: orgId,
     name: payload.name,
     intro: payload.intro || '',
     launchUrl: payload.launchUrl,
@@ -82,7 +95,8 @@ async function create({ payload, userId }) {
   return doc.toObject()
 }
 
-async function update({ id, payload, userId }) {
+async function update({ id, orgId, payload, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
   const update = { updatedBy: userId }
   if (payload.name !== undefined) update.name = payload.name
@@ -96,19 +110,24 @@ async function update({ id, payload, userId }) {
     update.isPublished = !!payload.isPublished
     if (payload.isPublished) update.publishedAt = new Date()
   }
-  const doc = await Game.findByIdAndUpdate(id, update, { new: true }).lean()
-  if (!doc) throw ApiError.notFound('游戏不存在')
+  const doc = await Game.findOneAndUpdate(
+    { _id: id, org: orgId },
+    update,
+    { new: true }
+  ).lean()
+  if (!doc) throw ApiError.notFound('游戏不存在或无权修改')
   return doc
 }
 
-async function softRemove({ id, userId }) {
+async function softRemove({ id, orgId, userId }) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
-  const doc = await Game.findByIdAndUpdate(
-    id,
+  const doc = await Game.findOneAndUpdate(
+    { _id: id, org: orgId },
     { isPublished: false, updatedBy: userId },
     { new: true }
   ).lean()
-  if (!doc) throw ApiError.notFound('游戏不存在')
+  if (!doc) throw ApiError.notFound('游戏不存在或无权操作')
   return { ok: true, id: String(doc._id) }
 }
 
