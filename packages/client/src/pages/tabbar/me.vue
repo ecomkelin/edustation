@@ -227,10 +227,9 @@ export default {
       uni.navigateTo({ url })
     },
 
-    // 2026-07-02: 我的课程 → 跳 child tab (uni.switchTab 不能传 navigateTo 路径)
-    // 用户在 child tab 滚动到"我的课程&课包"区点课程卡进 CourseInstance 详情
+    // 2026-07-03: 首页路由改名 pages/tabbar/index
     goMyCourses() {
-      uni.switchTab({ url: '/pages/tabbar/child' })
+      uni.switchTab({ url: '/pages/tabbar/index' })
     },
 
     maskPhone

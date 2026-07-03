@@ -1,9 +1,10 @@
 {
   "pages": [
     {
-      "path": "pages/tabbar/child",
+      // 2026-07-03: 原 child.vue 改名为 index.vue, 业务路由 pages/tabbar/index (首页)
+      "path": "pages/tabbar/index",
       "style": {
-        "navigationBarTitleText": "孩子",
+        "navigationBarTitleText": "首页",
         "enablePullDownRefresh": true,
         "navigationStyle": "custom"
       }
@@ -15,9 +16,10 @@
       }
     },
     {
-      "path": "pages/tabbar/org",
+      // 2026-07-03: 原 org.vue 改名为 child.vue, 业务路由 pages/tabbar/child (孩子)
+      "path": "pages/tabbar/child",
       "style": {
-        "navigationBarTitleText": "探索",
+        "navigationBarTitleText": "孩子",
         "enablePullDownRefresh": true
       }
     },
@@ -302,23 +304,26 @@
     "height": "56px",
     "list": [
       {
-        "pagePath": "pages/tabbar/child",
-        "text": "孩子",
+        // 2026-07-03: 业务路径改名 pages/tabbar/index (display "首页")
+        "pagePath": "pages/tabbar/index",
+        "text": "首页",
         "iconPath": "static/tabbar/child.png",
         "selectedIconPath": "static/tabbar/child-active.png"
       },
       {
+        // 2026-07-03: 原 org.vue 改名 child.vue, 业务路径 pages/tabbar/child (display "孩子")
+        "pagePath": "pages/tabbar/child",
+        "text": "孩子",
+        "iconPath": "static/tabbar/discover.png",
+        "selectedIconPath": "static/tabbar/discover-active.png"
+      },
+      {
         "pagePath": "pages/tabbar/chat",
         // 2026-07-02: "消息" 改成 "chat" 跟 chat.vue 业务名对齐; 图标也换了 (放大镜→对话气泡)
+        // 2026-07-03: 跟 org 对调位置
         "text": "chat",
         "iconPath": "static/tabbar/chat.png",
         "selectedIconPath": "static/tabbar/chat-active.png"
-      },
-      {
-        "pagePath": "pages/tabbar/org",
-        "text": "探索",
-        "iconPath": "static/tabbar/discover.png",
-        "selectedIconPath": "static/tabbar/discover-active.png"
       },
       {
         "pagePath": "pages/tabbar/me",

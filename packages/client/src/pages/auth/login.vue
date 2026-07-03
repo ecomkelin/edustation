@@ -202,7 +202,8 @@ export default {
         haptic.success()
         toast.success('欢迎回来!')
         setTimeout(() => {
-          uni.reLaunch({ url: '/pages/tabbar/child' })
+          // 2026-07-03: 首页路由改名 pages/tabbar/index (原 child.vue)
+uni.reLaunch({ url: '/pages/tabbar/index' })
         }, 400)
       } catch (e) {
         this.failCount++

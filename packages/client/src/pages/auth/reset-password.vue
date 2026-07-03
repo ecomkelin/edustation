@@ -164,7 +164,8 @@ export default {
         // 强制场景: 跳首页; 普通场景: 退栈
         setTimeout(() => {
           if (this.isForce) {
-            uni.reLaunch({ url: '/pages/tabbar/child' })
+            // 2026-07-03: 首页路由改名 pages/tabbar/index
+uni.reLaunch({ url: '/pages/tabbar/index' })
           } else {
             uni.navigateBack()
           }
