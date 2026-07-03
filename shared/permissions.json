@@ -354,6 +354,30 @@
         "finance.read": { "label": "查看财务", "description": "查看账本余额、流水明细、汇总数据、收支原因字典" },
         "finance.write": { "label": "编辑财务", "description": "创建/编辑账本; 录入收入/支出/转账流水; 维护收支原因字典" }
       }
+    },
+    {
+      "key": "article",
+      "label": "科普文章",
+      "permissions": [
+        "article.read",
+        "article.write"
+      ],
+      "permissionLabels": {
+        "article.read": { "label": "查看科普文章", "description": "浏览平台发布的所有科普文章 (含草稿)" },
+        "article.write": { "label": "编辑科普文章", "description": "新建/编辑/上下架科普文章 (平台超管专属, 跨机构对所有家长可见)" }
+      }
+    },
+    {
+      "key": "game",
+      "label": "平台小游戏",
+      "permissions": [
+        "game.read",
+        "game.write"
+      ],
+      "permissionLabels": {
+        "game.read": { "label": "查看小游戏", "description": "浏览平台发布的所有小游戏 (含草稿)" },
+        "game.write": { "label": "编辑小游戏", "description": "新建/编辑/上下架小游戏 (平台超管专属, 跨机构对所有家长可见)" }
+      }
     }
   ]
 }

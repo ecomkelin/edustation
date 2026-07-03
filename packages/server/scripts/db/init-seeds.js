@@ -18,6 +18,8 @@ const schoolSeed = require('./seeds/school.seed')
 const petCatalogSeed = require('./seeds/pet-catalog.seed')
 // 财务模块 (2026-06-25 立项): 8 条 FinanceReason 字典 + 4 本账本 + 3 条演示流水
 const financeSeed = require('./seeds/finance.seed')
+// 平台科普文章 + 小游戏 (2026-07-03 立项 MM=36 + MM=37): org=null 平台级, 跨机构对家长可见
+const contentSeed = require('./seeds/content.seed')
 
 async function initSeeds() {
   // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
@@ -47,6 +49,10 @@ async function initSeeds() {
   // 6. 财务 (2026-06-25): 8 条 FinanceReason 字典 + 4 本账本 + 3 条演示流水
   //    幂等: Category/FinanceAccount 走唯一索引, FinanceTransaction 按 (account,type,amount,occurredAt,remark) 查重
   await financeSeed.run()
+
+  // 7. 平台科普文章 + 小游戏 (2026-07-03): 3 articles + 3 games, platform-only
+  //    幂等 bulkWrite upsert; 不依赖 initial.dropDatabase 流程
+  await contentSeed.run()
 }
 
 module.exports = { initSeeds }

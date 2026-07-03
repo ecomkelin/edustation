@@ -59,7 +59,7 @@
         </view>
 
         <!-- 未报名: 引导去孩子 tab (2026-07-03: org 改名为 child) -->
-        <view v-else-if="petBlockReason === 'notEnrolled'" class="home__pet-empty press" @tap="goPage('/pages/tabbar/child')">
+        <view v-else-if="petBlockReason === 'notEnrolled'" class="home__pet-empty press" @tap="goPage('/pages/tabbar/explore')">
           <text class="home__pet-empty-emoji">🌱</text>
           <view class="home__pet-empty-info">
             <text class="home__pet-empty-title">先报名一门课程吧</text>

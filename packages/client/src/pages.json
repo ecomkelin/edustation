@@ -16,10 +16,10 @@
       }
     },
     {
-      // 2026-07-03: 原 org.vue 改名为 child.vue, 业务路由 pages/tabbar/child (孩子)
-      "path": "pages/tabbar/child",
+      // 2026-07-03: child.vue 改名 explore.vue, 业务名 "探索" (科普知识 + 平台小游戏)
+      "path": "pages/tabbar/explore",
       "style": {
-        "navigationBarTitleText": "孩子",
+        "navigationBarTitleText": "探索",
         "enablePullDownRefresh": true
       }
     },
@@ -265,6 +265,21 @@
       }
     },
     {
+      // 2026-07-03: 探索 Tab 内容详情 (R-3601 GET /articles/:id)
+      "path": "pages/content/article-detail",
+      "style": {
+        "navigationBarTitleText": "科普文章",
+        "disableScroll": false
+      }
+    },
+    {
+      // 2026-07-03: 探索 Tab 游戏启动页 (R-3701 GET /games/:id + R-3702 play)
+      "path": "pages/content/game-launch",
+      "style": {
+        "navigationBarTitleText": "趣味游戏"
+      }
+    },
+    {
       "path": "pages/help/faq",
       "style": {
         "navigationBarTitleText": "常见问题"
@@ -304,18 +319,18 @@
     "height": "56px",
     "list": [
       {
-        // 2026-07-03: 业务路径改名 pages/tabbar/index (display "首页")
+        // 2026-07-03: 业务路径改名 pages/tabbar/index (display "首页"); 图标沿用 tab1 home 用 child.png 不动
         "pagePath": "pages/tabbar/index",
         "text": "首页",
         "iconPath": "static/tabbar/child.png",
         "selectedIconPath": "static/tabbar/child-active.png"
       },
       {
-        // 2026-07-03: 原 org.vue 改名 child.vue, 业务路径 pages/tabbar/child (display "孩子")
-        "pagePath": "pages/tabbar/child",
-        "text": "孩子",
-        "iconPath": "static/tabbar/discover.png",
-        "selectedIconPath": "static/tabbar/discover-active.png"
+        // 2026-07-03: child.vue → explore.vue; "孩子" → "探索"; icon 改成 globe 地球
+        "pagePath": "pages/tabbar/explore",
+        "text": "探索",
+        "iconPath": "static/tabbar/explore.png",
+        "selectedIconPath": "static/tabbar/explore-active.png"
       },
       {
         "pagePath": "pages/tabbar/chat",

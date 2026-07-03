@@ -664,3 +664,27 @@ Auth 列简写:
 | 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
+| 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
+
+### MM=36 article (URL: /articles)
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3600 | GET | /articles | — | — | C 端公开列表 (已发布 + 分页) | query: category/page/pageSize; 不返 contentHtml |
+| R-3601 | GET | /articles/:id | — | — | C 端公开详情 (+1 viewCount 原子更新) | 只返 isPublished=true; 404 if 草稿/已下架 |
+| R-3602 | GET | /articles/admin/list | ADMIN | article.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize |
+| R-3603 | POST | /articles/admin | ADMIN | — (platform-admin) | 后台创建 | body 必填 title/contentMarkdown; 服务端 marked 编译 contentHtml |
+| R-3604 | PUT | /articles/admin/:id | ADMIN | — (platform-admin) | 后台更新 | contentMarkdown 改 → 重编译 contentHtml |
+| R-3605 | DELETE | /articles/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除, 草稿可恢复 |
+
+### MM=37 game (URL: /games)
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3700 | GET | /games | — | — | C 端公开列表 (已发布 + 分页) | query: tag/difficulty/page/pageSize |
+| R-3701 | GET | /games/:id | — | — | C 端公开详情 | |
+| R-3702 | POST | /games/:id/play | AUTH | — | C 端启动计数 (+1, 原子) | 失败不影响前端继续; 跨机构对所有家长可见 |
+| R-3703 | GET | /games/admin/list | ADMIN | game.read | 后台列表 (含草稿) | query: isPublished/keyword/page/pageSize |
+| R-3704 | POST | /games/admin | ADMIN | — (platform-admin) | 后台创建 | launchUrl 必填且 https:// |
+| R-3705 | PUT | /games/admin/:id | ADMIN | — (platform-admin) | 后台更新 | |
+| R-3706 | DELETE | /games/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除 |

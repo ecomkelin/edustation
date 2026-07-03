@@ -201,6 +201,10 @@ const menuGroups = [
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读
           { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
+          // 科普文章 (2026-07-03 MM=36): 平台超管发布, 跨机构对所有家长可见
+          { path: '/content/articles', label: '科普文章', icon: Reading, requirePlatform: true, perm: 'article.read' },
+          // 平台小游戏 (2026-07-03 MM=37): 平台超管发布
+          { path: '/content/games', label: '小游戏', icon: MagicStick, requirePlatform: true, perm: 'game.read' },
           // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
           { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看

@@ -97,5 +97,11 @@ router.use('/finance', financeRoutes)
 // 审计日志 (2026-06-27): /api/v1/audit-logs (操作留痕; 仅平台超管可见)
 const auditRoutes = require('@modules/audit/audit.routes')
 router.use('/audit-logs', auditRoutes)
+// 内容 - 平台科普文章 (2026-07-03 立项): MM=36, 平台超管发布, C 端公开
+const articleRoutes = require('@modules/article/article.routes')
+router.use('/articles', articleRoutes)
+// 内容 - 平台小游戏 (2026-07-03 立项): MM=37, 平台超管发布, C 端公开 + 启动计数
+const gameRoutes = require('@modules/game/game.routes')
+router.use('/games', gameRoutes)
 
 module.exports = router
