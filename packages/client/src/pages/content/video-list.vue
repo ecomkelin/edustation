@@ -62,15 +62,13 @@
 
       <!-- 加载更多 / 结束态 -->
       <view v-if="hasMore" class="video-list__more">
-        <el-button
+        <view
           v-if="!loadingMore"
-          type="primary"
-          plain
-          size="small"
-          @click="loadMore"
+          class="video-list__loadmore press"
+          @tap="loadMore"
         >
-          加载更多
-        </el-button>
+          <text>加载更多</text>
+        </view>
         <text v-else class="video-list__more-tip">加载中…</text>
       </view>
       <view v-else-if="videos.length" class="video-list__end">
@@ -351,6 +349,18 @@ export default {
   &__more {
     text-align: center;
     padding: $spacing-md 0;
+  }
+  &__loadmore {
+    display: inline-block;
+    padding: 12rpx 40rpx;
+    border: 2rpx solid $primary;
+    color: $primary;
+    border-radius: $radius-pill;
+    font-size: $font-sm;
+
+    & > text {
+      color: inherit;
+    }
   }
   &__more-tip {
     color: $text-tertiary;

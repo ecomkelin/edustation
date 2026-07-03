@@ -395,8 +395,10 @@ const GAMES = [
 ]
 
 // ─── 2026-07-03 同日加: 科普视频 (跟 Article/Game 一致评级, 平台级 org=null) ───
-// 视频示例 URL 来自 Google 公开演示视频 (gtv-videos-bucket), C 端 web-view 可直开
-// 生产环境请上传自有 H5 / mp4 替换 rawUrl 字段
+// 注意 (2026-07-03 用户反馈): Google 公开 bucket storage.googleapis.com/gtv-videos-bucket/*
+//   已被设为私有, 匿名读 403; 现改用 media.w3.org (W3C 官方长期维护) + test-videos.co.uk
+//   C 端 web-view 可直开.
+// 生产环境请上传自有 OSS / CDN mp4 替换 videoUrl 字段.
 const VIDEOS = [
   {
     key: 'video-blackhole',
@@ -404,8 +406,8 @@ const VIDEOS = [
     intro: '光是宇宙里跑最快的, 但黑洞让光也跑不掉。10 分钟动画带你走过爱因斯坦到 NASA 黑洞照片的全部里程碑。',
     category: 'space',
     tags: ['黑洞', '宇宙', '天文'],
-    durationSeconds: 596,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    durationSeconds: 52,
+    videoUrl: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
     coverEmoji: '🪐'
   },
   {
@@ -414,8 +416,8 @@ const VIDEOS = [
     intro: '马里亚纳海沟 11000 米深处, 阳光到不了, 水压能把坦克压扁, 但这里仍有活着的生命。',
     category: 'nature',
     tags: ['海洋', '深海', '地球'],
-    durationSeconds: 653,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    durationSeconds: 10,
+    videoUrl: 'https://media.w3.org/2010/05/bunny/movie.mp4',
     coverEmoji: '🌊'
   },
   {
@@ -424,8 +426,8 @@ const VIDEOS = [
     intro: '统治地球 1.6 亿年的恐龙, 在一颗 10 公里的小行星撞击后, 6600 万年前彻底消失。本文给孩子讲清楚那个 "最后一天"。',
     category: 'history',
     tags: ['恐龙', '小行星', '古生物'],
-    durationSeconds: 645,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    durationSeconds: 10,
+    videoUrl: 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4',
     coverEmoji: '🦕'
   },
   {
@@ -434,8 +436,8 @@ const VIDEOS = [
     intro: '不是所有岩浆都是红的, 不是所有火山都喷发, 火山其实有好几种脾气。本文带孩子认识 3 种典型火山。',
     category: 'nature',
     tags: ['火山', '地球', '地质'],
-    durationSeconds: 15,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    durationSeconds: 10,
+    videoUrl: 'https://test-videos.co.uk/vids/sintel/mp4/h264/360/Sintel_360_10s_1MB.mp4',
     coverEmoji: '🌋'
   },
   {
@@ -445,7 +447,7 @@ const VIDEOS = [
     category: 'science',
     tags: ['细胞', '生物学', '显微镜'],
     durationSeconds: 60,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    videoUrl: 'https://media.w3.org/2010/05/video/movie_300.mp4',
     coverEmoji: '🔬'
   },
   {
@@ -454,8 +456,8 @@ const VIDEOS = [
     intro: '北极星的光走了 433 年才到地球。有些恒星的寿命比太阳长几百倍, 有些星系正在以光速远离我们。',
     category: 'space',
     tags: ['星空', '宇宙', '天文'],
-    durationSeconds: 15,
-    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    durationSeconds: 10,
+    videoUrl: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
     coverEmoji: '🌌'
   }
 ]

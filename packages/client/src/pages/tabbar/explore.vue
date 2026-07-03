@@ -27,6 +27,65 @@
       @scrolltolower="onLower"
     >
       <view class="explore__body-inner">
+        <!-- 视频 (2026-07-03 新增, MM=38, 排在文章之上: 视频更具视觉吸引, 优先抓住眼球) -->
+        <view class="explore__section">
+          <view class="section-title">
+            <text>🎬 趣味科普视频</text>
+            <text class="section-title__more">{{ totalVideos }} 个</text>
+          </view>
+
+          <view v-if="videoLoading && !featuredVideo" class="explore__loading">
+            <text>召唤中…</text>
+          </view>
+
+          <view v-else-if="!featuredVideo" class="explore__empty">
+            <text class="explore__empty-emoji">🎬</text>
+            <text class="explore__empty-title">科普视频在路上</text>
+            <text class="explore__empty-desc">平台会持续更新, 敬请期待 ›</text>
+          </view>
+
+          <view v-else>
+            <!-- 视频英雄位 (最新 1 个大图卡) -->
+            <view
+              class="explore__featured explore__featured--video press"
+              @tap="goVideo(featuredVideo._id)"
+            >
+              <view
+                class="explore__featured-cover"
+                :style="{ background: videoEmojiBg(featuredVideo.meta?.coverEmoji) }"
+              >
+                <text class="explore__featured-cover-emoji">
+                  {{ featuredVideo.meta?.coverEmoji || '🎬' }}
+                </text>
+                <view class="explore__featured-play">
+                  <text>▶</text>
+                </view>
+                <view
+                  v-if="featuredVideo.durationSeconds"
+                  class="explore__featured-duration"
+                >
+                  <text>{{ formatDuration(featuredVideo.durationSeconds) }}</text>
+                </view>
+              </view>
+              <view class="explore__featured-body">
+                <text class="explore__featured-title">{{ featuredVideo.title }}</text>
+                <text class="explore__featured-summary">{{ featuredVideo.intro }}</text>
+                <view class="explore__featured-meta">
+                  <text v-if="featuredVideo.category" class="explore__featured-tag">
+                    {{ categoryLabel(featuredVideo.category) }}
+                  </text>
+                  <text class="explore__featured-cta">立即观看 ›</text>
+                </view>
+              </view>
+            </view>
+
+            <!-- 「查看所有」CTA -->
+            <view class="explore__more press" @tap="goVideoList">
+              <text>查看全部视频 ›</text>
+            </view>
+          </view>
+        </view>
+
         <!-- 文章 -->
         <view class="explore__section">
           <view class="section-title">
@@ -100,65 +159,6 @@
           </view>
         </view>
 
-        <!-- 视频 (2026-07-03 新增, MM=38) -->
-        <view class="explore__section">
-          <view class="section-title">
-            <text>🎬 趣味科普视频</text>
-            <text class="section-title__more">{{ totalVideos }} 个</text>
-          </view>
-
-          <view v-if="videoLoading && !featuredVideo" class="explore__loading">
-            <text>召唤中…</text>
-          </view>
-
-          <view v-else-if="!featuredVideo" class="explore__empty">
-            <text class="explore__empty-emoji">🎬</text>
-            <text class="explore__empty-title">科普视频在路上</text>
-            <text class="explore__empty-desc">平台会持续更新, 敬请期待 ›</text>
-          </view>
-
-          <view v-else>
-            <!-- 视频英雄位 (最新 1 个大图卡) -->
-            <view
-              class="explore__featured explore__featured--video press"
-              @tap="goVideo(featuredVideo._id)"
-            >
-              <view
-                class="explore__featured-cover"
-                :style="{ background: videoEmojiBg(featuredVideo.meta?.coverEmoji) }"
-              >
-                <text class="explore__featured-cover-emoji">
-                  {{ featuredVideo.meta?.coverEmoji || '🎬' }}
-                </text>
-                <view class="explore__featured-play">
-                  <text>▶</text>
-                </view>
-                <view
-                  v-if="featuredVideo.durationSeconds"
-                  class="explore__featured-duration"
-                >
-                  <text>{{ formatDuration(featuredVideo.durationSeconds) }}</text>
-                </view>
-              </view>
-              <view class="explore__featured-body">
-                <text class="explore__featured-title">{{ featuredVideo.title }}</text>
-                <text class="explore__featured-summary">{{ featuredVideo.intro }}</text>
-                <view class="explore__featured-meta">
-                  <text v-if="featuredVideo.category" class="explore__featured-tag">
-                    {{ categoryLabel(featuredVideo.category) }}
-                  </text>
-                  <text class="explore__featured-cta">立即观看 ›</text>
-                </view>
-              </view>
-            </view>
-
-            <!-- 「查看所有」CTA -->
-            <view class="explore__more press" @tap="goVideoList">
-              <text>查看全部视频 ›</text>
-            </view>
-          </view>
-        </view>
-
         <!-- 游戏 (2026-07-03 改造: 加载更多式分页) -->
         <view class="explore__section">
           <view class="section-title">
@@ -212,15 +212,13 @@
 
             <!-- 游戏加载更多 -->
             <view v-if="gamesHasMore" class="explore__more">
-              <el-button
+              <view
                 v-if="!gamesLoadingMore"
-                type="primary"
-                plain
-                size="small"
-                @click="loadMoreGames"
+                class="explore__loadmore press"
+                @tap="loadMoreGames"
               >
-                加载更多
-              </el-button>
+                <text>加载更多</text>
+              </view>
               <text v-else class="explore__more-tip">加载中…</text>
             </view>
             <view v-else-if="games.length" class="explore__end">
@@ -738,6 +736,18 @@ export default {
     & > text {
       color: $text-secondary;
       font-size: $font-sm;
+    }
+  }
+  &__loadmore {
+    display: inline-block;
+    padding: 12rpx 40rpx;
+    border: 2rpx solid $primary;
+    color: $primary;
+    border-radius: $radius-pill;
+    font-size: $font-sm;
+
+    & > text {
+      color: inherit;
     }
   }
   &__more-tip {
