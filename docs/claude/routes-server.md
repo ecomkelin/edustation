@@ -665,6 +665,7 @@ Auth 列简写:
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
 | 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
+| 2026-07-03 | 内容模块 MM=38 video 上线 (科普视频平台级; 8 端点; 与 Article/Game 一致评级; C 端 explore tab 视频 section 默认 1 个 (R-3800 featured) + 文章 4 个 (1 头条+3 列表) + 游戏 加载更多式分页; seed 6 段 mp4 demo) | R-3800 ~ R-3807 | add |
 
 ### MM=36 article (URL: /articles)
 
@@ -688,3 +689,19 @@ Auth 列简写:
 | R-3704 | POST | /games/admin | ADMIN | — (platform-admin) | 后台创建 | launchUrl 必填且 https:// |
 | R-3705 | PUT | /games/admin/:id | ADMIN | — (platform-admin) | 后台更新 | |
 | R-3706 | DELETE | /games/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除 |
+
+### MM=38 video (URL: /videos)
+
+> 平台级科普视频 (2026-07-03 立项). 与 Article/Game 同级: org=null 平台级, 跨机构对所有家长可见; platform-admin 发布; C 端公开 + web-view 播放.
+> C 端展示策略 (2026-07-03 用户决策): 探索 tab 「趣味科普视频」section 默认显示最新 1 个 (R-3800 featured); 「查看所有」CTA 跳 `/pages/content/video-list` 走 R-3801 加载更多式分页.
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3800 | GET | /videos/featured | — | — | C 端默认展示 (最新 1 个英雄位) | sort by publishedAt desc limit 1 |
+| R-3801 | GET | /videos | — | — | C 端公开全量列表 (已发布 + 分页) | query: category/page/pageSize (max 50) |
+| R-3802 | GET | /videos/:id | — | — | C 端公开详情 | bumpViewCount 原子 +1 |
+| R-3803 | POST | /videos/:id/play | AUTH | — | C 端播放计数 (+1, 原子) | 失败不影响前端; bumpViewCount 复用 |
+| R-3804 | GET | /videos/admin/list | ADMIN | video.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize |
+| R-3805 | POST | /videos/admin | ADMIN | — (platform-admin) | 后台创建 | videoUrl 必填且 https:// |
+| R-3806 | PUT | /videos/admin/:id | ADMIN | — (platform-admin) | 后台更新 | |
+| R-3807 | DELETE | /videos/admin/:id | ADMIN | — (platform-admin) | 软下架 (isPublished=false) | 不物理删除, 草稿可恢复 |

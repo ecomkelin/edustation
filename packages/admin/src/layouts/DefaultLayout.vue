@@ -205,6 +205,8 @@ const menuGroups = [
           { path: '/content/articles', label: '科普文章', icon: Reading, requirePlatform: true, perm: 'article.read' },
           // 平台小游戏 (2026-07-03 MM=37): 平台超管发布
           { path: '/content/games', label: '小游戏', icon: MagicStick, requirePlatform: true, perm: 'game.read' },
+          // 平台科普视频 (2026-07-03 MM=38): 平台超管发布, 跨机构对所有家长可见
+          { path: '/content/videos', label: '科普视频', icon: Picture, requirePlatform: true, perm: 'video.read' },
           // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
           { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看

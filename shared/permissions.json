@@ -378,6 +378,18 @@
         "game.read": { "label": "查看小游戏", "description": "浏览平台发布的所有小游戏 (含草稿)" },
         "game.write": { "label": "编辑小游戏", "description": "新建/编辑/上下架小游戏 (平台超管专属, 跨机构对所有家长可见)" }
       }
+    },
+    {
+      "key": "video",
+      "label": "科普视频",
+      "permissions": [
+        "video.read",
+        "video.write"
+      ],
+      "permissionLabels": {
+        "video.read": { "label": "查看科普视频", "description": "浏览平台发布的所有科普视频 (含草稿)" },
+        "video.write": { "label": "编辑科普视频", "description": "新建/编辑/上下架科普视频 (平台超管专属, 跨机构对所有家长可见)" }
+      }
     }
   ]
 }

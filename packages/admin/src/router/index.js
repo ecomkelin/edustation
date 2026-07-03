@@ -78,6 +78,8 @@ const routes = [
       { path: 'content/articles', component: () => import('@/views/content/ContentArticles.vue'), meta: { platform: true } },
       // 内容 - 平台小游戏 (2026-07-03 MM=37): 平台超管发
       { path: 'content/games', component: () => import('@/views/content/ContentGames.vue'), meta: { platform: true } },
+      // 内容 - 平台科普视频 (2026-07-03 MM=38): 平台超管发, C 端展示
+      { path: 'content/videos', component: () => import('@/views/content/ContentVideos.vue'), meta: { platform: true } },
       // 协议接受页 (强制拦截目标; 不可被 pendingConsents 守卫拦截, 否则死循环)
       { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },
       // 招生试听 (2026-06 重构: Lead → Parent + ChildLead)

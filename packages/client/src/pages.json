@@ -280,6 +280,21 @@
       }
     },
     {
+      // 2026-07-03: 探索 Tab 视频全量列表 (R-3801 GET /videos?page/pageSize + 加载更多)
+      "path": "pages/content/video-list",
+      "style": {
+        "navigationBarTitleText": "科普视频",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      // 2026-07-03: 探索 Tab 视频播放页 (R-3802 GET /videos/:id + R-3803 play + web-view)
+      "path": "pages/content/video-play",
+      "style": {
+        "navigationBarTitleText": "播放视频"
+      }
+    },
+    {
       "path": "pages/help/faq",
       "style": {
         "navigationBarTitleText": "常见问题"

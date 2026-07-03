@@ -1,26 +1,25 @@
 'use strict'
 
 /**
- * 平台科普文章 + 小游戏 种子 (2026-07-03 立项)
+ * 平台科普文章 + 小游戏 + 科普视频 种子 (2026-07-03 立项 + 2026-07-03 扩视频)
  *
  * 内容 (org=null) 平台级, 跨机构对所有 C 端家长可见.
- * 幂等: Article 按 title upsert; Game 按 name upsert.
+ * 幂等: Article 按 title upsert; Game 按 name upsert; Video 按 title upsert.
  * 单跑也可, 不依赖 initial.seed 的 dropDatabase 流程.
  *
- * 数据 (2026-07-03 二次扩种子):
- *   - 文章: 8 篇
- *     · 编程启蒙科普 / 孩子为什么需要艺术课 / 暑假安全小贴士 (首批, 偏家长)
- *     · 数学之美系列 (2026-07-03 用户反馈 "来点 e 这种神奇的科学类"):
- *       e 自然常数 / π 圆周率 / 0 的发明 / 复数与 i / 黄金分割 φ
+ * 数据:
+ *   - 文章: 8 篇 (编程 / 艺术 / 安全 + 数学之美 5 篇: e/π/0/i/φ)
  *   - 游戏: 3 款 (颜色 / 数字 / 看图成语)
+ *   - 视频: 6 段 (黑洞/海洋/恐龙/火山/微观/星空) — 2026-07-03 同日加, 跟 Article/Game 一致评级
  *
  * 注意事项:
- *   - Game.launchUrl 真实环境应是平台自有 H5, 这里先放占位
- *   - 替换为生产 URL 时改 rawUrl 字段即可
+ *   - Game.launchUrl / Video.videoUrl 真实环境应是平台自有 H5 / mp4;
+ *     这里先放示例 URL (Google 公开演示视频), 替换为生产 URL 时改 rawUrl 字段即可
  */
 
 const Article = require('@models/Article.model')
 const Game = require('@models/Game.model')
+const Video = require('@models/Video.model')
 const { compileMarkdownSafe } = require('@utils/markdown')
 
 const ARTICLES = [
@@ -395,6 +394,72 @@ const GAMES = [
   }
 ]
 
+// ─── 2026-07-03 同日加: 科普视频 (跟 Article/Game 一致评级, 平台级 org=null) ───
+// 视频示例 URL 来自 Google 公开演示视频 (gtv-videos-bucket), C 端 web-view 可直开
+// 生产环境请上传自有 H5 / mp4 替换 rawUrl 字段
+const VIDEOS = [
+  {
+    key: 'video-blackhole',
+    title: '黑洞到底是什么? 一段动画看懂宇宙最深处的怪物',
+    intro: '光是宇宙里跑最快的, 但黑洞让光也跑不掉。10 分钟动画带你走过爱因斯坦到 NASA 黑洞照片的全部里程碑。',
+    category: 'space',
+    tags: ['黑洞', '宇宙', '天文'],
+    durationSeconds: 596,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    coverEmoji: '🪐'
+  },
+  {
+    key: 'video-deep-ocean',
+    title: '海底 10000 米下有什么? 这是人类都到不了的地方',
+    intro: '马里亚纳海沟 11000 米深处, 阳光到不了, 水压能把坦克压扁, 但这里仍有活着的生命。',
+    category: 'nature',
+    tags: ['海洋', '深海', '地球'],
+    durationSeconds: 653,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    coverEmoji: '🌊'
+  },
+  {
+    key: 'video-dinosaur-era',
+    title: '恐龙是怎么灭绝的? 一颗小行星如何改写 1.6 亿年的地球霸主',
+    intro: '统治地球 1.6 亿年的恐龙, 在一颗 10 公里的小行星撞击后, 6600 万年前彻底消失。本文给孩子讲清楚那个 "最后一天"。',
+    category: 'history',
+    tags: ['恐龙', '小行星', '古生物'],
+    durationSeconds: 645,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    coverEmoji: '🦕'
+  },
+  {
+    key: 'video-volcano-inside',
+    title: '火山里面到底长什么样? 跟着镜头走进 1100 度的炼狱',
+    intro: '不是所有岩浆都是红的, 不是所有火山都喷发, 火山其实有好几种脾气。本文带孩子认识 3 种典型火山。',
+    category: 'nature',
+    tags: ['火山', '地球', '地质'],
+    durationSeconds: 15,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    coverEmoji: '🌋'
+  },
+  {
+    key: 'video-microscopic-cell',
+    title: '显微镜下看细胞分裂, 你的身体每天都在上演 "魔法"',
+    intro: '人体每秒钟有 380 万个细胞死亡, 同时也有 380 万个新生细胞开始工作。一段延时摄影带你看清这个过程。',
+    category: 'science',
+    tags: ['细胞', '生物学', '显微镜'],
+    durationSeconds: 60,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    coverEmoji: '🔬'
+  },
+  {
+    key: 'video-starry-universe',
+    title: '你看到的每一颗星, 都来自几万年前 — 宇宙的过去正在照在你脸上',
+    intro: '北极星的光走了 433 年才到地球。有些恒星的寿命比太阳长几百倍, 有些星系正在以光速远离我们。',
+    category: 'space',
+    tags: ['星空', '宇宙', '天文'],
+    durationSeconds: 15,
+    videoUrl: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    coverEmoji: '🌌'
+  }
+]
+
 async function upsertArticles() {
   const ops = ARTICLES.map((a) => ({
     updateOne: {
@@ -448,6 +513,33 @@ async function upsertGames() {
   return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
 }
 
+async function upsertVideos() {
+  const ops = VIDEOS.map((v) => ({
+    updateOne: {
+      filter: { org: null, title: v.title },
+      update: {
+        $set: {
+          org: null,
+          title: v.title,
+          intro: v.intro,
+          videoUrl: v.videoUrl,
+          coverFile: null,
+          coverUrl: '',
+          category: v.category,
+          tags: v.tags,
+          durationSeconds: v.durationSeconds,
+          isPublished: true,
+          publishedAt: new Date(),
+          'meta.coverEmoji': v.coverEmoji
+        }
+      },
+      upsert: true
+    }
+  }))
+  const r = await Video.bulkWrite(ops)
+  return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
+}
+
 async function run() {
   const aR = await upsertArticles()
   // eslint-disable-next-line no-console
@@ -455,7 +547,10 @@ async function run() {
   const gR = await upsertGames()
   // eslint-disable-next-line no-console
   console.log('[seed][content] games:', gR)
-  return { articles: aR, games: gR }
+  const vR = await upsertVideos()
+  // eslint-disable-next-line no-console
+  console.log('[seed][content] videos:', vR)
+  return { articles: aR, games: gR, videos: vR }
 }
 
-module.exports = { run, ARTICLES, GAMES }
+module.exports = { run, ARTICLES, GAMES, VIDEOS }
