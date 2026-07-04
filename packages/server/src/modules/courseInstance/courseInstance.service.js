@@ -280,6 +280,35 @@ async function detail(id, orgId) {
 }
 
 /**
+ * C 端开班详情 (家长端, 跳过 courseInstance.read 权限码)
+ * 复用 detail 字段, 但需校验 activeStudent 是该开班的报名学生 (含 trialAudience);
+ * 仅返回前端需要的字段, 滤掉内部的 statusLog / acceptedCourseProducts 等敏感字段。
+ * 注:仍走 CourseInstance.findOne, 不在中间件层加权限码以保持 c-end-me 范式一致
+ *   ([memory: c-end-me-endpoint-pattern])
+ */
+async function forClientStudent({ id, orgId, activeStudentId }) {
+  if (!activeStudentId) throw ApiError.badRequest('缺少 activeStudent')
+  // 校验 activeStudent 是该开班的报名学生 (含 active + withdrawn 因为详情页允许回看退班)
+  const CourseEnrollment = require('@models/CourseEnrollment.model')
+  const { CourseEnrollmentStatus } = require('@shared/enums')
+  const enrollment = await CourseEnrollment.findOne({
+    org: orgId,
+    courseInstance: id,
+    student: activeStudentId,
+    status: { $in: [CourseEnrollmentStatus.ENROLLED, CourseEnrollmentStatus.WITHDRAWN, CourseEnrollmentStatus.COMPLETED] }
+  }).select('_id status').lean()
+  if (!enrollment) throw ApiError.forbidden('当前孩子未报名此开班,无法查看详情')
+
+  const inst = await detail(id, orgId)
+  // 标记学生自己在该开班的报名 status, 前端做差异化 UI
+  inst.myEnrollmentStatus = enrollment.status
+  // C 端不需要的字段直接剔除, 减 payload
+  delete inst.statusLog
+  delete inst.enrollmentsWithoutSp
+  return inst
+}
+
+/**
  * 创建开班：必填 schedulePlan（lessonsPerWeek / totalPlannedLessons 等）。
  * 若不传 acceptedCourseProducts，默认回落到 [courseProduct]。
  * 若传了 acceptedCourseProducts，校验所有 id 都属于本机构、且包含 courseProduct。
@@ -847,7 +876,7 @@ async function ensureTrialCourseInstance(orgId) {
 }
 
 module.exports = {
-  list, detail, create, update,
+  list, detail, forClientStudent, create, update,
   setStatus, softDelete, removableCheck,
   computeEstimatedEndDate,
   assertSchedulePlanValid,

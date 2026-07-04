@@ -12,6 +12,11 @@ router.use(mws.authenticate, mws.requireOrg)
 router.get('/', mws.requirePermission('courseInstance.read'), asyncHandler(c.list))
 // R-1101 GET /course-instances/:id
 router.get('/:id', mws.requirePermission('courseInstance.read'), asyncHandler(c.detail))
+// R-1101A GET /course-instances/:id/me — C 端开班详情,跳过 courseInstance.read 权限码,只校验 activeStudent 是报名学生
+//   2026-07-04 立项: C 端开班详情页 [packages/client/src/pages/course/instance-detail.vue] 之前调 courseInstanceApi.detail 要 courseInstance.read 权限码 → 403
+//   按 [memory: c-end-me-endpoint-pattern] 范式加 me 端点: 跳过 requirePermission, mws.activeStudent 自动校验 activeStudent 是该开班报名学生 (含 enrolled/withdrawn/completed,允许回看)
+//   必须放在 '/:id/removable-check' 之前 (虽然 prefix 不同不冲突,显式排序更安全)
+router.get('/:id/me', mws.activeStudent, asyncHandler(c.forClientStudent))
 // R-1102 POST /course-instances
 router.post('/', mws.requirePermission('courseInstance.write'), v.create, mws.validateRequest, asyncHandler(c.create))
 // R-1103 PUT /course-instances/:id

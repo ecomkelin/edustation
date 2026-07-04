@@ -193,12 +193,12 @@
         </view>
       </view>
 
-      <!-- 我的课程 (2026-07-03 简化: 首页顶部已有剩余课时对应课包统计, 这里只展示当前孩子报名的课程) -->
+      <!-- 2026-07-04 改文案: 「我的课程」→「当前课程」(更准确: 展示当前 active kid 在学的)
+                          「全部课程」→「我的课程」(作为 CTA 跳全量列表, 区别于上方 active kid 单列表) -->
       <view class="home__section">
         <view class="section-title">
-          <text>📚 我的课程</text>
-          <!-- 2026-07-03 用户反馈: 标题右侧加"全部课程"按钮, 跳独立全量列表页 -->
-          <text class="section-title__more section-title__more--cta" @tap="goMyCoursesAll">全部课程 ›</text>
+          <text>📚 当前课程</text>
+          <text class="section-title__more section-title__more--cta" @tap="goMyCoursesAll">我的课程 ›</text>
         </view>
 
         <view v-if="enrollmentsLoading" class="home__loading">

@@ -242,6 +242,7 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-1100 | GET | /course-instances | PERM | courseInstance.read | 列表 | |
 | R-1101 | GET | /course-instances/:id | PERM | courseInstance.read | 详情 | |
+| R-1101A | GET | /course-instances/:id/me | C-END | (activeStudent) | C 端开班详情 | 跳过 courseInstance.read 权限码;校验 activeStudent 是该开班报名学生 (允许回看退班/已结课);复用 detail 返回 + 增 myEnrollmentStatus;2026-07-04 立项修复 C 端 instance-detail 403 |
 | R-1102 | POST | /course-instances | PERM | courseInstance.write | 新建开班 | |
 | R-1103 | PUT | /course-instances/:id | PERM | courseInstance.write | 更新 | |
 | R-1104 | DELETE | /course-instances/:id | ADMIN_PWD | — | 软删 | 状态互锁 |

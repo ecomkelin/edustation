@@ -256,8 +256,11 @@ export default {
       this.loadError = ''
       try {
         // 并行调详情 + 个人进度
+        // 2026-07-04 改: C 端用 /:id/me 旁路端点跳过 courseInstance.read 权限码 (家长没有这个权限码)
+        // 之前 detail() 返回 403 "无权限: courseInstance.read";现在 me() 走 mws.activeStudent 校验该学生报名该开班
+        // ref: R-1101A + [memory: c-end-me-endpoint-pattern]
         const [course, progress] = await Promise.all([
-          courseInstanceApi.detail(this.courseInstanceId),
+          courseInstanceApi.me(this.courseInstanceId),
           courseEnrollmentApi.myProgress(this.courseInstanceId).catch(() => ({}))
         ])
         this.course = course || null
