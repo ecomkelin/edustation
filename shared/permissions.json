@@ -368,18 +368,6 @@
       }
     },
     {
-      "key": "game",
-      "label": "小游戏",
-      "permissions": [
-        "game.read",
-        "game.write"
-      ],
-      "permissionLabels": {
-        "game.read": { "label": "查看小游戏", "description": "浏览本机构发布的小游戏 (含草稿)" },
-        "game.write": { "label": "编辑小游戏", "description": "新建/编辑/上下架本机构的小游戏 (C 端仅本机构家长可见)" }
-      }
-    },
-    {
       "key": "video",
       "label": "科普视频",
       "permissions": [

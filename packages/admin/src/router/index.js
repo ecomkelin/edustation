@@ -76,9 +76,8 @@ const routes = [
       { path: 'system/audit-logs', component: () => import('@/views/audit/AuditLogs.vue'), meta: { platform: true } },
       // 内容 - 科普文章 (2026-07-03 MM=36, 2026-07-03 下放 per-org): 普通机构 admin 也有权
       { path: 'content/articles', component: () => import('@/views/content/ContentArticles.vue') },
-      // 内容 - 平台小游戏 (2026-07-03 MM=37, 2026-07-03 下放 per-org)
-      { path: 'content/games', component: () => import('@/views/content/ContentGames.vue') },
       // 内容 - 平台科普视频 (2026-07-03 MM=38, 2026-07-03 下放 per-org)
+      // 2026-07-04: 游戏模块下线, 移除 content/games 路由
       { path: 'content/videos', component: () => import('@/views/content/ContentVideos.vue') },
       // 协议接受页 (强制拦截目标; 不可被 pendingConsents 守卫拦截, 否则死循环)
       { path: 'agreement/accept', component: () => import('@/views/legal/AgreementAccept.vue'), meta: { auth: true, agreement: true } },

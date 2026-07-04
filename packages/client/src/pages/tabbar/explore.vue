@@ -164,74 +164,6 @@
           </view>
         </view>
 
-        <!-- 游戏 (2026-07-03 改造: 加载更多式分页) -->
-        <view class="explore__section">
-          <view class="section-title">
-            <text>🎮 趣味小游戏</text>
-            <text class="section-title__more">{{ totalGames }} 款</text>
-          </view>
-
-          <view v-if="gamesLoading && !games.length" class="explore__loading">
-            <text>召唤中…</text>
-          </view>
-
-          <view v-else-if="!games.length" class="explore__empty">
-            <text class="explore__empty-emoji">🎮</text>
-            <text class="explore__empty-title">小游戏在路上</text>
-            <text class="explore__empty-desc">边玩边学, 敬请期待 ›</text>
-          </view>
-
-          <view v-else class="explore__game-grid">
-            <view
-              v-for="g in games"
-              :key="g._id"
-              class="explore__game-card press"
-              @tap="goGame(g)"
-            >
-              <view
-                class="explore__game-cover"
-                :style="{ background: emojiBg(g.meta?.coverEmoji, '#5B9EE6') }"
-              >
-                <text class="explore__game-emoji">{{ g.meta?.coverEmoji || '🎮' }}</text>
-                <view v-if="g.difficulty" class="explore__game-difficulty" :style="{ background: difficultyColor(g.difficulty) }">
-                  <text>{{ difficultyLabel(g.difficulty) }}</text>
-                </view>
-              </view>
-              <view class="explore__game-body">
-                <text class="explore__game-name">{{ g.name }}</text>
-                <text class="explore__game-intro">{{ g.intro }}</text>
-                <view class="explore__game-tags">
-                  <text
-                    v-for="t in (g.tags || []).slice(0, 2)"
-                    :key="t"
-                    class="explore__game-tag"
-                  >
-                    {{ t }}
-                  </text>
-                </view>
-                <view class="explore__game-cta">
-                  <text>▶ 立即开玩</text>
-                </view>
-              </view>
-            </view>
-
-            <!-- 游戏加载更多 -->
-            <view v-if="gamesHasMore" class="explore__more">
-              <view
-                v-if="!gamesLoadingMore"
-                class="explore__loadmore press"
-                @tap="loadMoreGames"
-              >
-                <text>加载更多</text>
-              </view>
-              <text v-else class="explore__more-tip">加载中…</text>
-            </view>
-            <view v-else-if="games.length" class="explore__end">
-              <text>— 已经到底了 —</text>
-            </view>
-          </view>
-        </view>
-
         <view class="explore__bottom-spacer" />
       </view>
     </scroll-view>
@@ -241,7 +173,6 @@
 <script>
 import { articleApi } from '@/api/article'
 import { videoApi } from '@/api/video'
-import { gameApi } from '@/api/game'
 import { date } from '@/utils/date'
 import { haptic } from '@/utils/haptic'
 
@@ -269,7 +200,6 @@ const DIFFICULTY_COLORS = {
 }
 
 const ARTICLE_PAGE_SIZE = 12      // 一次拉够, 客户端截 4
-const GAME_PAGE_SIZE = 12          // 加载更多式: 每页 12 (一般总数也少, 1-2 页拉完)
 
 export default {
   data() {
@@ -282,15 +212,7 @@ export default {
       // 视频 — featured 1 个 + total (用于角标)
       featuredVideo: null,
       videoLoading: false,
-      totalVideos: 0,
-
-      // 游戏 — 加载更多式
-      games: [],
-      gamesLoading: false,
-      gamesLoadingMore: false,
-      totalGames: 0,
-      gamesPage: 1,
-      gamesHasMore: true
+      totalVideos: 0
     }
   },
   computed: {
@@ -312,8 +234,7 @@ export default {
     async load() {
       await Promise.all([
         this.loadArticles(),
-        this.loadFeaturedVideo(),
-        this.loadGames(true)
+        this.loadFeaturedVideo()
       ])
     },
 
@@ -359,44 +280,6 @@ export default {
       }
     },
 
-    async loadGames(reset) {
-      if (reset) {
-        this.gamesLoading = true
-        this.games = []
-        this.gamesPage = 1
-        this.gamesHasMore = true
-      } else {
-        this.gamesLoadingMore = true
-      }
-      try {
-        const targetPage = reset ? 1 : this.gamesPage + 1
-        const res = await gameApi.list({ page: targetPage, pageSize: GAME_PAGE_SIZE })
-        const data = res?.data || res || {}
-        const items = this._extractItems(data)
-        if (reset) {
-          this.games = items
-        } else {
-          this.games = this.games.concat(items)
-        }
-        this.gamesPage = (typeof data.page === 'number' ? data.page : targetPage)
-        this.totalGames = typeof data.total === 'number' ? data.total : this.games.length
-        this.gamesHasMore = this.games.length < this.totalGames
-      } catch (e) {
-        console.warn('[explore.loadGames]', e)
-        if (reset) this.games = []
-        this.gamesHasMore = false
-      } finally {
-        this.gamesLoading = false
-        this.gamesLoadingMore = false
-      }
-    },
-
-    async loadMoreGames() {
-      if (this.gamesLoadingMore || !this.gamesHasMore) return
-      haptic.tap()
-      await this.loadGames(false)
-    },
-
     // 服务端返 {items: [...]} / {data: [...]} / [...] 多态兜底
     _extractItems(data) {
       if (Array.isArray(data)) return data
@@ -426,12 +309,6 @@ export default {
     goVideoList() {
       haptic.tap()
       uni.navigateTo({ url: '/pages/content/video-list' })
-    },
-
-    goGame(g) {
-      if (!g || !g._id) return
-      haptic.tap()
-      uni.navigateTo({ url: `/pages/content/game-launch?id=${g._id}` })
     },
 
     formatDate(d) {
@@ -486,10 +363,7 @@ export default {
     },
 
     onLower() {
-      // 滚动到底: 给游戏加载更多一个机会 (避免用户必须找按钮)
-      if (this.gamesHasMore && !this.gamesLoadingMore && this.games.length > 0) {
-        this.loadMoreGames()
-      }
+      // 2026-07-04: 游戏模块下线, onLower 暂 no-op (article/video 单页一次拉够)
     }
   }
 }
@@ -774,81 +648,8 @@ export default {
     grid-column: 1 / -1;
   }
 
-  // ─── 游戏 grid ───
-  &__game-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: $spacing-sm;
-  }
-  &__game-card {
-    background: $bg-card;
-    border-radius: $radius-md;
-    overflow: hidden;
-    box-shadow: $shadow-card;
-  }
-  &__game-cover {
-    width: 100%;
-    height: 200rpx;
-    @include flex-center;
-    position: relative;
-  }
-  &__game-emoji {
-    font-size: 80rpx;
-    filter: drop-shadow(0 4rpx 8rpx rgba(0, 0, 0, 0.15));
-  }
-  &__game-difficulty {
-    position: absolute;
-    top: $spacing-xs;
-    right: $spacing-xs;
-    padding: 4rpx 12rpx;
-    border-radius: $radius-pill;
-    & > text { color: #fff; font-size: $font-xs; font-weight: $font-weight-medium; }
-  }
-  &__game-body {
-    padding: $spacing-sm;
-  }
-  &__game-name {
-    display: block;
-    font-size: $font-base;
-    font-weight: $font-weight-semibold;
-    color: $text-primary;
-    margin-bottom: 4rpx;
-    @include multi-ellipsis(1);
-  }
-  &__game-intro {
-    display: block;
-    font-size: $font-xs;
-    color: $text-secondary;
-    line-height: 1.4;
-    margin-bottom: $spacing-xs;
-    @include multi-ellipsis(2);
-    height: 60rpx;
-  }
-  &__game-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4rpx;
-    margin-bottom: $spacing-xs;
-  }
-  &__game-tag {
-    padding: 2rpx 10rpx;
-    background: $bg-page;
-    color: $text-tertiary;
-    font-size: $font-xs;
-    border-radius: $radius-pill;
-  }
-  &__game-cta {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6rpx 0;
-    background: linear-gradient(135deg, $primary, $primary-light);
-    color: #fff;
-    font-size: $font-xs;
-    font-weight: $font-weight-medium;
-    border-radius: $radius-pill;
-    & > text { color: inherit; }
-  }
+  // 2026-07-04: 游戏模块下线, 删 &__game-* grid 一组样式
+  // (article/video 仍用 &__article-* / &__featured-* 等已有 class)
 
   &__bottom-spacer {
     height: $spacing-xl;

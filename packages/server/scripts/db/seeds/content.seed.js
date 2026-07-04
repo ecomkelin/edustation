@@ -1,24 +1,23 @@
 'use strict'
 
 /**
- * 平台科普文章 + 小游戏 + 科普视频 种子 (2026-07-03 立项 + 2026-07-03 扩视频)
+ * 平台科普文章 + 科普视频 种子 (2026-07-03 立项 + 2026-07-03 扩视频)
  *
  * 内容 (org=null) 平台级, 跨机构对所有 C 端家长可见.
- * 幂等: Article 按 title upsert; Game 按 name upsert; Video 按 title upsert.
+ * 幂等: Article 按 title upsert; Video 按 title upsert.
  * 单跑也可, 不依赖 initial.seed 的 dropDatabase 流程.
  *
  * 数据:
  *   - 文章: 8 篇 (编程 / 艺术 / 安全 + 数学之美 5 篇: e/π/0/i/φ)
- *   - 游戏: 3 款 (颜色 / 数字 / 看图成语)
- *   - 视频: 6 段 (黑洞/海洋/恐龙/火山/微观/星空) — 2026-07-03 同日加, 跟 Article/Game 一致评级
+ *   - 视频: 6 段 (黑洞/海洋/恐龙/火山/微观/星空) — 2026-07-03 同日加, 跟 Article 一致评级
+ * 2026-07-04: 游戏模块整条下线, 删 GAMES
  *
  * 注意事项:
- *   - Game.launchUrl / Video.videoUrl 真实环境应是平台自有 H5 / mp4;
+ *   - Video.videoUrl 真实环境应是平台自有 mp4;
  *     这里先放示例 URL (Google 公开演示视频), 替换为生产 URL 时改 rawUrl 字段即可
  */
 
 const Article = require('@models/Article.model')
-const Game = require('@models/Game.model')
 const Video = require('@models/Video.model')
 const Org = require('@models/Org.model')
 const { compileMarkdownSafe } = require('@utils/markdown')
@@ -365,37 +364,7 @@ i 让数学**从平面变成立体**, 让工程师**能用旋转代替微积分*
   }
 ]
 
-const GAMES = [
-  {
-    key: 'game-color-match',
-    name: '颜色大作战',
-    intro: '30 秒内找出颜色相同的卡片, 训练孩子视觉分辨 + 反应速度',
-    tags: ['认知', '反应', '适合 4-7 岁'],
-    difficulty: 'easy',
-    launchUrl: 'https://example.com/games/color-match/index.html',
-    coverEmoji: '🎨'
-  },
-  {
-    key: 'game-number-chain',
-    name: '数字接龙',
-    intro: '把 1-15 按顺序点击, 经典数字排列训练, 适合幼小衔接',
-    tags: ['数学', '逻辑', '适合 5-8 岁'],
-    difficulty: 'medium',
-    launchUrl: 'https://example.com/games/number-chain/index.html',
-    coverEmoji: '🔢'
-  },
-  {
-    key: 'game-pic-riddle',
-    name: '看图猜成语',
-    intro: '看图联想成语, 锻炼图像思维 + 中文词汇量',
-    tags: ['语文', '成语', '适合 7-12 岁'],
-    difficulty: 'medium',
-    launchUrl: 'https://example.com/games/pic-riddle/index.html',
-    coverEmoji: '🈚'
-  }
-]
-
-// ─── 2026-07-03 同日加: 科普视频 (跟 Article/Game 一致评级, 平台级 org=null) ───
+// ─── 2026-07-03 同日加: 科普视频 (跟 Article 一致评级, 平台级 org=null) ───
 // 注意 (2026-07-03 用户反馈): Google 公开 bucket storage.googleapis.com/gtv-videos-bucket/*
 //   已被设为私有, 匿名读 403; 现改用 media.w3.org (W3C 官方长期维护) + test-videos.co.uk
 //   C 端 web-view 可直开.
@@ -490,32 +459,6 @@ async function upsertArticles(orgId) {
   return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
 }
 
-async function upsertGames(orgId) {
-  const ops = GAMES.map((g) => ({
-    updateOne: {
-      filter: { org: orgId, name: g.name },
-      update: {
-        $set: {
-          org: orgId,
-          name: g.name,
-          intro: g.intro,
-          launchUrl: g.launchUrl,
-          coverFile: null,
-          coverUrl: '',
-          tags: g.tags,
-          difficulty: g.difficulty,
-          isPublished: true,
-          publishedAt: new Date(),
-          'meta.coverEmoji': g.coverEmoji
-        }
-      },
-      upsert: true
-    }
-  }))
-  const r = await Game.bulkWrite(ops)
-  return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
-}
-
 async function upsertVideos(orgId) {
   const ops = VIDEOS.map((v) => ({
     updateOne: {
@@ -544,9 +487,10 @@ async function upsertVideos(orgId) {
 }
 
 /**
- * 2026-07-03 per-org 化: 给每个启用 Org 各塞一份 8 articles + 3 games + 6 videos
+ * 2026-07-03 per-org 化: 给每个启用 Org 各塞一份 8 articles + 6 videos
  * 同一份内容分发到所有 org, 机构 admin 拿到后可在后台编辑/上下架
  * Org.find({ isActive: true }) 跟 [school.seed.js](school.seed.js) 范式一致
+ * 2026-07-04: 游戏模块整条下线, 删 GAMES
  */
 async function run() {
   const orgs = await Org.find({ isActive: true }).select('_id name').lean()
@@ -555,13 +499,12 @@ async function run() {
   const summary = []
   for (const o of orgs) {
     const aR = await upsertArticles(o._id)
-    const gR = await upsertGames(o._id)
     const vR = await upsertVideos(o._id)
     // eslint-disable-next-line no-console
-    console.log(`[seed][content] org=${o.name}: articles=${aR.upserted + aR.modified} games=${gR.upserted + gR.modified} videos=${vR.upserted + vR.modified}`)
-    summary.push({ org: o.name, articles: aR, games: gR, videos: vR })
+    console.log(`[seed][content] org=${o.name}: articles=${aR.upserted + aR.modified} videos=${vR.upserted + vR.modified}`)
+    summary.push({ org: o.name, articles: aR, videos: vR })
   }
   return summary
 }
 
-module.exports = { run, ARTICLES, GAMES, VIDEOS }
+module.exports = { run, ARTICLES, VIDEOS }

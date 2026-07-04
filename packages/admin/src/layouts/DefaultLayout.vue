@@ -252,14 +252,14 @@ const menuGroups = [
         ]
       },
       // 2026-07-03 内容模块下放 per-org: 新增科普内容子组 (取代原系统管理→平台配置里的 3 项)
-      //   管理员持 article/game/video 全 6 个码, 教务持 3 个 read
+      //   管理员持 article/video 全 4 个码, 教务持 2 个 read
       //   老师/财务/家长 不挂 (后续单独开权限组)
+      // 2026-07-04: 游戏模块整条下线 (用户决策), menu 去掉「小游戏」项
       {
         label: '科普内容',
         icon: Reading,
         children: [
           { path: '/content/articles', label: '科普文章', icon: Reading, perm: 'article.read' },
-          { path: '/content/games',    label: '小游戏',   icon: MagicStick, perm: 'game.read' },
           { path: '/content/videos',   label: '科普视频', icon: Picture,   perm: 'video.read' }
         ]
       }

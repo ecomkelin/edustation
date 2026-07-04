@@ -280,13 +280,6 @@
       }
     },
     {
-      // 2026-07-03: 探索 Tab 游戏启动页 (R-3701 GET /games/:id + R-3702 play)
-      "path": "pages/content/game-launch",
-      "style": {
-        "navigationBarTitleText": "趣味游戏"
-      }
-    },
-    {
       // 2026-07-03: 探索 Tab 视频全量列表 (R-3801 GET /videos?page/pageSize + 加载更多)
       "path": "pages/content/video-list",
       "style": {

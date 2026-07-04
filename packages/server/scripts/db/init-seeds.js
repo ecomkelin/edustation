@@ -50,9 +50,10 @@ async function initSeeds() {
   //    幂等: Category/FinanceAccount 走唯一索引, FinanceTransaction 按 (account,type,amount,occurredAt,remark) 查重
   await financeSeed.run()
 
-  // 7. 平台科普文章 + 小游戏 + 科普视频 (2026-07-03): 8 articles + 3 games + 6 videos, platform-only
+  // 7. 平台科普文章 + 科普视频 (2026-07-03): 8 articles + 6 videos, platform-only
   //    幂等 bulkWrite upsert; 不依赖 initial.dropDatabase 流程
-  //    (2026-07-03 同日加 videos: 与 article/game 一致评级, 平台超管发布, C 端 web-view 播放)
+  //    (2026-07-03 同日加 videos: 与 article 一致评级, 平台超管发布, C 端 web-view 播放)
+  //    2026-07-04: 游戏模块下线, content.seed 删 GAMES
   await contentSeed.run()
 }
 

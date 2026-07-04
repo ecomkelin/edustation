@@ -18,11 +18,11 @@ const { resolveRange } = require('@modules/report/report.shared')
  * 走 60s 进程内缓存 (复用 report.module 基础设施).
  */
 
-const VALID_TYPES = new Set(['article', 'video', 'game'])
+const VALID_TYPES = new Set(['article', 'video'])
 
 function ensureValidType(t) {
   if (!VALID_TYPES.has(t)) {
-    throw ApiError.badRequest(`contentType 不合法: ${t} (允许: article|video|game)`)
+    throw ApiError.badRequest(`contentType 不合法: ${t} (允许: article|video)`)
   }
 }
 

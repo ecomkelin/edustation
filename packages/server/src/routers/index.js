@@ -100,10 +100,7 @@ router.use('/audit-logs', auditRoutes)
 // 内容 - 平台科普文章 (2026-07-03 立项): MM=36, 平台超管发布, C 端公开
 const articleRoutes = require('@modules/article/article.routes')
 router.use('/articles', articleRoutes)
-// 内容 - 平台小游戏 (2026-07-03 立项): MM=37, 平台超管发布, C 端公开 + 启动计数
-const gameRoutes = require('@modules/game/game.routes')
-router.use('/games', gameRoutes)
-// 内容 - 平台科普视频 (2026-07-03 立项): MM=38, 平台超管发布, C 端公开 + 播放计数; 与 Article/Game 一致评级
+// 内容 - 平台科普视频 (2026-07-03 立项): MM=38, 平台超管发布, C 端公开 + 播放计数; 与 Article 一致评级
 const videoRoutes = require('@modules/video/video.routes')
 router.use('/videos', videoRoutes)
 
