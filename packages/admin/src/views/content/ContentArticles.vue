@@ -79,9 +79,19 @@
         <el-table-column label="发布时间" width="170">
           <template #default="{ row }">{{ formatTime(row.publishedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
+            <DestructiveConfirm
+              v-if="isPlatformAdmin"
+              :target="`科普文章 ${row.title}`"
+              warning="高风险"
+              :precheck-notes="['无 C 端用户行为事件 (文章访问/阅读记录) 引用']"
+              :precheck="() => articleApi.removableCheck(row._id).then((r) => r.data)"
+              @confirm="(p) => onRemoveConfirm(row, p)"
+            >
+              <el-button size="small" type="danger" link>误操删除</el-button>
+            </DestructiveConfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -105,8 +115,14 @@ import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
 import { articleApi } from '@/api/article'
 import KpiCard from '@/components/KpiCard.vue'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import { useAuthStore } from '@/stores/auth'
+import { handleRemoveError } from '@/utils/removable'
 import ContentArticleEditDialog from './ContentArticleEditDialog.vue'
 import { fmtNumber } from '@/utils/format'
+
+const auth = useAuthStore()
+const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const items = ref([])
 const loading = ref(false)
@@ -181,6 +197,17 @@ function openEdit(row) {
 function onSaved() {
   dialogVisible.value = false
   loadAll()
+}
+
+// 2026-07-04: 超管专属物理删除 (走 DestructiveConfirm + 后端 requirePlatformPassword 中间件)
+async function onRemoveConfirm(row, { password }) {
+  try {
+    await articleApi.purge(row._id, { password })
+    ElMessage.success('已删除')
+    loadAll()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 高风险', `科普文章 ${row.title}`)
+  }
 }
 
 onMounted(loadAll)

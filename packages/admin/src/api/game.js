@@ -32,5 +32,13 @@ export const gameApi = {
   // R-3708 per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}>
   adminRowStats(params = {}) {
     return http.get('/games/admin/row-stats', { params })
+  },
+  // R-3709 平台超管物理删除 (requirePlatformPassword)
+  purge(id, { password } = {}) {
+    return http.post(`/games/admin/${id}/purge`, { password })
+  },
+  // R-3710 删除预检 (普通业务岗 game.read 即可调)
+  removableCheck(id) {
+    return http.get(`/games/admin/${id}/removable-check`)
   }
 }

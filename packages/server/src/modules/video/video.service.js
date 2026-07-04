@@ -2,7 +2,9 @@
 
 const mongoose = require('mongoose')
 const Video = require('@models/Video.model')
+const ContentEngagement = require('@models/ContentEngagement.model')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 const { normalizePagination } = require('@utils/pagination')
 
 /**
@@ -141,6 +143,46 @@ async function softRemove({ id, orgId, userId }) {
   return { ok: true, id: String(doc._id) }
 }
 
+// =====================================================================
+// 物理删除 (2026-07-04 立项, 平台超管专属, 走 requirePlatformPassword)
+//  互锁: ContentEngagement.contentId 引用存在则挡
+// =====================================================================
+
+function videoUsageChecks(orgId, videoId) {
+  return [
+    {
+      model: ContentEngagement,
+      filter: { org: orgId, contentType: 'video', contentId: videoId },
+      label: '用户行为事件',
+      hint: '存在 C 端家长孩子的播放/观看时长记录, 请先评估影响或保留视频'
+    }
+  ]
+}
+
+async function remove(id, orgId) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
+  if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
+  const doc = await Video.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) throw ApiError.notFound('视频不存在')
+
+  await removable.assertUnused(orgId, videoUsageChecks(orgId, id))
+
+  await Video.deleteOne({ _id: id, org: orgId })
+  return { success: true, id }
+}
+
+async function removableCheck(id, orgId) {
+  if (!orgId) return { canRemove: false, blockers: [{ entity: 'Video', label: '视频', count: 0, hint: '请指定机构 (x-org-id)' }] }
+  if (!mongoose.isValidObjectId(id)) {
+    return { canRemove: false, blockers: [{ entity: 'Video', label: '视频', count: 0, hint: 'id 非法' }] }
+  }
+  const doc = await Video.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) {
+    return { canRemove: false, blockers: [{ entity: 'Video', label: '视频', count: 0, hint: '该视频不存在或不属于本机构' }] }
+  }
+  return removable.check(orgId, videoUsageChecks(orgId, id))
+}
+
 module.exports = {
   publicFeatured,
   publicList,
@@ -149,5 +191,7 @@ module.exports = {
   adminList,
   create,
   update,
-  softRemove
+  softRemove,
+  remove,
+  removableCheck
 }

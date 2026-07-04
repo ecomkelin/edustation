@@ -98,4 +98,29 @@ router.get(
   asyncHandler(c.adminRowStats)
 )
 
+// ────── 物理删除 (2026-07-04 立项, CLAUDE.md §8.1 三重防护) ──────
+// R-3608 POST /articles/admin/:id/purge — 平台超管物理删除 (requirePlatformPassword 中间件)
+//   互锁: ContentEngagement.contentId 引用存在则挡 (assertUnused 422)
+//   业务: 不 cascade 删 ContentEngagement, 挡板提示先评估影响
+router.post(
+  '/admin/:id/purge',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePlatformPassword,
+  v.idParam,
+  mws.validateRequest,
+  asyncHandler(c.purge)
+)
+
+// R-3609 GET /articles/admin/:id/removable-check — 预检 (普通业务岗 article.read 即可调)
+router.get(
+  '/admin/:id/removable-check',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePermission('article.read'),
+  v.idParam,
+  mws.validateRequest,
+  asyncHandler(c.removableCheck)
+)
+
 module.exports = router

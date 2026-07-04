@@ -2,7 +2,9 @@
 
 const mongoose = require('mongoose')
 const Article = require('@models/Article.model')
+const ContentEngagement = require('@models/ContentEngagement.model')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 const { normalizePagination } = require('@utils/pagination')
 const { compileMarkdownSafe } = require('@utils/markdown')
 // 2026-07-04 运营分析: detail 顺手记 engagement event
@@ -140,6 +142,48 @@ async function softRemove({ id, orgId, userId }) {
   return { ok: true, id: String(doc._id) }
 }
 
+// =====================================================================
+// 物理删除 (2026-07-04 立项, 平台超管专属 — 走 requirePlatformPassword 中间件)
+//  - 删除路线: findOne(存在 + org 隔离) → assertUnused(挡下游引用) → deleteOne
+//  - 不 cascade deleteContentEngagement, 走 CourseProduct 同款「先清理再删」挡板
+//  - 互锁检查声明 articleUsageChecks 函数被 remove + removableCheck 共用
+// =====================================================================
+
+function articleUsageChecks(orgId, articleId) {
+  return [
+    {
+      model: ContentEngagement,
+      filter: { org: orgId, contentType: 'article', contentId: articleId },
+      label: '用户行为事件',
+      hint: '存在 C 端家长孩子的访问/阅读记录, 请先评估影响或保留文章'
+    }
+  ]
+}
+
+async function remove(id, orgId) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
+  if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
+  const doc = await Article.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) throw ApiError.notFound('文章不存在')
+
+  await removable.assertUnused(orgId, articleUsageChecks(orgId, id))
+
+  await Article.deleteOne({ _id: id, org: orgId })
+  return { success: true, id }
+}
+
+async function removableCheck(id, orgId) {
+  if (!orgId) return { canRemove: false, blockers: [{ entity: 'Article', label: '文章', count: 0, hint: '请指定机构 (x-org-id)' }] }
+  if (!mongoose.isValidObjectId(id)) {
+    return { canRemove: false, blockers: [{ entity: 'Article', label: '文章', count: 0, hint: 'id 非法' }] }
+  }
+  const doc = await Article.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) {
+    return { canRemove: false, blockers: [{ entity: 'Article', label: '文章', count: 0, hint: '该文章不存在或不属于本机构' }] }
+  }
+  return removable.check(orgId, articleUsageChecks(orgId, id))
+}
+
 module.exports = {
   publicList,
   publicDetail,
@@ -147,5 +191,7 @@ module.exports = {
   adminList,
   create,
   update,
-  softRemove
+  softRemove,
+  remove,
+  removableCheck
 }

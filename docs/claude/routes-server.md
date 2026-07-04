@@ -671,6 +671,7 @@ Auth 列简写:
 | 2026-07-03 | 内容模块 MM=38 video 上线 (科普视频平台级; 8 端点; 与 Article/Game 一致评级; C 端 explore tab 视频 section 默认 1 个 (R-3800 featured) + 文章 4 个 (1 头条+3 列表) + 游戏 加载更多式分页; seed 6 段 mp4 demo) | R-3800 ~ R-3807 | add |
 | 2026-07-03 | 内容模块 MM=36/37/38 下放 per-org: service filter org=null → org=req.orgId (强制 x-org-id); 写操作 requirePlatformAdmin → requirePermission('xx.write'); admin 菜单移到「机构管理 → 科普内容」; C 端 explore.vue 无改动靠 x-org-id 自动隔离; seed Org.find 循环每个启用 Org 各一份 | R-3602~3605/R-3703~3706/R-3804~3807 + 所有公开 GET | modify |
 | 2026-07-04 | 科普内容运营分析 (ContentEngagement event log): 新建 content_engagements collection + adminStats/adminRowStats 6 端点 (article.read/video.read/game.read); video/game /play 接受 body.durationMs + 记录 activeStudentId+sessionMs (game /play 加 mws.requireOrg); article detail 自动记 1 条 event (sessionMs=0); 复用 reportCache 60s TTL + resolveRange time-range; admin UI 删「下架」按钮 (改用 editDialog isPublished switch) + 加 KpiCard 顶栏 + per-row stats 列; C 端 video-play / game-launch onPause/onEnded/onUnload report durationMs | R-3606/3607/R-3707/3708/R-3808/3809 | add |
+| 2026-07-04 | 科普内容超管物理删除 (CLAUDE.md §8.1 三重防护): 6 新端点 (3 module × {POST /:id/purge ADMIN_PWD + GET /:id/removable-check PERM}); service 增 `articleUsageChecks/gameUsageChecks/videoUsageChecks` 命名函数 + `remove(id, orgId)` + `removableCheck(id, orgId)`; 挡 ContentEngagement.contentId 引用 (assertUnused 422); admin UI 在「操作」列加 `<DestructiveConfirm>` 「误操删除」按钮 (v-if=isPlatformAdmin, 宽度 100→170); 普通员工只看到「编辑」 | R-3608/3609/R-3709/3710/R-3810/3811 | add |
 
 ### MM=36 article (URL: /articles)
 
@@ -684,6 +685,8 @@ Auth 列简写:
 | R-3605 | DELETE | /articles/admin/:id | ADMIN | article.write | 软下架 (isPublished=false) | filter 含 org 防跨越权; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮, editDialog.isPublished switch 替代** |
 | R-3606 | GET | /articles/admin/stats | ADMIN | article.read | 顶部 KPI 卡 (累计浏览 / 独立观众) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
 | R-3607 | GET | /articles/admin/row-stats | ADMIN | article.read | per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}> | 2026-07-04 运营分析; admin list 注入 _stats |
+| R-3608 | POST | /articles/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId; 走后端 `service.remove` 物理 `deleteOne` |
+| R-3609 | GET | /articles/admin/:id/removable-check | PERM | article.read | **删除预检** | 普通业务岗可调, DestructiveConfirm precheck 用; 返 `{canRemove, blockers}` |
 
 ### MM=37 game (URL: /games)
 
@@ -698,6 +701,8 @@ Auth 列简写:
 | R-3706 | DELETE | /games/admin/:id | ADMIN | game.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮** |
 | R-3707 | GET | /games/admin/stats | ADMIN | game.read | 顶部 KPI 卡 (累计启动 / 独立玩家 / 累计游玩时长) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
 | R-3708 | GET | /games/admin/row-stats | ADMIN | game.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |
+| R-3709 | POST | /games/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId |
+| R-3710 | GET | /games/admin/:id/removable-check | PERM | game.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |
 
 ### MM=38 video (URL: /videos)
 
@@ -716,3 +721,5 @@ Auth 列简写:
 | R-3807 | DELETE | /videos/admin/:id | ADMIN | video.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮** |
 | R-3808 | GET | /videos/admin/stats | ADMIN | video.read | 顶部 KPI 卡 (累计播放 / 独立观众 / 累计观看时长) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
 | R-3809 | GET | /videos/admin/row-stats | ADMIN | video.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |
+| R-3810 | POST | /videos/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId |
+| R-3811 | GET | /videos/admin/:id/removable-check | PERM | video.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |

@@ -32,5 +32,13 @@ export const articleApi = {
   // R-3607 per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}>
   adminRowStats(params = {}) {
     return http.get('/articles/admin/row-stats', { params })
+  },
+  // R-3608 平台超管物理删除 (requirePlatformPassword 中间件, body 必带 password)
+  purge(id, { password } = {}) {
+    return http.post(`/articles/admin/${id}/purge`, { password })
+  },
+  // R-3609 删除预检 (普通业务岗 article.read 即可调, 返 {canRemove, blockers})
+  removableCheck(id) {
+    return http.get(`/articles/admin/${id}/removable-check`)
   }
 }

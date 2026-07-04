@@ -94,9 +94,19 @@
           </template>
         </el-table-column>
         <!-- 操作 (2026-07-04 删除下架按钮, 只保留编辑) -->
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
+            <DestructiveConfirm
+              v-if="isPlatformAdmin"
+              :target="`小游戏 ${row.name}`"
+              warning="高风险"
+              :precheck-notes="['无 C 端用户行为事件 (启动/游玩记录) 引用']"
+              :precheck="() => gameApi.removableCheck(row._id).then((r) => r.data)"
+              @confirm="(p) => onRemoveConfirm(row, p)"
+            >
+              <el-button size="small" type="danger" link>误操删除</el-button>
+            </DestructiveConfirm>
           </template>
         </el-table-column>
       </el-table>
@@ -115,8 +125,14 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { gameApi } from '@/api/game'
 import KpiCard from '@/components/KpiCard.vue'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import { useAuthStore } from '@/stores/auth'
+import { handleRemoveError } from '@/utils/removable'
 import ContentGameEditDialog from './ContentGameEditDialog.vue'
 import { fmtNumber, fmtMsCompact } from '@/utils/format'
+
+const auth = useAuthStore()
+const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const items = ref([])
 const loading = ref(false)
@@ -192,6 +208,17 @@ function openEdit(row) {
 function onSaved() {
   dialogVisible.value = false
   loadAll()
+}
+
+// 2026-07-04: 超管专属物理删除 (走 DestructiveConfirm + 后端 requirePlatformPassword)
+async function onRemoveConfirm(row, { password }) {
+  try {
+    await gameApi.purge(row._id, { password })
+    ElMessage.success('已删除')
+    loadAll()
+  } catch (e) {
+    await handleRemoveError(e, '无法删除 · 高风险', `小游戏 ${row.name}`)
+  }
 }
 
 onMounted(loadAll)

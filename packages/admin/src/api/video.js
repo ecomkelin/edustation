@@ -32,5 +32,13 @@ export const videoApi = {
   // R-3809 per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}>
   adminRowStats(params = {}) {
     return http.get('/videos/admin/row-stats', { params })
+  },
+  // R-3810 平台超管物理删除 (requirePlatformPassword)
+  purge(id, { password } = {}) {
+    return http.post(`/videos/admin/${id}/purge`, { password })
+  },
+  // R-3811 删除预检 (普通业务岗 video.read 即可调)
+  removableCheck(id) {
+    return http.get(`/videos/admin/${id}/removable-check`)
   }
 }

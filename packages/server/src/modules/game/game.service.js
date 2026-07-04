@@ -2,7 +2,9 @@
 
 const mongoose = require('mongoose')
 const Game = require('@models/Game.model')
+const ContentEngagement = require('@models/ContentEngagement.model')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 const { normalizePagination } = require('@utils/pagination')
 
 /**
@@ -131,6 +133,46 @@ async function softRemove({ id, orgId, userId }) {
   return { ok: true, id: String(doc._id) }
 }
 
+// =====================================================================
+// 物理删除 (2026-07-04 立项, 平台超管专属, 走 requirePlatformPassword)
+//  互锁: ContentEngagement.contentId 引用存在则挡
+// =====================================================================
+
+function gameUsageChecks(orgId, gameId) {
+  return [
+    {
+      model: ContentEngagement,
+      filter: { org: orgId, contentType: 'game', contentId: gameId },
+      label: '用户行为事件',
+      hint: '存在 C 端家长孩子的启动/游玩记录, 请先评估影响或保留游戏'
+    }
+  ]
+}
+
+async function remove(id, orgId) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
+  if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
+  const doc = await Game.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) throw ApiError.notFound('游戏不存在')
+
+  await removable.assertUnused(orgId, gameUsageChecks(orgId, id))
+
+  await Game.deleteOne({ _id: id, org: orgId })
+  return { success: true, id }
+}
+
+async function removableCheck(id, orgId) {
+  if (!orgId) return { canRemove: false, blockers: [{ entity: 'Game', label: '游戏', count: 0, hint: '请指定机构 (x-org-id)' }] }
+  if (!mongoose.isValidObjectId(id)) {
+    return { canRemove: false, blockers: [{ entity: 'Game', label: '游戏', count: 0, hint: 'id 非法' }] }
+  }
+  const doc = await Game.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!doc) {
+    return { canRemove: false, blockers: [{ entity: 'Game', label: '游戏', count: 0, hint: '该游戏不存在或不属于本机构' }] }
+  }
+  return removable.check(orgId, gameUsageChecks(orgId, id))
+}
+
 module.exports = {
   publicList,
   publicDetail,
@@ -138,5 +180,7 @@ module.exports = {
   adminList,
   create,
   update,
-  softRemove
+  softRemove,
+  remove,
+  removableCheck
 }

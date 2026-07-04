@@ -94,6 +94,18 @@ exports.remove = async (req, res) => {
   res.json(ApiResponse.ok(r))
 }
 
+// 2026-07-04: 超管专属物理删除 (走 requirePlatformPassword 中间件 + assertUnused 互锁)
+exports.purge = async (req, res) => {
+  const r = await s.remove(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(r))
+}
+
+// 2026-07-04: 删除预检 (普通业务岗 game.read 即可调)
+exports.removableCheck = async (req, res) => {
+  const r = await s.removableCheck(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(r))
+}
+
 // ─── 2026-07-04 运营分析 (R-3707/3708) ─────────────────────
 
 exports.adminStats = async (req, res) => {
