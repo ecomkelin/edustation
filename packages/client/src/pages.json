@@ -295,6 +295,15 @@
       }
     },
     {
+      // 2026-07-04: 探索 Tab 文章全量列表 (R-3600 GET /articles?page/pageSize + 加载更多)
+      // 解决 explore.vue 文章段缺少「查看全部文章」CTA 问题
+      "path": "pages/content/article-list",
+      "style": {
+        "navigationBarTitleText": "科普文章",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
       // 2026-07-03: 探索 Tab 视频播放页 (R-3802 GET /videos/:id + R-3803 play + web-view)
       "path": "pages/content/video-play",
       "style": {

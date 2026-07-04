@@ -156,6 +156,11 @@
                 </view>
               </view>
             </view>
+
+            <!-- 「查看全部」CTA (2026-07-04; 与视频段对称) -->
+            <view class="explore__more press" @tap="goArticleList">
+              <text>查看全部文章 ›</text>
+            </view>
           </view>
         </view>
 
@@ -404,6 +409,12 @@ export default {
       if (!id) return
       haptic.tap()
       uni.navigateTo({ url: `/pages/content/article-detail?id=${id}` })
+    },
+
+    // 2026-07-04: 文章全量列表入口 (与视频段对称)
+    goArticleList() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/content/article-list' })
     },
 
     goVideo(id) {
