@@ -234,10 +234,10 @@
       </view>
 
       <!-- 学习画像 (2026-07-04: 从原 me.vue 移来; 数据源 studentApi.profile - 真实端点字段 personality/learningGoal/weakness 等) -->
+      <!-- 2026-07-04: 删「查看完整 ›」CTA — 整张 profile 卡片已可点 (@tap="goProfile"), 文字入口重复 -->
       <view class="home__section">
         <view class="section-title">
           <text>📊 学习画像</text>
-          <text class="section-title__more section-title__more--cta" @tap="goProfile">查看完整 ›</text>
         </view>
 
         <view class="home__profile press" @tap="goProfile">
@@ -262,8 +262,7 @@
       <view class="home__section">
         <view class="section-title">
           <text>🎨 作品墙</text>
-          <!-- 个人成长记录: 后台未开发, 点 toast 敬请期待 -->
-          <text class="section-title__more" @tap="goGrowthRecord">个人成长记录 ›</text>
+          <!-- 2026-07-04: 删「个人成长记录 ›」CTA — 后端未开发, 点也是 toast 敬请期待, 摆着误导 -->
         </view>
 
         <view v-if="worksLoading" class="home__loading">
@@ -710,11 +709,7 @@ export default {
       uni.navigateTo({ url: '/pages/work/list' })
     },
 
-    // 2026-07-03: 个人成长记录入口 — 后台未开发, toast 敬请期待
-    goGrowthRecord() {
-      haptic.tap()
-      uni.showToast({ title: '个人成长记录 · 敬请期待', icon: 'none' })
-    },
+    // 2026-07-04: 删 goGrowthRecord 方法 — 顶栏 CTA 已下线, 死代码
 
     async loadPet() {
       this.petLoading = true

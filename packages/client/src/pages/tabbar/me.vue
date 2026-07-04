@@ -25,22 +25,68 @@
           <text>编辑</text>
         </view>
       </view>
-
-      <!-- 切换孩子 -->
-      <view class="me__student">
-        <active-student-header />
-      </view>
+      <!-- 2026-07-04: 顶部 "当前孩子" chip 与下方 kids 卡重复, 删; 切孩子直接在下方 kids 卡内 pill 操作 -->
     </view>
 
     <scroll-view scroll-y class="me__body">
       <!-- 2026-07-04 fix: scroll-view 在 H5 下 padding 不传给子节点, 用 wrapper 承载 (同 home.vue me__body-inner 模式) -->
       <view class="me__body-inner">
 
-      <!-- 学习数据 (2026-07-04: 删「我的课程」入口; 只剩订单数, 改单列居中) -->
-      <view class="me__stats me__stats--single">
-        <view class="me__stat press" @tap="goPage('/pages/order/list')">
-          <text class="me__stat-val">{{ stats.orderCount }}</text>
-          <text class="me__stat-lbl">订单数</text>
+      <!-- 我的孩子 (2026-07-04: stats 区改成纵向 kid list, 多孩自动 list 下去, 不再有 + 管理卡) -->
+      <view class="me__stats me__stats--kids">
+        <view class="me__stats-label-row">
+          <text class="me__stats-label">我的孩子</text>
+          <text class="me__stats-meta">{{ students.length }} 位</text>
+        </view>
+
+        <view
+          v-for="(kid, idx) in students"
+          :key="kid.id"
+          class="me__kid-row press"
+          :class="{ 'me__kid-row--active': String(kid.id) === String(activeStudentId) }"
+          @tap="onPickKid(kid)"
+        >
+          <view class="me__kid-row-avatar">
+            <image v-if="kid.avatar" :src="kid.avatar" class="me__kid-row-img" mode="aspectFill" />
+            <text v-else>{{ kidEmoji(kid) }}</text>
+          </view>
+          <view class="me__kid-row-main">
+            <view class="me__kid-row-name-row">
+              <text class="me__kid-row-name">{{ kid.name }}</text>
+              <text v-if="String(kid.id) === String(activeStudentId)" class="me__kid-row-tag">
+                当前
+              </text>
+            </view>
+            <!-- 2026-07-04: 性别/年级/school 等 meta 删; school 是 ObjectId ref 没 populate 会暴露哈希串 -->
+          </view>
+          <text class="me__kid-row-arrow">›</text>
+        </view>
+
+        <view v-if="!students.length" class="me__stats-empty">
+          <text>暂无孩子信息</text>
+        </view>
+
+        <!-- 2026-07-04: kids 卡内底部 3 stat (剩余课时 / 积分 / 近7天课程) — 跟首页顶部同款数据, 跳转对应详情页 -->
+        <view class="me__kid-stats">
+          <view class="me__kid-stat press" @tap="goStudentProducts">
+            <text class="me__kid-stat-val">{{ stats.lessonsLeft || 0 }}</text>
+            <text class="me__kid-stat-unit">节</text>
+            <text class="me__kid-stat-lbl">剩余课时</text>
+          </view>
+          <view class="me__kid-stat-divider" />
+          <view class="me__kid-stat press" @tap="goPoints">
+            <text class="me__kid-stat-val">{{ stats.points || 0 }}</text>
+            <text class="me__kid-stat-unit">分</text>
+            <text class="me__kid-stat-lbl">剩余积分</text>
+          </view>
+          <view class="me__kid-stat-divider" />
+          <view class="me__kid-stat press" @tap="goUpcoming">
+            <text class="me__kid-stat-val">
+              {{ upcoming.lessonCount }}
+            </text>
+            <text class="me__kid-stat-unit">节</text>
+            <text class="me__kid-stat-lbl">近 7 天</text>
+          </view>
         </view>
       </view>
 
@@ -95,37 +141,45 @@
 import { mapState } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { useStudentStore } from '@/stores/student'
-import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
 import OrgFooter from '@/components/layout/OrgFooter.vue'
-import { orderApi } from '@/api/order'
 import { maskPhone } from '@/utils/format'
 import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
+// 2026-07-04: kids 卡内 3 stat (剩余课时 / 积分 / 近 7 天课程) — 与首页 stats 同套 API
+import { lessonScheduleApi } from '@/api/lessonSchedule'
+import { pointsApi } from '@/api/points'
+import { studentProductApi } from '@/api/studentProduct'
 
 export default {
-  components: { ActiveStudentHeader, OrgFooter },
+  components: { OrgFooter },
   data() {
     return {
-      stats: { orderCount: 0 },
       // 2026-07-04: 「设置与服务」折叠开关, 默认 false (用户需点击才展开)
-      settingsExpanded: false
+      settingsExpanded: false,
+      // 2026-07-04: kids 卡内 3 stat (剩余课时 / 积分 / 近 7 天课程)
+      stats: { lessonsLeft: 0, points: 0 },
+      // upcoming: label '有' / '无', lessonCount 数字
+      upcoming: { lessonCount: 0, label: '无' }
     }
   },
   computed: {
     ...mapState(useAuthStore, ['user']),
-    ...mapState(useStudentStore, ['activeStudentId']),
+    ...mapState(useStudentStore, ['activeStudentId', 'list']),
     auth() {
       return useAuthStore()
     },
     student() {
       return useStudentStore()
     },
+    // 2026-07-04: 顶部 kids 横排; 没拉列表时退到空数组 (App.vue 已自动 fetch)
+    students() {
+      return Array.isArray(this.list) ? this.list : []
+    },
     menus() {
-      // (2026-07-02 4 tab 重构) 智能助手 → tab2 chat.vue; 机构主页 → tab3 org.vue
-      // (2026-07-04: 删「联系我们」入口 — 联系方式走机构主页 R-0932, 已在 /pages/org/home 顶部 + 底部 section)
-      // (2026-07-04: 删「接送授权」「进出记录」「协议条款」— 收到"设置与服务"折叠区, 顶层 menu 只保留高频入口)
+      // (2026-07-04: 「分享得积分」加回 (低频但用户希望保留); 「我的订单」来自原 stats 升级;
+      //              共 3 项改成 3 列等分)
       return [
-        { label: '我的孩子', icon: '👨‍👩‍👧', bg: '#FFE4D3', url: '/pages/student/switch' },
+        { label: '我的订单', icon: '📋', bg: '#E5F0FA', url: '/pages/order/list' },
         { label: '分享得积分', icon: '💌', bg: '#FFF1D0', url: '/pages/share/share' },
         { label: '常见问题', icon: '❓', bg: '#C8F0DF', url: '/pages/help/faq' }
       ]
@@ -144,17 +198,97 @@ export default {
     }
   },
   onShow() {
+    // 2026-07-04: 「我的孩子」列表 App.vue 已自动 fetch;
+    // 3 stat (剩余课时 / 积分 / 近7天课程) 每次进入页面重新拉
     this.loadStats()
+    this.loadUpcoming()
   },
   methods: {
+    // 2026-07-04: kids 卡内 3 stat — 剩余课时 + 积分 (并行, 复用首页 stats 同款 API)
     async loadStats() {
-      // 2026-07-03: 剩余课时 + 积分 移到首页顶部 (孩子维度); 这里只保留订单数
-      try {
-        const res = await orderApi.me({ pageSize: 1 })
-        this.stats.orderCount = res?.total || res?.totalCount || 0
-      } catch (e) {
-        console.warn('[me.loadStats] orderApi.me', e)
+      const tasks = []
+      if (this.activeStudentId) {
+        tasks.push(
+          pointsApi.me()
+            .then((r) => (this.stats.points = r?.balance || 0))
+            .catch(() => {})
+        )
       }
+      tasks.push(
+        studentProductApi
+          .me({ isActive: true })
+          .then((res) => {
+            const items = Array.isArray(res) ? res : res?.items || res?.data || []
+            this.stats.lessonsLeft = items.reduce((s, p) => s + (p.remainingLessons || 0), 0)
+          })
+          .catch(() => {})
+      )
+      await Promise.all(tasks)
+    },
+
+    // 近 7 天课程 (lessonScheduleApi.myCalendar today → today+6)
+    async loadUpcoming() {
+      try {
+        const now = new Date()
+        const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+        const to = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
+        const res = await lessonScheduleApi.myCalendar({ from, to, isTrialLesson: false })
+        let list = []
+        if (Array.isArray(res)) list = res
+        else if (res && Array.isArray(res.items)) list = res.items
+        else if (res && Array.isArray(res.data)) list = res.data
+        // 过滤 "已结束" 的; 简单按 plannedEndTime > now 算 (若服务端返了)
+        const upcomingList = list.filter((l) => {
+          if (!l.plannedStartTime) return true
+          return new Date(l.plannedStartTime).getTime() >= now.getTime()
+        })
+        this.upcoming = {
+          lessonCount: upcomingList.length,
+          label: upcomingList.length > 0 ? '有' : '无'
+        }
+      } catch (e) {
+        console.warn('[me.loadUpcoming]', e)
+        this.upcoming = { lessonCount: 0, label: '无' }
+      }
+    },
+
+    // 三个 stat 跳转
+    goStudentProducts() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/studentProduct/list' })
+    },
+    goPoints() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/points/wallet' })
+    },
+    goUpcoming() {
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/schedule/calendar' })
+    },
+
+    // 2026-07-04: 切到指定孩子 (重设 activeStudentId, store 持久化 + 全局响应)
+    onPickKid(kid) {
+      if (!kid || !kid.id) return
+      haptic.tap()
+      if (String(kid.id) === String(this.activeStudentId)) {
+        // 已是当前孩子, 不重复切
+        return
+      }
+      this.student.setActive(kid.id)
+      uni.showToast({ title: `已切换到 ${kid.name}`, icon: 'none' })
+    },
+
+    // 头像 fallback emoji (name 哈希稳定选 avatar 池 — 跟 ActiveStudentHeader 一致)
+    kidEmoji(kid) {
+      const pool = ['🐰', '🐯', '🐻', '🦊', '🐼', '🐨', '🐸', '🐵', '🐱', '🐶']
+      const name = (kid && kid.name) || ''
+      let h = 0
+      for (let i = 0; i < name.length; i++) {
+        h = (h << 5) - h + name.charCodeAt(i)
+        h |= 0
+      }
+      return pool[Math.abs(h) % pool.length]
     },
 
     onMenuTap(item) {
@@ -297,11 +431,6 @@ export default {
     }
   }
 
-  &__student {
-    padding: 0 $spacing-md $spacing-md;
-    position: relative;
-  }
-
   &__body {
     // 2026-07-04: padding 移到 wrapper 内层 (H5 scroll-view padding 不传给子节点, 同 home.vue)
     height: calc(100vh - 360rpx);
@@ -311,18 +440,142 @@ export default {
   }
 
   &__stats {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: $spacing-sm;
     background: $bg-card;
     border-radius: $radius-md;
-    padding: $spacing-md $spacing-sm;
+    padding: $spacing-md;
     box-shadow: $shadow-card;
     margin-bottom: $spacing-md;
   }
-  // 2026-07-04: 「我的课程」删除后只剩订单数, 改单列居中
-  &__stats--single {
-    grid-template-columns: 1fr;
+  &__stats-label-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: $spacing-sm;
+  }
+  &__stats-label {
+    font-size: $font-md;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+  }
+  &__stats-meta {
+    font-size: $font-xs;
+    color: $text-tertiary;
+  }
+
+  // kids 纵向 list (2026-07-04 v2: 删 pill scroller + 管理卡, 多孩自动 list 下去)
+  &__kid-row {
+    display: flex;
+    align-items: center;
+    gap: $spacing-md;
+    padding: $spacing-sm $spacing-xs;
+    border-top: 1rpx solid $divider-light;
+    transition: background $transition-fast;
+    &:first-child {
+      border-top: none;
+    }
+    &:active {
+      background: $divider-light;
+    }
+    &--active {
+      background: $primary-lighter;
+    }
+  }
+  &__kid-row-avatar {
+    flex-shrink: 0;
+    width: 80rpx;
+    height: 80rpx;
+    border-radius: 50%;
+    background: linear-gradient(135deg, $primary-light, $primary);
+    @include flex-center;
+    font-size: 40rpx;
+    color: #fff;
+    box-shadow: 0 4rpx 12rpx rgba(255, 138, 101, 0.18);
+    overflow: hidden;
+  }
+  &__kid-row-img {
+    width: 100%;
+    height: 100%;
+  }
+  &__kid-row-main {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+  &__kid-row-name-row {
+    display: flex;
+    align-items: baseline;
+    gap: $spacing-xs;
+    margin-bottom: 4rpx;
+  }
+  &__kid-row-name {
+    font-size: $font-base;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    line-height: 1.3;
+    @include multi-ellipsis(1);
+  }
+  &__kid-row-tag {
+    flex-shrink: 0;
+    padding: 0 10rpx;
+    font-size: 20rpx;
+    line-height: 1.5;
+    border-radius: $radius-pill;
+    background: $primary;
+    color: #fff;
+  }
+  &__kid-row-arrow {
+    flex-shrink: 0;
+    font-size: 40rpx;
+    color: $text-tertiary;
+    line-height: 1;
+  }
+  &__stats-empty {
+    padding: $spacing-md;
+    text-align: center;
+    color: $text-tertiary;
+    font-size: $font-sm;
+  }
+
+  // 2026-07-04: kids 卡内底部 3 stat 横排
+  &__kid-stats {
+    display: flex;
+    align-items: center;
+    margin-top: $spacing-md;
+    padding-top: $spacing-md;
+    border-top: 1rpx solid $divider-light;
+  }
+  &__kid-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rpx;
+    transition: all $transition-fast;
+    &:active {
+      transform: scale(0.96);
+    }
+  }
+  &__kid-stat-divider {
+    width: 1rpx;
+    height: 64rpx;
+    background: $divider-light;
+  }
+  &__kid-stat-val {
+    font-size: $font-3xl;
+    font-weight: $font-weight-bold;
+    color: $primary;
+    line-height: 1.05;
+  }
+  &__kid-stat-unit {
+    font-size: $font-xs;
+    color: $text-tertiary;
+    line-height: 1;
+  }
+  &__kid-stat-lbl {
+    margin-top: 6rpx;
+    font-size: $font-xs;
+    color: $text-secondary;
+    line-height: 1.2;
   }
 
   &__stat {
@@ -350,7 +603,8 @@ export default {
 
   &__grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    // 2026-07-04: menu 3 项 (我的订单 / 分享得积分 / 常见问题), 改 3 列等分
+    grid-template-columns: repeat(3, 1fr);
     gap: $spacing-sm;
     margin-bottom: $spacing-md;
   }
