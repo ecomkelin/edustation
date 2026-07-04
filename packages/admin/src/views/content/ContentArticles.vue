@@ -47,16 +47,21 @@
       </div>
 
       <el-table v-loading="loading" :data="items" stripe>
-        <el-table-column prop="title" label="标题" min-width="200" />
+        <el-table-column label="emoji封面" width="80" fixed="left">
+          <template #default="{ row }">
+            <text style="font-size: 24px;">{{ row.meta?.coverEmoji || '📖' }}</text>
+          </template>
+        </el-table-column>
+        <!-- 2026-07-04: emoji + 标题 一起固定在左边; 未发布(草稿) 标题灰色 -->
+        <el-table-column label="标题" min-width="200" fixed="left">
+          <template #default="{ row }">
+            <span :class="{ 'name-draft': !row.isPublished }">{{ row.title }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="category" label="分类" width="100">
           <template #default="{ row }">
             <el-tag v-if="row.category" size="small">{{ row.category }}</el-tag>
             <span v-else class="muted">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="emoji封面" width="100">
-          <template #default="{ row }">
-            <text style="font-size: 24px;">{{ row.meta?.coverEmoji || '—' }}</text>
           </template>
         </el-table-column>
         <el-table-column label="浏览" width="100" align="center">
@@ -228,6 +233,7 @@ onMounted(loadAll)
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .kpi-row { margin-bottom: 12px; }
 .kpi-zero { color: #c0c4cc; }
+.name-draft { color: #c0c4cc; }   // 草稿/下架 标题灰色
 .empty { padding: 60px; text-align: center; color: #999; }
 .muted { color: #bbb; font-size: 12px; }
 </style>

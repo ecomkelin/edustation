@@ -43,12 +43,17 @@
       </div>
 
       <el-table v-loading="loading" :data="items" stripe>
-        <el-table-column label="emoji" width="80">
+        <el-table-column label="emoji" width="64" fixed="left">
           <template #default="{ row }">
             <text style="font-size: 22px;">{{ row.meta?.coverEmoji || '🎮' }}</text>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="140" />
+        <!-- 2026-07-04: emoji + 名称 一起固定在左边; 未发布(草稿) 名称灰色 -->
+        <el-table-column label="名称" min-width="160" fixed="left">
+          <template #default="{ row }">
+            <span :class="{ 'name-draft': !row.isPublished }">{{ row.name }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="intro" label="简介" min-width="220" show-overflow-tooltip />
         <el-table-column label="难度" width="100">
           <template #default="{ row }">
@@ -230,6 +235,7 @@ onMounted(loadAll)
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .kpi-row { margin-bottom: 12px; }
 .kpi-zero { color: #c0c4cc; }
+.name-draft { color: #c0c4cc; }   // 草稿/下架 名称灰色
 .empty { padding: 60px; text-align: center; color: #999; }
 .muted { color: #bbb; font-size: 12px; }
 </style>
