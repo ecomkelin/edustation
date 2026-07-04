@@ -183,6 +183,13 @@
       }
     },
     {
+      "path": "pages/pet/detail",
+      "style": {
+        "navigationBarTitleText": "我的宠物",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/pet/feed",
       "style": {
         "navigationBarTitleText": "喂食"

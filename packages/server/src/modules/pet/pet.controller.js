@@ -36,6 +36,12 @@ exports.species = async (req, res) => {
   res.json(ApiResponse.ok(await petCatalog.listSpecies(req.query || {})))
 }
 
+// 2026-07-03 加: GET /pet/consumables (C 端食物图鉴, 复用 petCatalog)
+// 不分 enrolled, 让未领养也能看商店浏览 (实际购买用 /pet/feed 端点要求 enrolled)
+exports.consumables = async (req, res) => {
+  res.json(ApiResponse.ok(await petCatalog.listConsumables(req.query || {})))
+}
+
 // GET /api/v1/pet/items — 装饰图鉴 + 解锁/装备状态
 exports.items = async (req, res) => {
   const studentId = studentIdOf(req)

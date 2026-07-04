@@ -780,7 +780,11 @@ async function getMine({ orgId, studentId }) {
   if (!studentId) throw ApiError.badRequest('缺少 studentId')
 
   const pet = await ensurePetAccount(orgId, studentId)
-  return await decoratePet(pet)
+  // 2026-07-03 修: 包成 {pet} 结构, 与 admin /admin/pet/accounts-by-student 的 {pet: ...} 形态一致;
+  // 前端 detail.vue 取 r.pet (response 解包后), 不会因为 pet 字段空字符串而被判成 null。
+  // 老 data 影响: 直接旧值 `await petApi.me()` 还是拿到裸 pet 对象, 但 detail.vue 用 r?.pet 取值
+  //   会拿到 {species, state, ...} (这些是字段名, 不是 'pet' 字段) - 错位.
+  return { pet: await decoratePet(pet) }
 }
 
 /**

@@ -28,6 +28,12 @@ const petCatalog = require('@modules/pet/petCatalog.service')
 const ApiError = require('@utils/ApiError')
 const { PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS } = require('@shared/enums')
 
+// tier 转数字比较 (C < B < A < S, 数字越大越高级)
+const TIER_ORDER = { C: 1, B: 2, A: 3, S: 4 }
+function tierOrder(t) {
+  return TIER_ORDER[String(t || '').toUpperCase()] || 0
+}
+
 /**
  * 列出图鉴 + 当前 PetAccount 的解锁 / 装备状态。
  *
@@ -57,10 +63,21 @@ async function listCatalog({ orgId, studentId }) {
         description: it.description,
         image: it.image || (it.imageFile && it.imageFile.url) || null,
         imageFile: it.imageFile || null,
+        // 2026-07-03 加: visualType + svgContent (之前漏传给 C 端, chip 渲染 SVG 失败走 emoji fallback)
+        visualType: it.visualType || 'image',
+        svgContent: it.svgContent || '',
         unlockTier: it.unlockTier,
         unlockLevel: it.unlockLevel,
         compatibleSpecies: it.compatibleSpecies || [],
-        unlocked: (unlocked[slot] || []).includes(it.key),
+        // 解锁规则 (前端 chip 可显示), 任一条件满足就视为可见:
+        //   a) pet.unlocked[slot] 手动解锁过
+        //   b) item.unlockType === 'tier' 且 unlockTier 满足 pet 当前阶
+        //   c) item.unlockType === 'level' 且 unlockLevel 满足 pet 当前等级
+        unlocked:
+          (unlocked[slot] || []).includes(it.key) ||
+          (it.unlockType === 'tier' && pet.tier && it.unlockTier && tierOrder(it.unlockTier) <= tierOrder(pet.tier)) ||
+          (it.unlockType === 'level' && pet.level && it.unlockLevel != null && pet.level >= it.unlockLevel) ||
+          (!it.unlockType),
         equipped: equipped[slot] === it.key
       }))
     }

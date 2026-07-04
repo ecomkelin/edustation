@@ -27,6 +27,8 @@ router.get('/me', asyncHandler(c.me))
 router.get('/species', asyncHandler(c.species))
 // R-2207 GET /pet/items
 router.get('/items', asyncHandler(c.items))
+// 2026-07-03 加: GET /pet/consumables — 食物图鉴 (C 端与 shop 复用)
+router.get('/consumables', asyncHandler(c.consumables))
 // R-2200 GET /pet/events
 router.get('/events', asyncHandler(c.events))
 

@@ -23,6 +23,11 @@ export const petApi = {
     return http.get('/pet/items', { data: params })
   },
 
+  // 2026-07-03 加: 食物图鉴 (C 端调, 复用 admin petCatalog)
+  consumables(params = {}) {
+    return http.get('/pet/consumables', { data: params })
+  },
+
   adopt(data = {}) {
     return http.post('/pet/adopt', data)
   },

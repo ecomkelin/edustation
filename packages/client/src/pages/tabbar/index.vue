@@ -46,11 +46,10 @@
         </view>
       </view>
 
-      <!-- 宠物概略 (2026-07-02 加回首页) -->
+      <!-- 宠物概略 (2026-07-02 加回首页; 2026-07-03 删去照顾 冗余 CTA — 点卡片本身进入详情) -->
       <view class="home__section">
         <view class="section-title">
           <text>🐾 我的宠物</text>
-          <text v-if="pet" class="section-title__more" @tap="goPetDetail">去照顾 ›</text>
         </view>
 
         <!-- 加载中 -->
@@ -94,15 +93,34 @@
         <!-- 已破壳: 主卡 (头像 + 名字 + 阶位 + 双进度条) -->
         <view v-else class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
-            <!-- 2026-07-02: species.visualType='svg' 时直接渲染 svgContent (跟 admin PetClassroomDisplay 对齐),
-                 否则走 emoji fallback -->
-            <image
-              v-if="petSvgSrc"
-              class="home__pet-portrait-svg"
-              :src="petSvgSrc"
-              mode="aspectFit"
-            />
+            <!-- 2026-07-04 重做: 跟 admin PetClassroomDisplay 严格对齐
+                 - 背景层独立铺满 portrait 区, 走 svg-wrap + v-html
+                 - species + 装备叠加层 走 svg-wrap + v-html + :deep(svg) CSS -->
+
+            <!-- 背景层 -->
+            <view
+              v-if="petEquipLayer.background && petEquipLayer.background.svgContent"
+              class="home__pet-bg"
+            >
+              <view class="home__svg-wrap" v-html="petEquipLayer.background.svgContent" />
+            </view>
+
+            <!-- species 主图: svg-wrap + v-html 走 :deep(svg) -->
+            <view v-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
             <text v-else class="home__pet-portrait-emoji">{{ petEmoji }}</text>
+
+            <!-- 装备叠加层 (hat/scarf/clothes/accessory/halo) -->
+            <view class="home__pet-equips">
+              <view
+                v-for="slot in ['hat','scarf','clothes','accessory','halo']"
+                :key="slot"
+                class="home__pet-equip-layer"
+                :class="`home__pet-equip-layer--${slot}`"
+              >
+                <view v-if="petEquipLayer[slot] && petEquipLayer[slot].svgContent" class="home__svg-wrap" v-html="petEquipLayer[slot].svgContent" />
+              </view>
+            </view>
+
             <view class="home__pet-tier-badge" :style="{ background: petTierColor }">
               <text>{{ petTier }}</text>
             </view>
@@ -292,6 +310,8 @@ import { toast } from '@/components/common/Toast'
 
 const TIER_EMOJI = { C: '🥚', B: '🐣', A: '🦊', S: '🐉' }
 const TIER_COLOR = { C: '#9CA3AF', B: '#7CD9B7', A: '#5B9EE6', S: '#F5C148' }
+// 2026-07-03: 装备 slot 常量 (与 detail.vue / admin 对齐)
+const PET_ITEM_SLOTS = ['background', 'hat', 'scarf', 'clothes', 'accessory', 'halo']
 
 export default {
   components: { ActiveStudentHeader, EmptyState, PendingConsents },
@@ -307,6 +327,8 @@ export default {
       pet: null,
       petSpecies: null,
       petBlockReason: '',
+      // 2026-07-03 加: 装备 catalog 缓存 (用 petApi.items 拉一次), 给首页宠物卡显示"已装备 N 件"
+      petEquipMap: {},
       // 我的课程 (2026-07-03 简化, 只剩当前孩子报名的课程; 2026-07-02 替换原"今日课程" section)
       enrollments: [],
       enrollmentsLoading: false,
@@ -432,6 +454,24 @@ export default {
       if (!this.pet) return ''
       if (this.pet.state === 'egg') return '🥚 待破壳'
       return `Lv.${this.pet.level || 1} · ${this.petTier} 阶`
+    },
+    // 2026-07-04 重做: 直接透传 svgContent, 模板走 svg-wrap + v-html (跟 admin 同源)
+    petEquipLayer() {
+      const out = { background: null, hat: null, scarf: null, clothes: null, accessory: null, halo: null }
+      if (!this.pet) return out
+      const equipped = this.pet.equipped || {}
+      for (const slot of PET_ITEM_SLOTS) {
+        const key = equipped[slot]
+        if (!key) continue
+        const meta = this.petEquipMap[key]
+        if (!meta) continue
+        out[slot] = {
+          key,
+          svgContent: meta.svgContent || '',
+          url: (meta.imageFile && meta.imageFile.url) || ''
+        }
+      }
+      return out
     }
   },
   watch: {
@@ -618,18 +658,28 @@ export default {
       this.petBlockReason = ''
       try {
         const res = await petApi.me()
-        this.pet = res || null
-        if (this.pet && this.pet.species) {
+        // 2026-07-03 修: 后端 getMine 返回 {pet: ...}, request.js 解包后 r = {pet};
+        // 之前 `res || null` 把 {pet: ...} 整个当成 pet, 导致 this.pet.state/species 拿到 undefined.
+        // 现在显式取 r.pet (与 detail.vue 同步)
+        this.pet = (res && (res.pet || res.data?.pet)) || null
+        // 2026-07-04 修: 之前二次 fetch /pet/species?tier=xxx 用 tier 过滤,会把 species 锁定在另一阶
+        //   (如 pet.tier=B 但 species='rabbit_white' 是 C 阶) 就匹配不到, 渲染退到 emoji 兜底
+        //   → admin 显示真正的 SVG, client 显示 🐣 完全不一致
+        // fix: 直接吃 /pet/me 已 populate 的 speciesRecord (pet.service.decoratePet 注入)
+        this.petSpecies = (this.pet && this.pet.speciesRecord) || null
+        // 兜底: 万一后端没 populate (旧版本兼容), 再去查一次全集不限 tier
+        if (this.pet && this.pet.species && !this.petSpecies) {
           try {
-            const list = await petApi.species({ tier: this.pet.tier, isActive: true })
+            const list = await petApi.species({ isActive: true })
             const items = Array.isArray(list) ? list : list.items || list.data || []
             this.petSpecies = items.find((s) => s.key === this.pet.species) || null
           } catch (_) {
             this.petSpecies = null
           }
-        } else {
-          this.petSpecies = null
         }
+        // 2026-07-03: 拉一次 catalog (itemMap) 给首页装备叠加层渲染用;
+        // 与 detail.vue loadCatalog 一致, 只缓存用过的 visual 数据, 不全展开
+        await this.loadEquipCatalog()
       } catch (e) {
         if (e && (e.code === 'notEnrolled' || e.statusCode === 422)) {
           this.petBlockReason = 'notEnrolled'
@@ -638,6 +688,42 @@ export default {
         this.petSpecies = null
       } finally {
         this.petLoading = false
+      }
+    },
+
+    // 2026-07-03: 首页装备 catalog — 只为已装备的 6 slot 各查一次, 不拉全量
+    // 与 detail.vue loadCatalog 区别: 首页不需要 chip 列表, 只需要已装备的 url/svgContent
+    async loadEquipCatalog() {
+      if (!this.pet) {
+        this.petEquipMap = {}
+        return
+      }
+      const equipped = this.pet.equipped || {}
+      const needed = PET_ITEM_SLOTS.map((s) => equipped[s]).filter(Boolean)
+      if (needed.length === 0) {
+        this.petEquipMap = {}
+        return
+      }
+      try {
+        const ir = await petApi.items({ pageSize: 100 })
+        const bySlot = ir?.items || {}
+        const map = {}
+        for (const slotKey of Object.keys(bySlot)) {
+          const group = bySlot[slotKey]
+          const list = Array.isArray(group?.items) ? group.items : []
+          for (const it of list) {
+            if (needed.indexOf(it.key) < 0) continue
+            map[it.key] = {
+              name: it.name,
+              slot: it.slot || slotKey,
+              svgContent: it.svgContent || '',
+              imageFile: it.imageFile || null
+            }
+          }
+        }
+        this.petEquipMap = map
+      } catch (e) {
+        this.petEquipMap = {}
       }
     },
 
@@ -654,6 +740,18 @@ export default {
       if (typeof btoa === 'function') return btoa(unescape(encodeURIComponent(str)))
       // 简易 fallback: 用 encodeURIComponent 替代 (image 组件多数实现能识别 URL-encoded data URI)
       return encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode('0x' + p1))
+    },
+    // 2026-07-04: SVG → base64 data URI, <image> 渲染更稳定 (v-html H5 偶尔丢 SVG)
+    _svgDataUri(svg) {
+      if (!svg) return ''
+      try {
+        if (typeof btoa === 'function') {
+          return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)))
+        }
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg)
+      } catch (e) {
+        return ''
+      }
     },
     countdownText: (d) => date.countdownLabel(d),
 
@@ -719,9 +817,9 @@ export default {
       haptic.success()
     },
 
-    // 宠物概略导航 (2026-07-02 加, 2026-07-02 同日精简: 只展示, 点击进详情页)
+    // 宠物概略导航 (2026-07-02 加, 2026-07-03 改成新版 /pages/pet/detail 详情页)
     goPetDetail() {
-      uni.navigateTo({ url: '/pages/pet/feed' })
+      uni.navigateTo({ url: '/pages/pet/detail' })
     },
     goPetAdopt() {
       uni.navigateTo({ url: '/pages/pet/adopt' })
@@ -1256,8 +1354,8 @@ export default {
   }
 
   &__pet-portrait {
-    width: 120rpx;
-    height: 120rpx;
+    width: 200rpx;
+    height: 200rpx;
     background: $bg-card;
     border-radius: 24rpx;
     display: flex;
@@ -1266,14 +1364,45 @@ export default {
     margin-right: $spacing-md;
     position: relative;
     flex-shrink: 0;
+    overflow: hidden;
   }
   &__pet-portrait-emoji {
-    font-size: 72rpx;
+    font-size: 120rpx;
   }
   &__pet-portrait-svg {
-    width: 100rpx;
-    height: 100rpx;
+    position: relative;
+    z-index: 1;
   }
+  // 2026-07-04 重做: svg-wrap 容器 + :deep(svg) (跟 admin PetEquipmentOverlay .svg-wrap 同款)
+  &__svg-wrap { width: 100%; height: 100%; display: block; }
+  &__svg-wrap :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; }
+  // 2026-07-04: 装备背景层 (跟 admin PetClassroomDisplay.pet-display-bg 同款:
+  // 绝对定位铺满 portrait, 显示蓝天草地这类背景, 不挡交互)
+  &__pet-bg {
+    position: absolute;
+    inset: 0;
+    display: block;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  // 2026-07-04: 装备叠加层容器 (跟 admin PetEquipmentOverlay 同款坐标)
+  &__pet-equips {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  &__pet-equip-layer {
+    position: absolute;
+    @include flex-center;
+    pointer-events: none;
+  }
+  &__pet-equip-layer--hat       { top: -2%;  left: 50%; transform: translateX(-50%); width: 50%; height: 32%; z-index: 3; }
+  &__pet-equip-layer--scarf     { top: 38%;  left: 50%; transform: translateX(-50%); width: 55%; height: 16%; z-index: 4; }
+  &__pet-equip-layer--clothes   { top: 50%;  left: 50%; transform: translateX(-50%); width: 70%; height: 36%; z-index: 2; }
+  &__pet-equip-layer--accessory { top: 36%;  left: 50%; transform: translateX(-50%); width: 45%; height: 18%; z-index: 4; }
+  &__pet-equip-layer--halo      { top: -4%;  left: 50%; transform: translateX(-50%); width: 75%; height: 30%; opacity: 0.85; z-index: 2; }
   &__pet-tier-badge {
     position: absolute;
     bottom: -8rpx;
@@ -1286,6 +1415,7 @@ export default {
     font-size: $font-xs;
     font-weight: $font-weight-bold;
     box-shadow: $shadow-card;
+    z-index: 3;
   }
   &__pet-tier-badge > text { color: inherit; }
 
