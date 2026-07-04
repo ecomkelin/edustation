@@ -33,15 +33,14 @@
     </view>
 
     <scroll-view scroll-y class="me__body">
-      <!-- 学习数据 (2026-07-03: 剩余课时/积分 移到首页顶部; 订单数保留, 我的课程保留) -->
-      <view class="me__stats">
+      <!-- 2026-07-04 fix: scroll-view 在 H5 下 padding 不传给子节点, 用 wrapper 承载 (同 home.vue me__body-inner 模式) -->
+      <view class="me__body-inner">
+
+      <!-- 学习数据 (2026-07-04: 删「我的课程」入口; 只剩订单数, 改单列居中) -->
+      <view class="me__stats me__stats--single">
         <view class="me__stat press" @tap="goPage('/pages/order/list')">
           <text class="me__stat-val">{{ stats.orderCount }}</text>
           <text class="me__stat-lbl">订单数</text>
-        </view>
-        <view class="me__stat press" @tap="goMyCourses">
-          <text class="me__stat-val">📚</text>
-          <text class="me__stat-lbl">我的课程</text>
         </view>
       </view>
 
@@ -60,19 +59,24 @@
         </view>
       </view>
 
-      <!-- 列表 -->
+      <!-- 列表 (2026-07-04: 「设置与服务」改成可折叠 header, 默认折叠, 点击展开子项) -->
       <view class="me__list">
-        <view class="me__list-title">设置与服务</view>
-        <view
-          v-for="item in settings"
-          :key="item.label"
-          class="me__list-item press"
-          @tap="onMenuTap(item)"
-        >
-          <text class="me__list-emoji">{{ item.icon }}</text>
-          <text class="me__list-label">{{ item.label }}</text>
-          <text v-if="item.badge" class="me__list-badge">{{ item.badge }}</text>
-          <text class="me__list-arrow">›</text>
+        <view class="me__list-title me__list-title--toggle press" @tap="toggleSettings">
+          <text>设置与服务</text>
+          <text class="me__list-arrow" :class="{ 'me__list-arrow--up': settingsExpanded }">›</text>
+        </view>
+        <view v-if="settingsExpanded">
+          <view
+            v-for="item in settings"
+            :key="item.label"
+            class="me__list-item press"
+            @tap="onMenuTap(item)"
+          >
+            <text class="me__list-emoji">{{ item.icon }}</text>
+            <text class="me__list-label">{{ item.label }}</text>
+            <text v-if="item.badge" class="me__list-badge">{{ item.badge }}</text>
+            <text class="me__list-arrow">›</text>
+          </view>
         </view>
       </view>
 
@@ -82,6 +86,7 @@
 
       <org-footer />
       <view class="me__bottom-spacer" />
+      </view>
     </scroll-view>
   </view>
 </template>
@@ -101,7 +106,9 @@ export default {
   components: { ActiveStudentHeader, OrgFooter },
   data() {
     return {
-      stats: { orderCount: 0 }
+      stats: { orderCount: 0 },
+      // 2026-07-04: 「设置与服务」折叠开关, 默认 false (用户需点击才展开)
+      settingsExpanded: false
     }
   },
   computed: {
@@ -115,24 +122,24 @@ export default {
     },
     menus() {
       // (2026-07-02 4 tab 重构) 智能助手 → tab2 chat.vue; 机构主页 → tab3 org.vue
-      // 新增「我的孩子」入口 (管理多孩), 跳 /pages/student/switch
+      // (2026-07-04: 删「联系我们」入口 — 联系方式走机构主页 R-0932, 已在 /pages/org/home 顶部 + 底部 section)
+      // (2026-07-04: 删「接送授权」「进出记录」「协议条款」— 收到"设置与服务"折叠区, 顶层 menu 只保留高频入口)
       return [
         { label: '我的孩子', icon: '👨‍👩‍👧', bg: '#FFE4D3', url: '/pages/student/switch' },
-        { label: '接送授权', icon: '🚪', bg: '#C8F0DF', url: '/pages/access/pickups' },
-        { label: '进出记录', icon: '📋', bg: '#E5F0FA', url: '/pages/access/events' },
         { label: '分享得积分', icon: '💌', bg: '#FFF1D0', url: '/pages/share/share' },
-        { label: '协议条款', icon: '📜', bg: '#FFE4D3', url: '/pages/legal/list' },
-        { label: '常见问题', icon: '❓', bg: '#C8F0DF', url: '/pages/help/faq' },
-        { label: '联系我们', icon: '📞', bg: '#E5F0FA', url: '/pages/help/contact' }
+        { label: '常见问题', icon: '❓', bg: '#C8F0DF', url: '/pages/help/faq' }
       ]
     },
     settings() {
+      // (2026-07-04: 删「学习画像」— 改放首页; 删「清除缓存」— 用户认为没必要)
+      // (2026-07-04: 菜单并入折叠组 — 接送授权 / 进出记录 / 协议条款 移到这里, 默认折叠, 点击"设置与服务"才显示)
       return [
-        { label: '学习画像', icon: '📊', url: '/pages/student/profile' },
+        { label: '接送授权', icon: '🚪', url: '/pages/access/pickups' },
+        { label: '进出记录', icon: '📋', url: '/pages/access/events' },
+        { label: '协议条款', icon: '📜', url: '/pages/legal/list' },
         { label: '意见反馈', icon: '💬', url: '/pages/help/feedback' },
         { label: '隐私政策', icon: '🔒', url: '/pages/legal/detail?key=privacy-policy' },
-        { label: '关于我们', icon: 'ℹ️', url: '/pages/legal/detail?key=user-agreement' },
-        { label: '清除缓存', icon: '🧹', action: 'clearCache' }
+        { label: '关于我们', icon: 'ℹ️', url: '/pages/legal/detail?key=user-agreement' }
       ]
     }
   },
@@ -152,8 +159,13 @@ export default {
 
     onMenuTap(item) {
       haptic.tap()
-      if (item.action === 'clearCache') return this.onClearCache()
       if (item.url) uni.navigateTo({ url: item.url })
+    },
+
+    // 2026-07-04: 折叠 "设置与服务" 区 (haptic 反馈跟 onMenuTap 一致)
+    toggleSettings() {
+      haptic.tap()
+      this.settingsExpanded = !this.settingsExpanded
     },
 
     onEdit() {
@@ -165,19 +177,6 @@ export default {
         itemList: ['从相册选择', '拍照'],
         success: (res) => {
           uni.showToast({ title: res.tapIndex === 0 ? '相册上传' : '拍照上传', icon: 'none' })
-        }
-      })
-    },
-
-    onClearCache() {
-      uni.showModal({
-        title: '清除缓存',
-        content: '清除后,本地缓存将重置',
-        success: async (res) => {
-          if (!res.confirm) return
-          uni.clearStorageSync()
-          toast.success('已清除')
-          setTimeout(() => uni.reLaunch({ url: '/pages/auth/login' }), 600)
         }
       })
     },
@@ -197,11 +196,6 @@ export default {
 
     goPage(url) {
       uni.navigateTo({ url })
-    },
-
-    // 2026-07-03: 首页路由改名 pages/tabbar/index
-    goMyCourses() {
-      uni.switchTab({ url: '/pages/tabbar/index' })
     },
 
     maskPhone
@@ -309,13 +303,15 @@ export default {
   }
 
   &__body {
-    padding: 0 $spacing-md;
+    // 2026-07-04: padding 移到 wrapper 内层 (H5 scroll-view padding 不传给子节点, 同 home.vue)
     height: calc(100vh - 360rpx);
+  }
+  &__body-inner {
+    padding: 0 $spacing-md;
   }
 
   &__stats {
     display: grid;
-    // 2026-07-03: 改为 2 列 (剩余课时/积分挪到首页), 只剩订单数 + 我的课程
     grid-template-columns: repeat(2, 1fr);
     gap: $spacing-sm;
     background: $bg-card;
@@ -323,6 +319,10 @@ export default {
     padding: $spacing-md $spacing-sm;
     box-shadow: $shadow-card;
     margin-bottom: $spacing-md;
+  }
+  // 2026-07-04: 「我的课程」删除后只剩订单数, 改单列居中
+  &__stats--single {
+    grid-template-columns: 1fr;
   }
 
   &__stat {
@@ -402,6 +402,17 @@ export default {
     color: $text-secondary;
     background: $bg-page;
   }
+  // 2026-07-04: 折叠 toggle header — 「设置与服务」点击展开子项, 默认折叠
+  &__list-title--toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: background $transition-fast;
+    &:active {
+      background: $divider-light;
+    }
+  }
 
   &__list-item {
     display: flex;
@@ -442,6 +453,13 @@ export default {
   &__list-arrow {
     font-size: 36rpx;
     color: $text-tertiary;
+  }
+  // 2026-07-04: 折叠 header 箭头: 展开时逆时针 90 度 (从右变下)
+  &__list-arrow--up {
+    display: inline-block;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: transform $transition-base;
   }
 
   &__logout {

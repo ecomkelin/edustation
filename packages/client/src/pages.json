@@ -243,7 +243,8 @@
     {
       "path": "pages/tabbar/chat-detail",
       "style": {
-        "navigationBarTitleText": "对话"
+        // 2026-07-04: 自定义头部 cd__top 已含返回+标题+新对话; 关掉系统 nav 避免双 header
+        "navigationStyle": "custom"
       }
     },
     {

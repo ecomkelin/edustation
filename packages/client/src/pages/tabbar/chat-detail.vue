@@ -8,7 +8,8 @@
 <template>
   <view class="cd">
     <!-- 顶部: 标题 + 副标题 + 右上"新对话" -->
-    <view class="cd__top">
+    <!-- 2026-07-04: 加 safe-area-top 让顶部头避开刘海/状态栏 -->
+    <view class="cd__top safe-area-top">
       <view class="cd__back press" @tap="goBack">
         <text>‹</text>
       </view>
@@ -21,6 +22,7 @@
       </view>
     </view>
 
+    <!-- 2026-07-04: 消息区改 flex:1 + min-height:0; 之前硬编码 height:calc(100vh - 280rpx) 在 iPhone safe-area 下挤压底部 -->
     <scroll-view scroll-y class="cd__body" :scroll-into-view="scrollInto" :scroll-with-animation="true">
       <view v-if="loading" class="cd__loading">
         <text>加载中…</text>
@@ -101,12 +103,10 @@ export default {
   onLoad(opts) {
     this.isSupport = opts && opts.type === 'support'
     this.conversationId = (opts && opts.id) || ''
+    // 2026-07-04: navigationStyle:custom 后无系统 nav bar, 不再调 setNavigationBarTitle
     if (this.isSupport) {
       this.title = '客服助理'
       this.subtitle = '人工智网 · 平台客服'
-      uni.setNavigationBarTitle({ title: '客服助理' })
-    } else if (this.conversationId) {
-      uni.setNavigationBarTitle({ title: '对话' })
     }
     this.load()
   },
@@ -300,8 +300,10 @@ export default {
 
   /* 消息区 */
   &__body {
+    // 2026-07-04: 用 flex:1 替代硬编码 height:calc(100vh - 280rpx)
+    // 硬编码在 iPhone safe-area 下会挤压输入栏; flex:1 + min-height:0 是 uni-app H5 scroll-view 撑开父级的标准写法
     flex: 1;
-    height: calc(100vh - 280rpx);
+    min-height: 0;
     padding: $spacing-sm $spacing-md;
   }
   &__loading, &__empty {
@@ -390,8 +392,11 @@ export default {
     align-items: flex-end;
     background: $bg-card;
     padding: $spacing-sm $spacing-md;
+    // 2026-07-04: 兼容 iPhone home indicator 底部安全区, 不加这一行输入栏会被 Home 横条遮住
+    padding-bottom: calc(#{$spacing-sm} + env(safe-area-inset-bottom, 0px));
     border-top: 1rpx solid $divider-light;
     box-shadow: $shadow-float;
+    flex-shrink: 0;
   }
   &__input {
     flex: 1;

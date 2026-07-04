@@ -151,9 +151,9 @@ export default {
     }
   },
   computed: {
-    ...mapState(useStudentStore, ['activeStudentId', 'students']),
+    ...mapState(useStudentStore, ['activeStudentId', 'list']),
     activeStudentName() {
-      const s = (this.students || []).find((x) => String(x._id) === String(this.activeStudentId))
+      const s = (this.list || []).find((x) => String(x.id) === String(this.activeStudentId))
       return s?.name || '当前孩子'
     },
     summary() {

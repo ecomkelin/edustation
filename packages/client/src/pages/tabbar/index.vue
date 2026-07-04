@@ -233,6 +233,31 @@
         </view>
       </view>
 
+      <!-- 学习画像 (2026-07-04: 从原 me.vue 移来; 数据源 studentApi.profile - 真实端点字段 personality/learningGoal/weakness 等) -->
+      <view class="home__section">
+        <view class="section-title">
+          <text>📊 学习画像</text>
+          <text class="section-title__more section-title__more--cta" @tap="goProfile">查看完整 ›</text>
+        </view>
+
+        <view class="home__profile press" @tap="goProfile">
+          <view v-if="profileLoading" class="home__profile-loading">
+            <text>召唤中…</text>
+          </view>
+          <view v-else-if="!profileHighlight" class="home__profile-empty">
+            <text class="home__profile-empty-emoji">📊</text>
+            <view class="home__profile-empty-info">
+              <text class="home__profile-empty-title">还没有画像</text>
+              <text class="home__profile-empty-desc">老师建好后,会显示孩子的成长数据 ›</text>
+            </view>
+          </view>
+          <view v-else>
+            <text class="home__profile-hl">{{ profileHighlight.label }}</text>
+            <text class="home__profile-text">{{ profileHighlight.text }}</text>
+          </view>
+        </view>
+      </view>
+
       <!-- 作品墙 (2026-07-03: 替换原快捷入口; 显示最近 4 个作品 + 右上"个人成长记录"入口) -->
       <view class="home__section">
         <view class="section-title">
@@ -304,6 +329,7 @@ import { petApi } from '@/api/pet'
 import { studentProductApi } from '@/api/studentProduct'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
 import { studentWorkApi } from '@/api/studentWork'
+import { studentApi } from '@/api/student'
 import { date } from '@/utils/date'
 import { greetingByHour, PET_SPECIES_EMOJI } from '@/utils/constants'
 import { haptic } from '@/utils/haptic'
@@ -338,7 +364,10 @@ export default {
       statsLoading: false,
       // 2026-07-03 作品墙: 最近 4 个作品缩略图 (R-1670 me)
       works: [],
-      worksLoading: false
+      worksLoading: false,
+      // 2026-07-04 学习画像: 学生 profile (端点 /students/:id/profile 返 personality/learningGoal/weakness...)
+      profile: null,
+      profileLoading: false
     }
   },
   computed: {
@@ -480,6 +509,30 @@ export default {
         }
       }
       return out
+    },
+    // 2026-07-04 学习画像 (mini 预览): 取第一个非空字段做高亮 label + 60 字预览
+    // 端点实际返 personality/learningGoal/weakness/classFeedback/strengths/followUp (老师手填画像)
+    profileHighlight() {
+      const p = this.profile
+      if (!p) return null
+      const candidates = [
+        { label: '🎯 学习目标', text: p.learningGoal },
+        { label: '💡 性格特点', text: p.personality },
+        { label: '⭐ 优势', text: p.strengths },
+        { label: '⚠️ 待加强', text: p.weakness },
+        { label: '💬 课堂反馈', text: p.classFeedback },
+        { label: '📌 跟进事项', text: p.followUp }
+      ]
+      for (const c of candidates) {
+        if (c.text && String(c.text).trim()) {
+          const txt = String(c.text).trim()
+          return {
+            label: c.label,
+            text: txt.length > 60 ? txt.slice(0, 60) + '…' : txt
+          }
+        }
+      }
+      return null
     }
   },
   watch: {
@@ -534,6 +587,8 @@ export default {
       this.loadWorks()
       // 孩子 stat (并行, 2026-07-03)
       this.loadStats()
+      // 学习画像 (并行, 2026-07-04)
+      this.loadProfile()
     },
 
     // 2026-07-03 简化: 只加载当前孩子报名的课程 (R-1214); 课包顶部 stat 已有, 此模块不重复展示
@@ -796,6 +851,35 @@ export default {
 
     onStudentChange() {
       this.load()
+    },
+
+    // 2026-07-04: 学习画像入口 (从原 me.vue 搬来; 数据源 R-0406 GET /students/:id/profile)
+    async loadProfile() {
+      if (!this.activeStudentId) {
+        this.profile = null
+        this.profileLoading = false
+        return
+      }
+      this.profileLoading = true
+      try {
+        const res = await studentApi.profile(this.activeStudentId)
+        this.profile = res || null
+      } catch (e) {
+        // 404 = 学生没画像 (其他错误也兜底当 null)
+        console.warn('[home.loadProfile]', e)
+        this.profile = null
+      } finally {
+        this.profileLoading = false
+      }
+    },
+
+    goProfile() {
+      if (!this.activeStudentId) {
+        uni.showToast({ title: '请先选择孩子', icon: 'none' })
+        return
+      }
+      haptic.tap()
+      uni.navigateTo({ url: '/pages/student/profile?id=' + this.activeStudentId })
     },
 
     goCalendar() {
@@ -1342,6 +1426,62 @@ export default {
   }
 
   // 我的课程 (2026-07-03 简化: 单列表, 无 tab)
+  // 学习画像 (2026-07-04: 从 me.vue 搬来; mini 预览卡)
+  &__profile {
+    background: linear-gradient(135deg, $primary-lighter, #FFE4D3);
+    border-radius: $radius-md;
+    padding: $spacing-md;
+    box-shadow: $shadow-card;
+    min-height: 120rpx;
+    display: flex;
+    align-items: center;
+  }
+  &__profile-loading {
+    flex: 1;
+    text-align: center;
+    color: $text-tertiary;
+    font-size: $font-sm;
+  }
+  &__profile-empty {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+  &__profile-empty-emoji {
+    font-size: 56rpx;
+    margin-right: $spacing-md;
+    flex-shrink: 0;
+  }
+  &__profile-empty-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  &__profile-empty-title {
+    font-size: $font-md;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    margin-bottom: 4rpx;
+  }
+  &__profile-empty-desc {
+    font-size: $font-xs;
+    color: $text-secondary;
+  }
+  &__profile-hl {
+    display: block;
+    font-size: $font-sm;
+    font-weight: $font-weight-semibold;
+    color: $primary-dark;
+    margin-bottom: 6rpx;
+  }
+  &__profile-text {
+    display: block;
+    font-size: $font-base;
+    color: $text-primary;
+    line-height: 1.5;
+    @include multi-ellipsis(2);
+  }
+
   &__mine-list {
     display: flex;
     flex-direction: column;
