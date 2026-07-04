@@ -1,11 +1,12 @@
 'use strict'
 
 const s = require('./article.service')
+const engagement = require('@modules/contentEngagement/contentEngagement.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 /**
  * 2026-07-03 下放 per-org: 公开 GET 读 x-org-id header (无需登录, 走 Service 强制校验)
- * admin CRUD 走 mws.requireOrg 中间件, 挂 req.orgId
+ * admin CRUD / play (鉴权) 走 mws.requireOrg 中间件, 挂 req.orgId
  */
 function orgIdFromReq(req) {
   return req.orgId || req.headers['x-org-id'] || null
@@ -25,12 +26,18 @@ exports.list = async (req, res) => {
 }
 
 exports.detail = async (req, res) => {
+  const orgId = orgIdFromReq(req)
   const r = await s.publicDetail({
     id: req.params.id,
-    orgId: orgIdFromReq(req)
+    orgId
   })
-  // +1 viewCount (原子更新, 失败不影响详情返回)
-  s.bumpViewCount(req.params.id).catch(() => {})
+  // +1 viewCount + 记一条 engagement (失败不影响详情返回)
+  // 文章按 activeStudentId 拍板记 event, 不带 activeStudent 时只 +1 viewCount
+  s.bumpViewCount({
+    id: req.params.id,
+    orgId,
+    activeStudentId: req.headers['x-active-student-id'] || null
+  }).catch(() => {})
   res.json(ApiResponse.ok(r))
 }
 
@@ -73,6 +80,26 @@ exports.remove = async (req, res) => {
     id: req.params.id,
     orgId: req.orgId,
     userId: req.user.id
+  })
+  res.json(ApiResponse.ok(r))
+}
+
+// ─── 2026-07-04 运营分析 (R-3606/3607) ─────────────────────
+
+exports.adminStats = async (req, res) => {
+  const r = await engagement.adminKpi({
+    orgId: req.orgId,
+    contentType: 'article',
+    range: req.query.range
+  })
+  res.json(ApiResponse.ok(r))
+}
+
+exports.adminRowStats = async (req, res) => {
+  const r = await engagement.adminRowStats({
+    orgId: req.orgId,
+    contentType: 'article',
+    range: req.query.range
   })
   res.json(ApiResponse.ok(r))
 }

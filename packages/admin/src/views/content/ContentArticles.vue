@@ -1,13 +1,27 @@
 <!--
   科普文章管理 (admin 端)
-  R-3602 list / R-3603 create / R-3604 update / R-3605 soft delete
+  R-3602 list / R-3603 create / R-3604 update / R-3605 soft delete (前端 2026-07-04 已删除「下架」按钮)
+  R-3606 adminStats + R-3607 adminRowStats 顶部 KPI bar + 每行 stats
 -->
 <template>
   <div class="page">
     <h2>科普文章</h2>
     <p class="subtitle">
-      平台超管统一发布, 跨机构对所有 C 端家长可见。在 <code>/pages/tabbar/explore</code> 探索 Tab 的「趣味科普」section 展示。
+      本机构发布的科普文章, C 端家长在「探索」Tab 阅读。草稿/发布切换在编辑弹窗中操作。
     </p>
+
+    <!-- 顶部 KPI Bar (2026-07-04) -->
+    <el-row :gutter="12" class="kpi-row" v-loading="statsLoading">
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="事件总数" :value="fmtNumber(stats.totalEvents)" extra="累计浏览+activeStudent 去重事件" unit="次" accent="blue" />
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="独立孩子观众" :value="fmtNumber(stats.uniqueStudents)" extra="按 activeStudentId 去重" unit="人" accent="green" />
+      </el-col>
+      <el-col :xs="12" :sm="6">
+        <KpiCard label="时间窗" :value="rangeLabel" :extra="rangeExtra" />
+      </el-col>
+    </el-row>
 
     <el-card class="card">
       <div class="toolbar">
@@ -22,7 +36,13 @@
           <el-option label="已发布" value="true" />
           <el-option label="草稿" value="false" />
         </el-select>
-        <el-button @click="load">刷新</el-button>
+        <!-- 时间范围 (2026-07-04 复用 report.range) -->
+        <el-select v-model="range" placeholder="时间范围" style="width: 140px" @change="loadAll">
+          <el-option label="今天" value="today" />
+          <el-option label="近 7 天" value="week" />
+          <el-option label="本月" value="month" />
+        </el-select>
+        <el-button @click="loadAll">刷新</el-button>
         <el-button type="primary" @click="openCreate">+ 新建文章</el-button>
       </div>
 
@@ -40,7 +60,15 @@
           </template>
         </el-table-column>
         <el-table-column label="浏览" width="100" align="center">
-          <template #default="{ row }">{{ row.viewCount || 0 }}</template>
+          <template #default="{ row }">{{ fmtNumber(row.viewCount || 0) }}</template>
+        </el-table-column>
+        <!-- 2026-07-04 新增: 独立孩子观众列 -->
+        <el-table-column label="独立观众" width="100" align="center">
+          <template #default="{ row }">
+            <span :class="{ 'kpi-zero': !row._stats?.uniqueStudents }">
+              {{ fmtNumber(row._stats?.uniqueStudents || 0) }}
+            </span>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
@@ -51,10 +79,9 @@
         <el-table-column label="发布时间" width="170">
           <template #default="{ row }">{{ formatTime(row.publishedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="100" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" link type="danger" @click="disable(row)">下架</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -73,39 +100,72 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import dayjs from 'dayjs'
 import { articleApi } from '@/api/article'
+import KpiCard from '@/components/KpiCard.vue'
 import ContentArticleEditDialog from './ContentArticleEditDialog.vue'
+import { fmtNumber } from '@/utils/format'
 
 const items = ref([])
 const loading = ref(false)
+const statsLoading = ref(false)
 const keyword = ref('')
 const filter = ref('')
+const range = ref('month')   // 默认本月
 const dialogVisible = ref(false)
 const editingDoc = ref(null)
+const stats = ref({ totalEvents: 0, uniqueStudents: 0 })
+
+const rangeLabel = computed(() => {
+  if (range.value === 'today') return '今天'
+  if (range.value === 'week') return '近 7 天'
+  if (range.value === 'month') return '本月'
+  return '全部'
+})
+const rangeExtra = computed(() => 'KPI 累计 + 独立观众')
 
 function formatTime(t) {
   return t ? dayjs(t).format('YYYY-MM-DD HH:mm') : '—'
 }
 
-async function load() {
+async function loadStats() {
+  statsLoading.value = true
+  try {
+    const res = await articleApi.adminStats({ range: range.value })
+    if (res?.data) Object.assign(stats.value, res.data)
+  } catch (e) {
+    console.warn('[ContentArticles.loadStats]', e)
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+async function loadList() {
   loading.value = true
   try {
     const params = { pageSize: 50 }
     if (keyword.value) params.keyword = keyword.value
     if (filter.value) params.isPublished = filter.value
     const res = await articleApi.adminList(params)
-    // admin http.js 拦截器 return body = {success, code, message, data:{items,...}}
-    // 取 res.data?.items; [memory: http-interceptor-actually-unpacked]
-    items.value = res.data?.items || []
+    const list = res.data?.items || []
+    const rowStatsRes = await articleApi.adminRowStats({ range: range.value })
+    const rowStats = rowStatsRes?.data || {}
+    items.value = list.map(it => ({
+      ...it,
+      _stats: rowStats[it._id] || { totalEvents: 0, uniqueStudents: 0, totalMs: 0 }
+    }))
   } catch (e) {
-    console.warn('[ContentArticles.load]', e)
+    console.warn('[ContentArticles.loadList]', e)
     items.value = []
   } finally {
     loading.value = false
   }
+}
+
+async function loadAll() {
+  await Promise.all([loadList(), loadStats()])
 }
 
 function openCreate() {
@@ -118,31 +178,20 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 
-async function disable(row) {
-  try {
-    await ElMessageBox.confirm(`下架「${row.title}」后, C 端将看不到这篇文章, 但数据库保留以备恢复。确认下架?`, '提示', { type: 'warning' })
-  } catch { return }
-  try {
-    await articleApi.remove(row._id)
-    ElMessage.success('已下架')
-    load()
-  } catch (e) {
-    ElMessage.error(e.message || '下架失败')
-  }
-}
-
 function onSaved() {
   dialogVisible.value = false
-  load()
+  loadAll()
 }
 
-onMounted(load)
+onMounted(loadAll)
 </script>
 
 <style lang="scss" scoped>
 .page { padding: 16px; }
 .subtitle { color: #666; font-size: 13px; margin: 4px 0 16px; }
 .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.kpi-row { margin-bottom: 12px; }
+.kpi-zero { color: #c0c4cc; }
 .empty { padding: 60px; text-align: center; color: #999; }
 .muted { color: #bbb; font-size: 12px; }
 </style>

@@ -22,10 +22,11 @@ router.get('/', v.list, mws.validateRequest, asyncHandler(c.list))
 // R-3701 GET /games/:id — C 端公开详情
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
 
-// R-3702 POST /games/:id/play — C 端启动计数 (+1)
+// R-3702 POST /games/:id/play — C 端启动计数 (+1) + 2026-07-04 engagement 上报 (durationMs)
 router.post(
   '/:id/play',
   mws.authenticate,
+  mws.requireOrg,           // 2026-07-04 也按 per-org 隔离 (engagement 需要 orgId)
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.play)
@@ -76,6 +77,27 @@ router.delete(
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)
+)
+
+// ────── 运营分析 (2026-07-04) ──────
+// R-3707 GET /games/admin/stats — 顶部 KPI 4 张卡
+router.get(
+  '/admin/stats',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePermission('game.read'),
+  mws.validateRequest,
+  asyncHandler(c.adminStats)
+)
+
+// R-3708 GET /games/admin/row-stats — 每行 _stats 注入 (Map<contentId, stats>)
+router.get(
+  '/admin/row-stats',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePermission('game.read'),
+  mws.validateRequest,
+  asyncHandler(c.adminRowStats)
 )
 
 module.exports = router

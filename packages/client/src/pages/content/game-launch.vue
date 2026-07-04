@@ -83,7 +83,8 @@ export default {
     return {
       loading: true,
       game: null,
-      played: false
+      played: false,
+      playStartMs: 0    // 2026-07-04: 进入页时间戳, 用于算游玩时长
     }
   },
   onLoad(query) {
@@ -92,11 +93,20 @@ export default {
       this.load()
     }
   },
-  // onShow 时 (含首次进入) +1 启动; 用 played 标记防止重复计入 (uni-app 路由栈回退也会触发)
+  // onShow 时 (含首次进入) +1 启动 + 记 engagement event (durationMs=0)
+  // 用 played 标记防止重复计入 (uni-app 路由栈回退也会触发)
   onShow() {
     if (this.game && this.game._id && !this.played) {
-      this.bumpPlay()
+      this.playStartMs = Date.now()
+      this.bumpPlay(0)
     }
+  },
+  // 2026-07-04: 离开页时上报本次游玩时长
+  onUnload() {
+    if (!this.playStartMs) return
+    const elapsed = Date.now() - this.playStartMs
+    this.playStartMs = 0
+    if (elapsed >= 2000) this.bumpPlay(elapsed)
   },
   methods: {
     async load() {
@@ -113,12 +123,12 @@ export default {
       }
     },
 
-    // 启动计数: 失败不影响用户开玩
-    async bumpPlay() {
+    // 启动计数 + engagement event: 失败不影响用户开玩
+    // 2026-07-04 改造: 入参 durationMs, 0 表示首次进入, >0 表示离场上报
+    async bumpPlay(durationMs = 0) {
       try {
-        const r = await gameApi.play(this.id)
+        const r = await gameApi.play(this.id, { durationMs: Math.max(0, Math.floor(durationMs)) })
         const data = r?.data || r || {}
-        // 后端 play 返回 playCount 同步更新本地展示
         if (this.game && data.playCount) this.game.playCount = data.playCount
         this.played = true
       } catch (e) {

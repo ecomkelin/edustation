@@ -1,6 +1,6 @@
 /**
  * Article API - 平台科普文章 (admin 端 CRUD)
- * R-3602/3603/3604/3605
+ * R-3602/3603/3604/3605 (CRUD) + R-3606/3607 (运营分析 2026-07-04)
  */
 import http from './http'
 
@@ -17,12 +17,20 @@ export const articleApi = {
   update(id, data) {
     return http.put(`/articles/admin/${id}`, data)
   },
-  // R-3605 DELETE /articles/admin/:id (软下架)
+  // R-3605 DELETE /articles/admin/:id (软下架, 2026-07-04 起 admin UI 不再调, 后端保留)
   remove(id) {
     return http.delete(`/articles/admin/${id}`)
   },
   // R-3601 GET /articles/:id (admin 端可借用详情接口读取草稿)
   detail(id) {
     return http.get(`/articles/${id}`)
+  },
+  // R-3606 顶部 KPI 卡 (累计浏览 / 独立孩子观众 / 总时长)
+  adminStats(params = {}) {
+    return http.get('/articles/admin/stats', { params })
+  },
+  // R-3607 per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}>
+  adminRowStats(params = {}) {
+    return http.get('/articles/admin/row-stats', { params })
   }
 }

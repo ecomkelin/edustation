@@ -52,6 +52,8 @@
           preload="auto"
           class="video-play__video"
           @play="onVideoPlay"
+          @pause="onVideoPause"
+          @ended="onVideoEnded"
         />
         <web-view
           v-else-if="video.videoUrl"
@@ -106,7 +108,8 @@ export default {
     return {
       loading: true,
       video: null,
-      played: false
+      played: false,
+      playStartMs: 0    // 2026-07-04: 真实播放开始时间 (Date.now()), 用于算 elapsedMs
     }
   },
   onLoad(query) {
@@ -117,7 +120,16 @@ export default {
   },
   onShow() {
     if (this.video && this.video._id && !this.played) {
-      this.bumpPlay()
+      this.playStartMs = Date.now()
+      this.bumpPlay(0)   // 2026-07-04: 进页立即记一条 event (durationMs=0)
+    }
+  },
+  // 2026-07-04: 离开页兜底上报
+  onUnload() {
+    if (this.playStartMs) {
+      const elapsed = Date.now() - this.playStartMs
+      this.playStartMs = 0
+      if (elapsed >= 2000) this.bumpPlay(elapsed)
     }
   },
   computed: {
@@ -144,9 +156,12 @@ export default {
       }
     },
 
-    async bumpPlay() {
+    // 2026-07-04 改造: bumpPlay 入参 durationMs
+    // - 进页 onShow 立即调用 durationMs=0 (记一条 event 作 KPI 起始; 不影响 viewCount 计数语义)
+    // - 暂停 / 播放结束 / 退出页 真实上报 elapsedMs
+    async bumpPlay(durationMs = 0) {
       try {
-        const r = await videoApi.play(this.id)
+        const r = await videoApi.play(this.id, { durationMs: Math.max(0, Math.floor(durationMs)) })
         const data = r?.data || r || {}
         if (this.video && typeof data.viewCount === 'number') {
           this.video.viewCount = data.viewCount
@@ -154,7 +169,6 @@ export default {
         this.played = true
       } catch (e) {
         // 静默失败: 计数不影响播放体验 (404/400 都忽略)
-        // 只在 dev 模式打印
         if (process.env.NODE_ENV === 'development') console.debug('[videoPlay.bumpPlay]', e?.message)
         this.played = true
       }
@@ -162,9 +176,36 @@ export default {
 
     // 视频元素 play 事件触发 (H5 进页即自动播放时也会触发)
     // 兜底: 如果 <video autoplay> 因任何原因未触发 (老 Safari / 网络慢), 也保证计入 viewCount
+    // 2026-07-04: 现在还顺便记下 playStartMs, 用于 onPause/onEnded 计算 elapsed
     onVideoPlay() {
       if (!this.played) {
-        this.bumpPlay()
+        this.playStartMs = Date.now()
+        this.bumpPlay(0)
+      } else {
+        // 重新开始播放 (从 pause 状态恢复), 重置起点
+        this.playStartMs = Date.now()
+      }
+    },
+
+    // 2026-07-04 改造: <video> @pause / @ended 上报 elapsed
+    onVideoPause() {
+      if (!this.playStartMs) return
+      const elapsed = Date.now() - this.playStartMs
+      this.playStartMs = 0
+      this.bumpPlay(elapsed)
+    },
+    onVideoEnded() {
+      if (!this.playStartMs) return
+      const elapsed = Date.now() - this.playStartMs
+      this.playStartMs = 0
+      this.bumpPlay(elapsed)
+    },
+    // 离开页兜底 (pause 事件在 iOS 上可能不触发)
+    onUnload() {
+      if (this.playStartMs) {
+        const elapsed = Date.now() - this.playStartMs
+        this.playStartMs = 0
+        this.bumpPlay(elapsed)
       }
     },
 

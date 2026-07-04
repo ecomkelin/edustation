@@ -294,6 +294,8 @@ Auth 列简写:
 | R-1442 | GET | /lesson-schedules/:id/sync-attendances/preview | PERM | lessonSchedule.read | 补齐名单预览 | UI 决定按钮显隐 |
 | R-1450 | GET | /lesson-schedules/calendar | PERM | lessonSchedule.read | 日历视图 | |
 | R-1451 | GET | /lesson-schedules/conflicts | PERM | lessonSchedule.read | 冲突预检 | |
+| R-1492 | GET | /lesson-schedules/me/calendar | GUARD | — | 我的课表 | C 端家长; active student 上下文; 仅 enrolled 开班下的排课 |
+| R-1493 | GET | /lesson-schedules/me/by-instance/:courseInstanceId | GUARD | — | 开班内我的排课+考勤 | C 端家长; active student 上下文; instance-detail.vue 用; service 校验学生是该开班的 enrolled/archived 报名 |
 
 ### MM=15 lessonAttendance (URL: /lesson-attendances)
 
@@ -668,6 +670,7 @@ Auth 列简写:
 | 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
 | 2026-07-03 | 内容模块 MM=38 video 上线 (科普视频平台级; 8 端点; 与 Article/Game 一致评级; C 端 explore tab 视频 section 默认 1 个 (R-3800 featured) + 文章 4 个 (1 头条+3 列表) + 游戏 加载更多式分页; seed 6 段 mp4 demo) | R-3800 ~ R-3807 | add |
 | 2026-07-03 | 内容模块 MM=36/37/38 下放 per-org: service filter org=null → org=req.orgId (强制 x-org-id); 写操作 requirePlatformAdmin → requirePermission('xx.write'); admin 菜单移到「机构管理 → 科普内容」; C 端 explore.vue 无改动靠 x-org-id 自动隔离; seed Org.find 循环每个启用 Org 各一份 | R-3602~3605/R-3703~3706/R-3804~3807 + 所有公开 GET | modify |
+| 2026-07-04 | 科普内容运营分析 (ContentEngagement event log): 新建 content_engagements collection + adminStats/adminRowStats 6 端点 (article.read/video.read/game.read); video/game /play 接受 body.durationMs + 记录 activeStudentId+sessionMs (game /play 加 mws.requireOrg); article detail 自动记 1 条 event (sessionMs=0); 复用 reportCache 60s TTL + resolveRange time-range; admin UI 删「下架」按钮 (改用 editDialog isPublished switch) + 加 KpiCard 顶栏 + per-row stats 列; C 端 video-play / game-launch onPause/onEnded/onUnload report durationMs | R-3606/3607/R-3707/3708/R-3808/3809 | add |
 
 ### MM=36 article (URL: /articles)
 
@@ -678,7 +681,9 @@ Auth 列简写:
 | R-3602 | GET | /articles/admin/list | ADMIN | article.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; 强制 org=req.orgId |
 | R-3603 | POST | /articles/admin | ADMIN | article.write | 后台创建 | body 必填 title/contentMarkdown; 服务端 marked 编译 contentHtml; org 注入 req.orgId |
 | R-3604 | PUT | /articles/admin/:id | ADMIN | article.write | 后台更新 | contentMarkdown 改 → 重编译 contentHtml; filter 含 org 防跨越权 |
-| R-3605 | DELETE | /articles/admin/:id | ADMIN | article.write | 软下架 (isPublished=false) | filter 含 org 防跨越权; 不物理删除 |
+| R-3605 | DELETE | /articles/admin/:id | ADMIN | article.write | 软下架 (isPublished=false) | filter 含 org 防跨越权; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮, editDialog.isPublished switch 替代** |
+| R-3606 | GET | /articles/admin/stats | ADMIN | article.read | 顶部 KPI 卡 (累计浏览 / 独立观众) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
+| R-3607 | GET | /articles/admin/row-stats | ADMIN | article.read | per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}> | 2026-07-04 运营分析; admin list 注入 _stats |
 
 ### MM=37 game (URL: /games)
 
@@ -686,11 +691,13 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-3700 | GET | /games | — | — | C 端公开列表 (已发布 + 分页) | query: tag/difficulty/page/pageSize |
 | R-3701 | GET | /games/:id | — | — | C 端公开详情 | |
-| R-3702 | POST | /games/:id/play | AUTH | — | C 端启动计数 (+1, 原子) | 失败不影响前端继续; 跨机构对所有家长可见 |
+| R-3702 | POST | /games/:id/play | AUTH | — | C 端启动计数 (+1, 原子) + 2026-07-04 engagement event | body: {durationMs}; header: x-active-student-id; 强制 org=req.orgId; 失败不影响前端 |
 | R-3703 | GET | /games/admin/list | ADMIN | game.read | 后台列表 (含草稿) | query: isPublished/keyword/page/pageSize; 强制 org=req.orgId |
 | R-3704 | POST | /games/admin | ADMIN | game.write | 后台创建 | launchUrl 必填且 https://; org 注入 req.orgId |
 | R-3705 | PUT | /games/admin/:id | ADMIN | game.write | 后台更新 | filter 含 org 防跨越权 |
-| R-3706 | DELETE | /games/admin/:id | ADMIN | game.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除 |
+| R-3706 | DELETE | /games/admin/:id | ADMIN | game.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮** |
+| R-3707 | GET | /games/admin/stats | ADMIN | game.read | 顶部 KPI 卡 (累计启动 / 独立玩家 / 累计游玩时长) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
+| R-3708 | GET | /games/admin/row-stats | ADMIN | game.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |
 
 ### MM=38 video (URL: /videos)
 
@@ -706,4 +713,6 @@ Auth 列简写:
 | R-3804 | GET | /videos/admin/list | ADMIN | video.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; 强制 org=req.orgId |
 | R-3805 | POST | /videos/admin | ADMIN | video.write | 后台创建 | videoUrl 必填且 https://; org 注入 req.orgId |
 | R-3806 | PUT | /videos/admin/:id | ADMIN | video.write | 后台更新 | filter 含 org 防跨越权 |
-| R-3807 | DELETE | /videos/admin/:id | ADMIN | video.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除 |
+| R-3807 | DELETE | /videos/admin/:id | ADMIN | video.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮** |
+| R-3808 | GET | /videos/admin/stats | ADMIN | video.read | 顶部 KPI 卡 (累计播放 / 独立观众 / 累计观看时长) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
+| R-3809 | GET | /videos/admin/row-stats | ADMIN | video.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |

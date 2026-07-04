@@ -1,6 +1,7 @@
 'use strict'
 
 const s = require('./video.service')
+const engagement = require('@modules/contentEngagement/contentEngagement.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 /**
@@ -44,11 +45,26 @@ exports.detail = async (req, res) => {
 }
 
 // R-3803 C 端播放/启动计数 (+1, 需鉴权)
+// 2026-07-04 改造: 接受 body { durationMs } 上报观看时长; 记 engagement event
 exports.play = async (req, res) => {
   const r = await s.bumpViewCount({
     id: req.params.id,
     orgId: req.orgId
   })
+  // 视频/游戏按 activeStudentId 记 1 条 engagement, sessionMs = body.durationMs
+  // onShow 进页立即调用 (durationMs=0), onPause/onEnded 真正播放后再调用 1 次 (durationMs=elapsed)
+  const durationMs = Math.max(0, parseInt((req.body && req.body.durationMs) || 0, 10)) || 0
+  const activeStudentId = (req.headers['x-active-student-id'] || '').trim() || null
+  if (activeStudentId && durationMs >= 0) {
+    engagement.record({
+      orgId: req.orgId,
+      contentType: 'video',
+      contentId: req.params.id,
+      activeStudentId,
+      sessionMs: durationMs,
+      source: 'client'
+    }).catch(() => {})
+  }
   res.json(ApiResponse.ok(r))
 }
 
@@ -92,6 +108,26 @@ exports.remove = async (req, res) => {
     id: req.params.id,
     orgId: req.orgId,
     userId: req.user.id
+  })
+  res.json(ApiResponse.ok(r))
+}
+
+// ─── 2026-07-04 运营分析 (R-3808/3809) ─────────────────────
+
+exports.adminStats = async (req, res) => {
+  const r = await engagement.adminKpi({
+    orgId: req.orgId,
+    contentType: 'video',
+    range: req.query.range
+  })
+  res.json(ApiResponse.ok(r))
+}
+
+exports.adminRowStats = async (req, res) => {
+  const r = await engagement.adminRowStats({
+    orgId: req.orgId,
+    contentType: 'video',
+    range: req.query.range
   })
   res.json(ApiResponse.ok(r))
 }

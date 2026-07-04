@@ -1,6 +1,7 @@
 'use strict'
 
 const s = require('./game.service')
+const engagement = require('@modules/contentEngagement/contentEngagement.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 /**
@@ -36,6 +37,19 @@ exports.play = async (req, res) => {
     orgId: req.orgId,                        // play 走 mws.requireOrg + mws.authenticate
     userId: req.user && req.user.id
   })
+  // 2026-07-04 运营分析: 接受 body { durationMs } 上报游玩时长; 记 engagement event
+  const durationMs = Math.max(0, parseInt((req.body && req.body.durationMs) || 0, 10)) || 0
+  const activeStudentId = (req.headers['x-active-student-id'] || '').trim() || null
+  if (activeStudentId) {
+    engagement.record({
+      orgId: req.orgId,
+      contentType: 'game',
+      contentId: req.params.id,
+      activeStudentId,
+      sessionMs: durationMs,
+      source: 'client'
+    }).catch(() => {})
+  }
   res.json(ApiResponse.ok(r))
 }
 
@@ -76,6 +90,26 @@ exports.remove = async (req, res) => {
     id: req.params.id,
     orgId: req.orgId,
     userId: req.user.id
+  })
+  res.json(ApiResponse.ok(r))
+}
+
+// ─── 2026-07-04 运营分析 (R-3707/3708) ─────────────────────
+
+exports.adminStats = async (req, res) => {
+  const r = await engagement.adminKpi({
+    orgId: req.orgId,
+    contentType: 'game',
+    range: req.query.range
+  })
+  res.json(ApiResponse.ok(r))
+}
+
+exports.adminRowStats = async (req, res) => {
+  const r = await engagement.adminRowStats({
+    orgId: req.orgId,
+    contentType: 'game',
+    range: req.query.range
   })
   res.json(ApiResponse.ok(r))
 }

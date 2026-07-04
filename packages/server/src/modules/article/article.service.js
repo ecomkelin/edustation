@@ -5,6 +5,8 @@ const Article = require('@models/Article.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { compileMarkdownSafe } = require('@utils/markdown')
+// 2026-07-04 运营分析: detail 顺手记 engagement event
+const engagement = require('@modules/contentEngagement/contentEngagement.service')
 
 /**
  * 关键点:
@@ -41,9 +43,19 @@ async function publicDetail({ id, orgId }) {
   return doc
 }
 
-async function bumpViewCount(id) {
+async function bumpViewCount({ id, orgId, activeStudentId }) {
   if (!mongoose.isValidObjectId(id)) return
   await Article.updateOne({ _id: id }, { $inc: { viewCount: 1 } })
+  // 2026-07-04 运营分析: 文章按 activeStudentId 记事件 (sessionMs=0)
+  // article 不需要 timeline ms, 走「孩子是否访问过」即可
+  engagement.record({
+    orgId,
+    contentType: 'article',
+    contentId: id,
+    activeStudentId,
+    sessionMs: 0,
+    source: 'client'
+  }).catch(() => {})
 }
 
 // ───── admin 端 ─────

@@ -83,4 +83,25 @@ router.delete(
   asyncHandler(c.remove)
 )
 
+// ────── 运营分析 (2026-07-04) ──────
+// R-3808 GET /videos/admin/stats — 顶部 KPI 4 张卡
+router.get(
+  '/admin/stats',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePermission('video.read'),
+  mws.validateRequest,
+  asyncHandler(c.adminStats)
+)
+
+// R-3809 GET /videos/admin/row-stats — 每行 _stats 注入 (Map<contentId, stats>)
+router.get(
+  '/admin/row-stats',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePermission('video.read'),
+  mws.validateRequest,
+  asyncHandler(c.adminRowStats)
+)
+
 module.exports = router
