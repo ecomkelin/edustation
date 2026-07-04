@@ -19,6 +19,14 @@ exports.calendarForStudent = async (req, res) =>
     studentId: req.activeStudentId,
     ...req.query
   })))
+
+// C 端 R-1493 (2026-07-04): 当前 active child 在某开班下的排课+考勤列表 (开班详情用)
+exports.byInstanceForStudent = async (req, res) =>
+  res.json(ApiResponse.ok(await s.byInstanceForStudent({
+    orgId: req.orgId,
+    studentId: req.activeStudentId,
+    courseInstanceId: req.params.courseInstanceId
+  })))
 exports.preview = async (req, res) => res.json(ApiResponse.ok(await s.preview({ orgId: req.orgId, ...req.body })))
 exports.generate = async (req, res) => res.status(201).json(ApiResponse.created(await s.generate({ orgId: req.orgId, ...req.body })))
 exports.start = async (req, res) => res.json(ApiResponse.ok(await s.start({ id: req.params.id, orgId: req.orgId })))

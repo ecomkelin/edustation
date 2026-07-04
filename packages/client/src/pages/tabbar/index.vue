@@ -18,8 +18,13 @@
         </view>
       </view>
 
+      <!-- 2026-07-04 重做: 学生 pill 和机构 chip 同 row, 跟 red-box 一致 -->
       <view class="home__top-content">
         <active-student-header @change="onStudentChange" />
+        <view class="home__org-chip press" @tap="goOrgHome">
+          <text class="home__org-chip-icon">🏫</text>
+          <text class="home__org-chip-name">{{ currentOrgName || '选择机构' }}</text>
+        </view>
       </view>
     </view>
 
@@ -29,8 +34,9 @@
            包一层 wrapper view 承载 padding 让 section 真正缩进 -->
       <view class="home__body-inner">
 
-      <!-- 2026-07-03: 孩子维度数据 stat (剩余课时/积分 来自 me.vue) -->
-      <view class="home__quickstats">
+      <!-- 2026-07-04 删「机构」stat: 顶部已有 home__org-chip 同入口, 重复
+           现在只剩「剩余课时」「积分」2 列, 改成 1fr 1fr 居中放大 -->
+      <view class="home__quickstats home__quickstats--2col">
         <view class="home__quickstat press" @tap="goStudentProducts">
           <text class="home__quickstat-val">{{ stats.lessonsLeft || 0 }}</text>
           <text class="home__quickstat-lbl">剩余课时</text>
@@ -38,11 +44,6 @@
         <view class="home__quickstat press" @tap="goPoints">
           <text class="home__quickstat-val">{{ stats.points || 0 }}</text>
           <text class="home__quickstat-lbl">积分</text>
-        </view>
-        <!-- 2026-07-03: 「我的课程」改为「机构」, 跳 R-0932 公开机构主页 (展示推广+学科+老师+课包) -->
-        <view class="home__quickstat press" @tap="goOrg">
-          <text class="home__quickstat-val">🏫</text>
-          <text class="home__quickstat-lbl">机构</text>
         </view>
       </view>
 
@@ -353,6 +354,13 @@ export default {
     orgId() {
       return this.auth.currentOrgId
     },
+    // 2026-07-04: 顶部同-row 机构 chip 用, 从 auth.orgs 找当前机构名
+    currentOrgName() {
+      const id = this.auth.currentOrgId
+      if (!id || !Array.isArray(this.auth.orgs)) return ''
+      const org = this.auth.orgs.find((o) => String(o.id) === String(id))
+      return (org && org.name) || ''
+    },
 
     userName() {
       return this.user?.realName || this.user?.mobile?.slice(-4) || '朋友'
@@ -611,12 +619,12 @@ export default {
       haptic.tap()
       uni.navigateTo({ url: '/pages/points/wallet' })
     },
-    // 2026-07-03: 「机构」顶部 stat — 公开主页跳转 (R-0932 /orgs/:id/public)
-    goOrg() {
+    // 2026-07-04 顶部机构 chip 跳转 — 公开机构主页 R-0932 (跟被删的 stat 按钮是同入口)
+    goOrgHome() {
       haptic.tap()
       const orgId = this.orgId
       if (!orgId) {
-        toast.warn('尚未选择机构')
+        uni.showToast({ title: '尚未选择机构', icon: 'none' })
         return
       }
       uni.navigateTo({ url: '/pages/org/home?id=' + orgId })
@@ -906,8 +914,45 @@ export default {
   }
 
   &__top-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12rpx;
     padding: 0 $spacing-lg;
     position: relative;
+  }
+
+  // 2026-07-04: 跟学生 pill 同 row 的机构 chip (在 active-student-header 右侧)
+  &__org-chip {
+    display: flex;
+    align-items: center;
+    gap: 6rpx;
+    padding: 8rpx 18rpx 8rpx 14rpx;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: $radius-pill;
+    box-shadow: 0 4rpx 12rpx rgba(255, 138, 101, 0.10);
+    backdrop-filter: blur(8rpx);
+    flex: 0 1 auto;
+    max-width: 56%;
+    min-width: 0;
+    &:active {
+      background: rgba(255, 255, 255, 0.88);
+    }
+  }
+  &__org-chip-icon {
+    font-size: 24rpx;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  &__org-chip-name {
+    font-size: $font-sm;
+    font-weight: $font-weight-medium;
+    color: $text-primary;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
 
   &__body {
@@ -921,6 +966,7 @@ export default {
   }
 
   // 2026-07-03: 顶部孩子 stat 卡 (剩余课时/积分/我的课程) — 跟 me.vue stat 区分, 这里 3 列
+  // 2026-07-04: 删「机构」stat 后改 2 列
   &__quickstats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -930,6 +976,12 @@ export default {
     background: $bg-card;
     border-radius: $radius-md;
     box-shadow: $shadow-card;
+  }
+  &__quickstats--2col {
+    grid-template-columns: 1fr 1fr;
+  }
+  &__quickstats--2col .home__quickstat-val {
+    font-size: 56rpx; // 比 $font-xl(40rpx) 更大, 撑满 2 列, 跟 hero 数字呼应
   }
   &__quickstat {
     text-align: center;

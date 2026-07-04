@@ -166,6 +166,44 @@
           </view>
         </view>
 
+        <!-- 2026-07-04 新增 (R-1493): 本孩子的考勤记录 - 点击进 schedule/detail -->
+        <view v-if="schedules.length" class="course-detail__card">
+          <view class="course-detail__card-header">
+            <text class="course-detail__card-title">📋 考勤记录</text>
+            <text class="course-detail__card-stat">{{ attendanceCounts.done }}/{{ schedules.length }} 节已上</text>
+          </view>
+          <view class="course-detail__attendances">
+            <view
+              v-for="s in schedules"
+              :key="s.id"
+              class="course-detail__att-row press"
+              @tap="goSchedule(s)"
+            >
+              <view class="course-detail__att-no">
+                <text>{{ s.lessonNo }}</text>
+              </view>
+              <view class="course-detail__att-body">
+                <view class="course-detail__att-top">
+                  <text class="course-detail__att-title">第 {{ s.lessonNo }} 节</text>
+                  <view
+                    class="course-detail__att-tag"
+                    :class="'course-detail__att-tag--' + attendanceUI(s).cls"
+                  >
+                    <text>{{ attendanceUI(s).label }}</text>
+                  </view>
+                </view>
+                <view class="course-detail__att-meta">
+                  <text v-if="formatDateShort(s.plannedStartTime)">📅 {{ formatDateShort(s.plannedStartTime) }}</text>
+                  <text v-if="formatTime(s.plannedStartTime)">⏰ {{ formatTime(s.plannedStartTime) }}</text>
+                  <text v-if="s.teacher?.realName">👨‍🏫 {{ s.teacher.realName }}</text>
+                  <text v-if="s.room?.name">📍 {{ s.room.name }}</text>
+                </view>
+              </view>
+              <text class="course-detail__att-arrow">›</text>
+            </view>
+          </view>
+        </view>
+
         <view class="course-detail__bottom-spacer" />
       </view>
     </scroll-view>
@@ -175,6 +213,7 @@
 <script>
 import { courseInstanceApi } from '@/api/courseInstance'
 import { courseEnrollmentApi } from '@/api/courseEnrollment'
+import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { date } from '@/utils/date'
 import { haptic } from '@/utils/haptic'
 
@@ -187,6 +226,16 @@ const STATUS_MAP = {
   cancelled: { label: '已取消', cls: 'cancelled' }
 }
 
+// 2026-07-04: 考勤状态 → UI 文案 + 颜色,跟 admin 端 AttendanceStatusLabel/Color 对齐
+const ATTENDANCE_UI = {
+  scheduled:  { label: '待上课', cls: 'scheduled' },
+  checked_in: { label: '进行中', cls: 'checked-in' },
+  completed:  { label: '已上', cls: 'completed' },
+  madeup:     { label: '已补课', cls: 'completed' },  // 跟 completed 视觉等价(均扣课时)
+  no_show:    { label: '缺席', cls: 'no-show' },
+  leave:      { label: '已请假', cls: 'leave' }
+}
+
 export default {
   data() {
     return {
@@ -195,6 +244,9 @@ export default {
       courseInstanceId: '',
       course: null,
       progress: {},
+      // 2026-07-04 加 (R-1493): 当前孩子在开班下所有排课+本学生考勤
+      schedules: [],
+      schedulesLoading: false,
       expandedSet: new Set(),       // 已展开的 lessonNo
       descExpanded: false,
       ringSize: 140,
@@ -237,6 +289,16 @@ export default {
     ringOffset() {
       const pct = (this.progress.attendanceRate || 0) / 100
       return this.ringCircumference * (1 - pct)
+    },
+    // 2026-07-04: 已上/总数 (走 attendance.status 而非 schedule.status,更准确)
+    attendanceCounts() {
+      const list = Array.isArray(this.schedules) ? this.schedules : []
+      let done = 0
+      for (const s of list) {
+        const st = s.attendance && s.attendance.status
+        if (st === 'completed' || st === 'madeup') done++
+      }
+      return { done, total: list.length }
     }
   },
   onLoad(options) {
@@ -255,16 +317,23 @@ export default {
       this.loading = true
       this.loadError = ''
       try {
-        // 并行调详情 + 个人进度
+        // 并行调详情 + 个人进度 + 考勤列表
         // 2026-07-04 改: C 端用 /:id/me 旁路端点跳过 courseInstance.read 权限码 (家长没有这个权限码)
         // 之前 detail() 返回 403 "无权限: courseInstance.read";现在 me() 走 mws.activeStudent 校验该学生报名该开班
         // ref: R-1101A + [memory: c-end-me-endpoint-pattern]
-        const [course, progress] = await Promise.all([
+        // 2026-07-04 增第三路 (R-1493): byInstance 拉本孩子在开班下的排课+考勤,失败也不影响首屏 KPI
+        this.schedulesLoading = true
+        const [course, progress, schedules] = await Promise.all([
           courseInstanceApi.me(this.courseInstanceId),
-          courseEnrollmentApi.myProgress(this.courseInstanceId).catch(() => ({}))
+          courseEnrollmentApi.myProgress(this.courseInstanceId).catch(() => ({})),
+          lessonScheduleApi.byInstance(this.courseInstanceId).catch((e) => {
+            console.warn('[instance-detail.schedules]', e?.message)
+            return []
+          })
         ])
         this.course = course || null
         this.progress = progress?.progress || progress || {}
+        this.schedules = Array.isArray(schedules) ? schedules : (schedules?.items || [])
         // 默认展开第 1 节
         if (this.syllabusLessons.length && this.expandedSet.size === 0) {
           this.expandedSet = new Set([this.syllabusLessons[0].lessonNo])
@@ -275,6 +344,7 @@ export default {
         this.course = null
       } finally {
         this.loading = false
+        this.schedulesLoading = false
       }
     },
 
@@ -305,6 +375,49 @@ export default {
       } catch (e) {
         return ''
       }
+    },
+    // 2026-07-04: 考勤 section 用
+    formatDateShort(d) {
+      if (!d) return ''
+      try {
+        const dt = new Date(d)
+        const m = String(dt.getMonth() + 1).padStart(2, '0')
+        const day = String(dt.getDate()).padStart(2, '0')
+        const weekday = ['日', '一', '二', '三', '四', '五', '六'][dt.getDay()]
+        return `${m}-${day} 周${weekday}`
+      } catch (e) {
+        return ''
+      }
+    },
+    formatTime(d) {
+      if (!d) return ''
+      try {
+        const dt = new Date(d)
+        const hh = String(dt.getHours()).padStart(2, '0')
+        const mm = String(dt.getMinutes()).padStart(2, '0')
+        return `${hh}:${mm}`
+      } catch (e) {
+        return ''
+      }
+    },
+    // schedule 行的状态 tag; attendance=null 时(刚生成排课未报/未消课)按 schedule.status 兜底
+    attendanceUI(s) {
+      const a = s && s.attendance
+      if (a && a.status && ATTENDANCE_UI[a.status]) {
+        return ATTENDANCE_UI[a.status]
+      }
+      // 没有考勤记录 — 看排课本身是否已上完(plannedEndTime < now)
+      const st = s && s.status
+      if (st === 'finished' || st === 'archived') {
+        return { label: '已上', cls: 'completed' }
+      }
+      if (st === 'in_progress') return { label: '进行中', cls: 'checked-in' }
+      return { label: '待上课', cls: 'scheduled' }
+    },
+    goSchedule(s) {
+      haptic.tap()
+      if (!s || !s.id) return
+      uni.navigateTo({ url: '/pages/schedule/detail?id=' + s.id })
     }
   }
 }
@@ -657,6 +770,116 @@ export default {
 
   &__bottom-spacer {
     height: $spacing-2xl;
+  }
+
+  // 2026-07-04: 考勤记录 section
+  &__card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: $spacing-sm;
+  }
+  &__card-title {
+    display: block;
+    font-size: $font-lg;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    // 此处不复写 margin - 已有 card 类的 margin-bottom;header 内的 title 不重复
+    margin-bottom: 0;
+  }
+  &__card-stat {
+    font-size: $font-xs;
+    color: $text-tertiary;
+  }
+  &__attendances {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-sm;
+  }
+  &__att-row {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    padding: $spacing-sm $spacing-md;
+    background: $bg-page;
+    border-radius: $radius-md;
+    border: 1rpx solid $divider;
+
+    &:active {
+      background: rgba(255, 138, 101, 0.06);
+    }
+  }
+  &__att-no {
+    width: 56rpx;
+    height: 56rpx;
+    background: $bg-card;
+    color: $text-secondary;
+    border-radius: 50%;
+    @include flex-center;
+    font-size: $font-base;
+    font-weight: $font-weight-semibold;
+    flex-shrink: 0;
+    box-shadow: $shadow-card;
+  }
+  &__att-body {
+    flex: 1;
+    min-width: 0;
+  }
+  &__att-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8rpx;
+    margin-bottom: 6rpx;
+  }
+  &__att-title {
+    font-size: $font-base;
+    font-weight: $font-weight-medium;
+    color: $text-primary;
+  }
+  &__att-tag {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 4rpx 12rpx;
+    font-size: $font-xs;
+    border-radius: $radius-pill;
+    background: $divider-light;
+    color: $text-secondary;
+
+    &--completed {
+      background: rgba(124, 217, 183, 0.20);
+      color: #1F8C66;
+    }
+    &--checked-in {
+      background: rgba(91, 158, 230, 0.20);
+      color: #2D5F9F;
+    }
+    &--scheduled {
+      background: rgba(255, 138, 101, 0.18);
+      color: $primary;
+    }
+    &--no-show {
+      background: rgba(255, 107, 107, 0.20);
+      color: #D44141;
+    }
+    &--leave {
+      background: rgba(0, 0, 0, 0.06);
+      color: $text-tertiary;
+    }
+  }
+  &__att-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6rpx 14rpx;
+    font-size: $font-xs;
+    color: $text-tertiary;
+  }
+  &__att-arrow {
+    color: $text-tertiary;
+    font-size: 36rpx;
+    flex-shrink: 0;
+    line-height: 1;
   }
 }
 </style>

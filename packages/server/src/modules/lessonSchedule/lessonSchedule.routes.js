@@ -13,6 +13,10 @@ router.use(mws.authenticate, mws.requireOrg)
 router.use(mws.activeStudent)
 // R-1492 GET /lesson-schedules/me/calendar (C 端"我的课表")
 router.get('/me/calendar', asyncHandler(c.calendarForStudent))
+// R-1493 GET /lesson-schedules/me/by-instance/:courseInstanceId (开班详情用,本孩子的排课+考勤列表)
+// 2026-07-04: instance-detail.vue "考勤记录" section
+// 顺序要求: 必须在 /me/calendar 之后, /:id 之前(否则会被误吞到 :id)
+router.get('/me/by-instance/:courseInstanceId', asyncHandler(c.byInstanceForStudent))
 
 // R-1450 GET /lesson-schedules/calendar
 router.get('/calendar', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.calendar))

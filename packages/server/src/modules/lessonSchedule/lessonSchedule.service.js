@@ -1138,6 +1138,87 @@ async function calendarForStudent({ orgId, studentId, from, to, isTrialLesson, s
 }
 
 /**
+ * C 端 (R-1493 2026-07-04): 当前 active child 在某开班下的排课+考勤列表
+ *
+ * 用例: 家长在开班详情(instance-detail)里看"本孩子的考勤记录"
+ *
+ * 设计:
+ *  1) 越权防护 - 学生必须在此开班有有效报名 (enrolled / archived)
+ *  2) 一次性 LessonSchedule.find + LessonAttendance.find(lessonSchedule $in ids),避免 N+1
+ *  3) 按 lessonNo 升序输出,方便 UI 按"第 N 节"展示
+ *  4) 没考勤(attendance=null)≠ 出勤状态 — 这是 "scheduled 生成前/未报报名",UI 自己辨别
+ *
+ * 关联 memory: 跨模块给 instance-detail 加考勤展示 (2026-07-04)
+ */
+async function byInstanceForStudent({ orgId, studentId, courseInstanceId }) {
+  if (!orgId) throw ApiError.badRequest('缺少 orgId')
+  if (!studentId) throw ApiError.badRequest('缺少 studentId')
+  if (!courseInstanceId) throw ApiError.badRequest('缺少 courseInstanceId')
+
+  // 1) 越权检查 - 该学生必须在此开班有有效报名
+  //    allowed: enrolled(在读) + archived(已结课归档, 看历史考勤用)
+  //    denied:  dropped / withdrew — 完全没学这课
+  const enrollment = await CourseEnrollment.findOne({
+    org: orgId,
+    student: studentId,
+    courseInstance: courseInstanceId,
+    status: { $in: [CourseEnrollmentStatus.ENROLLED, CourseEnrollmentStatus.ARCHIVED] }
+  }).lean()
+  if (!enrollment) {
+    throw ApiError.forbidden('孩子未报名该开班')
+  }
+
+  // 2) 该开班下所有排课
+  const schedules = await LessonSchedule.find({
+    org: orgId,
+    courseInstance: courseInstanceId
+  })
+    .populate('teacher', 'realName')
+    .populate('room', 'name')
+    .sort({ lessonNo: 1, plannedStartTime: 1 })
+    .lean()
+
+  if (!schedules.length) return []
+
+  // 3) 一次性拿本学生在这些排课下的所有考勤
+  const scheduleIds = schedules.map((s) => s._id)
+  const attendances = await LessonAttendance.find({
+    org: orgId,
+    student: studentId,
+    lessonSchedule: { $in: scheduleIds }
+  }).lean()
+  const attMap = new Map()
+  for (const a of attendances) {
+    attMap.set(String(a.lessonSchedule), a)
+  }
+
+  // 4) 拼装输出
+  return schedules.map((s) => {
+    const a = attMap.get(String(s._id))
+    return {
+      id: String(s._id),
+      lessonNo: s.lessonNo,
+      title: s.title || '',
+      plannedStartTime: s.plannedStartTime,
+      plannedEndTime: s.plannedEndTime,
+      status: s.status,
+      isTrialLesson: !!s.isTrialLesson,
+      teacher: s.teacher && { id: String(s.teacher._id), realName: s.teacher.realName },
+      room: s.room && { id: String(s.room._id), name: s.room.name },
+      attendance: a
+        ? {
+            id: String(a._id),
+            status: a.status,
+            actualStartTime: a.actualStartTime,
+            actualEndTime: a.actualEndTime,
+            remark: a.remark || ''
+          }
+        : null
+    }
+  })
+}
+
+/**
  * 冲突预检（独立端点）：给定一个时间段 + 老师/教室/课程实例，
  * 返回所有冲突排课（用于编辑对话框的"实时校验"）
  */
@@ -1296,6 +1377,8 @@ async function previewSyncAttendances({ id, orgId }) {
 module.exports = {
   list, detail, create, update, remove, removableCheck, calendar,
   calendarForStudent,
+  // 2026-07-04: C 端开班详情 - 本孩子排课+考勤列表 (R-1493)
+  byInstanceForStudent,
   preview, generate, prepare, start, finish, archive, checkConflicts,
   detectConflict,
   generateAttendancesForSchedule,
