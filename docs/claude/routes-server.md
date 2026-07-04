@@ -672,6 +672,7 @@ Auth 列简写:
 | 2026-07-03 | 内容模块 MM=36/37/38 下放 per-org: service filter org=null → org=req.orgId (强制 x-org-id); 写操作 requirePlatformAdmin → requirePermission('xx.write'); admin 菜单移到「机构管理 → 科普内容」; C 端 explore.vue 无改动靠 x-org-id 自动隔离; seed Org.find 循环每个启用 Org 各一份 | R-3602~3605/R-3703~3706/R-3804~3807 + 所有公开 GET | modify |
 | 2026-07-04 | 科普内容运营分析 (ContentEngagement event log): 新建 content_engagements collection + adminStats/adminRowStats 6 端点 (article.read/video.read/game.read); video/game /play 接受 body.durationMs + 记录 activeStudentId+sessionMs (game /play 加 mws.requireOrg); article detail 自动记 1 条 event (sessionMs=0); 复用 reportCache 60s TTL + resolveRange time-range; admin UI 删「下架」按钮 (改用 editDialog isPublished switch) + 加 KpiCard 顶栏 + per-row stats 列; C 端 video-play / game-launch onPause/onEnded/onUnload report durationMs | R-3606/3607/R-3707/3708/R-3808/3809 | add |
 | 2026-07-04 | 科普内容超管物理删除 (CLAUDE.md §8.1 三重防护): 6 新端点 (3 module × {POST /:id/purge ADMIN_PWD + GET /:id/removable-check PERM}); service 增 `articleUsageChecks/gameUsageChecks/videoUsageChecks` 命名函数 + `remove(id, orgId)` + `removableCheck(id, orgId)`; 挡 ContentEngagement.contentId 引用 (assertUnused 422); admin UI 在「操作」列加 `<DestructiveConfirm>` 「误操删除」按钮 (v-if=isPlatformAdmin, 宽度 100→170); 普通员工只看到「编辑」 | R-3608/3609/R-3709/3710/R-3810/3811 | add |
+| 2026-07-04 | admin edit 正文空白修复: article.adminList 投影剔除 contentMarkdown + contentHtml 省带宽 → dialog edit 时 textarea 显示空白; 新增 R-3612 GET /articles/admin/:id (adminDetail, 含大字段, 草稿也能看); ContentArticles.vue#openEdit async fetch detail 后再开 dialog | R-3612 | add |
 
 ### MM=36 article (URL: /articles)
 
@@ -687,6 +688,7 @@ Auth 列简写:
 | R-3607 | GET | /articles/admin/row-stats | ADMIN | article.read | per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}> | 2026-07-04 运营分析; admin list 注入 _stats |
 | R-3608 | POST | /articles/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId; 走后端 `service.remove` 物理 `deleteOne` |
 | R-3609 | GET | /articles/admin/:id/removable-check | PERM | article.read | **删除预检** | 普通业务岗可调, DestructiveConfirm precheck 用; 返 `{canRemove, blockers}` |
+| R-3612 | GET | /articles/admin/:id | PERM | article.read | **admin 单条详情** (含 contentMarkdown + contentHtml) | 2026-07-04 新增; adminList 为省带宽显式剔除大字段, edit dialog 需要原文回填; 不过滤 isPublished (草稿也能看) |
 
 ### MM=37 game (URL: /games)
 

@@ -123,4 +123,18 @@ router.get(
   asyncHandler(c.removableCheck)
 )
 
+// R-3612 GET /articles/admin/:id — admin 单条详情
+//   含 contentMarkdown + contentHtml (adminList 为省带宽显式剔除;)
+//   不过滤 isPublished (草稿也能编辑)
+//   普通业务岗 article.read 即可调
+router.get(
+  '/admin/:id',
+  mws.authenticate,
+  mws.requireOrg,
+  mws.requirePermission('article.read'),
+  v.idParam,
+  mws.validateRequest,
+  asyncHandler(c.adminDetail)
+)
+
 module.exports = router

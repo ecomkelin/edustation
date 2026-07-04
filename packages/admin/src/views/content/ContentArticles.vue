@@ -30,9 +30,9 @@
           placeholder="搜索标题..."
           style="width: 240px"
           clearable
-          @keyup.enter="load"
+          @keyup.enter="loadAll"
         />
-        <el-select v-model="filter" placeholder="上下架" clearable style="width: 140px" @change="load">
+        <el-select v-model="filter" placeholder="上下架" clearable style="width: 140px" @change="loadAll">
           <el-option label="已发布" value="true" />
           <el-option label="草稿" value="false" />
         </el-select>
@@ -189,8 +189,17 @@ function openCreate() {
   dialogVisible.value = true
 }
 
-function openEdit(row) {
-  editingDoc.value = row
+// 2026-07-04: 列表接口 (adminList) 投影剔除了 contentMarkdown + contentHtml 省带宽;
+//   编辑弹窗需拿完整正文回填, 所以先单独调一次 adminDetail (R-3612) 再开 dialog.
+//   失败 fallback: 仍开 dialog (其它字段正常, 用户不能编辑正文但不影响其它)
+//   (draft 已发布文章都返详情; 失败场景罕见, 不弹错避免打扰)
+async function openEdit(row) {
+  try {
+    const res = await articleApi.adminDetail(row._id)
+    editingDoc.value = res?.data || row
+  } catch (_) {
+    editingDoc.value = row
+  }
   dialogVisible.value = true
 }
 

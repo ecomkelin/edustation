@@ -56,6 +56,13 @@ exports.adminList = async (req, res) => {
   res.json(ApiResponse.ok(r))
 }
 
+// 2026-07-04: admin 详情 (含 contentMarkdown + contentHtml, 草稿也能看)
+//   adminList 显式 projection 剔除大字段省带宽, edit dialog 需要原文回填
+exports.adminDetail = async (req, res) => {
+  const r = await s.adminDetail(req.params.id, req.orgId)
+  res.json(ApiResponse.ok(r))
+}
+
 exports.create = async (req, res) => {
   const r = await s.create({
     orgId: req.orgId,

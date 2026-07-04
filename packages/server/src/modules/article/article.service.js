@@ -62,6 +62,18 @@ async function bumpViewCount({ id, orgId, activeStudentId }) {
 
 // ───── admin 端 ─────
 
+// 2026-07-04: admin 单条详情 — 不过滤 isPublished (草稿也能编辑), 含 contentMarkdown/contentHtml
+//   adminList 为省带宽剔除了大字段 (markdown + html), edit dialog 需原文回填
+async function adminDetail(id, orgId) {
+  if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
+  if (!mongoose.isValidObjectId(id)) throw ApiError.badRequest('id 非法')
+  const doc = await Article.findOne({ _id: id, org: orgId })
+    .populate('coverFile', 'url mime size')
+    .lean()
+  if (!doc) throw ApiError.notFound('文章不存在')
+  return doc
+}
+
 async function adminList({ orgId, isPublished, category, keyword, page, pageSize }) {
   if (!orgId) throw ApiError.badRequest('请指定机构 (x-org-id)')
   const p = normalizePagination({ page, pageSize })
@@ -189,6 +201,7 @@ module.exports = {
   publicDetail,
   bumpViewCount,
   adminList,
+  adminDetail,    // 2026-07-04 新增: 含 markdown 大字段, 用于 edit dialog 回填
   create,
   update,
   softRemove,

@@ -25,6 +25,11 @@ export const articleApi = {
   detail(id) {
     return http.get(`/articles/${id}`)
   },
+  // R-3612 GET /articles/admin/:id — admin 单条详情 (含 contentMarkdown, 草稿也能看)
+  //   dialog edit 时调 — adminList 投影剔除了大字段
+  adminDetail(id) {
+    return http.get(`/articles/admin/${id}`)
+  },
   // R-3606 顶部 KPI 卡 (累计浏览 / 独立孩子观众 / 总时长)
   adminStats(params = {}) {
     return http.get('/articles/admin/stats', { params })
