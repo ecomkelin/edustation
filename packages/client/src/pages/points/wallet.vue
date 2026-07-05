@@ -1,17 +1,19 @@
 <!--
-  我的积分 - C 端家长视角
-  数据源: R-2072 GET /points/me (强制 activeStudent)
-  返回:
-    student / balance / totalEarned / totalSpent / lastTransactionAt
-    recentTransactions: Array<{ amount, trigger, reason{name}, operator{realName}, balanceAfter, remark, createdAt }>
+  我的积分 - C 端家长视角 (2026-07-05 重做)
+  数据源: R-2072 GET /points/me?student=xxx  (后端 points.controller.js: student = req.query.student || req.activeStudentId, 允许 query 覆盖)
+  显示指定 kid 的积分; 不切全局 activeStudent — 这是「查看模式」, kid-card 跳进来就是该 kid 的数据, 用户原话「这页面不许换孩子」
+  入参: ?kid=<id> (必填)
+  返回字段:
+    balance / totalEarned / totalSpent / lastTransactionAt
+    recentTransactions: [{ amount, trigger, reason{name}, operator{realName}, balanceAfter, remark, createdAt }]
 -->
 <template>
   <view class="pw">
-    <!-- Hero: 当前孩子 + 余额大字 + 累计入账/出账 -->
+    <!-- Hero -->
     <view class="pw__hero">
       <view class="pw__hero-bg" />
       <view class="pw__hero-inner">
-        <text class="pw__hero-label">{{ activeStudentName }}的积分</text>
+        <text class="pw__hero-label">{{ viewStudentName }}的积分</text>
         <view class="pw__hero-balance">
           <text class="pw__hero-balance-val">{{ account.balance || 0 }}</text>
           <text class="pw__hero-balance-unit">分</text>
@@ -37,12 +39,7 @@
       </view>
     </view>
 
-    <!-- 学生切换 (单孩子也无下拉箭头) -->
-    <view class="pw__sub">
-      <active-student-header @change="onStudentChange" />
-    </view>
-
-    <!-- 最近流水 (最多 8 条) -->
+    <!-- 最近流水 -->
     <view class="pw__recent">
       <view class="pw__recent-head">
         <text class="pw__recent-title">最近流水</text>
@@ -77,7 +74,7 @@
             <text class="pw__row-amount" :class="amountClass(tx)">
               {{ tx.amount > 0 ? '+' : '' }}{{ tx.amount }}
             </text>
-            <text class="pw__row-time">{{ date.fmtTime(tx.createdAt) }}</text>
+            <text class="pw__row-time">{{ timeLabel(tx) }}</text>
           </view>
         </view>
       </view>
@@ -94,7 +91,6 @@
 <script>
 import { mapState } from 'pinia'
 import { useStudentStore } from '@/stores/student'
-import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
 import { pointsApi } from '@/api/points'
 import { date } from '@/utils/date'
 import { haptic } from '@/utils/haptic'
@@ -114,10 +110,12 @@ const TRIGGER_META = {
 }
 
 export default {
-  components: { ActiveStudentHeader },
   data() {
     return {
       loading: false,
+      // 2026-07-05: 入参 ?kid=xxx, 显示 view-kid 的积分 (不切 activeStudent)
+      viewKidId: '',
+      viewStudentName: '',
       account: {
         balance: 0,
         totalEarned: 0,
@@ -129,11 +127,8 @@ export default {
     }
   },
   computed: {
-    ...mapState(useStudentStore, ['activeStudentId', 'list']),
-    activeStudentName() {
-      const s = (this.list || []).find((x) => String(x.id) === String(this.activeStudentId))
-      return s?.name || '当前孩子'
-    },
+    // 仅用来反查 kid 名 (kidMap 在主屏 me.vue 已经 fetch)
+    ...mapState(useStudentStore, ['list']),
     lastTxLabel() {
       if (!this.account.lastTransactionAt) return '—'
       const t = new Date(this.account.lastTransactionAt).getTime()
@@ -148,19 +143,51 @@ export default {
       return date.fmtDate(this.account.lastTransactionAt)
     }
   },
-  watch: {
-    activeStudentId() {
-      this.load()
-    }
+  onLoad(query) {
+    // uni-app x H5 下 onLoad 只在页面首次创建时跑一次, 后续 navigateTo 复用实例只触发 onShow
+    // 所以 query 解析必须放 onShow, 每次进入重新读 — 否则 wallet 第二次进来仍是上次的 viewKidId
+    this.viewKidId = (query && query.kid) || ''
+    this._resolveViewName()
   },
   onShow() {
+    // 每次显示重新读 query (H5 下 navigateTo 复用实例只跑 onShow)
+    // 解码方式: uni.getCurrentPages() 看当前页面 options
+    try {
+      const pages = getCurrentPages && getCurrentPages()
+      const cur = pages && pages.length ? pages[pages.length - 1] : null
+      const options = (cur && cur.options) || {}
+      // 优先读页面栈当前实例 options (uni-app x 实测拿到正确 query), 失败再用 data 里缓存的
+      if (options && options.kid) {
+        if (this.viewKidId !== options.kid) {
+          this.viewKidId = options.kid
+          this._resolveViewName()
+        }
+      }
+    } catch (e) {
+      console.warn('[wallet.onShow] getCurrentPages failed', e)
+    }
     this.load()
   },
   methods: {
+    _resolveViewName() {
+      if (this.viewKidId && Array.isArray(this.list) && this.list.length) {
+        const found = this.list.find((x) => String(x.id) === String(this.viewKidId))
+        this.viewStudentName = (found && found.name) || '孩子'
+      } else {
+        this.viewStudentName = '孩子'
+      }
+    },
     async load() {
+      console.log('[wallet.load] viewKidId=', this.viewKidId)
+      if (!this.viewKidId) {
+        this.recent = []
+        this.account = { balance: 0, totalEarned: 0, totalSpent: 0, lastTransactionAt: null }
+        return
+      }
       this.loading = true
       try {
-        const res = await pointsApi.me()
+        // R-2072 后端 controller 接受 query.student 覆盖 activeStudentId
+        const res = await pointsApi.me({ student: this.viewKidId })
         const data = res || {}
         this.account = {
           balance: data.balance || 0,
@@ -179,23 +206,19 @@ export default {
           totalSpent: 0,
           lastTransactionAt: null
         }
+        uni.showToast({ title: '积分加载失败,请稍后再试', icon: 'none' })
       } finally {
         this.loading = false
       }
-    },
-    onStudentChange() {
-      this.load()
     },
     triggerMeta(trigger) {
       return TRIGGER_META[trigger] || { label: trigger || '其他', emoji: '💫', dir: 'neutral' }
     },
     txTitle(tx) {
-      // 优先 reason.name (Category) > trigger label > '积分变动'
       if (tx.reason && tx.reason.name) return tx.reason.name
       return this.triggerMeta(tx.trigger).label
     },
     txSub(tx) {
-      // 二行: 备注 / 操作人 / 余快照 / 时间
       const parts = []
       if (tx.remark) parts.push(tx.remark)
       if (tx.operator && (tx.operator.realName || tx.operator.mobile)) {
@@ -212,6 +235,10 @@ export default {
       if (dir === 'out') return 'pw__row-amount--out'
       return 'pw__row-amount--neutral'
     },
+    timeLabel(tx) {
+      if (!tx || !tx.createdAt) return ''
+      return date.fmtTime(tx.createdAt)
+    },
     previewTx(tx) {
       haptic.tap()
       const meta = this.triggerMeta(tx.trigger)
@@ -223,7 +250,11 @@ export default {
     },
     goAll() {
       haptic.tap()
-      uni.navigateTo({ url: '/pages/points/transactions' })
+      // 看全部仍按 viewKid 过滤 (保持当前 kid 不动)
+      const url = this.viewKidId
+        ? `/pages/points/transactions?kid=${this.viewKidId}`
+        : '/pages/points/transactions'
+      uni.navigateTo({ url })
     }
   }
 }
@@ -237,7 +268,6 @@ export default {
   flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom);
 
-  // hero: 渐变 (暖色) + 大 balance
   &__hero {
     position: relative;
     overflow: hidden;
@@ -246,7 +276,6 @@ export default {
   &__hero-bg {
     position: absolute;
     inset: 0;
-    // 与 studentProduct 区分: 用更"财富感"的橙金色
     background: linear-gradient(180deg, $primary 0%, $primary-light 50%, #FFE4D3 100%);
     z-index: 0;
   }
@@ -312,24 +341,14 @@ export default {
     background: rgba(255, 255, 255, 0.3);
   }
 
-  // 子节点
-  &__sub {
-    padding: $spacing-md $spacing-lg;
-    background: $bg-page;
-    position: relative;
-    z-index: 2;
-    margin-top: -$spacing-md;
-  }
-
-  // 最近流水 section
   &__recent {
     background: $bg-page;
-    padding: 0 $spacing-lg $spacing-xl;
+    padding: 0 $spacing-md $spacing-xl;
   }
   &__recent-head {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: baseline;
     padding: $spacing-md 0;
   }
   &__recent-title {
@@ -342,7 +361,6 @@ export default {
     color: $primary;
   }
 
-  // 骨架
   &__skeleton {
     display: flex;
     flex-direction: column;
@@ -356,7 +374,6 @@ export default {
     animation: shimmer 1.5s ease-in-out infinite;
   }
 
-  // 空
   &__empty {
     @include flex-center;
     flex-direction: column;
@@ -380,7 +397,6 @@ export default {
     color: $text-secondary;
   }
 
-  // 列表
   &__list {
     display: flex;
     flex-direction: column;
@@ -389,8 +405,6 @@ export default {
     padding: $spacing-xs 0;
     box-shadow: $shadow-card;
   }
-
-  // 单行
   &__row {
     display: flex;
     align-items: center;

@@ -88,7 +88,7 @@
               <text>{{ w.title }}</text>
             </view>
             <view v-if="w.lessonSchedule && w.lessonSchedule.plannedStartTime" class="wall__tile-time">
-              <text>{{ date.fmtShort(w.lessonSchedule.plannedStartTime) }}</text>
+              <text>{{ timeLabel(w) }}</text>
             </view>
           </view>
         </view>
@@ -158,6 +158,13 @@ export default {
     this.reload().then(() => uni.stopPullDownRefresh())
   },
   methods: {
+    // 模板 {{ timeLabel(w) }} 替代 {{ date.fmtShort(...) }} — options API 模板不认 module-scope util
+    timeLabel(w) {
+      const t = w && w.lessonSchedule && w.lessonSchedule.plannedStartTime
+      if (!t) return ''
+      return date.fmtShort(t)
+    },
+
     isVideoUrl(url) {
       if (!url) return false
       return /\.(mp4|mov|m4v|webm|avi|mkv)(\?|$)/i.test(url)

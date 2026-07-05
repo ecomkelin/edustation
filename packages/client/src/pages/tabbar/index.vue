@@ -667,11 +667,17 @@ export default {
     // 2026-07-03: 顶部 stat 跳转
     goStudentProducts() {
       haptic.tap()
-      uni.navigateTo({ url: '/pages/studentProduct/list' })
+      // 2026-07-05: home.vue stat 卡按全局 activeStudent 走, 附带 ?kid= 让详情页定位该 kid 数据 (不切 activeStudent)
+      // 用普通字符串拼接避免模板字面量嵌三元在一些 vite-plugin-uni 解析器下的兼容性坑
+      const kid = this.activeStudentId || ''
+      const url = kid ? '/pages/studentProduct/list?kid=' + kid : '/pages/studentProduct/list'
+      uni.navigateTo({ url: url })
     },
     goPoints() {
       haptic.tap()
-      uni.navigateTo({ url: '/pages/points/wallet' })
+      const kid = this.activeStudentId || ''
+      const url = kid ? '/pages/points/wallet?kid=' + kid : '/pages/points/wallet'
+      uni.navigateTo({ url: url })
     },
     // 2026-07-04 顶部机构 chip 跳转 — 公开机构主页 R-0932 (跟被删的 stat 按钮是同入口)
     goOrgHome() {
@@ -878,7 +884,10 @@ export default {
     },
 
     goCalendar() {
-      uni.navigateTo({ url: '/pages/schedule/calendar' })
+      haptic.tap()
+      const kid = this.activeStudentId || ''
+      const url = kid ? '/pages/schedule/calendar?kid=' + kid : '/pages/schedule/calendar'
+      uni.navigateTo({ url: url })
     },
 
     goLessonDetail(id) {

@@ -6,10 +6,17 @@ const ApiResponse = require('@utils/ApiResponse')
 exports.list = async (req, res) => res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, ...req.query })))
 exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(req.params.id, req.orgId)))
 
-// C 端 /orders/me (R-2078 2026-07-01): 当前 active child 的 Order
-// 复用 service.list,强制 student=req.activeStudentId,避免越权
+// C 端 /orders/me (R-2078 2026-07-05 重构): 跨 kid 跨 org 聚合, 不强制 activeStudent
+//   替代旧版 "强制 student=activeStudentId" — 之前 C 端家长在多机构多孩场景只能看到 active 一孩的订单
+//   新版通过 userId 反查所有 kid 子集, 任何 query.student 必须 ⊂ kid 子集 (route 越权由 service 校验)
 exports.mine = async (req, res) =>
-  res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, student: req.activeStudentId, ...req.query })))
+  res.json(ApiResponse.ok(await s.listMyOrdersForGuardian({
+    userId: req.user.id,
+    student: req.query.student,
+    status: req.query.status,
+    page: req.query.page,
+    pageSize: req.query.pageSize
+  })))
 exports.create = async (req, res) => {
   // 新结构：{ student, items: [{ courseProduct, quantity }], actualPrice, paymentMethod, paidAmount, remark, agreements }
   // - 仅传 items  → 创建 pending 订单（客户端下单 / 家长端未来使用）

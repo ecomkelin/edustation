@@ -346,6 +346,7 @@ Auth 列简写:
 | R-1723 | POST | /orders/:id/cancel | PERM | order.write | 取消 | pending → cancelled |
 | R-1704 | DELETE | /orders/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 StudentProduct.order; 业务硬门挡 paid/refunded |
 | R-1705 | GET | /orders/:id/removable-check | PERM | order.read | 删除预检 | |
+| R-2078 | GET | /orders/me | AUTH | — | 家长 C 端名下所有 kid 跨机构订单 | 2026-07-05 重构: 不再强制绑 activeStudentId, userId 反查所有 kid 子集; query.student/status/page/pageSize 任选; populate student.name+org; 响应含 orgIds + kidMap 给前端筛选项用 |
 
 ### MM=18 studentProduct (URL: /student-products)
 

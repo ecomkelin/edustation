@@ -4,6 +4,7 @@ const Order = require('@models/Order.model')
 const CourseProduct = require('@models/CourseProduct.model')
 const Student = require('@models/Student.model')
 const StudentProduct = require('@models/StudentProduct.model')
+const Org = require('@models/Org.model')
 const LegalDoc = require('@models/LegalDoc.model')
 const ApiError = require('@utils/ApiError')
 const removable = require('@utils/removable')
@@ -275,7 +276,7 @@ async function list({ orgId, student, status, page, pageSize }) {
   if (status) filter.status = status
   const [items, total] = await Promise.all([
     Order.find(filter)
-      .populate('student', 'name')
+      .populate('student', 'name org')
       .populate('items.courseProduct', 'name totalLessons validDays discountPrice promotionPrice')
       .sort({ createdAt: -1 })
       .skip(p.skip)
@@ -284,6 +285,74 @@ async function list({ orgId, student, status, page, pageSize }) {
     Order.countDocuments(filter)
   ])
   return { items, total, page: p.page, pageSize: p.pageSize }
+}
+
+/**
+ * 2026-07-05 新增: 家长查自己名下 kid 的所有订单 (跨 org, 不强制 activeStudent)
+ *
+ * 设计: 不走 req.orgId (用户可能在多机构下各报班), 走 userId → listForGuardian 跨机构拿所有 kid,
+ *       再 Order.find({ student ∈ kidIds, status }) populate student.name + student.org
+ *
+ * 越权防御: 任何 req.query.student 参数都只接受 kid 子集, 否则 400; 默认不传 = 拉全部
+ */
+async function listMyOrdersForGuardian({ userId, student, status, page, pageSize }) {
+  const p = normalizePagination({ page, pageSize })
+  // 1) 拿所有 kid (跨机构)
+  const kids = await Student.find({ guardians: userId, isBlocked: { $ne: true } })
+    .select('_id name org')
+    .lean()
+  if (kids.length === 0) return { items: [], total: 0, page: p.page, pageSize: p.pageSize, orgs: [], kidMap: {} }
+  const kidMap = {}
+  const kidIds = []
+  const orgIds = new Set()
+  for (const k of kids) {
+    kidMap[String(k._id)] = { id: String(k._id), name: k.name, orgId: k.org ? String(k.org) : null }
+    kidIds.push(k._id)
+    if (k.org) orgIds.add(String(k.org))
+  }
+  // 2) 安全校验: 传 student 参数必须 ⊂ kidIds
+  let filterStudents = kidIds
+  if (student) {
+    if (!kidMap[String(student)]) {
+      throw ApiError.forbidden('指定学生不在监护人关联范围内')
+    }
+    filterStudents = [student]
+  }
+  // 3) 构造 filter, 显式 if 避免 undefined / '' 写入
+  const filter = { student: { $in: filterStudents } }
+  if (status) filter.status = status
+  const [items, total] = await Promise.all([
+    Order.find(filter)
+      .populate({ path: 'student', select: 'name org', populate: { path: 'org', select: 'name' } })
+      .populate('items.courseProduct', 'name totalLessons validDays discountPrice promotionPrice')
+      .sort({ createdAt: -1 })
+      .skip(p.skip)
+      .limit(p.limit)
+      .lean(),
+    Order.countDocuments(filter)
+  ])
+  // 3) 收集本批订单涉及到的 org (用以筛选项前端构造)
+  const orderOrgIds = new Set(orgIds)
+  for (const o of items) {
+    const oOrg = o.student && o.student.org
+    if (oOrg) orderOrgIds.add(typeof oOrg === 'string' ? oOrg : String(oOrg._id || oOrg))
+  }
+  // 4) 查 org 名字返回给前端 chip 渲染
+  let orgs = []
+  if (orderOrgIds.size > 0) {
+    const orgsRaw = await Org.find({ _id: { $in: [...orderOrgIds] } })
+      .select('_id name')
+      .lean()
+    orgs = orgsRaw.map((o) => ({ id: String(o._id), name: o.name }))
+  }
+  return {
+    items,
+    total,
+    page: p.page,
+    pageSize: p.pageSize,
+    orgs,
+    kidMap
+  }
 }
 
 async function detail(id, orgId) {
@@ -525,6 +594,7 @@ async function removableCheck(id, orgId) {
 module.exports = {
   create,
   list,
+  listMyOrdersForGuardian,
   detail,
   pay,
   cancel,

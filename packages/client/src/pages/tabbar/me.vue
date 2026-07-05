@@ -32,6 +32,21 @@
       <!-- 2026-07-04 fix: scroll-view 在 H5 下 padding 不传给子节点, 用 wrapper 承载 (同 home.vue me__body-inner 模式) -->
       <view class="me__body-inner">
 
+      <!-- 2026-07-05: 功能入口上移到 kids 之前 (用户原话「把我画红框的模块放到我的孩子上面」) -->
+      <view class="me__grid">
+        <view
+          v-for="item in menus"
+          :key="item.label"
+          class="me__menu press"
+          @tap="onMenuTap(item)"
+        >
+          <view class="me__menu-icon" :style="{ background: item.bg }">
+            <text class="me__menu-emoji">{{ item.icon }}</text>
+          </view>
+          <text class="me__menu-label">{{ item.label }}</text>
+        </view>
+      </view>
+
       <!-- 我的孩子 (2026-07-05: 每个 kid 一个独立 card 自带 3 stat — 走 R-0473 一次性聚合, 不切换 activeStudent) -->
       <view class="me__kid-cards">
         <view class="me__kid-cards-head">
@@ -53,9 +68,7 @@
             <view class="me__kid-card-info">
               <view class="me__kid-card-name-row">
                 <text class="me__kid-card-name">{{ kid.name }}</text>
-                <text v-if="String(kid.id) === String(activeStudentId)" class="me__kid-card-tag">
-                  当前
-                </text>
+                <!-- 2026-07-05: 移除「当前」药丸 tag, 用 me__kid-card--active 主色渐变背景标识当前孩子 (更净) -->
               </view>
               <!-- 2026-07-05: 显示孩子所属机构 (跟学生名字同 row, 卡片头部最右侧)
                    后端 listMyKidsStats 已 populate org.name, 没绑/孤儿时降级 "未关联机构" -->
@@ -92,21 +105,6 @@
         </view>
         <view v-if="kidStatsLoading && !kidStats.length" class="me__kid-cards-loading">
           <text>召唤中…</text>
-        </view>
-      </view>
-
-      <!-- 功能入口 -->
-      <view class="me__grid">
-        <view
-          v-for="item in menus"
-          :key="item.label"
-          class="me__menu press"
-          @tap="onMenuTap(item)"
-        >
-          <view class="me__menu-icon" :style="{ background: item.bg }">
-            <text class="me__menu-emoji">{{ item.icon }}</text>
-          </view>
-          <text class="me__menu-label">{{ item.label }}</text>
         </view>
       </view>
 
@@ -225,19 +223,31 @@ export default {
       }
     },
 
-    // 3 stat 跳转 — 2026-07-05 用户原话 "不切换孩子", 但这些 stat 详情页仍展示当前 activeStudent 数据
-    //       所以这里不需要 setActive, 直接 navigateTo 即可; 用户在 stat 详情页看到的仍是当前孩子
-    goStudentProducts() {
+    // 3 stat 跳转 — 2026-07-05 用户原话「这页面不许换孩子」: 详情页入参 `?kid=xxx` 让对应 kid 数据展示, 不动 activeStudent
+    goStudentProducts(kidId) {
       haptic.tap()
-      uni.navigateTo({ url: '/pages/studentProduct/list' })
+      if (!kidId) {
+        uni.showToast({ title: '请先选择孩子', icon: 'none' })
+        return
+      }
+      uni.navigateTo({ url: `/pages/studentProduct/list?kid=${kidId}` })
     },
-    goPoints() {
+    goPoints(kidId) {
       haptic.tap()
-      uni.navigateTo({ url: '/pages/points/wallet' })
+      console.log('[me.goPoints] kidId=', kidId, 'typeof=', typeof kidId)
+      if (!kidId) {
+        uni.showToast({ title: '请先选择孩子', icon: 'none' })
+        return
+      }
+      uni.navigateTo({ url: `/pages/points/wallet?kid=${kidId}` })
     },
-    goCalendar() {
+    goCalendar(kidId) {
       haptic.tap()
-      uni.navigateTo({ url: '/pages/schedule/calendar' })
+      if (!kidId) {
+        uni.showToast({ title: '请先选择孩子', icon: 'none' })
+        return
+      }
+      uni.navigateTo({ url: `/pages/schedule/calendar?kid=${kidId}` })
     },
 
     // 头像 fallback emoji (name 哈希稳定选 avatar 池 — 跟 ActiveStudentHeader 一致)
@@ -536,15 +546,6 @@ export default {
     color: $text-primary;
     line-height: 1.3;
     @include multi-ellipsis(1);
-  }
-  &__kid-card-tag {
-    flex-shrink: 0;
-    padding: 0 12rpx;
-    font-size: 22rpx;
-    line-height: 1.6;
-    border-radius: $radius-pill;
-    background: $primary;
-    color: #fff;
   }
 
   // kid 自带 3 stat 横排

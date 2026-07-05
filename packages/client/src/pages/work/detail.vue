@@ -99,7 +99,7 @@
         </view>
         <view v-if="work.lessonSchedule && work.lessonSchedule.plannedStartTime" class="detail__meta-row">
           <text class="detail__meta-lbl">排课</text>
-          <text class="detail__meta-val">{{ date.fmt(work.lessonSchedule.plannedStartTime) }}</text>
+          <text class="detail__meta-val">{{ scheduleTimeLabel() }}</text>
         </view>
         <view v-if="work.uploadedBy" class="detail__meta-row">
           <text class="detail__meta-lbl">上传者</text>
@@ -107,7 +107,7 @@
         </view>
         <view class="detail__meta-row">
           <text class="detail__meta-lbl">上传时间</text>
-          <text class="detail__meta-val">{{ date.fmt(work.createdAt) }}</text>
+          <text class="detail__meta-val">{{ createdAtLabel() }}</text>
         </view>
       </view>
 
@@ -136,6 +136,16 @@ export default {
     this.load()
   },
   methods: {
+    // 模板方法包装 — options API 不认 module-scope 的 date util
+    scheduleTimeLabel() {
+      const t = this.work && this.work.lessonSchedule && this.work.lessonSchedule.plannedStartTime
+      return t ? date.fmt(t) : ''
+    },
+    createdAtLabel() {
+      const t = this.work && this.work.createdAt
+      return t ? date.fmt(t) : ''
+    },
+
     isVideoUrl(url) {
       return /\.(mp4|mov|m4v|webm|avi|mkv)(\?|$)/i.test(url)
     },

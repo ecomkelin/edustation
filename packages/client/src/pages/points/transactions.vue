@@ -79,7 +79,7 @@
                 </text>
               </view>
               <view class="pt__row-foot">
-                <text class="pt__row-time">{{ date.fmtTime(tx.createdAt) }}</text>
+                <text class="pt__row-time">{{ timeLabel(tx) }}</text>
                 <text class="pt__row-balance">余额 {{ tx.balanceAfter }}</text>
               </view>
             </view>
@@ -274,6 +274,12 @@ export default {
       if (dir === 'out') return 'out'
       return 'neutral'
     },
+    // 模板 {{ timeLabel(tx) }} — options API 模板不认 module-scope util
+    timeLabel(tx) {
+      if (!tx || !tx.createdAt) return ''
+      return date.fmtTime(tx.createdAt)
+    },
+
     amountClass(tx) {
       const dir = this.triggerMeta(tx.trigger).dir
       if (dir === 'in') return 'pt__row-amount--in'
