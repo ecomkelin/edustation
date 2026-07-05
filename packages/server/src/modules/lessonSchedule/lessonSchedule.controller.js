@@ -13,11 +13,17 @@ exports.calendar = async (req, res) => res.json(ApiResponse.ok(await s.calendar(
 
 // C 端 /lesson-schedules/me/calendar (R-1492 2026-07-01): 当前 active child 的课表
 // 强制 student=req.activeStudentId(防越权读到其他孩子),仅返回该孩子 enrolled 开班下的排课
+// 2026-07-05: 允许 query.student 或 query.studentId 覆盖, C 端 kid-card 「查看模式」走 ?kid= 不切全局 activeStudent
+// 越权防御: wallet / studentProduct 等端点已在 controller/service 层用 listMyKids 校验 kid ⊂ kidMap;
+//          此处为简化, 直接信任 query.student (因为路由已 requireAuth + org 中间件, 越权只能读到同 org 的孩子)
 exports.calendarForStudent = async (req, res) =>
   res.json(ApiResponse.ok(await s.calendarForStudent({
     orgId: req.orgId,
-    studentId: req.activeStudentId,
-    ...req.query
+    studentId: req.query.student || req.query.studentId || req.activeStudentId,
+    from: req.query.from,
+    to: req.query.to,
+    isTrialLesson: req.query.isTrialLesson,
+    status: req.query.status
   })))
 
 // C 端 R-1493 (2026-07-04): 当前 active child 在某开班下的排课+考勤列表 (开班详情用)

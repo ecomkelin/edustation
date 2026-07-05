@@ -234,7 +234,6 @@ export default {
     },
     goPoints(kidId) {
       haptic.tap()
-      console.log('[me.goPoints] kidId=', kidId, 'typeof=', typeof kidId)
       if (!kidId) {
         uni.showToast({ title: '请先选择孩子', icon: 'none' })
         return

@@ -31,11 +31,6 @@
       </view>
     </view>
 
-    <!-- 当前孩子切换 (单孩子不显示下拉箭头) -->
-    <view class="sp__sub">
-      <active-student-header @change="onStudentChange" />
-    </view>
-
     <!-- 列表 -->
     <scroll-view
       scroll-y
@@ -125,36 +120,37 @@
         <view class="sp__bottom-spacer" />
       </view>
     </scroll-view>
-
-    <!-- 底部悬浮: 去买课 (用于空状态引导之外的快速入口) -->
-    <view v-if="items.length" class="sp__fab press" @tap="goCourses">
-      <text>+ 去买课</text>
-    </view>
   </view>
 </template>
 
 <script>
-import { mapState, mapGetters } from 'pinia'
+import { mapState } from 'pinia'
 import { useStudentStore } from '@/stores/student'
-import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
 import { studentProductApi } from '@/api/studentProduct'
 import { date } from '@/utils/date'
 import { haptic } from '@/utils/haptic'
 
 export default {
-  components: { ActiveStudentHeader },
+  components: {},
   data() {
     return {
       loading: false,
       refreshing: false,
-      items: []
+      items: [],
+      // 2026-07-05: viewKidId 模式 (跟 wallet 一致), kid-card 跳进来查该 kid 的课包, 不切全局 activeStudent
+      viewKidId: '',
+      viewStudentName: ''
     }
   },
   computed: {
-    ...mapState(useStudentStore, ['activeStudentId', 'list']),
+    ...mapState(useStudentStore, ['list']),
+    // 2026-07-05: 用 viewStudentName 替代 activeStudentName
     activeStudentName() {
-      const s = (this.list || []).find((x) => String(x.id) === String(this.activeStudentId))
-      return s?.name || '当前孩子'
+      return this.viewStudentName || '当前孩子'
+    },
+    // 兜底: onShow 跑时 student store list 还没就绪, 临时显示 '当前孩子', list 就绪后自动纠正
+    shouldRetryResolve() {
+      return this.viewKidId && !this.viewStudentName && Array.isArray(this.list) && this.list.length > 0
     },
     summary() {
       const active = this.items.filter((x) => x.isActive !== false)
@@ -171,18 +167,67 @@ export default {
     }
   },
   watch: {
-    activeStudentId() {
-      this.load()
+    // 2026-07-05: list (kidMap) 异步就绪后, 自动 retry resolve viewStudentName
+    list: {
+      handler() { if (this.shouldRetryResolve) this._resolveViewName() },
+      deep: false
     }
   },
+  onLoad(query) {
+    // 优先 window.location.search (浏览器 URL 权威, 跟 wallet 同模式)
+    let kid = ''
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const params = new URLSearchParams(window.location.search)
+        kid = params.get('kid') || ''
+      }
+    } catch (_) {}
+    if (!kid && query && query.kid) kid = query.kid
+    this.viewKidId = kid || ''
+    this._resolveViewName()
+  },
   onShow() {
+    // 每次显示强制重新读 query (H5 下 navigateTo 复用实例只跑 onShow)
+    let kid = ''
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const params = new URLSearchParams(window.location.search)
+        kid = params.get('kid') || ''
+      }
+    } catch (_) {}
+    if (!kid) {
+      try {
+        const pages = getCurrentPages && getCurrentPages()
+        const cur = pages && pages.length ? pages[pages.length - 1] : null
+        const options = (cur && cur.options) || {}
+        kid = options.kid || ''
+      } catch (_) {}
+    }
+    if (kid) {
+      this.viewKidId = kid
+      this._resolveViewName()
+    }
     this.load()
   },
   methods: {
+    _resolveViewName() {
+      if (this.viewKidId && Array.isArray(this.list) && this.list.length) {
+        const found = this.list.find((x) => String(x.id) === String(this.viewKidId))
+        this.viewStudentName = (found && found.name) || ''
+      } else {
+        this.viewStudentName = ''
+      }
+    },
     async load() {
+      // 2026-07-05: 必须传 student 参数, 否则后端 fallback 到 req.activeStudentId (错的 kid)
+      // R-2079 controller: student=req.activeStudentId, ...req.query → query.student 覆盖
+      if (!this.viewKidId) {
+        this.items = []
+        return
+      }
       this.loading = true
       try {
-        const res = await studentProductApi.me({})
+        const res = await studentProductApi.me({ student: this.viewKidId })
         // [memory: http-interceptor-actually-unpacked] http 已解包, res 即业务字段
         const list = Array.isArray(res) ? res : res?.items || res?.data || []
         this.items = list.map((x) => ({ ...x, _id: x._id || x.id }))
@@ -197,9 +242,6 @@ export default {
       this.refreshing = true
       await this.load()
       this.refreshing = false
-    },
-    onStudentChange() {
-      this.load()
     },
     percent(sp) {
       const t = sp.totalLessons || 0
@@ -511,22 +553,7 @@ export default {
     height: $spacing-xl;
   }
 
-  // 悬浮按钮
-  &__fab {
-    position: fixed;
-    right: $spacing-lg;
-    bottom: calc(#{$spacing-xl} + env(safe-area-inset-bottom));
-    padding: 18rpx 28rpx;
-    background: linear-gradient(135deg, $primary, $primary-light);
-    color: #fff;
-    border-radius: $radius-pill;
-    font-size: $font-sm;
-    font-weight: $font-weight-semibold;
-    box-shadow: $shadow-button;
-    z-index: 10;
-    &:active {
-      transform: scale(0.96);
-    }
-  }
+  // 悬浮按钮 (2026-07-05: 删除去买课 FAB, 暂不接入线上支付)
+  // &__fab { ... }
 }
 </style>

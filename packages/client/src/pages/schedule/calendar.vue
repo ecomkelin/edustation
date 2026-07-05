@@ -83,6 +83,7 @@
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { date } from '@/utils/date'
 import { useStudentStore } from '@/stores/student'
+import { mapState } from 'pinia'
 
 export default {
   data() {
@@ -91,10 +92,14 @@ export default {
       month: new Date().getMonth() + 1,
       selectedDate: '',
       loading: true,
-      monthLessons: []
+      monthLessons: [],
+      // 2026-07-05: viewKidId 模式 (跟 wallet / studentProduct.list 同)
+      // kid-card 跳过来查该 kid 的课表, 不切全局 activeStudent
+      viewKidId: ''
     }
   },
   computed: {
+    ...mapState(useStudentStore, ['list']),
     monthTitle() {
       return `${this.year} 年 ${this.month} 月`
     },
@@ -161,8 +166,37 @@ export default {
         .sort((a, b) => new Date(a.plannedStartTime) - new Date(b.plannedStartTime))
     }
   },
+  onLoad(query) {
+    // 2026-07-05: 优先 window.location.search 解析 ?kid= (权威, 跟 wallet / studentProduct.list 同)
+    let kid = ''
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const params = new URLSearchParams(window.location.search)
+        kid = params.get('kid') || ''
+      }
+    } catch (_) {}
+    if (!kid && query && query.kid) kid = query.kid
+    this.viewKidId = kid || ''
+  },
   onShow() {
     if (!this.selectedDate) this.selectedDate = date.fmtDate(new Date())
+    // 2026-07-05: 每次进入强制重新读 query (H5 复用 page 只跑 onShow)
+    let kid = ''
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const params = new URLSearchParams(window.location.search)
+        kid = params.get('kid') || ''
+      }
+    } catch (_) {}
+    if (!kid) {
+      try {
+        const pages = getCurrentPages && getCurrentPages()
+        const cur = pages && pages.length ? pages[pages.length - 1] : null
+        const options = (cur && cur.options) || {}
+        kid = options.kid || ''
+      } catch (_) {}
+    }
+    if (kid) this.viewKidId = kid
     this.load()
   },
   methods: {
@@ -175,7 +209,9 @@ export default {
         //   旧 .calendar() 走 admin 端点 + requirePermission('lessonSchedule.read'),
         //   家长无权限码 → 403 → monthLessons=[] → "这一天没有课程"
         //   me 端点跳过权限码,只靠 activeStudent middleware 验监护人
+        // 2026-07-05: 必须传 student 参数, 否则后端 fallback 到 req.activeStudentId (错的 kid)
         const res = await lessonScheduleApi.myCalendar({
+          student: this.viewKidId,
           from: date.fmtDate(start),
           to: date.fmtDate(end),
           isTrialLesson: false

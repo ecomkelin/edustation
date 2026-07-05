@@ -5,8 +5,9 @@
 import { http } from './request'
 
 export const pointsApi = {
-  me() {
-    return http.get('/points/me')
+  // 2026-07-05: 接受 student 参数作为 query.student (request.js 会自动转 querystring)
+  me(params = {}) {
+    return http.get('/points/me', { data: params })
   },
 
   transactions(params = {}) {

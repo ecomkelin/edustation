@@ -5,10 +5,14 @@ const { Schema, model } = require('mongoose')
 /**
  * 积分账户（PointsAccount）
  *
- * 每个学员（Student）拥有一个积分账户，记录当前可用积分（balance）。
+ * 每个学员（Student）在每个机构（Org）各拥有一个积分账户，记录当前可用积分（balance）。
  *
  * 关键约束：
- *   - student 唯一：一对一关系，一个学员只有一个积分账户
+ *   - {org, student} 复合唯一：每个学员在每个机构各有一个积分账户
+ *   - 2026-07-05 修正: 旧 schema 是 `student: { unique: true }` (全局唯一),
+ *     意味着同 kid 在梓潼和绵阳两个机构无法各自有账户 (跨 org 转学时撞 unique 约束).
+ *     改为 {org, student} 复合唯一 — 这才是 SaaS 多租户的正确语义.
+ *     迁移: 启动时会 drop 老 student_1 unique index (mongo 不自动删).
  *
  * 数据一致性（重要）：
  *   - balance 是"当前余额"，理论上等于该学员所有 PointsTransaction.amount 的累加。
@@ -32,8 +36,8 @@ const PointsAccountSchema = new Schema(
   {
     // 所属机构（多租户隔离）
     org: { type: Schema.Types.ObjectId, ref: 'Org', required: true },
-    // 账户所属学员（一对一，unique 索引）
-    student: { type: Schema.Types.ObjectId, ref: 'Student', required: true, unique: true },
+    // 账户所属学员 (跨机构: 同一 student 在不同 org 各有一个账户)
+    student: { type: Schema.Types.ObjectId, ref: 'Student', required: true },
     // 当前可用积分（>= 0；变更时务必同时写 PointsTransaction）
     balance: { type: Number, default: 0 },
     // 累计入账（仅 +amount 部分累加；用于"经营分析 > 积分与活跃"看板 / 学员激励统计）
@@ -50,5 +54,17 @@ const PointsAccountSchema = new Schema(
 PointsAccountSchema.index({ org: 1 })
 // 余额排行榜 / 高余额筛选（积分管理页排序用）
 PointsAccountSchema.index({ org: 1, balance: -1 })
+// 2026-07-05: {org, student} 复合唯一 — 替代原 student 全局唯一
+PointsAccountSchema.index({ org: 1, student: 1 }, { unique: true })
 
-module.exports = model('PointsAccount', PointsAccountSchema)
+const PointsAccount = model('PointsAccount', PointsAccountSchema)
+
+// 2026-07-05: 一次性迁移 — model load 时 drop 老 student_1 unique index (mongoose 不会自动删 schema-level unique)
+// 后续老 index 已删, dropIndex 会抛 IndexNotFound, catch 静默即可
+PointsAccount.collection.dropIndex('student_1').catch((e) => {
+  if (e && e.codeName !== 'IndexNotFound') console.warn('[PointsAccount] drop student_1 failed:', e.message)
+})
+// syncIndexes() 按 schema 重建正确索引 (含 {org, student} compound unique)
+PointsAccount.syncIndexes().catch((e) => console.warn('[PointsAccount] syncIndexes failed:', e.message))
+
+module.exports = PointsAccount

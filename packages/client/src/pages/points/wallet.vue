@@ -60,7 +60,7 @@
 
       <view v-else class="pw__list">
         <view
-          v-for="tx in recent"
+          v-for="tx in previewList"
           :key="tx._id"
           class="pw__row press"
           @tap="previewTx(tx)"
@@ -123,12 +123,22 @@ export default {
         lastTransactionAt: null
       },
       recent: [],
-      MAX_PREVIEW: 8
+      MAX_PREVIEW: 6
     }
   },
   computed: {
     // 仅用来反查 kid 名 (kidMap 在主屏 me.vue 已经 fetch)
     ...mapState(useStudentStore, ['list']),
+    // 2026-07-05: list 就绪后但 viewStudentName 仍是默认值 '孩子' → 重试 resolve
+    // 兜底场景: onShow 跑时 student store list 还没 fetch 完 (kidMap 空),
+    //         _resolveViewName 找不到 kid → 临时显示 '孩子', list 就绪后自动纠正
+    shouldRetryResolve() {
+      return this.viewKidId && this.viewStudentName === '孩子' && Array.isArray(this.list) && this.list.length > 0
+    },
+    // 2026-07-05: 后端返 MAX_RECENT_TX=50 条, 钱包只显示最近 MAX_PREVIEW=6 条
+    previewList() {
+      return (this.recent || []).slice(0, this.MAX_PREVIEW)
+    },
     lastTxLabel() {
       if (!this.account.lastTransactionAt) return '—'
       const t = new Date(this.account.lastTransactionAt).getTime()
@@ -143,28 +153,62 @@ export default {
       return date.fmtDate(this.account.lastTransactionAt)
     }
   },
+  watch: {
+    // 2026-07-05: list (kidMap) 异步就绪后, 如果 viewStudentName 还是默认值, 自动 resolve
+    list: {
+      handler() {
+        if (this.shouldRetryResolve) this._resolveViewName()
+      },
+      deep: false
+    }
+  },
   onLoad(query) {
     // uni-app x H5 下 onLoad 只在页面首次创建时跑一次, 后续 navigateTo 复用实例只触发 onShow
-    // 所以 query 解析必须放 onShow, 每次进入重新读 — 否则 wallet 第二次进来仍是上次的 viewKidId
-    this.viewKidId = (query && query.kid) || ''
+    // 优先 window.location.search (权威), 兜底用 query 参数
+    let kid = ''
+    try {
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const params = new URLSearchParams(window.location.search)
+        kid = params.get('kid') || ''
+      }
+    } catch (_) { /* URLSearchParams 兜底 */ }
+    if (!kid && query && query.kid) kid = query.kid
+    this.viewKidId = kid || ''
     this._resolveViewName()
   },
   onShow() {
-    // 每次显示重新读 query (H5 下 navigateTo 复用实例只跑 onShow)
-    // 解码方式: uni.getCurrentPages() 看当前页面 options
+    // 每次显示强制重新读 query (H5 下 navigateTo 复用实例只跑 onShow)
+    // 2026-07-05 修: 优先从 window.location.search 解析 (浏览器 URL 是真实权威源),
+    // 兜底用 getCurrentPages() (uni-app x H5 实测 page 实例 options 缓存不同步,
+    // navigateTo 同 URL 复用 page 时拿到的还是上次 query — 这是 v3.x 已知行为).
+    //
+    // 现象: user 在 me 页点 王兴武 kid-card → URL `?kid=王兴武.id` (浏览器已更新),
+    //       但 wallet onShow 跑 getCurrentPages() 拿到的 options.kid 还是 上次的 王兴宇.id,
+    //       → viewKidId 不更新 → load() 用上次的 viewKidId → 后端查 王兴宇 数据 (9620),
+    //         但 hero 显示上次的 viewStudentName ("王兴武") → 数据/UI 不一致.
+    // 修法: window.location.search 是浏览器维护的, 实时同步 URL 变化,
+    //       永远用它作为 query 权威源.
+    let kid = ''
     try {
-      const pages = getCurrentPages && getCurrentPages()
-      const cur = pages && pages.length ? pages[pages.length - 1] : null
-      const options = (cur && cur.options) || {}
-      // 优先读页面栈当前实例 options (uni-app x 实测拿到正确 query), 失败再用 data 里缓存的
-      if (options && options.kid) {
-        if (this.viewKidId !== options.kid) {
-          this.viewKidId = options.kid
-          this._resolveViewName()
-        }
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const params = new URLSearchParams(window.location.search)
+        kid = params.get('kid') || ''
       }
-    } catch (e) {
-      console.warn('[wallet.onShow] getCurrentPages failed', e)
+    } catch (_) { /* URLSearchParams 不支持? fallback to page options */ }
+    if (!kid) {
+      // 兜底: getCurrentPages (H5 复用下不可靠, 但小程序端稳定)
+      try {
+        const pages = getCurrentPages && getCurrentPages()
+        const cur = pages && pages.length ? pages[pages.length - 1] : null
+        const options = (cur && cur.options) || {}
+        kid = options.kid || ''
+      } catch (e) {
+        console.warn('[wallet.onShow] getCurrentPages failed', e)
+      }
+    }
+    if (kid) {
+      this.viewKidId = kid
+      this._resolveViewName()
     }
     this.load()
   },
@@ -178,7 +222,6 @@ export default {
       }
     },
     async load() {
-      console.log('[wallet.load] viewKidId=', this.viewKidId)
       if (!this.viewKidId) {
         this.recent = []
         this.account = { balance: 0, totalEarned: 0, totalSpent: 0, lastTransactionAt: null }

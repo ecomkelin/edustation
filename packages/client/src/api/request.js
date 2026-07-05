@@ -111,8 +111,24 @@ async function doRefresh() {
  * @returns {Promise<{ data, statusCode, header }>} - 返回的 data 已是业务层 data (与后端响应一致)
  */
 export async function request(url, opts = {}) {
-  const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`
+  let fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`
   const method = (opts.method || 'GET').toUpperCase()
+
+  // 2026-07-05 修: uni.request 对 GET 请求的 data 字段不会自动转 querystring,
+  // 手动拼接 (axios 会自动处理, 但 uni.request 不会, 是 v3.x 已知行为).
+  // 现象: http.get('/points/me', { data: { student: 'xxx' } }) → 实际发请求 URL 不带 query string,
+  //        后端 req.query.student = undefined → fallback 到 req.activeStudentId → 返回错的 kid 数据.
+  // 修法: 在 request 层统一转, 所有 GET API 都受益 (之前 order/list / pointsApi / agent 等 GET 接口
+  //       的过滤参数 page/student/status 等全都失效).
+  if (method === 'GET' && opts.data && typeof opts.data === 'object') {
+    const qs = Object.entries(opts.data)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+      .join('&')
+    if (qs) {
+      fullUrl += (fullUrl.includes('?') ? '&' : '?') + qs
+    }
+  }
 
   try {
     const res = await uni.request({
