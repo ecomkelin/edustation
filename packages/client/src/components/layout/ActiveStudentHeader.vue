@@ -69,8 +69,10 @@
             </view>
             <view class="student-header__item-info">
               <text class="student-header__item-name">{{ s.name }}</text>
-              <text v-if="s.school || s.grade" class="student-header__item-meta">
-                {{ s.school || '' }} {{ s.grade || '' }}
+              <!-- 2026-07-05: 之前直接渲染 s.school (ObjectId ref 未 populate) 暴露哈希串
+                   改用后端 populate 后的 s.orgName + s.grade (orgName 区分同名 kid: 梓潼 vs 绵阳) -->
+              <text v-if="s.orgName || s.grade" class="student-header__item-meta">
+                🏫 {{ s.orgName || '未关联机构' }} {{ s.grade ? '· ' + s.grade : '' }}
               </text>
             </view>
             <view
@@ -91,6 +93,8 @@
 
 <script>
 import { useStudentStore } from '@/stores/student'
+// 2026-07-05: 跨 org kid 选中时同步切 activeOrg (解 6 个 /me 端点连环 404)
+import { useAuthStore } from '@/stores/auth'
 import { haptic } from '@/utils/haptic'
 
 const AVATAR_EMOJI = ['🐰', '🐯', '🐻', '🦊', '🐼', '🐨', '🐸', '🐵', '🐱', '🐶']
@@ -136,7 +140,16 @@ export default {
       this.showSwitcher = false
     },
     selectStudent(s) {
+      // 2026-07-05: 跨 org kid 选中时同时切 activeOrg
+      // 之前只 setActive(s.id) → x-active-student-id 切到绵阳 kid 但 x-org-id 还是梓潼
+      // activeStudent middleware 按 req.orgId 查 → 404 "学生不存在"
+      // 6 个 /me 端点连环 404 (lesson-schedules/pet/points/student-works/student-products/course-enrollments/students/:id/profile)
+      // 修法: kid.orgId != currentOrgId 时, 同步调 auth.setOrg(kid.orgId), 两边对齐
       this.student.setActive(s.id)
+      const auth = useAuthStore()
+      if (s && s.orgId && auth.currentOrgId !== s.orgId) {
+        auth.setOrg(s.orgId)
+      }
       haptic.success()
       this.closeSwitcher()
       this.$emit('change', s)

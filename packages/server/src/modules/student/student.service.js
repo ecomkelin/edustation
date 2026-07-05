@@ -9,6 +9,8 @@ const CourseEnrollment = require('@models/CourseEnrollment.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const PointsAccount = require('@models/PointsAccount.model')
 const LessonSchedule = require('@models/LessonSchedule.model')
+// 2026-07-05: listMyKidsStats 加 org populate, 给前端 "孩子所属机构" 显示用 (kid-card 头部右侧红框)
+const Org = require('@models/Org.model')
 const Parent = require('@models/Parent.model')
 const PetAccount = require('@models/PetAccount.model')
 const parentProfile = require('@modules/parent/parent.profile')
@@ -314,9 +316,30 @@ async function setBlocked(id, orgId, isBlocked, reason) {
  * 导致 storage[ACTIVE_STUDENT] 永远 undefined,所有需要 activeStudent 的端点 400。
  */
 async function listForGuardian({ orgId, userId }) {
-  return Student.find({ org: orgId, guardians: userId, isActive: true, isBlocked: { $ne: true } })
-    .select('_id name gender birthday grade school avatar notes')
+  // 2026-07-05 修: 跨 org 列出 (跟 listMyKidsStats 一致)
+  // 之前按 req.orgId 过滤 → 切换器只显示当前机构的孩子
+  // 例: 梓潼 activeOrg, 家长有梓潼王兴宇 + 梓潼王兴武 + 绵阳王兴宇 → 切换器只显示前 2 个
+  // 用户反馈"这里还差一个王兴宇 绵阳机构呀" → 改为按 userId 全量列, 但用 populate org.name 区分
+  // 注: orgId 入参仍保留作"主机构"概念, 可供未来扩展"默认 active org"用, 不再用于数据过滤
+  // 2026-07-05: 加 org/school populate, 返 orgName + schoolName
+  // 切换器需要 orgName 区分同名 kid (例: 梓潼王兴宇 vs 绵阳王兴宇),
+  // school 是 ObjectId ref 没 populate 会暴露哈希串 (memory: me-vue-strip-hero-chip-and-meta-2026-07-04)
+  const kids = await Student.find({ guardians: userId, isActive: true, isBlocked: { $ne: true } })
+    .select('_id name gender birthday grade school avatar notes org')
+    .populate('org', 'name')
+    .populate('school', 'name')
     .lean()
+  // 拆出 populated 对象, 避免响应里同时出现 school (对象) 和 schoolId (字符串) 这种双键冗余
+  return kids.map((k) => {
+    const { school, org, ...rest } = k
+    return {
+      ...rest,
+      orgId: org ? String(org._id || org) : null,
+      orgName: (org && typeof org === 'object') ? (org.name || null) : null,
+      schoolId: school ? String(school._id || school) : null,
+      schoolName: (school && typeof school === 'object') ? (school.name || null) : null
+    }
+  })
 }
 
 /**
@@ -327,22 +350,30 @@ async function listForGuardian({ orgId, userId }) {
  *       旧路由会强制切换 activeStudent, 副作用巨大.
  *       新增本端点一次性聚合所有孩子的 stat, 1 个请求完成 N 份 stat 信息.
  *
- * 数据来源 (本机构同 org 严格隔离):
- *   - 剩余课时: StudentProduct.isActive=true 且 remainingLessons > 0 的求和
- *   - 积分:    PointsAccount.balance (懒创建账户, 没记录时 0)
+ * 数据来源 (2026-07-05 修: 跨 org 聚合):
+ *   - 家长可能在多个机构各报班 (user_org_rels 有 N 条), 孩子也按 org 分;
+ *     "我的孩子" 在 UI 上是家长视角下统一展示, 不该被当前 active org 截断
+ *   - 剩余课时: StudentProduct.student = kid, isActive && remainingLessons > 0, 跨 org 求和
+ *   - 积分:    PointsAccount.balance (懒创建账户, 没记录时 0), 跨 org 求和
  *   - 近 7 天课程:
- *       1) CourseEnrollment.student=kid, status='enrolled' → 拿到该 kid 报名的 courseInstance 列表
+ *       1) CourseEnrollment.student=kid, status='enrolled' → 拿到该 kid 报名的 courseInstance 列表 (跨 org)
  *       2) LessonSchedule.courseInstance IN [...] AND plannedStartTime ∈ [now, now+7d]
- *          且 status ∉ {cancelled, archived}
+ *          且 status ∉ {cancelled, archived} (跨 org 查)
  *
  * 上线策略: 这是聚合端点, 不会 "返回错", 单条聚合超时也不会让整个崩溃 (内部 try/catch 跳过单个 kid,
  *           最差降级为该 kid stats = 0).
+ *
+ * 注意: orgId 入参仅作「机构访问日志 / 调试」保留, 不再用于数据过滤.
  */
 async function listMyKidsStats({ orgId, userId }) {
   const toOid = (id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id)
 
-  const kids = await Student.find({ org: orgId, guardians: userId, isActive: true, isBlocked: { $ne: true } })
-    .select('_id name gender avatar')
+  // 2026-07-05 修: 跨 user_org_rels 所有机构聚合, 不再被当前 active org 截断
+  // 例: 家长在梓潼报王兴宇 + 王兴武, 在绵阳报另一个王兴宇 → 一次请求返 3 个 kid
+  // 2026-07-05 加: org populate, 给前端 kid-card 头部右侧红框位置展示「孩子所属机构」用
+  const kids = await Student.find({ guardians: userId, isActive: true, isBlocked: { $ne: true } })
+    .select('_id name gender avatar org')
+    .populate('org', 'name')
     .lean()
   if (!kids.length) return { items: [] }
 
@@ -350,13 +381,12 @@ async function listMyKidsStats({ orgId, userId }) {
   const now = new Date()
   const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
 
-  // 1) 剩余课时: StudentProduct 聚合 (kid → totalRemainingLessons)
+  // 1) 剩余课时: StudentProduct 聚合 (kid → totalRemainingLessons), 跨 org
   let spMap = new Map()
   try {
-    const orgOid = toOid(orgId)
     const kidOidList = kidIds.map(toOid)
     const spAgg = await StudentProduct.aggregate([
-      { $match: { org: orgOid, student: { $in: kidOidList }, isActive: true, remainingLessons: { $gt: 0 } } },
+      { $match: { student: { $in: kidOidList }, isActive: true, remainingLessons: { $gt: 0 } } },
       { $group: { _id: '$student', total: { $sum: '$remainingLessons' } } }
     ])
     spMap = new Map(spAgg.map((x) => [String(x._id), x.total]))
@@ -364,24 +394,26 @@ async function listMyKidsStats({ orgId, userId }) {
     spMap = new Map()
   }
 
-  // 2) 积分: PointsAccount 懒创建, 没记录返回 0
+  // 2) 积分: PointsAccount 跨 org 求和 (同 kid 在多个机构可能各有一个账户, 全加总)
   let acctMap = new Map()
   try {
-    const accts = await PointsAccount.find({ org: orgId, student: { $in: kidIds } })
+    const accts = await PointsAccount.find({ student: { $in: kidIds } })
       .select('student balance')
       .lean()
-    acctMap = new Map(accts.map((a) => [String(a.student), a.balance || 0]))
+    for (const a of accts) {
+      const k = String(a.student)
+      acctMap.set(k, (acctMap.get(k) || 0) + (a.balance || 0))
+    }
   } catch (_) {
     acctMap = new Map()
   }
 
-  // 3) 近 7 天课程: 走 enrollment → courseInstance → LessonSchedule
+  // 3) 近 7 天课程: 跨 org 走 enrollment → courseInstance → LessonSchedule
   let lessonCountMap = new Map()
   try {
-    const orgOid = toOid(orgId)
     const kidOidList = kidIds.map(toOid)
     const enrollAgg = await CourseEnrollment.aggregate([
-      { $match: { org: orgOid, student: { $in: kidOidList }, status: 'enrolled' } },
+      { $match: { student: { $in: kidOidList }, status: 'enrolled' } },
       { $group: { _id: '$student', courseInstances: { $addToSet: '$courseInstance' } } }
     ])
     const enrollMap = new Map(enrollAgg.map((x) => [String(x._id), x.courseInstances || []]))
@@ -389,7 +421,6 @@ async function listMyKidsStats({ orgId, userId }) {
     if (allCiIds.length > 0) {
       const allCiOids = allCiIds.map(toOid)
       const lessons = await LessonSchedule.find({
-        org: orgId,
         courseInstance: { $in: allCiOids },
         plannedStartTime: { $gte: now, $lte: nextWeek },
         status: { $nin: ['cancelled', 'archived'] }
@@ -416,6 +447,10 @@ async function listMyKidsStats({ orgId, userId }) {
     name: k.name,
     gender: k.gender,
     avatar: k.avatar,
+    // 2026-07-05 加: org populate, 给前端 kid-card 头部右侧红框位置展示「孩子所属机构」用
+    // 例: 梓潼 kid → orgName="梓潼县人工智网科技培训学校有限公司"
+    orgId: k.org ? String(k.org._id || k.org) : null,
+    orgName: (k.org && typeof k.org === 'object') ? (k.org.name || null) : null,
     stats: {
       lessonsLeft: spMap.get(String(k._id)) || 0,
       points: acctMap.get(String(k._id)) || 0,

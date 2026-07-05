@@ -57,8 +57,10 @@
                   当前
                 </text>
               </view>
-              <!-- 性别 / 年级 / school 都不展示 (school 是 ObjectId ref 没 populate 会暴露哈希串) -->
+              <!-- 2026-07-05: 显示孩子所属机构 (跟学生名字同 row, 卡片头部最右侧)
+                   后端 listMyKidsStats 已 populate org.name, 没绑/孤儿时降级 "未关联机构" -->
             </view>
+            <text class="me__kid-card-org">🏫 {{ kid.orgName || '未关联机构' }}</text>
           </view>
 
           <!-- kid 自带 3 stat (剩余课时 / 积分 / 近 7 天课程) — 与 kid 一一对应, 不是全局当前孩子 -->
@@ -206,6 +208,9 @@ export default {
           name: x.name,
           gender: x.gender,
           avatar: x.avatar,
+          // 2026-07-05: 后端 listMyKidsStats populate 了 org, 给前端 kid-card 头部右侧红框位置展示「孩子所属机构」
+          orgId: x.orgId || null,
+          orgName: x.orgName || '',
           stats: {
             lessonsLeft: x.stats?.lessonsLeft || 0,
             points: x.stats?.points || 0,
@@ -505,6 +510,20 @@ export default {
   &__kid-card-info {
     flex: 1;
     min-width: 0;
+  }
+  // 2026-07-05: kid-card 头部最右侧红框位置, 显示孩子所属机构 (跟 name 同 row)
+  &__kid-card-org {
+    flex-shrink: 0;
+    max-width: 48%;
+    font-size: $font-sm;
+    color: $text-secondary;
+    padding: 6rpx 16rpx;
+    background: rgba(255, 138, 101, 0.10);
+    border-radius: $radius-pill;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
   }
   &__kid-card-name-row {
     display: flex;
