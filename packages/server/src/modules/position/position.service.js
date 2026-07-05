@@ -330,8 +330,9 @@ async function listByOrg(orgId) {
  *  - 源内同名（重复 id）只取第一个，其余 skip: 'duplicate-in-source'
  *  - 目标机构已存在的 name：skip: 'already-exists-in-target'（不覆盖）
  *  - 源端查不到的 id：skip: 'source-position-not-found'
- *  - 复制到新机构后，isSystem 一律置为 false、clientLevel 一律置为 0
- *    （系统/家长等级是 per-org 概念，由目标机构各自初始化）
+ *  - isSystem / clientLevel 一并复制（源端的选择是合理初值，目标机构可在「职位管理」中按需调整）
+ *  - clientLevel>0 受 partial unique index 约束：
+ *    目标机构若已占该等级 → skip: 'client-level-taken-in-target'（避免 11000）
  */
 async function syncPositions({ targetOrgId, sourceOrgId, positionIds, operatorId }) {
   if (!targetOrgId) throw ApiError.badRequest('请先在顶部「机构切换」中选择目标机构')
@@ -370,6 +371,12 @@ async function syncPositions({ targetOrgId, sourceOrgId, positionIds, operatorId
   ])
 
   const existingNames = new Set(existing.map((p) => p.name))
+  // 目标已占用的 clientLevel>0 等级 — 复制时跳过避免 11000
+  const takenClientLevels = new Set(
+    existing
+      .filter((p) => Number(p.clientLevel) > 0)
+      .map((p) => Number(p.clientLevel))
+  )
   const seen = new Set()
   const toCreate = []
   const skipped = []
@@ -384,13 +391,20 @@ async function syncPositions({ targetOrgId, sourceOrgId, positionIds, operatorId
       skipped.push({ sourceId: String(p._id), name: p.name, reason: 'already-exists-in-target' })
       continue
     }
+    const srcLevel = Number.isFinite(Number(p.clientLevel)) ? Number(p.clientLevel) : CLIENT_LEVEL.NONE
+    if (srcLevel > 0 && takenClientLevels.has(srcLevel)) {
+      // 目标已占该等级 → 跳过并告知,避免 insertMany 时 11000
+      skipped.push({ sourceId: String(p._id), name: p.name, reason: 'client-level-taken-in-target' })
+      continue
+    }
     toCreate.push({
       org: targetOrgId,
       name: p.name,
       permissions: Array.isArray(p.permissions) ? p.permissions : [],
-      isSystem: false,
-      clientLevel: CLIENT_LEVEL.NONE
+      isSystem: !!p.isSystem,
+      clientLevel: srcLevel
     })
+    if (srcLevel > 0) takenClientLevels.add(srcLevel)
   }
 
   // 源端查不到的 id

@@ -28,6 +28,8 @@
 
 const mongoose = require('mongoose')
 const PetAccount = require('@models/PetAccount.model')
+// 2026-07-05: getMine 加 enrollment 校验, 阻断未报班学生懒创建 egg
+const CourseEnrollment = require('@models/CourseEnrollment.model')
 const ApiError = require('@utils/ApiError')
 const petConfig = require('@shared/petConfig')
 // 2026-06-21 pet-system-v2-ext: species/items/consumables 从 shared 迁到 DB，
@@ -779,6 +781,20 @@ async function getMine({ orgId, studentId }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId')
   if (!studentId) throw ApiError.badRequest('缺少 studentId')
 
+  // 2026-07-05 修: 未报班的学生不要懒创建 egg, 也不返现有 egg
+  // 之前 ensurePetAccount 无差别创建, 客户端看到蛋点击破壳 → POST /pet/hatch 被 requireEnrolledStudent 挡 → 422
+  // 链: GET /pet/me 懒创建 → 显示蛋 → 点破壳 → 写端点 422 (数据可见不可写)
+  // 修法: 先查 enrollment, 没 enrolled 就返 {pet:null, noEnrollment:true}, 客户端 detail.vue 走 "请先报名" 空态
+  // 注: 即使 DB 里有遗留 egg (历史 bug 创建的), 也一并返 noEnrollment 阻断, 不让用户对着蛋干瞪眼
+  const enrolledCount = await CourseEnrollment.countDocuments({
+    org: orgId,
+    student: studentId,
+    status: 'enrolled'
+  })
+  if (enrolledCount === 0) {
+    return { pet: null, noEnrollment: true }
+  }
+
   const pet = await ensurePetAccount(orgId, studentId)
   // 2026-07-03 修: 包成 {pet} 结构, 与 admin /admin/pet/accounts-by-student 的 {pet: ...} 形态一致;
   // 前端 detail.vue 取 r.pet (response 解包后), 不会因为 pet 字段空字符串而被判成 null。
@@ -838,6 +854,7 @@ async function listEvents({ orgId, studentId, page = 1, pageSize = 20 }) {
 async function listStarving({ orgId, threshold = 20, limit = 50 }) {
   const t = Math.max(0, Math.min(1000, Number(threshold) || 0))
   const PetAccount = require('@models/PetAccount.model')
+  const CourseEnrollment = require('@models/CourseEnrollment.model')
   const Student = require('@models/Student.model')
 
   const pets = await PetAccount.find({

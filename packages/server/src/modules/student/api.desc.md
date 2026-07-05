@@ -135,6 +135,56 @@
 
 ---
 
+## 8. 家长查多个孩子的 stat 聚合 (2026-07-05 新增)
+
+- **Method / Path**：`GET /api/v1/students/me/stats`
+- **权限**：authenticated（家长）—— 不要求 `student.read` 权限码
+- **说明**：跨所有孩子一次性聚合 stat（剩余课时 / 积分 / 近 7 天课程数），单次请求替代 N 次强制 `activeStudent` 端点切换。专为 C 端「我的」页「每个孩子一卡自带 stat」渲染用。
+- **成功响应** (`200 OK`)：
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "66ab12...",
+        "name": "王兴宇",
+        "gender": "male",
+        "avatar": "https://...",
+        "stats": {
+          "lessonsLeft": 32,
+          "points": 9620,
+          "upcoming": 7
+        }
+      },
+      {
+        "id": "66ab34...",
+        "name": "王兴武",
+        "gender": "male",
+        "avatar": null,
+        "stats": { "lessonsLeft": 12, "points": 540, "upcoming": 3 }
+      }
+    ]
+  }
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 来源 |
+| ---- | ---- | ---- |
+| id | String | Student._id |
+| name | String | 学生姓名 |
+| gender | String | 性别枚举 |
+| avatar | String\|null | 学生头像 (image) |
+| stats.lessonsLeft | Number | StudentProduct.`isActive=true` 且 `remainingLessons > 0` 之求和 |
+| stats.points | Number | PointsAccount.`balance` (无记录返 0) |
+| stats.upcoming | Number | 当前时间 ~ 7 天内 `LessonSchedule` 数 (按该 kid 报名的 courseInstance 计, 过滤 `cancelled/archived`) |
+
+**降级策略**: 任一聚合失败 (超时 / 异常) 时该 kid stat 降为 0，整体不崩溃。
+
+---
+
 ## 错误码
 
 | 状态码 | 场景 |

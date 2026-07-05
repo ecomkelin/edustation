@@ -452,13 +452,15 @@ export default {
     async load() {
       this.loading = true
       try {
+        // http 层已解包 (request.js:140 return body.data), r 直接是 {pet, noEnrollment?}
+        // 2026-07-05 修: 判 r.noEnrollment (顶层标志) 而非 r.pet.noEnrollment
+        // 之前写错成 data.noEnrollment 永远是 undefined → 走 else 分支 → 展示蛋 → 点破壳 422
         const r = await petApi.me()
-        const data = r?.pet || r?.data?.pet || null
-        if (data && data.noEnrollment) {
+        if (r && r.noEnrollment) {
           this.pet = null
           this.petBlockReason = 'notEnrolled'
         } else {
-          this.pet = data
+          this.pet = r?.pet || null
           this.petBlockReason = ''
         }
         // 独立积分拉取, 不阻塞主流程
@@ -561,6 +563,11 @@ export default {
         this.clearHatchTimers()
         this.hatchPhase = 'idle'
         this.hatchActive = false
+        // 2026-07-05: 422 未报班 是数据可见不可写场景 (历史 bug 残留 egg), 重新 load
+        // 会拿到 noEnrollment 标志, 自动切到 "请先报名" 空态, 不留 UI 在动画半态
+        if (e && (e.statusCode === 422 || /未报班/.test(e?.message || ''))) {
+          this.load()
+        }
         return
       }
       this.hatchTimers.push(setTimeout(() => {

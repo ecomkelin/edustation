@@ -1,11 +1,14 @@
 'use strict'
 
+const mongoose = require('mongoose')
 const Student = require('@models/Student.model')
 const User = require('@models/User.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
 const Position = require('@models/Position.model')
 const CourseEnrollment = require('@models/CourseEnrollment.model')
 const StudentProduct = require('@models/StudentProduct.model')
+const PointsAccount = require('@models/PointsAccount.model')
+const LessonSchedule = require('@models/LessonSchedule.model')
 const Parent = require('@models/Parent.model')
 const PetAccount = require('@models/PetAccount.model')
 const parentProfile = require('@modules/parent/parent.profile')
@@ -316,4 +319,110 @@ async function listForGuardian({ orgId, userId }) {
     .lean()
 }
 
-module.exports = { list, detail, create, update, remove, removableCheck, setGuardians, setBlocked, listForGuardian }
+/**
+ * 2026-07-05 新增: 家长查自己多个孩子的 stat 聚合 (剩余课时 / 积分 / 近 7 天课程数)
+ *
+ * 设计: 原 me 端点一次只返 1 个 activeStudent 的 stat (走 activeStudent 强制绑定);
+ *       但 me.vue 要展示 "每个孩子各自己的 stat", N 份协议 = N 次跨孩子批量,
+ *       旧路由会强制切换 activeStudent, 副作用巨大.
+ *       新增本端点一次性聚合所有孩子的 stat, 1 个请求完成 N 份 stat 信息.
+ *
+ * 数据来源 (本机构同 org 严格隔离):
+ *   - 剩余课时: StudentProduct.isActive=true 且 remainingLessons > 0 的求和
+ *   - 积分:    PointsAccount.balance (懒创建账户, 没记录时 0)
+ *   - 近 7 天课程:
+ *       1) CourseEnrollment.student=kid, status='enrolled' → 拿到该 kid 报名的 courseInstance 列表
+ *       2) LessonSchedule.courseInstance IN [...] AND plannedStartTime ∈ [now, now+7d]
+ *          且 status ∉ {cancelled, archived}
+ *
+ * 上线策略: 这是聚合端点, 不会 "返回错", 单条聚合超时也不会让整个崩溃 (内部 try/catch 跳过单个 kid,
+ *           最差降级为该 kid stats = 0).
+ */
+async function listMyKidsStats({ orgId, userId }) {
+  const toOid = (id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id)
+
+  const kids = await Student.find({ org: orgId, guardians: userId, isActive: true, isBlocked: { $ne: true } })
+    .select('_id name gender avatar')
+    .lean()
+  if (!kids.length) return { items: [] }
+
+  const kidIds = kids.map((k) => k._id)
+  const now = new Date()
+  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+  // 1) 剩余课时: StudentProduct 聚合 (kid → totalRemainingLessons)
+  let spMap = new Map()
+  try {
+    const orgOid = toOid(orgId)
+    const kidOidList = kidIds.map(toOid)
+    const spAgg = await StudentProduct.aggregate([
+      { $match: { org: orgOid, student: { $in: kidOidList }, isActive: true, remainingLessons: { $gt: 0 } } },
+      { $group: { _id: '$student', total: { $sum: '$remainingLessons' } } }
+    ])
+    spMap = new Map(spAgg.map((x) => [String(x._id), x.total]))
+  } catch (_) {
+    spMap = new Map()
+  }
+
+  // 2) 积分: PointsAccount 懒创建, 没记录返回 0
+  let acctMap = new Map()
+  try {
+    const accts = await PointsAccount.find({ org: orgId, student: { $in: kidIds } })
+      .select('student balance')
+      .lean()
+    acctMap = new Map(accts.map((a) => [String(a.student), a.balance || 0]))
+  } catch (_) {
+    acctMap = new Map()
+  }
+
+  // 3) 近 7 天课程: 走 enrollment → courseInstance → LessonSchedule
+  let lessonCountMap = new Map()
+  try {
+    const orgOid = toOid(orgId)
+    const kidOidList = kidIds.map(toOid)
+    const enrollAgg = await CourseEnrollment.aggregate([
+      { $match: { org: orgOid, student: { $in: kidOidList }, status: 'enrolled' } },
+      { $group: { _id: '$student', courseInstances: { $addToSet: '$courseInstance' } } }
+    ])
+    const enrollMap = new Map(enrollAgg.map((x) => [String(x._id), x.courseInstances || []]))
+    const allCiIds = [...enrollMap.values()].flat().filter(Boolean)
+    if (allCiIds.length > 0) {
+      const allCiOids = allCiIds.map(toOid)
+      const lessons = await LessonSchedule.find({
+        org: orgId,
+        courseInstance: { $in: allCiOids },
+        plannedStartTime: { $gte: now, $lte: nextWeek },
+        status: { $nin: ['cancelled', 'archived'] }
+      }).select('courseInstance plannedStartTime').lean()
+      // 按 courseInstance 聚合
+      const ciCount = new Map()
+      for (const l of lessons) {
+        const k = String(l.courseInstance)
+        ciCount.set(k, (ciCount.get(k) || 0) + 1)
+      }
+      // 反向汇总: kidId → 该 kid 名下 courseInstance 之 lesson 数总和
+      for (const [kidId, ciIds] of enrollMap.entries()) {
+        let total = 0
+        for (const ci of ciIds) total += ciCount.get(String(ci)) || 0
+        lessonCountMap.set(kidId, total)
+      }
+    }
+  } catch (_) {
+    lessonCountMap = new Map()
+  }
+
+  const items = kids.map((k) => ({
+    id: String(k._id),
+    name: k.name,
+    gender: k.gender,
+    avatar: k.avatar,
+    stats: {
+      lessonsLeft: spMap.get(String(k._id)) || 0,
+      points: acctMap.get(String(k._id)) || 0,
+      upcoming: lessonCountMap.get(String(k._id)) || 0
+    }
+  }))
+  return { items }
+}
+
+module.exports = { list, detail, create, update, remove, removableCheck, setGuardians, setBlocked, listForGuardian, listMyKidsStats }

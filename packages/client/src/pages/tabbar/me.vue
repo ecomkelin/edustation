@@ -32,61 +32,64 @@
       <!-- 2026-07-04 fix: scroll-view 在 H5 下 padding 不传给子节点, 用 wrapper 承载 (同 home.vue me__body-inner 模式) -->
       <view class="me__body-inner">
 
-      <!-- 我的孩子 (2026-07-04: stats 区改成纵向 kid list, 多孩自动 list 下去, 不再有 + 管理卡) -->
-      <view class="me__stats me__stats--kids">
-        <view class="me__stats-label-row">
-          <text class="me__stats-label">我的孩子</text>
-          <text class="me__stats-meta">{{ students.length }} 位</text>
+      <!-- 我的孩子 (2026-07-05: 每个 kid 一个独立 card 自带 3 stat — 走 R-0473 一次性聚合, 不切换 activeStudent) -->
+      <view class="me__kid-cards">
+        <view class="me__kid-cards-head">
+          <text class="me__kid-cards-title">我的孩子</text>
+          <text class="me__kid-cards-meta">{{ kidStats.length }} 位</text>
         </view>
 
         <view
-          v-for="(kid, idx) in students"
+          v-for="kid in kidStats"
           :key="kid.id"
-          class="me__kid-row press"
-          :class="{ 'me__kid-row--active': String(kid.id) === String(activeStudentId) }"
-          @tap="onPickKid(kid)"
+          class="me__kid-card"
+          :class="{ 'me__kid-card--active': String(kid.id) === String(activeStudentId) }"
         >
-          <view class="me__kid-row-avatar">
-            <image v-if="kid.avatar" :src="kid.avatar" class="me__kid-row-img" mode="aspectFill" />
-            <text v-else>{{ kidEmoji(kid) }}</text>
-          </view>
-          <view class="me__kid-row-main">
-            <view class="me__kid-row-name-row">
-              <text class="me__kid-row-name">{{ kid.name }}</text>
-              <text v-if="String(kid.id) === String(activeStudentId)" class="me__kid-row-tag">
-                当前
-              </text>
+          <view class="me__kid-card-head">
+            <view class="me__kid-card-avatar">
+              <image v-if="kid.avatar" :src="kid.avatar" class="me__kid-card-img" mode="aspectFill" />
+              <text v-else class="me__kid-card-emoji">{{ kidEmoji(kid) }}</text>
             </view>
-            <!-- 2026-07-04: 性别/年级/school 等 meta 删; school 是 ObjectId ref 没 populate 会暴露哈希串 -->
+            <view class="me__kid-card-info">
+              <view class="me__kid-card-name-row">
+                <text class="me__kid-card-name">{{ kid.name }}</text>
+                <text v-if="String(kid.id) === String(activeStudentId)" class="me__kid-card-tag">
+                  当前
+                </text>
+              </view>
+              <!-- 性别 / 年级 / school 都不展示 (school 是 ObjectId ref 没 populate 会暴露哈希串) -->
+            </view>
           </view>
-          <text class="me__kid-row-arrow">›</text>
+
+          <!-- kid 自带 3 stat (剩余课时 / 积分 / 近 7 天课程) — 与 kid 一一对应, 不是全局当前孩子 -->
+          <view class="me__kid-card-stats">
+            <view class="me__kid-card-stat press" @tap="goStudentProducts(kid.id)">
+              <text class="me__kid-card-stat-val">{{ kid.stats.lessonsLeft || 0 }}</text>
+              <text class="me__kid-card-stat-unit">节</text>
+              <text class="me__kid-card-stat-lbl">剩余课时</text>
+            </view>
+            <view class="me__kid-card-stat-divider" />
+            <view class="me__kid-card-stat press" @tap="goPoints(kid.id)">
+              <text class="me__kid-card-stat-val">{{ kid.stats.points || 0 }}</text>
+              <text class="me__kid-card-stat-unit">分</text>
+              <text class="me__kid-card-stat-lbl">剩余积分</text>
+            </view>
+            <view class="me__kid-card-stat-divider" />
+            <view class="me__kid-card-stat press" @tap="goCalendar(kid.id)">
+              <text class="me__kid-card-stat-val">{{ kid.stats.upcoming || 0 }}</text>
+              <text class="me__kid-card-stat-unit">节</text>
+              <text class="me__kid-card-stat-lbl">近 7 天</text>
+            </view>
+          </view>
         </view>
 
-        <view v-if="!students.length" class="me__stats-empty">
-          <text>暂无孩子信息</text>
+        <view v-if="!kidStats.length && !kidStatsLoading" class="me__kid-cards-empty">
+          <text class="me__kid-cards-empty-emoji">📭</text>
+          <text class="me__kid-cards-empty-title">还没有关联孩子</text>
+          <text class="me__kid-cards-empty-desc">请联系机构添加您的孩子 ›</text>
         </view>
-
-        <!-- 2026-07-04: kids 卡内底部 3 stat (剩余课时 / 积分 / 近7天课程) — 跟首页顶部同款数据, 跳转对应详情页 -->
-        <view class="me__kid-stats">
-          <view class="me__kid-stat press" @tap="goStudentProducts">
-            <text class="me__kid-stat-val">{{ stats.lessonsLeft || 0 }}</text>
-            <text class="me__kid-stat-unit">节</text>
-            <text class="me__kid-stat-lbl">剩余课时</text>
-          </view>
-          <view class="me__kid-stat-divider" />
-          <view class="me__kid-stat press" @tap="goPoints">
-            <text class="me__kid-stat-val">{{ stats.points || 0 }}</text>
-            <text class="me__kid-stat-unit">分</text>
-            <text class="me__kid-stat-lbl">剩余积分</text>
-          </view>
-          <view class="me__kid-stat-divider" />
-          <view class="me__kid-stat press" @tap="goUpcoming">
-            <text class="me__kid-stat-val">
-              {{ upcoming.lessonCount }}
-            </text>
-            <text class="me__kid-stat-unit">节</text>
-            <text class="me__kid-stat-lbl">近 7 天</text>
-          </view>
+        <view v-if="kidStatsLoading && !kidStats.length" class="me__kid-cards-loading">
+          <text>召唤中…</text>
         </view>
       </view>
 
@@ -145,10 +148,8 @@ import OrgFooter from '@/components/layout/OrgFooter.vue'
 import { maskPhone } from '@/utils/format'
 import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
-// 2026-07-04: kids 卡内 3 stat (剩余课时 / 积分 / 近 7 天课程) — 与首页 stats 同套 API
-import { lessonScheduleApi } from '@/api/lessonSchedule'
-import { pointsApi } from '@/api/points'
-import { studentProductApi } from '@/api/studentProduct'
+// 2026-07-05: kids-card 自带 stat 走 R-0473 一次性聚合 (跨 kid 不强制 activeStudent)
+import { studentApi } from '@/api/student'
 
 export default {
   components: { OrgFooter },
@@ -156,10 +157,9 @@ export default {
     return {
       // 2026-07-04: 「设置与服务」折叠开关, 默认 false (用户需点击才展开)
       settingsExpanded: false,
-      // 2026-07-04: kids 卡内 3 stat (剩余课时 / 积分 / 近 7 天课程)
-      stats: { lessonsLeft: 0, points: 0 },
-      // upcoming: label '有' / '无', lessonCount 数字
-      upcoming: { lessonCount: 0, label: '无' }
+      // 2026-07-05: R-0473 拉来的 kid + stat 列表 (kidStats = [{id, name, avatar, stats: {lessonsLeft, points, upcoming}}])
+      kidStats: [],
+      kidStatsLoading: false
     }
   },
   computed: {
@@ -171,13 +171,8 @@ export default {
     student() {
       return useStudentStore()
     },
-    // 2026-07-04: 顶部 kids 横排; 没拉列表时退到空数组 (App.vue 已自动 fetch)
-    students() {
-      return Array.isArray(this.list) ? this.list : []
-    },
     menus() {
-      // (2026-07-04: 「分享得积分」加回 (低频但用户希望保留); 「我的订单」来自原 stats 升级;
-      //              共 3 项改成 3 列等分)
+      // (2026-07-04: 「分享得积分」加回; 「我的订单」来自原 stats 升级; 3 项 3 列等分)
       return [
         { label: '我的订单', icon: '📋', bg: '#E5F0FA', url: '/pages/order/list' },
         { label: '分享得积分', icon: '💌', bg: '#FFF1D0', url: '/pages/share/share' },
@@ -185,8 +180,6 @@ export default {
       ]
     },
     settings() {
-      // (2026-07-04: 删「学习画像」— 改放首页; 删「清除缓存」— 用户认为没必要)
-      // (2026-07-04: 菜单并入折叠组 — 接送授权 / 进出记录 / 协议条款 移到这里, 默认折叠, 点击"设置与服务"才显示)
       return [
         { label: '接送授权', icon: '🚪', url: '/pages/access/pickups' },
         { label: '进出记录', icon: '📋', url: '/pages/access/events' },
@@ -198,62 +191,37 @@ export default {
     }
   },
   onShow() {
-    // 2026-07-04: 「我的孩子」列表 App.vue 已自动 fetch;
-    // 3 stat (剩余课时 / 积分 / 近7天课程) 每次进入页面重新拉
-    this.loadStats()
-    this.loadUpcoming()
+    // 2026-07-05: kids-card 渲染来自 R-0473 聚合, 每次进入刷新
+    this.loadKidStats()
   },
   methods: {
-    // 2026-07-04: kids 卡内 3 stat — 剩余课时 + 积分 (并行, 复用首页 stats 同款 API)
-    async loadStats() {
-      const tasks = []
-      if (this.activeStudentId) {
-        tasks.push(
-          pointsApi.me()
-            .then((r) => (this.stats.points = r?.balance || 0))
-            .catch(() => {})
-        )
-      }
-      tasks.push(
-        studentProductApi
-          .me({ isActive: true })
-          .then((res) => {
-            const items = Array.isArray(res) ? res : res?.items || res?.data || []
-            this.stats.lessonsLeft = items.reduce((s, p) => s + (p.remainingLessons || 0), 0)
-          })
-          .catch(() => {})
-      )
-      await Promise.all(tasks)
-    },
-
-    // 近 7 天课程 (lessonScheduleApi.myCalendar today → today+6)
-    async loadUpcoming() {
+    // 2026-07-05: 拉多个 kid + 各自的 stat (剩余课时 / 积分 / 近 7 天) — 一次请求搞定
+    async loadKidStats() {
+      this.kidStatsLoading = true
       try {
-        const now = new Date()
-        const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-        const next = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-        const to = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
-        const res = await lessonScheduleApi.myCalendar({ from, to, isTrialLesson: false })
-        let list = []
-        if (Array.isArray(res)) list = res
-        else if (res && Array.isArray(res.items)) list = res.items
-        else if (res && Array.isArray(res.data)) list = res.data
-        // 过滤 "已结束" 的; 简单按 plannedEndTime > now 算 (若服务端返了)
-        const upcomingList = list.filter((l) => {
-          if (!l.plannedStartTime) return true
-          return new Date(l.plannedStartTime).getTime() >= now.getTime()
-        })
-        this.upcoming = {
-          lessonCount: upcomingList.length,
-          label: upcomingList.length > 0 ? '有' : '无'
-        }
+        const res = await studentApi.statsMyKids()
+        const items = res?.items || []
+        this.kidStats = items.map((x) => ({
+          id: x.id,
+          name: x.name,
+          gender: x.gender,
+          avatar: x.avatar,
+          stats: {
+            lessonsLeft: x.stats?.lessonsLeft || 0,
+            points: x.stats?.points || 0,
+            upcoming: x.stats?.upcoming || 0
+          }
+        }))
       } catch (e) {
-        console.warn('[me.loadUpcoming]', e)
-        this.upcoming = { lessonCount: 0, label: '无' }
+        console.warn('[me.loadKidStats]', e)
+        this.kidStats = []
+      } finally {
+        this.kidStatsLoading = false
       }
     },
 
-    // 三个 stat 跳转
+    // 3 stat 跳转 — 2026-07-05 用户原话 "不切换孩子", 但这些 stat 详情页仍展示当前 activeStudent 数据
+    //       所以这里不需要 setActive, 直接 navigateTo 即可; 用户在 stat 详情页看到的仍是当前孩子
     goStudentProducts() {
       haptic.tap()
       uni.navigateTo({ url: '/pages/studentProduct/list' })
@@ -262,21 +230,9 @@ export default {
       haptic.tap()
       uni.navigateTo({ url: '/pages/points/wallet' })
     },
-    goUpcoming() {
+    goCalendar() {
       haptic.tap()
       uni.navigateTo({ url: '/pages/schedule/calendar' })
-    },
-
-    // 2026-07-04: 切到指定孩子 (重设 activeStudentId, store 持久化 + 全局响应)
-    onPickKid(kid) {
-      if (!kid || !kid.id) return
-      haptic.tap()
-      if (String(kid.id) === String(this.activeStudentId)) {
-        // 已是当前孩子, 不重复切
-        return
-      }
-      this.student.setActive(kid.id)
-      uni.showToast({ title: `已切换到 ${kid.name}`, icon: 'none' })
     },
 
     // 头像 fallback emoji (name 哈希稳定选 avatar 池 — 跟 ActiveStudentHeader 一致)
@@ -462,89 +418,125 @@ export default {
     color: $text-tertiary;
   }
 
-  // kids 纵向 list (2026-07-04 v2: 删 pill scroller + 管理卡, 多孩自动 list 下去)
-  &__kid-row {
-    display: flex;
-    align-items: center;
-    gap: $spacing-md;
-    padding: $spacing-sm $spacing-xs;
-    border-top: 1rpx solid $divider-light;
-    transition: background $transition-fast;
-    &:first-child {
-      border-top: none;
-    }
-    &:active {
-      background: $divider-light;
-    }
-    &--active {
-      background: $primary-lighter;
-    }
+  // 2026-07-05: kids-card 模式 — 每个 kid 一个独立卡自带 3 stat
+  &__kid-cards {
+    margin-bottom: $spacing-md;
   }
-  &__kid-row-avatar {
-    flex-shrink: 0;
-    width: 80rpx;
-    height: 80rpx;
-    border-radius: 50%;
-    background: linear-gradient(135deg, $primary-light, $primary);
-    @include flex-center;
-    font-size: 40rpx;
-    color: #fff;
-    box-shadow: 0 4rpx 12rpx rgba(255, 138, 101, 0.18);
-    overflow: hidden;
-  }
-  &__kid-row-img {
-    width: 100%;
-    height: 100%;
-  }
-  &__kid-row-main {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-  }
-  &__kid-row-name-row {
+  &__kid-cards-head {
     display: flex;
     align-items: baseline;
-    gap: $spacing-xs;
-    margin-bottom: 4rpx;
+    justify-content: space-between;
+    padding: 0 $spacing-xs $spacing-sm;
   }
-  &__kid-row-name {
-    font-size: $font-base;
+  &__kid-cards-title {
+    font-size: $font-md;
     font-weight: $font-weight-semibold;
     color: $text-primary;
-    line-height: 1.3;
-    @include multi-ellipsis(1);
   }
-  &__kid-row-tag {
-    flex-shrink: 0;
-    padding: 0 10rpx;
-    font-size: 20rpx;
-    line-height: 1.5;
-    border-radius: $radius-pill;
-    background: $primary;
-    color: #fff;
-  }
-  &__kid-row-arrow {
-    flex-shrink: 0;
-    font-size: 40rpx;
+  &__kid-cards-meta {
+    font-size: $font-xs;
     color: $text-tertiary;
-    line-height: 1;
   }
-  &__stats-empty {
-    padding: $spacing-md;
+  &__kid-cards-empty,
+  &__kid-cards-loading {
+    background: $bg-card;
+    border-radius: $radius-md;
+    padding: $spacing-xl $spacing-md;
+    box-shadow: $shadow-card;
     text-align: center;
     color: $text-tertiary;
     font-size: $font-sm;
   }
+  &__kid-cards-empty {
+    @include flex-center;
+    flex-direction: column;
+  }
+  &__kid-cards-empty-emoji {
+    font-size: 64rpx;
+    margin-bottom: $spacing-sm;
+  }
+  &__kid-cards-empty-title {
+    font-size: $font-base;
+    font-weight: $font-weight-medium;
+    color: $text-primary;
+    margin-bottom: 4rpx;
+  }
+  &__kid-cards-empty-desc {
+    font-size: $font-sm;
+    color: $text-secondary;
+  }
 
-  // 2026-07-04: kids 卡内底部 3 stat 横排
-  &__kid-stats {
+  &__kid-card {
+    background: $bg-card;
+    border-radius: $radius-md;
+    padding: $spacing-md;
+    box-shadow: $shadow-card;
+    margin-bottom: $spacing-sm;
+    transition: background $transition-fast;
+    &--active {
+      background: linear-gradient(135deg, rgba($primary, 0.04), $primary-lighter);
+      box-shadow: 0 8rpx 24rpx rgba(255, 138, 101, 0.18);
+    }
+  }
+  &__kid-card-head {
     display: flex;
     align-items: center;
-    margin-top: $spacing-md;
-    padding-top: $spacing-md;
-    border-top: 1rpx solid $divider-light;
+    gap: $spacing-md;
+    margin-bottom: $spacing-md;
   }
-  &__kid-stat {
+  &__kid-card-avatar {
+    flex-shrink: 0;
+    width: 88rpx;
+    height: 88rpx;
+    border-radius: 50%;
+    background: linear-gradient(135deg, $primary-light, $primary);
+    @include flex-center;
+    font-size: 44rpx;
+    box-shadow: 0 4rpx 12rpx rgba(255, 138, 101, 0.22);
+    overflow: hidden;
+  }
+  &__kid-card-emoji {
+    color: #fff;
+  }
+  &__kid-card-img {
+    width: 100%;
+    height: 100%;
+  }
+  &__kid-card-info {
+    flex: 1;
+    min-width: 0;
+  }
+  &__kid-card-name-row {
+    display: flex;
+    align-items: baseline;
+    gap: $spacing-xs;
+  }
+  &__kid-card-name {
+    font-size: $font-lg;
+    font-weight: $font-weight-bold;
+    color: $text-primary;
+    line-height: 1.3;
+    @include multi-ellipsis(1);
+  }
+  &__kid-card-tag {
+    flex-shrink: 0;
+    padding: 0 12rpx;
+    font-size: 22rpx;
+    line-height: 1.6;
+    border-radius: $radius-pill;
+    background: $primary;
+    color: #fff;
+  }
+
+  // kid 自带 3 stat 横排
+  &__kid-card-stats {
+    display: flex;
+    align-items: center;
+    background: $bg-page;
+    border-radius: $radius-sm;
+    padding: $spacing-sm $spacing-xs;
+  }
+  &__kid-card-stat {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -555,23 +547,23 @@ export default {
       transform: scale(0.96);
     }
   }
-  &__kid-stat-divider {
+  &__kid-card-stat-divider {
     width: 1rpx;
-    height: 64rpx;
+    height: 56rpx;
     background: $divider-light;
   }
-  &__kid-stat-val {
-    font-size: $font-3xl;
+  &__kid-card-stat-val {
+    font-size: $font-2xl;
     font-weight: $font-weight-bold;
     color: $primary;
     line-height: 1.05;
   }
-  &__kid-stat-unit {
-    font-size: $font-xs;
+  &__kid-card-stat-unit {
+    font-size: 20rpx;
     color: $text-tertiary;
     line-height: 1;
   }
-  &__kid-stat-lbl {
+  &__kid-card-stat-lbl {
     margin-top: 6rpx;
     font-size: $font-xs;
     color: $text-secondary;

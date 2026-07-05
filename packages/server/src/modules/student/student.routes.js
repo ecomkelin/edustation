@@ -10,6 +10,9 @@ router.use(mws.authenticate, mws.requireOrg)
 
 // R-0472 GET /students/me
 router.get('/me', asyncHandler(c.me))
+// R-0473 GET /students/me/stats
+// 2026-07-05: 家长查自己孩子的 stat 聚合 (剩余课时 / 积分 / 近 7 天课程数) — 跨 kid 一次性返, 避免逐一调 activeStudent 端点
+router.get('/me/stats', asyncHandler(c.myStats))
 // R-0400 GET /students
 router.get('/', mws.requirePermission('student.read'), asyncHandler(c.list))
 // R-0401 GET /students/:id

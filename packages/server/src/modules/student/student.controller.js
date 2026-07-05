@@ -51,6 +51,13 @@ exports.me = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// 2026-07-05: 家长查自己多个孩子的 stat 聚合 (剩余课时 / 积分 / 近 7 天课程)
+// 走 /students/me/stats; 旧 me 端点只返基础信息不含 stat
+exports.myStats = async (req, res) => {
+  const data = await service.listMyKidsStats({ orgId: req.orgId, userId: req.user.id })
+  res.json(ApiResponse.ok(data))
+}
+
 // === 学生学习画像 (2026-06 新增) ===
 exports.getProfile = async (req, res) => {
   const data = await profile.getProfile(req.params.id, req.orgId)
