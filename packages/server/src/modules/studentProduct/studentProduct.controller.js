@@ -6,6 +6,8 @@ const ApiResponse = require('@utils/ApiResponse')
 exports.list = async (req, res) => res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, ...req.query })))
 exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(req.params.id, req.orgId)))
 exports.remaining = async (req, res) => res.json(ApiResponse.ok(await s.remaining(req.params.id, req.orgId)))
+// 课包消费明细：管理后台"学生课包"列表点击"剩余/总课时"列弹窗调用
+exports.getUsage = async (req, res) => res.json(ApiResponse.ok(await s.getUsage({ id: req.params.id, orgId: req.orgId })))
 
 // C 端 /student-products/me (R-2079 2026-07-01): 当前 active child 的 StudentProduct
 // 复用 service.list,强制 student=req.activeStudentId,避免越权读到别人孩子的课包

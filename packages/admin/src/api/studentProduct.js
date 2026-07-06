@@ -9,5 +9,7 @@ export const studentProductApi = {
   // 物理删除 (2026-06-25): 超管+密码确认, 互锁检查 LessonAttendance.studentProduct + CourseEnrollment.studentProduct
   remove: (id, { password } = {}) => http.delete(`/student-products/${id}`, { data: { password } }),
   // 删除预检: 删除按钮触发前先弹挡板说明
-  removableCheck: (id) => http.get(`/student-products/${id}/removable-check`)
+  removableCheck: (id) => http.get(`/student-products/${id}/removable-check`),
+  // 「课包消费明细」：学生课包列表点击"剩余/总课时"列弹窗调用
+  getUsage: (id) => http.get(`/student-products/${id}/usage`)
 }

@@ -96,5 +96,8 @@ LessonAttendanceSchema.index({ 'meta.makeupOf': 1 })
 LessonAttendanceSchema.index({ org: 1, status: 1 })
 //查"这个学生的全部考勤记录"（家长端课表）
 LessonAttendanceSchema.index({ student: 1 })
+// 课包消费明细反查（管理后台「学生课包」点击"剩余/总课时"列弹窗）；
+//  之前 studentProduct 删除互锁也走这个 filter，没索引只能 collection scan
+LessonAttendanceSchema.index({ org: 1, studentProduct: 1 })
 
 module.exports = model('LessonAttendance', LessonAttendanceSchema)

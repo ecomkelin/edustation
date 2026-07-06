@@ -244,4 +244,53 @@ async function removableCheck(id, orgId) {
   return removable.check(orgId, studentProductUsageChecks(orgId, id))
 }
 
-module.exports = { list, detail, remaining, gift, listLowRemaining, remove, removableCheck }
+/**
+ * 「课包消费明细」：返回某 StudentProduct 关联的全部 LessonAttendance + 状态汇总。
+ *
+ * 用途：管理后台「学生课包」列表点击"剩余/总课时"列弹窗。
+ * 数据来源：LessonAttendance.studentProduct 反向引用（已有字段，无需新增 schema）。
+ * 性能：LessonAttendance 上 (org, studentProduct) 复合索引支撑此查询。
+ *
+ * @returns {
+ *   studentProduct,                       // 课包摘要（含 student / courseProduct）
+ *   summary: { total, completed, checkedIn, scheduled, noShow, leave, makeup },
+ *   items: [                              // 考勤记录，按创建时间倒序
+ *     { _id, student, lessonSchedule, status, actualStartTime, actualEndTime, remark,
+ *       meta, evaluation }
+ *   ]
+ * }
+ */
+async function getUsage({ orgId, id }) {
+  // 1. 校验课包存在 + 属本机构（顺便取概要，避免弹窗再调一次详情）
+  const sp = await StudentProduct.findOne({ _id: id, org: orgId })
+    .select('_id student courseProduct totalLessons remainingLessons expireDate isActive source giftReason giftedBy giftedAt order')
+    .lean()
+  if (!sp) throw ApiError.notFound('学生课包不存在')
+
+  // 2. 查本课包被哪些考勤消费 / 排课引用
+  // sort 用 createdAt：简单可靠，populate 之后 'lessonSchedule.plannedStartTime' 字符串路径不可靠
+  const items = await LessonAttendance.find({ org: orgId, studentProduct: id })
+    .populate('student', 'name')
+    .populate({
+      path: 'lessonSchedule',
+      select: 'plannedStartTime plannedEndTime title lessonNo courseInstance',
+      populate: { path: 'courseInstance', select: 'name courseProduct' }
+    })
+    .sort({ createdAt: -1 })
+    .lean()
+
+  // 3. 状态汇总（弹窗顶部 KPI 用）
+  const summary = { total: items.length, completed: 0, checkedIn: 0, scheduled: 0, noShow: 0, leave: 0, makeup: 0 }
+  for (const it of items) {
+    if (it.status === 'completed') summary.completed++
+    else if (it.status === 'checked_in') summary.checkedIn++
+    else if (it.status === 'scheduled') summary.scheduled++
+    else if (it.status === 'no_show') summary.noShow++
+    else if (it.status === 'leave') summary.leave++
+    if (it.meta && it.meta.makeupOf) summary.makeup++
+  }
+
+  return { studentProduct: sp, summary, items }
+}
+
+module.exports = { list, detail, remaining, gift, listLowRemaining, remove, removableCheck, getUsage }

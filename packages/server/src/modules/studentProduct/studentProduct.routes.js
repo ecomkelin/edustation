@@ -22,6 +22,9 @@ router.get('/', mws.requirePermission('studentProduct.read'), asyncHandler(c.lis
 router.get('/:id', mws.requirePermission('studentProduct.read'), asyncHandler(c.detail))
 // R-1806 GET /student-products/:id/remaining
 router.get('/:id/remaining', mws.requirePermission('studentProduct.read'), asyncHandler(c.remaining))
+// 「课包消费明细」：学生课包列表点击"剩余/总课时"列弹窗调用
+//   权限用 studentProduct.read（看课包的人就能看明细）；明细数据来自 LessonAttendance.studentProduct 反向引用
+router.get('/:id/usage', mws.requirePermission('studentProduct.read'), asyncHandler(c.getUsage))
 
 // 赠课：员工直接创建 StudentProduct（不走订单；需要 studentProduct.gift 权限）
 // 注意：必须放在 /:id 之前，否则会被 :id 路由吞掉

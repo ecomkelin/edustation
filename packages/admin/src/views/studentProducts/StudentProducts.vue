@@ -72,9 +72,14 @@
       </el-table-column>
       <el-table-column label="剩余/总课时" width="140">
         <template #default="{ row }">
-          <div :class="row.source === 'gift' ? 'gift-strong' : 'cell-strong'">
-            剩余 {{ row.remainingLessons }} / 共 {{ row.totalLessons }} 节
-          </div>
+          <el-tooltip content="点击查看消费明细" placement="top">
+            <div
+              :class="['usage-trigger', row.source === 'gift' ? 'gift-strong' : 'cell-strong']"
+              @click.stop="openUsageDialog(row)"
+            >
+              剩余 {{ row.remainingLessons }} / 共 {{ row.totalLessons }} 节
+            </div>
+          </el-tooltip>
           <el-progress
             :percentage="progressPct(row)"
             :stroke-width="6"
@@ -216,11 +221,130 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 「课包消费明细」弹窗：学生课包列表点击"剩余/总课时"列触发。
+         显示该课包被哪些考勤引用 + 状态 KPI 汇总；明细行的"开班·第几课"可跳到排课。 -->
+    <el-dialog
+      v-model="usageDialog"
+      :title="usageTarget ? `课包消费明细 · ${usageTarget.studentName} · ${usageTarget.courseProductName}` : '课包消费明细'"
+      width="960px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="usageLoading" class="usage-body">
+        <!-- 课包概要 -->
+        <div v-if="usageTarget" class="usage-summary">
+          <div class="usage-summary-item">
+            <div class="label">来源</div>
+            <div class="value">
+              <el-tag v-if="usageTarget.source === 'gift'" type="danger" size="small">赠课</el-tag>
+              <el-tag v-else type="primary" size="small">订单</el-tag>
+            </div>
+          </div>
+          <div class="usage-summary-item">
+            <div class="label">剩余/总课时</div>
+            <div class="value cell-strong">{{ usageTarget.remainingLessons }} / {{ usageTarget.totalLessons }}</div>
+          </div>
+          <div class="usage-summary-item">
+            <div class="label">到期日</div>
+            <div class="value" :class="expiryClass({ expireDate: usageTarget.expireDate })">
+              {{ formatDate(usageTarget.expireDate, 'YYYY-MM-DD') }}
+            </div>
+          </div>
+          <div class="usage-summary-item">
+            <div class="label">消费记录数</div>
+            <div class="value cell-strong">{{ usageData.summary?.total ?? '—' }}</div>
+          </div>
+        </div>
+
+        <!-- 状态 KPI 汇总 -->
+        <div v-if="usageData.summary" class="usage-kpi">
+          <div class="kpi-cell"><span class="num">{{ usageData.summary.completed }}</span><span class="lbl">已消课</span></div>
+          <div class="kpi-cell"><span class="num">{{ usageData.summary.checkedIn }}</span><span class="lbl">已签到</span></div>
+          <div class="kpi-cell"><span class="num">{{ usageData.summary.scheduled }}</span><span class="lbl">待上课</span></div>
+          <div class="kpi-cell"><span class="num">{{ usageData.summary.noShow }}</span><span class="lbl">未到</span></div>
+          <div class="kpi-cell"><span class="num">{{ usageData.summary.leave }}</span><span class="lbl">请假</span></div>
+          <div v-if="usageData.summary.makeup > 0" class="kpi-cell kpi-makeup">
+            <span class="num">{{ usageData.summary.makeup }}</span><span class="lbl">其中补课</span>
+          </div>
+        </div>
+
+        <!-- 明细表 -->
+        <el-table
+          v-if="usageData.items && usageData.items.length"
+          :data="usageData.items"
+          border
+          size="small"
+          max-height="420"
+          style="margin-top: 12px"
+        >
+          <el-table-column label="计划上课时间" width="160">
+            <template #default="{ row }">
+              <span v-if="row.lessonSchedule">
+                {{ formatDate(row.lessonSchedule.plannedStartTime, 'YYYY-MM-DD HH:mm') }}
+              </span>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="开班 · 第几课" min-width="200">
+            <template #default="{ row }">
+              <template v-if="row.lessonSchedule">
+                <a class="schedule-link" href="javascript:;" @click="goSchedule(row.lessonSchedule)">
+                  {{ row.lessonSchedule.courseInstance?.name || '—' }} · 第 {{ row.lessonSchedule.lessonNo || '?' }} 课
+                </a>
+              </template>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">
+              <el-tag :type="usageStatusType(row.status)" size="small" effect="plain">
+                {{ usageStatusLabel(row.status) }}
+              </el-tag>
+              <el-tag
+                v-if="row.meta && row.meta.makeupOf"
+                type="danger"
+                size="small"
+                effect="dark"
+                style="margin-left: 4px"
+              >补课</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="签到" width="120">
+            <template #default="{ row }">
+              <span :class="row.actualStartTime ? '' : 'muted'">
+                {{ row.actualStartTime ? formatDate(row.actualStartTime, 'MM-DD HH:mm') : '—' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="下课" width="120">
+            <template #default="{ row }">
+              <span :class="row.actualEndTime ? '' : 'muted'">
+                {{ row.actualEndTime ? formatDate(row.actualEndTime, 'MM-DD HH:mm') : '—' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="课评" width="80">
+            <template #default="{ row }">
+              <span v-if="row.evaluation && row.evaluation.score != null" class="cell-strong">
+                {{ row.evaluation.score }} 分
+              </span>
+              <span v-else class="muted">—</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty
+          v-else-if="!usageLoading"
+          description="该课包暂无消费记录（仅作为预选产品尚未消课）"
+          style="padding: 40px 0"
+        />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { studentProductApi } from '@/api/studentProduct'
 import { studentApi } from '@/api/student'
@@ -360,6 +484,74 @@ function expiryClass(row) {
 const giftDialog = ref(false)
 const giftSaving = ref(false)
 const giftFormRef = ref(null)
+
+// 「课包消费明细」弹窗
+const usageDialog = ref(false)
+const usageLoading = ref(false)
+const usageTarget = ref(null) // { id, studentName, courseProductName, remainingLessons, totalLessons, source, expireDate }
+const usageData = ref({ summary: null, items: null })
+const router = useRouter()
+
+// 状态展示（与 AttendanceRosterTable / 独立考勤页保持一致）
+const USAGE_STATUS_LABELS = {
+  scheduled: '待上课', checked_in: '已签到', completed: '已消课', no_show: '未到', leave: '请假'
+}
+const USAGE_STATUS_TYPES = {
+  scheduled: 'info', checked_in: 'warning', completed: 'success', no_show: 'danger', leave: ''
+}
+function usageStatusLabel(s) { return USAGE_STATUS_LABELS[s] || s || '—' }
+function usageStatusType(s) { return USAGE_STATUS_TYPES[s] || '' }
+
+async function openUsageDialog(row) {
+  // 缓存触发行的概要（弹窗标题 + 课包概要区用；拉完 API 再用后端的精确值覆盖）
+  const studentName = (row.student && row.student.name) || '—'
+  const courseName = (row.courseProduct && row.courseProduct.name) || '—'
+  usageTarget.value = {
+    id: row._id,
+    studentName,
+    courseProductName: courseName,
+    remainingLessons: row.remainingLessons,
+    totalLessons: row.totalLessons,
+    source: row.source,
+    expireDate: row.expireDate
+  }
+  usageData.value = { summary: null, items: null }
+  usageDialog.value = true
+  usageLoading.value = true
+  try {
+    const r = await studentProductApi.getUsage(row._id)
+    // 兼容 { data: ... } 与直接 ... 的响应形态（http 拦截器未统一解包）
+    const payload = r.data?.data || r.data
+    usageData.value = {
+      summary: payload?.summary || null,
+      items: payload?.items || []
+    }
+    // 用后端返回的 studentProduct 校正顶部概要（后端值更准，含 populate 后的 student/courseProduct）
+    const spFromApi = payload?.studentProduct
+    if (spFromApi) {
+      usageTarget.value = {
+        ...usageTarget.value,
+        studentName: spFromApi.student?.name || usageTarget.value.studentName,
+        courseProductName: spFromApi.courseProduct?.name || usageTarget.value.courseProductName,
+        remainingLessons: spFromApi.remainingLessons,
+        totalLessons: spFromApi.totalLessons,
+        source: spFromApi.source,
+        expireDate: spFromApi.expireDate
+      }
+    }
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载消费明细失败')
+  } finally {
+    usageLoading.value = false
+  }
+}
+
+function goSchedule(sched) {
+  if (!sched || !sched._id) return
+  // 跳到课表页（/schedule/class），把目标排课 id 作为 query 带上，
+  // 课表页 ClassSchedulePage 会自动 fetch 该排课到视野（扩展点由后续接入）。
+  router.push({ path: '/schedule/class', query: { schedule: sched._id } })
+}
 const giftForm = reactive({
   student: '',
   courseProduct: '',
@@ -442,6 +634,46 @@ onMounted(() => {
 .muted { color: #909399; font-size: 12px; }
 .expired { color: #F56C6C; font-weight: 600; }
 .expiring { color: #E6A23C; font-weight: 600; }
+
+/* 「剩余/总课时」点击触发器：hover 提示 + 下划线 */
+.usage-trigger {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.usage-trigger:hover { opacity: 0.7; text-decoration: underline; }
+
+/* 「课包消费明细」弹窗内样式 */
+.usage-body { padding: 0 4px; }
+.usage-summary {
+  display: flex;
+  gap: 32px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.usage-summary-item .label { color: #909399; font-size: 12px; margin-bottom: 4px; }
+.usage-summary-item .value { font-weight: 500; font-size: 14px; }
+.usage-kpi {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.usage-kpi .kpi-cell {
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 8px 16px;
+  text-align: center;
+  min-width: 70px;
+}
+.usage-kpi .kpi-cell .num { display: block; font-size: 22px; font-weight: 700; color: #303133; line-height: 1.2; }
+.usage-kpi .kpi-cell .lbl { display: block; font-size: 12px; color: #909399; margin-top: 4px; }
+.usage-kpi .kpi-makeup { background: #fef0f0; }
+.usage-kpi .kpi-makeup .num { color: #F56C6C; }
+.schedule-link { color: #409EFF; text-decoration: none; }
+.schedule-link:hover { text-decoration: underline; }
 
 .form-hint {
   font-size: 12px;
