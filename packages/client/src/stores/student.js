@@ -57,12 +57,10 @@ export const useStudentStore = defineStore('student', {
       this.list = []
       this.activeStudentId = ''
       storage.remove(StorageKeys.ACTIVE_STUDENT)
-    },
-
-    /** 拿当前孩子的头像 fallback - 缺图时用 emoji/initial */
-    avatarOf(student) {
-      if (!student) return ''
-      return student.avatar || student.avatarUrl || ''
     }
+
+    // 2026-07-05: avatarOf 已移除 (不再用 URL/SVG markup 字符串)
+    //   历史客户/store list 上的 .avatar / .avatarUrl 字段废弃
+    //   直接 .avatarSvgKey 喂给 <SvgAvatar> 即可
   }
 })

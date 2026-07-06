@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => {
     plugins: [uni()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src')
+        '@': path.resolve(__dirname, './src'),
+        // 2026-07-05: 跨端共用 SVG 头像枚举 (CJS, 走 module.exports)
+        '@shared': path.resolve(__dirname, '../../shared')
       }
     },
     css: {
@@ -34,6 +36,14 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true
         }
       }
+    },
+    // 2026-07-05: shared/*.js 是 CJS, uni-app 多端编译对 CJS exports 兼容性差
+    //   加入 optimizeDeps 让 esbuild 预构建走 ESM-CJS interop, 同 admin 配置
+    // 2026-07-05: shared/*.js 是 CJS, uni-app 多端编译对 CJS exports 兼容性差
+    //   加入 optimizeDeps 让 esbuild 预构建走 ESM-CJS interop, 同 admin 配置
+    //   .mjs 通过 namespace import { default } 拿 CJS 命名空间
+    optimizeDeps: {
+      include: ['@shared/avatars']
     }
   }
 })

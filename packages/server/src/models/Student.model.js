@@ -2,6 +2,7 @@
 
 const { Schema, model } = require('mongoose')
 const { GENDERS } = require('@shared/enums')
+const { STUDENT_AVATAR_KEYS } = require('@shared/avatars')
 
 /**
  * 学员（Student）
@@ -42,6 +43,16 @@ const StudentSchema = new Schema(
     className: { type: String, trim: true, default: '' },
     // 备注（过敏史/特殊需求/老师注意事项等）
     notes: { type: String },
+    // 头像 (2026-07-05 重构: 新增字段, 历史上 schema 漏洞未定义 avatar
+    //   service 一直 .select('avatar') 取 undefined, 客户端永远 fallback 到 emoji)
+    //   - 6 个预制 SVG 手动指定 (boy/girl/brother/sister/younger_brother/younger_sister)
+    //   - 不强制默认: 让教务/家长在编辑 dialog 主动挑
+    //   - SVG 字符串在 shared/avatars.js 维护
+    avatarSvgKey: {
+      type: String,
+      enum: STUDENT_AVATAR_KEYS,
+      default: null
+    },
 
     // === 学生学习画像 (2026-06 新增) ===
     // 业务上 1 个学生在 1 个机构下有 1 份画像; Student 本身已按 org 隔离, 天然支持

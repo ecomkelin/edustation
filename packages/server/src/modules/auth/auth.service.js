@@ -9,9 +9,11 @@ const JwtUtil = require('@utils/JwtUtil')
 const legalService = require('@modules/legal/legal.service')
 const captchaService = require('@modules/captcha/captcha.service')
 const config = require('@config/index')
+const { isValidUserKey, DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
 
 // 自助资料可改字段白名单：mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律不可由用户自助修改
-const SELF_UPDATE_WHITELIST = ['realName', 'avatar', 'idCard', 'region']
+// 2026-07-05: 'avatar' (URL) 替换为 'avatarSvgKey' (枚举 key), 不再走 File 引用追踪
+const SELF_UPDATE_WHITELIST = ['realName', 'avatarSvgKey', 'idCard', 'region']
 
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -185,7 +187,7 @@ async function logout({ refreshToken }) {
  */
 async function me(userId, options = {}) {
   const user = await User.findById(userId)
-    .select('mobile realName avatar idCard region isPlatformAdmin isActive isBlocked blockedAt blockedReason createdAt')
+    .select('mobile realName avatarSvgKey idCard region isPlatformAdmin isActive isBlocked blockedAt blockedReason createdAt')
     .populate('region', 'name level code')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
@@ -247,7 +249,8 @@ async function me(userId, options = {}) {
     id: String(user._id),
     mobile: user.mobile,
     realName: user.realName,
-    avatar: user.avatar,
+    // 2026-07-05: avatar → avatarSvgKey (枚举 key)
+    avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
     idCard: user.idCard || null,
     region: user.region
       ? { id: String(user.region._id), name: user.region.name, level: user.region.level, code: user.region.code }
@@ -265,18 +268,18 @@ async function me(userId, options = {}) {
 }
 
 /**
- * 自助修改资料：白名单字段(realName / avatar / idCard / region)。
+ * 自助修改资料：白名单字段(realName / avatarSvgKey / idCard / region)。
  * - mobile / passwordHash / isPlatformAdmin / isActive / isBlocked 一律由管理员走 user 模块改。
  * - idCard 唯一性手动校验(与 user.update 等价,避免 partial index 异常回包不友好)。
- * - avatar 是 File 引用字段(走 URL 字符串),引用追踪由 fileBind 维护,这里必须调
- *   diffSingle,否则新上传的头像永远是孤儿、引用数 = 0(详见 user.service.update)。
+ * - 2026-07-05: 'avatar' (URL) 替换为 'avatarSvgKey' (枚举 key), 不再走 File 引用追踪
+ *   - 直接校验 enum 合法性,写 User 即可
  * - 完成后回包用 me(userId) 的全量结构,与 GET /auth/me 完全一致,前端可以直接覆盖。
  */
 async function updateMe(userId, payload, options = {}) {
   const patch = {}
   for (const key of SELF_UPDATE_WHITELIST) {
     if (Object.prototype.hasOwnProperty.call(payload, key)) {
-      // 空串 / undefined 一律视为"清空",对应字段置 null(idCard / region / avatar 允许为空)
+      // 空串 / undefined 一律视为"清空",对应字段置 null(idCard / region 允许为空; avatarSvgKey 视情况)
       const v = payload[key]
       patch[key] = v === '' || v === undefined ? null : v
     }
@@ -287,31 +290,12 @@ async function updateMe(userId, payload, options = {}) {
     if (dup) throw ApiError.conflict('身份证号已存在')
   }
 
-  // avatar 是 File 引用字段 —— 先抓旧值,update 完做 diffSingle(unbind 旧 / bind 新)
-  let prevAvatar = null
-  if (Object.prototype.hasOwnProperty.call(patch, 'avatar')) {
-    const prev = await User.findById(userId).select('avatar').lean()
-    prevAvatar = prev ? prev.avatar : null
+  // 2026-07-05: 校验 avatarSvgKey 合法性 (枚举内的 key 或 null)
+  if (patch.avatarSvgKey !== undefined && patch.avatarSvgKey !== null && !isValidUserKey(patch.avatarSvgKey)) {
+    throw ApiError.badRequest(`无效的头像类型: ${patch.avatarSvgKey}`)
   }
 
-  const user = await User.findByIdAndUpdate(userId, { $set: patch }, { new: true, runValidators: true })
-    .select('_id avatar')
-    .lean()
-  if (!user) throw ApiError.notFound('用户不存在')
-
-  // avatar 引用追踪 —— 与 user.service.update 行为一致
-  if (Object.prototype.hasOwnProperty.call(patch, 'avatar')) {
-    const { REF_ENTITY } = require('@models/File.model')
-    const fileBind = require('@modules/storage/fileBind')
-    await fileBind.diffSingle({
-      orgId: null, // user 跨机构,avatar scope 允许 File.org=null
-      oldUrl: prevAvatar,
-      newUrl: user.avatar,
-      entity: REF_ENTITY.USER,
-      entityId: user._id,
-      field: 'avatar'
-    })
-  }
+  await User.findByIdAndUpdate(userId, { $set: patch }, { new: true, runValidators: true })
 
   return me(userId, { orgId: options.orgId || null })
 }
@@ -343,7 +327,7 @@ function publicUser(u) {
     id: String(u._id),
     mobile: u.mobile,
     realName: u.realName,
-    avatar: u.avatar,
+    avatarSvgKey: u.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
     isPlatformAdmin: u.isPlatformAdmin,
     isActive: u.isActive,
     isBlocked: !!u.isBlocked,

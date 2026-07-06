@@ -759,7 +759,6 @@
       "mobile": "15800000000",
       "passwordHash": "$argon2id$v=19$m=65536,t=3,p=4$zh+we3LOAUHE49jQE2UflQ$pTbcb7fB+kB5rKCM5BUG86Kt1ynHAIUJxRNTbQgksc8",
       "realName": "李科霖",
-      "avatar": "/uploads/avatar/2026-06/20260616/c7e6885b-6ef2-495d-b63f-b4847d61da45.jpg",
       "idCard": null,
       "region": null,
       "isPlatformAdmin": true,
@@ -770,7 +769,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-15T08:09:38.383Z",
       "updatedAt": "2026-06-16T05:28:31.642Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a2fb342aa8152333e4de518",
@@ -787,14 +787,14 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-15T08:09:38.420Z",
       "updatedAt": "2026-06-15T08:09:38.420Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a2fb342aa8152333e4de51d",
       "mobile": "13800000000",
       "passwordHash": "$argon2id$v=19$m=65536,t=3,p=4$jpiUVA9aZCm9YGXOy5N5Kw$aqq4M2xT4yENax8FkB/788A0WyZLIQj7W+3e4HAfXtY",
       "realName": "梓潼校长",
-      "avatar": "/uploads/avatar/2026-06/20260616/c7e6885b-6ef2-495d-b63f-b4847d61da45.jpg",
       "idCard": null,
       "region": "6a2fb342aa8152333e4de4e6",
       "isPlatformAdmin": false,
@@ -805,7 +805,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-15T08:09:38.592Z",
       "updatedAt": "2026-06-17T09:44:10.546Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a339b7f2b19596aafa75428",
@@ -822,7 +823,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-18T07:17:19.521Z",
       "updatedAt": "2026-06-18T08:06:37.450Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a33a9542b19596aafa75a33",
@@ -839,7 +841,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-18T08:16:20.351Z",
       "updatedAt": "2026-06-18T08:16:20.351Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a33ae4a2b19596aafa75b46",
@@ -856,7 +859,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-18T08:37:30.074Z",
       "updatedAt": "2026-06-18T08:37:30.074Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a33ae642b19596aafa75b5b",
@@ -873,7 +877,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-18T08:37:56.413Z",
       "updatedAt": "2026-06-18T08:37:56.413Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     },
     {
       "_id": "6a33bbc5d17c278a6cef8b91",
@@ -890,7 +895,8 @@
       "requirePasswordChange": false,
       "createdAt": "2026-06-18T09:35:01.082Z",
       "updatedAt": "2026-06-18T09:35:01.082Z",
-      "__v": 0
+      "__v": 0,
+      "avatarSvgKey": "mom"
     }
   ],
   "orgs": [

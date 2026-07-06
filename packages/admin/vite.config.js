@@ -23,7 +23,10 @@ export default defineConfig(({ mode }) => {
     // 后端 server 端用 require('@shared/enums') 不受影响 (走 module-alias, 不是 Vite).
     optimizeDeps: {
       // 用 alias 名 (@shared) 让 Vite 走 resolve.alias 找到路径
-      include: ['@shared/enums.js', '@shared/permissions.js']
+      // 2026-07-05: 加 @shared/avatars (用户/学生 10 个预制 SVG, 前端通过 .mjs 镜像)
+      //   与 shared/enums.js 同理: esbuild 把 CJS 包成 `__commonJS` + `export default require_xxx()`,
+      //   `.mjs` 里 namespace import 拿到的 `{ default: ... }`.
+      include: ['@shared/enums.js', '@shared/permissions.js', '@shared/avatars']
     },
     server: {
       port: 8000,

@@ -15,6 +15,7 @@ const password = require('@utils/password')
 const { normalizePagination } = require('@utils/pagination')
 const removable = require('@utils/removable')
 const config = require('@config/index')
+const { isValidUserKey, DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
 
 async function listUnaffiliated({ keyword, isActive, isPlatformAdmin, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
@@ -60,7 +61,7 @@ async function listUnaffiliated({ keyword, isActive, isPlatformAdmin, page, page
 }
 
 /**
- * 平台超管编辑游离用户。显式 allowlist 防越权, 不允许改 mobile / isPlatformAdmin / isBlocked / avatar / passwordHash。
+ * 平台超管编辑游离用户。显式 allowlist 防越权, 不允许改 mobile / isPlatformAdmin / isBlocked / avatarSvgKey / passwordHash。
  */
 async function updateUnaffiliated(userId, payload) {
   const allowed = ['realName', 'idCard', 'region', 'isActive']
@@ -153,7 +154,7 @@ async function list({ orgId, keyword, userType, position, region, isActive, role
     .populate({
       path: 'user',
       match: userMatch,
-      select: 'mobile realName avatar idCard region isActive'
+      select: 'mobile realName avatarSvgKey idCard region isActive'
     })
     .populate({
       path: 'positions',
@@ -167,7 +168,7 @@ async function list({ orgId, keyword, userType, position, region, isActive, role
     id: String(r.user._id),
     mobile: r.user.mobile,
     realName: r.user.realName,
-    avatar: r.user.avatar,
+    avatarSvgKey: r.user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
     idCard: r.user.idCard,
     region: r.user.region ? String(r.user.region) : null,
     isActive: r.user.isActive,
@@ -190,7 +191,7 @@ async function list({ orgId, keyword, userType, position, region, isActive, role
 async function detail(userId, orgId) {
   const user = await User.findById(userId)
     .populate('region', 'name level code')
-    .select('mobile realName avatar idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
+    .select('mobile realName avatarSvgKey idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
   const rel = await UserOrgRel.findOne({ user: userId, org: orgId })
@@ -199,6 +200,7 @@ async function detail(userId, orgId) {
   return {
     ...user,
     id: String(user._id),
+    avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
     region: user.region
       ? { id: String(user.region._id), name: user.region.name, level: user.region.level }
       : null,
@@ -218,7 +220,7 @@ async function detail(userId, orgId) {
 /**
  * 创建用户并关联到当前 org
  */
-async function create({ orgId, mobile, password: pwd, realName, avatar, idCard, region, positions = [], isMain = false }) {
+async function create({ orgId, mobile, password: pwd, realName, avatarSvgKey, idCard, region, positions = [], isMain = false }) {
   const exist = await User.findOne({ mobile })
   if (exist) throw ApiError.conflict('手机号已注册')
 
@@ -232,7 +234,8 @@ async function create({ orgId, mobile, password: pwd, realName, avatar, idCard, 
     mobile,
     passwordHash: hash,
     realName,
-    avatar,
+    // 2026-07-05: avatar → avatarSvgKey (不入库为 'mom')
+    avatarSvgKey: isValidUserKey(avatarSvgKey) ? avatarSvgKey : DEFAULT_USER_AVATAR_KEY,
     idCard: idCard || null,
     region: region || null
   })
@@ -256,40 +259,26 @@ async function update(userId, payload) {
     if (dup) throw ApiError.conflict('身份证号已存在')
   }
 
-  // avatar 字段可能更新 —— 先抓旧值做 fileBind diff
-  // 业务上 avatar 走 URL 字符串；File 引用追踪由 fileBind 维护
-  // 注意：user 是跨机构实体（无 org 字段），fileBind 校验时传 orgId=null 跳过隔离
-  let prevAvatar = null
+  // 2026-07-05: avatar → avatarSvgKey 校验, 不再走 fileBind (SVG 是预制,不入 File 体系)
+  if (payload.avatarSvgKey !== undefined && payload.avatarSvgKey !== null && !isValidUserKey(payload.avatarSvgKey)) {
+    throw ApiError.badRequest(`无效的头像类型: ${payload.avatarSvgKey}`)
+  }
+
+  // 适配 payload 里旧的 'avatar' 键 (老前端兼容): 自动转写到 avatarSvgKey, 默认 mom
   if (Object.prototype.hasOwnProperty.call(payload, 'avatar')) {
-    const prev = await User.findById(userId).select('avatar').lean()
-    prevAvatar = prev ? prev.avatar : null
+    delete payload.avatar // 旧字段直接丢弃, 不再持久化
   }
 
   const user = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
     .populate('region', 'name level code')
-    .select('mobile realName avatar idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
+    .select('mobile realName avatarSvgKey idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
-
-  // avatar 引用追踪（unbind 旧 / bind 新）
-  if (Object.prototype.hasOwnProperty.call(payload, 'avatar')) {
-    const { REF_ENTITY } = require('@models/File.model')
-    const fileBind = require('@modules/storage/fileBind')
-    // 跨机构：user 不属于 org，用 null 让 fileBind 跳过 org 校验
-    // 但本 service 的 caller 一定是某个 req.orgId 上下文；用该 org 校验更稳
-    await fileBind.diffSingle({
-      orgId: null, // user 跨机构，File.org 可能是 null（avatar scope 允许）
-      oldUrl: prevAvatar,
-      newUrl: user.avatar,
-      entity: REF_ENTITY.USER,
-      entityId: user._id,
-      field: 'avatar'
-    })
-  }
 
   return {
     ...user,
     id: String(user._id),
+    avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
     region: user.region
       ? { id: String(user.region._id), name: user.region.name, level: user.region.level }
       : null
@@ -411,7 +400,7 @@ async function setTeacherFlag(userId, orgId, showAsTeacher) {
 async function lookupByMobile(mobile, orgId) {
   if (!mobile) throw ApiError.badRequest('请提供手机号')
   const user = await User.findOne({ mobile })
-    .select('mobile realName avatar idCard region isActive isPlatformAdmin')
+    .select('mobile realName avatarSvgKey idCard region isActive isPlatformAdmin')
     .populate('region', 'name level')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
@@ -424,7 +413,7 @@ async function lookupByMobile(mobile, orgId) {
     id: String(user._id),
     mobile: user.mobile,
     realName: user.realName,
-    avatar: user.avatar,
+    avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
     idCard: user.idCard,
     region: user.region ? { id: String(user.region._id), name: user.region.name } : null,
     isActive: user.isActive,

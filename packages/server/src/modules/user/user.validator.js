@@ -1,12 +1,14 @@
 'use strict'
 
 const { body } = require('express-validator')
+const { USER_AVATAR_KEYS } = require('@shared/avatars')
 
 const create = [
   body('mobile').isString().trim().isLength({ min: 11, max: 11 }).withMessage('手机号格式错误'),
   body('password').optional().isString().isLength({ min: 6, max: 64 }),
   body('realName').optional().isString().isLength({ max: 50 }),
-  body('avatar').optional().isString().isLength({ max: 500 }),
+  // 2026-07-05: avatar → avatarSvgKey (枚举 key)
+  body('avatarSvgKey').optional().isString().isIn(USER_AVATAR_KEYS).withMessage(`头像必须是 ${USER_AVATAR_KEYS.join('/')} 之一`),
   body('idCard').optional({ values: 'falsy' }).isString().matches(/^\d{15}(\d{2}[\dXx])?$/).withMessage('身份证号格式不正确'),
   body('region').optional({ values: 'falsy' }).isMongoId().withMessage('地区 id 格式错误'),
   body('positions').optional().isArray(),
@@ -16,7 +18,8 @@ const create = [
 
 const update = [
   body('realName').optional().isString().isLength({ max: 50 }),
-  body('avatar').optional().isString().isLength({ max: 500 }),
+  // 2026-07-05: avatar → avatarSvgKey
+  body('avatarSvgKey').optional().isString().isIn(USER_AVATAR_KEYS).withMessage(`头像必须是 ${USER_AVATAR_KEYS.join('/')} 之一`),
   body('idCard').optional({ values: 'falsy' }).isString().matches(/^\d{15}(\d{2}[\dXx])?$/).withMessage('身份证号格式不正确'),
   body('region').optional({ values: 'falsy' }).isMongoId().withMessage('地区 id 格式错误'),
   body('isActive').optional().isBoolean()

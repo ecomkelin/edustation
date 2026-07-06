@@ -9,13 +9,13 @@
 
       <view class="me__profile safe-area-top">
         <view class="me__avatar" @tap="onAvatar">
-          <image
-            v-if="auth.user && auth.user.avatar"
-            class="me__avatar-img"
-            :src="auth.user.avatar"
-            mode="aspectFill"
+          <SvgAvatar
+            :svg-key="(auth.user && auth.user.avatarSvgKey) || 'mom'"
+            :size="64"
+            audience="user"
+            clickable
+            @click="onAvatar"
           />
-          <text v-else class="me__avatar-emoji">👤</text>
         </view>
         <view class="me__info">
           <text class="me__name">{{ auth.user?.realName || '家长' }}</text>
@@ -62,8 +62,11 @@
         >
           <view class="me__kid-card-head">
             <view class="me__kid-card-avatar">
-              <image v-if="kid.avatar" :src="kid.avatar" class="me__kid-card-img" mode="aspectFill" />
-              <text v-else class="me__kid-card-emoji">{{ kidEmoji(kid) }}</text>
+              <SvgAvatar
+                :svg-key="kid.avatarSvgKey || null"
+                :size="44"
+                audience="student"
+              />
             </view>
             <view class="me__kid-card-info">
               <view class="me__kid-card-name-row">
@@ -146,18 +149,18 @@ import { useAuthStore } from '@/stores/auth'
 import { useStudentStore } from '@/stores/student'
 import OrgFooter from '@/components/layout/OrgFooter.vue'
 import { maskPhone } from '@/utils/format'
-import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
 // 2026-07-05: kids-card 自带 stat 走 R-0473 一次性聚合 (跨 kid 不强制 activeStudent)
 import { studentApi } from '@/api/student'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 
 export default {
-  components: { OrgFooter },
+  components: { OrgFooter, SvgAvatar },
   data() {
     return {
       // 2026-07-04: 「设置与服务」折叠开关, 默认 false (用户需点击才展开)
       settingsExpanded: false,
-      // 2026-07-05: R-0473 拉来的 kid + stat 列表 (kidStats = [{id, name, avatar, stats: {lessonsLeft, points, upcoming}}])
+      // 2026-07-05: R-0473 拉来的 kid + stat 列表 (kidStats = [{id, name, avatarSvgKey, stats: {lessonsLeft, points, upcoming}}])
       kidStats: [],
       kidStatsLoading: false
     }
@@ -205,7 +208,8 @@ export default {
           id: x.id,
           name: x.name,
           gender: x.gender,
-          avatar: x.avatar,
+          // 2026-07-05: avatar → avatarSvgKey (DB 只存 enum key)
+          avatarSvgKey: x.avatarSvgKey || null,
           // 2026-07-05: 后端 listMyKidsStats populate 了 org, 给前端 kid-card 头部右侧红框位置展示「孩子所属机构」
           orgId: x.orgId || null,
           orgName: x.orgName || '',
@@ -249,17 +253,7 @@ export default {
       uni.navigateTo({ url: `/pages/schedule/calendar?kid=${kidId}` })
     },
 
-    // 头像 fallback emoji (name 哈希稳定选 avatar 池 — 跟 ActiveStudentHeader 一致)
-    kidEmoji(kid) {
-      const pool = ['🐰', '🐯', '🐻', '🦊', '🐼', '🐨', '🐸', '🐵', '🐱', '🐶']
-      const name = (kid && kid.name) || ''
-      let h = 0
-      for (let i = 0; i < name.length; i++) {
-        h = (h << 5) - h + name.charCodeAt(i)
-        h |= 0
-      }
-      return pool[Math.abs(h) % pool.length]
-    },
+    // 2026-07-05: kidEmoji 已弃用, 直接用 SvgAvatar 渲染; fallback 改走 utils/avatarFallback
 
     onMenuTap(item) {
       haptic.tap()
@@ -277,12 +271,8 @@ export default {
     },
 
     onAvatar() {
-      uni.showActionSheet({
-        itemList: ['从相册选择', '拍照'],
-        success: (res) => {
-          uni.showToast({ title: res.tapIndex === 0 ? '相册上传' : '拍照上传', icon: 'none' })
-        }
-      })
+      // 2026-07-05: 改为跳 SVG 头像 picker 页面 (4 个预制头像)
+      uni.navigateTo({ url: '/pages/profile/avatars' })
     },
 
     onLogout() {

@@ -3,6 +3,7 @@
 const ApiError = require('@utils/ApiError')
 const JwtUtil = require('@utils/JwtUtil')
 const User = require('@models/User.model')
+const { DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
 
 /**
  * 解析 Bearer Token，校验后挂载 req.user。
@@ -25,7 +26,7 @@ module.exports = async function authenticate(req, res, next) {
     }
 
     const user = await User.findById(payload.userId)
-      .select('mobile realName avatar isPlatformAdmin isActive')
+      .select('mobile realName avatarSvgKey isPlatformAdmin isActive')
       .lean()
     if (!user || !user.isActive) {
       throw ApiError.unauthorized('账号不存在或已停用')
@@ -35,7 +36,7 @@ module.exports = async function authenticate(req, res, next) {
       id: String(user._id),
       mobile: user.mobile,
       realName: user.realName,
-      avatar: user.avatar,
+      avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
       isPlatformAdmin: !!user.isPlatformAdmin
     }
     next()

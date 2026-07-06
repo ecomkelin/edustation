@@ -12,15 +12,13 @@
       @tap="onTap"
     >
       <view class="student-header__avatar">
-        <image
-          v-if="student.activeStudent && student.activeStudent.avatar"
-          class="student-header__avatar-img"
-          :src="student.activeStudent.avatar"
-          mode="aspectFill"
+        <SvgAvatar
+          v-if="student.activeStudent"
+          :svg-key="student.activeStudent.avatarSvgKey || null"
+          :size="36"
+          audience="student"
         />
-        <text v-else class="student-header__avatar-emoji">
-          {{ avatarEmoji }}
-        </text>
+        <text v-else class="student-header__avatar-emoji">{{ avatarEmoji }}</text>
       </view>
 
       <view class="student-header__info">
@@ -59,13 +57,11 @@
             @tap="selectStudent(s)"
           >
             <view class="student-header__item-avatar">
-              <image
-                v-if="s.avatar"
-                :src="s.avatar"
-                class="student-header__item-img"
-                mode="aspectFill"
+              <SvgAvatar
+                :svg-key="s.avatarSvgKey || null"
+                :size="36"
+                audience="student"
               />
-              <text v-else class="student-header__item-emoji">{{ emojiFor(s) }}</text>
             </view>
             <view class="student-header__item-info">
               <text class="student-header__item-name">{{ s.name }}</text>
@@ -96,11 +92,12 @@ import { useStudentStore } from '@/stores/student'
 // 2026-07-05: 跨 org kid 选中时同步切 activeOrg (解 6 个 /me 端点连环 404)
 import { useAuthStore } from '@/stores/auth'
 import { haptic } from '@/utils/haptic'
-
-const AVATAR_EMOJI = ['🐰', '🐯', '🐻', '🦊', '🐼', '🐨', '🐸', '🐵', '🐱', '🐶']
+import { fallbackEmoji } from '@/utils/avatarFallback'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 
 export default {
   name: 'ActiveStudentHeader',
+  components: { SvgAvatar },
   data() {
     return {
       showSwitcher: false
@@ -110,26 +107,14 @@ export default {
     student() {
       return useStudentStore()
     },
+    // 2026-07-05: 共用 utils/avatarFallback 替原来 3 处复制
     avatarEmoji() {
       const s = this.student.activeStudent
       if (!s) return '🐾'
-      // 用 name 哈希选 emoji,保证稳定
-      const idx = this._hash(s.name || '') % AVATAR_EMOJI.length
-      return AVATAR_EMOJI[idx]
+      return fallbackEmoji(s.name || '')
     }
   },
   methods: {
-    _hash(str) {
-      let h = 0
-      for (let i = 0; i < str.length; i++) {
-        h = (h << 5) - h + str.charCodeAt(i)
-        h |= 0
-      }
-      return Math.abs(h)
-    },
-    emojiFor(s) {
-      return AVATAR_EMOJI[this._hash(s.name || '') % AVATAR_EMOJI.length]
-    },
     onTap() {
       if (this.student.hasMultiple) {
         haptic.tap()

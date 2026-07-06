@@ -2,6 +2,7 @@
 
 const { body, param } = require('express-validator')
 const { GENDERS } = require('@shared/enums')
+const { STUDENT_AVATAR_KEYS } = require('@shared/avatars')
 
 const create = [
   body('name').isString().trim().isLength({ min: 1, max: 50 }).withMessage('姓名必填 (1-50)'),
@@ -11,7 +12,9 @@ const create = [
   body('guardians').optional().isArray(),
   body('guardians.*').optional().isMongoId(),
   body('school').optional({ nullable: true }).isMongoId().withMessage('school 必须是学校 id 或 null'),
-  body('notes').optional().isString().isLength({ max: 500 })
+  body('notes').optional().isString().isLength({ max: 500 }),
+  // 2026-07-05: 学生头像 (6 个预制 SVG, 不强制默认)
+  body('avatarSvgKey').optional({ values: 'falsy' }).isString().isIn(STUDENT_AVATAR_KEYS).withMessage(`学生头像必须是 ${STUDENT_AVATAR_KEYS.join('/')} 之一`)
 ]
 
 const update = [
@@ -22,7 +25,8 @@ const update = [
   body('guardians.*').optional().isMongoId(),
   body('school').optional({ nullable: true }).isMongoId(),
   body('notes').optional().isString().isLength({ max: 500 }),
-  body('isActive').optional().isBoolean()
+  body("isActive").optional().isBoolean(),
+  body("avatarSvgKey").optional({ values: "falsy" }).isString().isIn(STUDENT_AVATAR_KEYS).withMessage(`学生头像必须是 ${STUDENT_AVATAR_KEYS.join("/")} 之一`)
 ]
 
 const setGuardians = [

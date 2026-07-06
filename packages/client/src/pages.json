@@ -57,6 +57,13 @@
       }
     },
     {
+      // 2026-07-05: 头像选择 (SVG 枚举, 不再上传图片)
+      "path": "pages/profile/avatars",
+      "style": {
+        "navigationBarTitleText": "选择头像"
+      }
+    },
+    {
       "path": "pages/schedule/detail",
       "style": {
         "navigationBarTitleText": "课程详情"

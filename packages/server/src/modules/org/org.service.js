@@ -236,7 +236,7 @@ async function candidatePrincipals(id) {
   if (!org) throw ApiError.notFound('机构不存在')
 
   const rels = await UserOrgRel.find({ org: id })
-    .populate({ path: 'user', match: { isActive: true }, select: 'mobile realName avatar isActive' })
+    .populate({ path: 'user', match: { isActive: true }, select: 'mobile realName avatarSvgKey isActive' })
     .lean()
   return rels
     .filter((r) => r.user)
@@ -308,7 +308,7 @@ async function publicOrg(id) {
     // 但作为该机构的"名师"展示与主岗无关。
     // 同时 populate rel.positions 拿 clientLevel, 用来在 service 层 filter 掉纯家长 (clientLevel > 0)
     UserOrgRel.find({ org: org._id, showAsTeacher: true })
-      .populate({ path: 'user', select: 'realName avatar title bio isActive' })
+      .populate({ path: 'user', select: 'realName avatarSvgKey title bio isActive' })
       .populate({ path: 'positions', select: 'clientLevel name' })
       .lean(),
     // 上架课程产品: isActive=true, 按创建时间倒序, 取前 20 防止首屏过载
@@ -390,7 +390,7 @@ async function publicOrg(id) {
           .map((r) => ({
             id: String(r.user._id),
             realName: r.user.realName || '老师',
-            avatar: r.user.avatar || '',
+            avatarSvgKey: r.user.avatarSvgKey || null,
             title: r.user.title || '',
             bio: r.user.bio || ''
           }))

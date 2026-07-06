@@ -1,6 +1,7 @@
 'use strict'
 
 const { Schema, model } = require('mongoose')
+const { USER_AVATAR_KEYS, DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
 
 /**
  * 用户（User）
@@ -31,8 +32,16 @@ const UserSchema = new Schema(
     passwordHash: { type: String, required: true, select: false },
     // 真实姓名（实名/对账用）
     realName: { type: String, trim: true },
-    // 头像 URL
-    avatar: { type: String },
+    // 头像 (2026-07-05 重构: 不再是 URL, 改为 SVG 枚举 key)
+    //   - 不再依赖 File 体系 (没有 scope=avatar 上传)
+    //   - 用户编辑头像只能从 4 个预制 SVG (妈妈/爸爸/奶奶/爷爷) 中选
+    //   - SVG 字符串在 shared/avatars.js 内维护, 跨前后端共享
+    //   - 默认值 'mom' 让任何未选用户都显示一个合理头像
+    avatarSvgKey: {
+      type: String,
+      enum: USER_AVATAR_KEYS,
+      default: DEFAULT_USER_AVATAR_KEY
+    },
     // 微信开放平台 unionId（绑定微信登录用；稀疏唯一，未绑定时为 null）
     wechatUnionId: { type: String },
     /**

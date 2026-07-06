@@ -21,8 +21,11 @@
         <view class="profile__hero-bg profile__hero-bg--1" />
         <view class="profile__hero-bg profile__hero-bg--2" />
         <view class="profile__avatar">
-          <image v-if="data.avatar" class="profile__avatar-img" :src="data.avatar" mode="aspectFill" />
-          <text v-else class="profile__avatar-emoji">👦</text>
+          <SvgAvatar
+            :svg-key="data.avatarSvgKey || null"
+            :size="72"
+            audience="student"
+          />
         </view>
         <text class="profile__name">{{ data.name || '孩子' }}</text>
         <text v-if="data.subtitle" class="profile__sub">{{ data.subtitle }}</text>
@@ -88,8 +91,10 @@
 import { studentApi } from '@/api/student'
 import { useStudentStore } from '@/stores/student'
 import { date } from '@/utils/date'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 
 export default {
+  components: { SvgAvatar },
   data() {
     return {
       loading: true,

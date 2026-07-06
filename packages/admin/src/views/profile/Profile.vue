@@ -7,9 +7,7 @@
       <el-col :xs="24" :md="8">
         <el-card shadow="never" class="card">
           <div class="overview">
-            <el-avatar :size="84" :src="form.avatar || ''">
-              {{ initial }}
-            </el-avatar>
+            <SvgAvatar :svg-key="form.avatarSvgKey" :size="84" audience="user" />
             <div class="overview-meta">
               <div class="name">{{ form.realName || '（未填写姓名）' }}</div>
               <div class="mobile">{{ form.mobile }}</div>
@@ -76,30 +74,16 @@
               <el-input :model-value="form.mobile" disabled />
               <div class="form-hint">如需更换登录手机号，请联系机构管理员。</div>
             </el-form-item>
-            <el-form-item label="头像" prop="avatar">
+            <el-form-item label="头像" prop="avatarSvgKey">
               <div class="avatar-uploader">
-                <el-avatar :size="64" :src="form.avatar || ''">
-                  {{ initial }}
-                </el-avatar>
+                <SvgAvatar :svg-key="form.avatarSvgKey" :size="64" audience="user" />
                 <div class="avatar-uploader-actions">
-                  <el-upload
-                    :show-file-list="false"
-                    :auto-upload="true"
-                    :http-request="uploadAvatar"
-                    :before-upload="beforeAvatarUpload"
-                    accept="image/*"
-                  >
-                    <el-button size="small" :icon="Upload">上传新头像</el-button>
-                  </el-upload>
-                  <el-button v-if="form.avatar" size="small" link type="danger" @click="form.avatar = ''">
-                    清除
+                  <el-button size="small" type="primary" link @click="avatarPicker = true">
+                    选择预制头像
                   </el-button>
-                  <el-button size="small" link @click="avatarPicker = true">从文件库选</el-button>
                 </div>
-                <div class="form-hint" style="margin-left: 12px">支持 jpg/png/webp/gif，≤ 20MB</div>
+                <div class="form-hint" style="margin-left: 12px">从 4 个预制形象中选择（妈妈/爸爸/奶奶/爷爷）</div>
               </div>
-              <!-- 隐藏字段：保存时拿到 url -->
-              <input type="hidden" :value="form.avatar" />
             </el-form-item>
             <el-form-item label="身份证号" prop="idCard">
               <el-input v-model="form.idCard" placeholder="选填，15 或 18 位" maxlength="18" clearable />
@@ -162,27 +146,25 @@
       </template>
     </el-dialog>
 
-    <!-- 从文件库选头像 -->
-    <FilePicker
+    <!-- SVG 头像选择器 (2026-07-05: 不再传图片, 改选 4 个预制 SVG) -->
+    <AvatarSvgPicker
       v-model="avatarPicker"
-      scope="avatar"
-      mime-prefix="image/"
+      v-model:key-value="form.avatarSvgKey"
+      audience="user"
       title="选择头像"
-      @select="onPickAvatar"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Upload, Folder } from '@element-plus/icons-vue'
 import { authApi } from '@/api/auth'
 import { regionApi } from '@/api/region'
-import { storageApi } from '@/api/storage'
 import { useAuthStore } from '@/stores/auth'
-import FilePicker from '@/components/FilePicker.vue'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
+import AvatarSvgPicker from '@/components/Avatar/AvatarSvgPicker.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -193,7 +175,8 @@ const formRef = ref()
 const form = reactive({
   realName: '',
   mobile: '',
-  avatar: '',
+  // 2026-07-05: avatar (URL) → avatarSvgKey (枚举 key)
+  avatarSvgKey: 'mom',
   idCard: '',
   region: null, // 仅 id
   isActive: true,
@@ -205,9 +188,7 @@ const saving = ref(false)
 
 const rules = {
   realName: [{ required: true, message: '请填写姓名', trigger: 'blur' }],
-  avatar: [
-    { max: 500, message: '头像 URL 最长 500', trigger: 'blur' }
-  ],
+  // avatarSvgKey 由 AvatarSvgPicker 自带校验 (options 是固定枚举), 不必再写 form 校验
   idCard: [
     {
       validator: (rule, value, cb) => {
@@ -219,11 +200,6 @@ const rules = {
     }
   ]
 }
-
-const initial = computed(() => {
-  const name = form.realName || form.mobile || ''
-  return name ? name.slice(-1) : '?'
-})
 
 function formatDate(v) {
   if (!v) return '—'
@@ -237,7 +213,8 @@ async function reload() {
   const d = r.data || {}
   form.realName = d.realName || ''
   form.mobile = d.mobile || ''
-  form.avatar = d.avatar || ''
+  // 2026-07-05: avatar → avatarSvgKey
+  form.avatarSvgKey = d.avatarSvgKey || 'mom'
   form.idCard = d.idCard || ''
   form.region = d.region ? d.region.id : null
   form.isActive = !!d.isActive
@@ -258,35 +235,8 @@ async function loadRegionTree() {
   }))
 }
 
-// ===== 头像上传 =====
-function beforeAvatarUpload(file) {
-  if (file.size > 20 * 1024 * 1024) {
-    ElMessage.error('头像文件超过 20MB 限制')
-    return false
-  }
-  if (!file.type.startsWith('image/')) {
-    ElMessage.error('仅支持图片格式')
-    return false
-  }
-  return true
-}
-
-async function uploadAvatar(req) {
-  try {
-    const { data } = await storageApi.upload({ file: req.file, scope: 'avatar' })
-    form.avatar = data.url
-    ElMessage.success('头像已上传，点击"保存资料"生效')
-  } catch (e) {
-    // axios 拦截器已 toast
-  }
-}
-
-// 从文件库选头像。自我头像没 staged 栈（user.service.update 的 diffSingle 自然替换）。
+// ===== 头像 picker (2026-07-05: SVG picker 直接双向绑定 form.avatarSvgKey) =====
 const avatarPicker = ref(false)
-function onPickAvatar(file) {
-  form.avatar = file.url
-  ElMessage.success('已选择头像，点"保存资料"生效')
-}
 
 async function submit() {
   try {
@@ -298,7 +248,7 @@ async function submit() {
   try {
     const r = await authApi.updateMe({
       realName: form.realName,
-      avatar: form.avatar || '',
+      avatarSvgKey: form.avatarSvgKey,
       idCard: form.idCard || '',
       region: form.region || ''
     })
@@ -308,7 +258,8 @@ async function submit() {
     // 用最新出参覆盖本地表单（避免 store fetchMe 的字段裁剪导致表单丢失）
     const d = r.data || {}
     form.realName = d.realName || ''
-    form.avatar = d.avatar || ''
+    // 2026-07-05: avatar → avatarSvgKey
+    form.avatarSvgKey = d.avatarSvgKey || 'mom'
     form.idCard = d.idCard || ''
     form.region = d.region ? d.region.id : null
     formRegion.value = form.region

@@ -95,13 +95,11 @@
                 class="org-home__teacher-card"
               >
                 <view class="org-home__teacher-avatar">
-                  <image
-                    v-if="t.avatar"
-                    class="org-home__teacher-img"
-                    :src="t.avatar"
-                    mode="aspectFill"
+                  <SvgAvatar
+                    :svg-key="t.avatarSvgKey || null"
+                    :size="56"
+                    audience="user"
                   />
-                  <text v-else class="org-home__teacher-emoji">👨‍🏫</text>
                 </view>
                 <text class="org-home__teacher-name">{{ t.realName }}</text>
                 <text v-if="t.title" class="org-home__teacher-title">{{ t.title }}</text>
@@ -210,8 +208,10 @@ import { toast } from '@/components/common/Toast'
 import { copyText } from '@/utils/share'
 import { formatMoney } from '@/utils/format'
 import { haptic } from '@/utils/haptic'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 
 export default {
+  components: { SvgAvatar },
   data() {
     return {
       loading: true,

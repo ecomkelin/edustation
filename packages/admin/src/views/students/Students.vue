@@ -139,6 +139,16 @@
     <el-dialog v-model="dialog" :title="form._id ? '编辑学生' : '新建学生'" width="520px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="姓名" prop="name" required><el-input v-model="form.name" /></el-form-item>
+        <!-- 2026-07-05: 学生头像 (6 个预制 SVG 手动选, 不分男女) -->
+        <el-form-item label="头像">
+          <div style="display: flex; align-items: center; gap: 12px">
+            <SvgAvatar :svg-key="form.avatarSvgKey" :size="48" audience="student" />
+            <el-button size="small" type="primary" link @click="studentAvatarPicker = true">
+              选择形象
+            </el-button>
+            <span v-if="!form.avatarSvgKey" style="color: #909399; font-size: 12px">未选择 (默认显示字母)</span>
+          </div>
+        </el-form-item>
         <el-form-item label="性别">
           <el-select v-model="form.gender">
             <el-option label="男" value="male" />
@@ -211,6 +221,15 @@
       :parent="parentProfileDialog.parent"
       @saved="onParentProfileSaved"
     />
+
+    <!-- 学生头像选择器 (2026-07-05) -->
+    <AvatarSvgPicker
+      v-model="studentAvatarPicker"
+      v-model:key-value="form.avatarSvgKey"
+      audience="student"
+      :allow-clear="true"
+      title="选择学生形象"
+    />
   </div>
 </template>
 
@@ -223,6 +242,8 @@ import { parentApi } from '@/api/parent'
 import { schoolApi } from '@/api/school'
 import StudentProfileDialog from '@/components/Profile/StudentProfileDialog.vue'
 import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
+import AvatarSvgPicker from '@/components/Avatar/AvatarSvgPicker.vue'
 import { handleRemoveError } from '@/utils/removable'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
@@ -251,8 +272,12 @@ const form = reactive({
   guardianMobile: '',
   guardians: [],
   school: '',
-  notes: ''
+  notes: '',
+  // 2026-07-05: 头像 (6 个预制 SVG 手动选, 默认 null 显示兜底)
+  avatarSvgKey: null
 })
+// 学生头像 picker 开关
+const studentAvatarPicker = ref(false)
 
 // 表单校验规则(必填 + 手机号格式)
 const rules = {
@@ -291,7 +316,7 @@ async function load() {
 /**
  * 取主监护人手机号
  *   - 业务上 guardians[0] = 主监护人 (Student.guardianUser 也是它)
- *   - 后端 list() 已 .populate('guardians', 'mobile realName avatar')
+ *   - 后端 list() 已 .populate('guardians', 'mobile realName avatarSvgKey')
  *   - 用于"家长电话"列展示 + tel: 拨号
  */
 function primaryGuardianMobile(row) {
@@ -346,7 +371,8 @@ function openCreate() {
     guardianMobile: '',
     guardians: [],
     school: '',
-    notes: ''
+    notes: '',
+    avatarSvgKey: null
   })
   dialog.value = true
 }
@@ -359,7 +385,9 @@ function openEdit(row) {
     birthday: row.birthday ? formatDate(row.birthday, 'YYYY-MM-DD') : '',
     guardians: (row.guardians || []).map((g) => (g._id ? String(g._id) : String(g))),
     school: row.school ? (row.school._id || String(row.school)) : '',
-    notes: row.notes
+    notes: row.notes,
+    // 2026-07-05: 后端 select avatarSvgKey 列 (Student.model 之前隐式取 undefined)
+    avatarSvgKey: row.avatarSvgKey || null
   })
   dialog.value = true
 }
@@ -415,7 +443,9 @@ async function submit() {
         gender: form.gender,
         birthday: form.birthday,
         school: form.school || null,
-        notes: form.notes
+        notes: form.notes,
+        // 2026-07-05: 学生头像
+        avatarSvgKey: form.avatarSvgKey || null
       })
       // 重绑监护人(仅超管,且表单上有该字段才走)
       if (auth.isPlatformAdmin) {

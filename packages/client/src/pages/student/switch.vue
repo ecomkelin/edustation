@@ -25,13 +25,11 @@
           @tap="select(s)"
         >
           <view class="switch-student__item-avatar">
-            <image
-              v-if="s.avatar"
-              class="switch-student__item-img"
-              :src="s.avatar"
-              mode="aspectFill"
+            <SvgAvatar
+              :svg-key="s.avatarSvgKey || null"
+              :size="48"
+              audience="student"
             />
-            <text v-else class="switch-student__item-emoji">{{ emojiOf(s) }}</text>
           </view>
           <view class="switch-student__item-info">
             <text class="switch-student__item-name">{{ s.name }}</text>
@@ -64,8 +62,10 @@
 import { useStudentStore } from '@/stores/student'
 import { date } from '@/utils/date'
 import { haptic } from '@/utils/haptic'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 
 export default {
+  components: { SvgAvatar },
   data() {
     return {}
   },
@@ -86,15 +86,6 @@ export default {
     },
     onDone() {
       uni.navigateBack()
-    },
-    emojiOf(s) {
-      const AVATARS = ['🐰', '🐯', '🐻', '🦊', '🐼', '🐨', '🐸', '🐵', '🐱', '🐶']
-      let h = 0
-      for (let i = 0; i < (s.name || '').length; i++) {
-        h = (h << 5) - h + (s.name || '').charCodeAt(i)
-        h |= 0
-      }
-      return AVATARS[Math.abs(h) % AVATARS.length]
     },
     genderOf(s) {
       return s.gender === 'male' ? '男' : s.gender === 'female' ? '女' : '保密'

@@ -14,6 +14,7 @@ const Org = require('@models/Org.model')
 const Parent = require('@models/Parent.model')
 const PetAccount = require('@models/PetAccount.model')
 const parentProfile = require('@modules/parent/parent.profile')
+const { isValidStudentKey } = require('@shared/avatars')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const password = require('@utils/password')
@@ -44,7 +45,7 @@ async function list({ orgId, keyword, isActive, isBlocked, school, hasPet, page,
   }
   const [items, total] = await Promise.all([
     Student.find(filter)
-      .populate('guardians', 'mobile realName avatar')
+      .populate('guardians', 'mobile realName avatarSvgKey')
       .populate('guardianUser', 'mobile realName')
       .populate('school', 'name type address')
       .sort({ createdAt: -1 })
@@ -125,7 +126,7 @@ async function list({ orgId, keyword, isActive, isBlocked, school, hasPet, page,
 
 async function detail(id, orgId) {
   const s = await Student.findOne({ _id: id, org: orgId })
-    .populate('guardians', 'mobile realName avatar')
+    .populate('guardians', 'mobile realName avatarSvgKey')
     .populate('guardianUser', 'mobile realName')
     .populate('school', 'name type address')
     .populate('profileLastUpdatedBy', 'realName')
@@ -173,7 +174,7 @@ async function detail(id, orgId) {
   return s
 }
 
-async function create({ orgId, name, gender, birthday, guardianMobile, guardians = [], school, notes }) {
+async function create({ orgId, name, gender, birthday, guardianMobile, guardians = [], school, notes, avatarSvgKey }) {
   // 如果传 guardianMobile，自动按手机号查 / 创 user，并建立与本机构的关联（家长角色）
   if (guardianMobile) {
     let u = await User.findOne({ mobile: guardianMobile })
@@ -232,7 +233,9 @@ async function create({ orgId, name, gender, birthday, guardianMobile, guardians
     guardians,
     guardianUser: guardians[0],
     school: school || undefined,
-    notes
+    notes,
+    // 2026-07-05: avatarSvgKey (6 个预制 SVG 手动指定, schema enum 校验)
+    avatarSvgKey: isValidStudentKey(avatarSvgKey) ? avatarSvgKey : null
   })
   return detail(s._id, orgId)
 }
@@ -325,7 +328,7 @@ async function listForGuardian({ orgId, userId }) {
   // 切换器需要 orgName 区分同名 kid (例: 梓潼王兴宇 vs 绵阳王兴宇),
   // school 是 ObjectId ref 没 populate 会暴露哈希串 (memory: me-vue-strip-hero-chip-and-meta-2026-07-04)
   const kids = await Student.find({ guardians: userId, isActive: true, isBlocked: { $ne: true } })
-    .select('_id name gender birthday grade school avatar notes org')
+    .select('_id name gender birthday grade school avatarSvgKey notes org')
     .populate('org', 'name')
     .populate('school', 'name')
     .lean()
@@ -372,7 +375,7 @@ async function listMyKidsStats({ orgId, userId }) {
   // 例: 家长在梓潼报王兴宇 + 王兴武, 在绵阳报另一个王兴宇 → 一次请求返 3 个 kid
   // 2026-07-05 加: org populate, 给前端 kid-card 头部右侧红框位置展示「孩子所属机构」用
   const kids = await Student.find({ guardians: userId, isActive: true, isBlocked: { $ne: true } })
-    .select('_id name gender avatar org')
+    .select('_id name gender avatarSvgKey org')
     .populate('org', 'name')
     .lean()
   if (!kids.length) return { items: [] }
@@ -446,7 +449,7 @@ async function listMyKidsStats({ orgId, userId }) {
     id: String(k._id),
     name: k.name,
     gender: k.gender,
-    avatar: k.avatar,
+    avatarSvgKey: k.avatarSvgKey || null,
     // 2026-07-05 加: org populate, 给前端 kid-card 头部右侧红框位置展示「孩子所属机构」用
     // 例: 梓潼 kid → orgName="梓潼县人工智网科技培训学校有限公司"
     orgId: k.org ? String(k.org._id || k.org) : null,

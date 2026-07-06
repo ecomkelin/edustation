@@ -23,9 +23,7 @@
         <OrgSwitcher />
         <el-dropdown @command="onCommand">
           <span class="user-trigger">
-            <el-avatar :size="28" :src="auth.user?.avatar && avatarOk ? auth.user.avatar : ''" class="user-avatar" @error="avatarOk = false">
-              {{ avatarInitial }}
-            </el-avatar>
+            <SvgAvatar :svg-key="auth.user?.avatarSvgKey" :size="28" audience="user" />
             <span class="user-name">{{ auth.user?.realName || auth.user?.mobile }}</span>
             <el-icon><ArrowDown /></el-icon>
           </span>
@@ -97,11 +95,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import OrgSwitcher from '@/components/OrgSwitcher.vue'
 import AppFooter from '@/components/AppFooter.vue'
+import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 import {
   ArrowDown,
   Odometer,
@@ -118,10 +117,8 @@ import {
   School,
   Present,
   Platform,
-  Key,
   Connection,
   Warning,
-  ChatLineRound,
   SwitchButton,
   DataAnalysis,
   Picture,
@@ -145,8 +142,6 @@ import {
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
-// 头像 src 404 时自动降级到 initial 文字头像（避免 console 报 Image 加载错误）
-const avatarOk = ref(true)
 
 // AI 助手 (2026-06): 顶层菜单项, 需 agent.write 权限
 // 平台超管直通; 否则查当前 org 的职位权限码
@@ -408,11 +403,7 @@ async function onCommand(cmd) {
   }
 }
 
-// 头像兜底字符（无头像时显示姓名/手机号最后一个字）
-const avatarInitial = computed(() => {
-  const name = auth.user?.realName || auth.user?.mobile || ''
-  return name ? name.slice(-1) : '?'
-})
+// 头像兜底字符（已移除: 2026-07-05 后全部走 SVG, 不再有 initial 兜底）
 </script>
 
 <style scoped>
