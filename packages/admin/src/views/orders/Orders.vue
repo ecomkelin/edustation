@@ -56,9 +56,18 @@
 
     <!-- ───── 列表 ───── -->
     <el-table :data="items" v-loading="loading" style="margin-top: 12px" :row-class-name="rowClass">
-      <el-table-column label="订单号" width="120">
+      <el-table-column label="订单号" width="120" fixed="left">
         <template #default="{ row }">
-          <span class="muted">{{ String(row._id).slice(-6).toUpperCase() }}</span>
+          <el-link type="primary" :underline="'never'" class="order-link" @click="openDetail(row)">
+            {{ String(row._id).slice(-6).toUpperCase() }}
+          </el-link>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="100">
+        <template #default="{ row }">
+          <el-tag :type="statusTagType(row.status)" size="small">
+            {{ ORDER_STATUS_LABEL[row.status] || row.status }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="学生" width="120">
@@ -86,13 +95,6 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="100">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small">
-            {{ ORDER_STATUS_LABEL[row.status] || row.status }}
-          </el-tag>
-        </template>
-      </el-table-column>
       <el-table-column label="支付方式" width="100">
         <template #default="{ row }">
           <span class="muted">{{ PAYMENT_METHOD_LABEL[row.paymentMethod] || '—' }}</span>
@@ -100,30 +102,6 @@
       </el-table-column>
       <el-table-column label="下单时间" width="160">
         <template #default="{ row }">{{ formatDate(row.createdAt, 'YYYY-MM-DD HH:mm') }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" link @click="openDetail(row)">详情</el-button>
-          <el-button
-            v-if="row.status === 'pending' && canCreate"
-            size="small"
-            link
-            type="danger"
-            @click="openCancel(row)"
-          >
-            取消
-          </el-button>
-          <!-- 退款 (R-1722 2026-06-25): 仅 paid / partially_refunded 显示; 复用 order.pay 权限 -->
-          <el-button
-            v-if="(row.status === 'paid' || row.status === 'partially_refunded') && canRefund"
-            size="small"
-            link
-            type="warning"
-            @click="openRefund(row)"
-          >
-            退款
-          </el-button>
-        </template>
       </el-table-column>
     </el-table>
 
@@ -301,59 +279,93 @@
       </template>
     </el-dialog>
 
-    <!-- ───── 详情弹窗 ───── -->
-    <el-dialog v-model="detailDialog" title="订单详情" width="640px">
-      <el-descriptions v-if="current" :column="2" border size="small">
-        <el-descriptions-item label="订单号">{{ String(current._id).slice(-6).toUpperCase() }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          <el-tag :type="statusTagType(current.status)" size="small">
-            {{ ORDER_STATUS_LABEL[current.status] }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="学生">{{ current.student && current.student.name }}</el-descriptions-item>
-        <el-descriptions-item label="支付方式">
-          {{ PAYMENT_METHOD_LABEL[current.paymentMethod] || '—' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="原价">¥ {{ formatMoney(current.originalPrice) }}</el-descriptions-item>
-        <el-descriptions-item label="成交价">¥ {{ formatMoney(current.actualPrice) }}</el-descriptions-item>
-        <el-descriptions-item label="实付">¥ {{ formatMoney(current.paidAmount) }}</el-descriptions-item>
-        <el-descriptions-item label="支付时间">{{ formatDate(current.paidAt) || '—' }}</el-descriptions-item>
-        <el-descriptions-item v-if="current.refundedAmount > 0" label="累计退款" :span="2">
-          <span class="cell-strong">¥ {{ formatMoney(current.refundedAmount) }}</span>
-          <span class="muted" style="margin-left: 8px">
-            共 {{ current.refunds?.length || 0 }} 笔
-            <template v-if="current.refundedAt">
-              (最近: {{ formatDate(current.refundedAt) }})
-            </template>
-          </span>
-        </el-descriptions-item>
-        <el-descriptions-item label="下单时间" :span="2">{{ formatDate(current.createdAt) }}</el-descriptions-item>
-        <el-descriptions-item v-if="current.remark" label="备注" :span="2">{{ current.remark }}</el-descriptions-item>
-      </el-descriptions>
+    <!-- ───── 详情抽屉 (2026-07-06 改: 从 el-dialog 改为右侧 el-drawer) ───── -->
+    <el-drawer
+      v-model="detailDialog"
+      direction="rtl"
+      size="640px"
+      :with-header="false"
+    >
+      <div v-if="current" class="detail-drawer">
+        <header class="detail-header">
+          <h3>订单详情</h3>
+          <el-button link @click="detailDialog = false">关闭</el-button>
+        </header>
 
-      <h4 style="margin: 16px 0 8px">订单明细</h4>
-      <el-table v-if="current" :data="current.items" border size="small">
-        <el-table-column label="课程产品" min-width="220">
-          <template #default="{ row }">
-            <div class="cell-strong">{{ row.name }}</div>
-            <div class="muted" v-if="row.courseProduct && row.courseProduct.totalLessons">
-              {{ row.courseProduct.totalLessons }} 节
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="单价" width="120" align="right">
-          <template #default="{ row }">¥ {{ formatMoney(row.unitPrice) }}</template>
-        </el-table-column>
-        <el-table-column label="数量" width="80" align="center">
-          <template #default="{ row }">{{ row.quantity }}</template>
-        </el-table-column>
-        <el-table-column label="小计" width="120" align="right">
-          <template #default="{ row }">
-            <span class="cell-strong">¥ {{ formatMoney(row.unitPrice * row.quantity) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+        <section class="detail-body">
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="订单号">{{ String(current._id).slice(-6).toUpperCase() }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="statusTagType(current.status)" size="small">
+                {{ ORDER_STATUS_LABEL[current.status] }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="学生">{{ current.student && current.student.name }}</el-descriptions-item>
+            <el-descriptions-item label="支付方式">
+              {{ PAYMENT_METHOD_LABEL[current.paymentMethod] || '—' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="原价">¥ {{ formatMoney(current.originalPrice) }}</el-descriptions-item>
+            <el-descriptions-item label="成交价">¥ {{ formatMoney(current.actualPrice) }}</el-descriptions-item>
+            <el-descriptions-item label="实付">¥ {{ formatMoney(current.paidAmount) }}</el-descriptions-item>
+            <el-descriptions-item label="支付时间">{{ formatDate(current.paidAt) || '—' }}</el-descriptions-item>
+            <el-descriptions-item v-if="current.refundedAmount > 0" label="累计退款" :span="2">
+              <span class="cell-strong">¥ {{ formatMoney(current.refundedAmount) }}</span>
+              <span class="muted" style="margin-left: 8px">
+                共 {{ current.refunds?.length || 0 }} 笔
+                <template v-if="current.refundedAt">
+                  (最近: {{ formatDate(current.refundedAt) }})
+                </template>
+              </span>
+            </el-descriptions-item>
+            <el-descriptions-item label="下单时间" :span="2">{{ formatDate(current.createdAt) }}</el-descriptions-item>
+            <el-descriptions-item v-if="current.remark" label="备注" :span="2">{{ current.remark }}</el-descriptions-item>
+          </el-descriptions>
+
+          <h4 style="margin: 16px 0 8px">订单明细</h4>
+          <el-table :data="current.items" border size="small">
+            <el-table-column label="课程产品" min-width="220">
+              <template #default="{ row }">
+                <div class="cell-strong">{{ row.name }}</div>
+                <div class="muted" v-if="row.courseProduct && row.courseProduct.totalLessons">
+                  {{ row.courseProduct.totalLessons }} 节
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="单价" width="120" align="right">
+              <template #default="{ row }">¥ {{ formatMoney(row.unitPrice) }}</template>
+            </el-table-column>
+            <el-table-column label="数量" width="80" align="center">
+              <template #default="{ row }">{{ row.quantity }}</template>
+            </el-table-column>
+            <el-table-column label="小计" width="120" align="right">
+              <template #default="{ row }">
+                <span class="cell-strong">¥ {{ formatMoney(row.unitPrice * row.quantity) }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
+
+        <!-- 操作区: 取消 / 退款 (2026-07-06 从列表「操作」列迁移到抽屉底部) -->
+        <footer v-if="canCancelCurrent || canRefundCurrent" class="detail-footer">
+          <el-button
+            v-if="canCancelCurrent"
+            type="danger"
+            plain
+            @click="openCancel(current)"
+          >
+            取消订单
+          </el-button>
+          <el-button
+            v-if="canRefundCurrent"
+            type="warning"
+            plain
+            @click="openRefund(current)"
+          >
+            退款
+          </el-button>
+        </footer>
+      </div>
+    </el-drawer>
 
     <!-- ───── 取消弹窗 ───── -->
     <el-dialog v-model="cancelDialog" title="取消订单" width="420px" :close-on-click-modal="false">
@@ -461,6 +473,18 @@ const canRefund = computed(() => {
   if (!cur) return false
   return (cur.positions || []).some((p) => (p.permissions || []).includes('order.pay'))
 })
+
+// 详情抽屉内操作按钮可见性 (2026-07-06: 从列表「操作」列迁入)
+// 取消: pending + order.write; 退款: paid / partially_refunded + order.pay
+const canCancelCurrent = computed(
+  () => canCreate.value && current.value && current.value.status === 'pending'
+)
+const canRefundCurrent = computed(
+  () =>
+    canRefund.value &&
+    current.value &&
+    (current.value.status === 'paid' || current.value.status === 'partially_refunded')
+)
 
 // ─── 列表状态 ───
 const items = ref([])
@@ -595,7 +619,7 @@ function openCreate() {
   createDialog.value = true
 }
 
-// ─── 详情弹窗 ───
+// ─── 详情抽屉 (2026-07-06: 从 el-dialog 改为右侧 el-drawer) ───
 const detailDialog = ref(false)
 const current = ref(null)
 
@@ -769,6 +793,42 @@ onMounted(() => {
 .cell-strong { font-weight: 600; color: #303133; }
 .muted { color: #909399; font-size: 12px; }
 .form-hint { font-size: 12px; color: #909399; margin-left: 8px; }
+
+/* 订单号链接样式 (2026-07-06: 改为点击订单号打开抽屉) */
+.order-link { font-family: monospace; font-size: 13px; }
+
+/* 详情抽屉 (2026-07-06: 替代原 dialog) */
+.detail-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 16px;
+}
+.detail-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.detail-footer {
+  padding: 16px 0 0;
+  border-top: 1px solid #ebeef5;
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
 
 .picker { width: 100%; }
 
