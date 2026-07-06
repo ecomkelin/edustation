@@ -158,21 +158,16 @@
           <span v-else class="muted">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380" fixed="right">
+      <!--
+        操作列 (2026-07-06 瘦身: 380→200, 「误操删除」搬到详情页 footer)。
+        列表只留两个高频入口「报名信息 / 排课信息」; 危险操作走详情抽屉走
+        canDelete 校验(仅超管 + 仅 planning/cancelled), 物理视觉上远离高频操作,
+        避免误触, 与 CLAUDE.md §8.1 三重防护一致。
+      -->
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="openEnrollmentInfo(row)">报名信息</el-button>
           <el-button size="small" @click="openScheduleInfo(row)">排课信息</el-button>
-          <!-- 「误操删除」:仅超管;前置条件:planning/cancelled 状态 + 无业务引用 -->
-          <DestructiveConfirm
-            v-if="canDelete(row)"
-            :target="`开班 ${row.name || row.courseProduct?.name || '?'}`"
-            warning="高风险"
-            :precheck-notes="['开班状态为 planning/cancelled', '无报名/未归档排课/作品引用']"
-            :precheck="() => courseInstanceApi.removableCheck(row._id).then((r) => r.data)"
-            @confirm="(p) => onDeleteConfirm(row, p)"
-          >
-            <el-button size="small" type="danger">误操删除</el-button>
-          </DestructiveConfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -736,11 +731,37 @@
         </template>
       </div>
       <!-- 详情页 footer：操作按钮区 (2026-06-26：把列表里的 编辑/改状态/取消 搬到这)；
-           「为该开班排课」入口移到「排课信息」抽屉 footer（2026-07-06：用户决策 — 排课入口紧邻排课表更顺） -->
+           「为该开班排课」入口移到「排课信息」抽屉 footer（2026-07-06：用户决策 — 排课入口紧邻排课表更顺）；
+           「误操删除」从列表操作列搬来 (2026-07-06 用户决策: 列表操作列太宽, 危险动作远离高频入口) -->
       <template #footer>
         <div class="detail-footer-actions">
           <el-button @click="detailDrawer = false">关闭</el-button>
           <div class="detail-footer-right">
+            <!--
+              误操删除 (2026-07-06 用户决策: 即使不可用也始终显示按钮, hover tooltip 说明原因)
+              - DestructiveConfirm.disabled 拦截 click, 走 toast 兜底
+              - 外层 el-tooltip + span.inline-block 让 disabled 按钮 hover 也能弹
+              - deleteDisabledReason: 仅超管 + 仅 planning/cancelled 才返回空 (可执行)
+            -->
+            <el-tooltip
+              v-if="detailRow"
+              :content="deleteDisabledReason(detailRow)"
+              placement="top"
+              :disabled="!deleteDisabledReason(detailRow)"
+            >
+              <span class="inline-block">
+                <DestructiveConfirm
+                  :target="`开班 ${detailRow.name || detailRow.courseProduct?.name || '?'}`"
+                  warning="高风险"
+                  :precheck-notes="['开班状态为 planning/cancelled', '无报名/未归档排课/作品引用']"
+                  :precheck="() => courseInstanceApi.removableCheck(detailRow._id).then((r) => r.data)"
+                  :disabled="!canDelete(detailRow)"
+                  @confirm="(p) => onDeleteConfirm(detailRow, p)"
+                >
+                  <el-button type="danger" :disabled="!canDelete(detailRow)">误操删除</el-button>
+                </DestructiveConfirm>
+              </span>
+            </el-tooltip>
             <el-button v-if="detailRow && canCancel(detailRow)" type="warning" @click="openCancelDialog(detailRow)">取消</el-button>
             <el-button v-if="detailRow && canChangeStatus(detailRow)" @click="openStatusDialog(detailRow)">改状态</el-button>
             <el-button v-if="detailRow" type="primary" @click="openEdit(detailRow)">编辑</el-button>
@@ -1549,6 +1570,16 @@ function canCancel(row) {
 function canDelete(row) {
   // 仅超管 + 仅 planning/cancelled
   return auth.isPlatformAdmin && ['planning', 'cancelled'].includes(row.status)
+}
+// 误操删除按钮 disabled 时的原因 (2026-07-06 用户决策: 即使不可用也显示按钮, hover 说明原因)
+// 返回空字符串 = 可执行(不显示 tooltip)
+function deleteDisabledReason(row) {
+  if (!row) return '开班数据未加载'
+  if (!auth.isPlatformAdmin) return '仅平台超管可执行该操作'
+  if (!['planning', 'cancelled'].includes(row.status)) {
+    return `当前开班状态为「${statusLabel(row.status)}」, 需先切到「筹备」或「已取消」后才能物理删除(已招生/已上课的开班请用「取消」)`
+  }
+  return ''
 }
 // 已报人数是否达到/超过 maxStudents(maxStudents 缺省时不算超额)
 // 注:capLevel() 已涵盖此判断,此处不再单独保留。
