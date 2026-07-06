@@ -5,7 +5,9 @@ const { LESSON_SCHEDULE_STATUSES } = require('@shared/enums')
 
 const create = [
   body('courseInstance').isMongoId(),
-  body('lessonNo').isInt({ min: 1 }),
+  // 2026-07-06 bugfix: lessonNo 改为可选 — 不传时后端自动取 max(lessonNo)+1
+  // 历史 bug: 原版强制要求传, 前端用 scheduledCount(=countDocuments)推算, 删除几节后 +1 会与现有 lessonNo 撞唯一索引
+  body('lessonNo').optional().isInt({ min: 1 }),
   body('plannedStartTime').isISO8601(),
   body('plannedEndTime').isISO8601(),
   body('teacher').isMongoId(),
@@ -58,6 +60,12 @@ const preview = [
 ]
 
 // 批量生成
+// 2026-07-06 用户决策: 预览表支持改时间/老师/教室 (主题列已下线)
+//   - titleMap: 历史字段 (2026-06 旧版), 后端仍兜底兼容
+//   - entriesMap: 新版按 lessonNo 覆盖单个排课的元数据, 未在本表中的节用全局默认值
+//     shape: { [lessonNo: number]: { startTime?: 'HH:mm', endTime?: 'HH:mm', teacher?: ObjectId, room?: ObjectId } }
+//   - keepLessonNos: 2026-07-06 bugfix — 前端预览删除某些行后, 后端需要知道哪些 lessonNo 保留,
+//     否则会被 schedulePlan 重算"复活". 元素为正整数 lessonNo; 不传则保留全部 (向后兼容).
 const generate = [
   body('courseInstance').isMongoId(),
   body('startDate').isISO8601(),
@@ -66,9 +74,16 @@ const generate = [
   body('teacher').optional().isMongoId(),
   body('room').optional().isMongoId(),
   body('title').optional().isString().isLength({ max: 100 }),
-  // 每节主题覆盖：{ [lessonNo: number]: string }
   body('titleMap').optional().isObject(),
-  body('titleMap.*').optional().isString().isLength({ max: 100 })
+  body('titleMap.*').optional().isString().isLength({ max: 100 }),
+  body('entriesMap').optional().isObject(),
+  body('entriesMap.*').optional().isObject(),
+  body('entriesMap.*.startTime').optional().matches(/^\d{2}:\d{2}$/),
+  body('entriesMap.*.endTime').optional().matches(/^\d{2}:\d{2}$/),
+  body('entriesMap.*.teacher').optional().isMongoId(),
+  body('entriesMap.*.room').optional().isMongoId(),
+  body('keepLessonNos').optional().isArray({ min: 1 }),
+  body('keepLessonNos.*').optional().isInt({ min: 1 })
 ]
 
 // 冲突预检（GET /conflicts）：用 query 传参

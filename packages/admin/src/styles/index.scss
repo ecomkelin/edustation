@@ -18,3 +18,9 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* 让 <el-tooltip> 能包裹 disabled 按钮 / 让"伪 inline-block"对鼠标事件可达。
+   用于给 disabled 按钮加 tooltip 时, 外层包 <span class="inline-block"> */
+.inline-block {
+  display: inline-block;
+}

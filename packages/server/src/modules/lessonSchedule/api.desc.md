@@ -124,6 +124,7 @@
 - **权限**：`lessonSchedule.write`
 
 请求体同旧版；冲突时返回 `422` + `data.conflicts: [{ id, lessonNo, plannedStartTime, plannedEndTime, courseInstance, teacher, room, status }]`。
+**2026-07-06**：请求体中 `lessonNo` 改为可选 — 不传时后端按 `max(lessonNo) + 1` 自动分配。详见 § 8。
 
 ---
 
@@ -132,7 +133,7 @@
 - **Method / Path**：`PUT /api/v1/lesson-schedules/:id`
 - **权限**：`lessonSchedule.write`
 - **可写字段**：
-  - 元数据：`plannedStartTime` / `plannedEndTime` / `teacher` / `room` / `title` / `notes`
+  - 元数据：`plannedStartTime` / `plannedEndTime` / `teacher` / `room` / `lessonNo` / `title` / `notes`
   - 实际时间（教务补录）：`actualStartTime` / `actualEndTime`
   - 理由：`actualStartReason` / `actualEndReason`
 - **约束**：
@@ -140,6 +141,9 @@
   - 已完成 / 已归档的排课只允许改 `notes` / `title`。
   - 已取消的排课完全锁死。
   - 改时间/老师/教室会触发冲突检测，失败时返回 `422` + `data.conflicts`。
+  - **课次改写**（2026-07-06 用户决策：管理后台排课列表"课次"列 inline 可编辑）：
+    - `lessonNo` 同开班下唯一；改值时若已被同一 `courseInstance` 下的另一节课占用 → `422` + `data: { code: 'lessonNoDuplicate', conflictLessonNo: <number> }`。
+    - 前端 (ScheduleList / CourseInstancesTab 排课抽屉) 在 `data.code === 'lessonNoDuplicate'` 时精确提示「课次 X 已被第 N 课占用」。
   - **5 分钟差异校验**：
     - `|actualStartTime - plannedStartTime| ≥ 5min` → `actualStartReason` 必填，否则 `400`。
     - `|actualEndTime - plannedEndTime| ≥ 5min` → `actualEndReason` 必填，否则 `400`。
@@ -192,7 +196,9 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| titleMap | Object<Number, String> | 否 | 每节主题覆盖 `{ [lessonNo]: title }`；未指定的 lessonNo 沿用 `title`（默认） |
+| titleMap | Object<Number, String> | 否 | 每节主题覆盖 `{ [lessonNo]: title }`；未指定的 lessonNo 沿用 `title`（默认）。**历史字段**（2026-07-06 主题列下线后默认空）。 |
+| entriesMap | Object<Number, Object> | 否 | 逐节元数据覆盖（2026-07-06 用户决策：预览表支持改时间/老师/教室）。shape: `{ [lessonNo]: { startTime?: 'HH:mm', endTime?: 'HH:mm', teacher?: ObjectId, room?: ObjectId } }`；未在本表中的节用全局 `startTime/endTime + teacher/room`；日期仍按 `schedulePlan` 自动算。conflict 检测 / insert 时均生效。 |
+| keepLessonNos | Number[] | 否 | 显式保留的 lessonNo 列表（2026-07-06 bugfix）。前端预览表可逐行删除；不传则保留全部（向后兼容）。有值时后端严格按本表截断，`schedulePlan` 重算的所有其它课次**不会**被"复活"。 |
 
 - **成功响应** (`201 Created`)：`{ data: { created: 44, entries: [id...], conflicts: [] } }`
 - **存在冲突时**：返回 `422` + `data.conflicts`，**不入库**；请先让用户去解决冲突再重试。
@@ -208,15 +214,22 @@
 1. **后端 `/preview` 返回 `data.conflicts`** 时，前端按 `teacher.id + room.id + plannedStartTime` 三元组比对，标记预览表里**与已有冲突行对应的行**（红底 + 警告图标）。
 2. 用户可在预览表里**逐行删除**（删除仅修改预览数组，不入库）。"生成"按钮在**还有任何残留冲突行**时置灰。
 3. 用户亦可在弹窗顶部**更换老师/教室**（默认从开班带出），或调整起始日期/上课时间，点击"预览"重算。
-4. 都无法解决时（结构性冲突），用户应去 `CourseInstance` 编辑页调整 `schedulePlan`（那里有锁字段保护）。
+4. **(2026-07-06)** 用户还可在预览表里**逐节修改时间/老师/教室** —— 同步进 `entriesMap` 一并提交给后端；后端在 conflict 检测 / insert 之前将 `entriesMap` 应用到对应 entry。
+5. 都无法解决时（结构性冲突），用户应去 `CourseInstance` 编辑页调整 `schedulePlan`（那里有锁字段保护）。
 
 ---
 
 ## 8. 单条加一节（开班详情页"加一节"按钮）
 
 > 适用场景：开班已存在但未排满，需要手动补一节（无需走批量）。
-> 用 `POST /api/v1/lesson-schedules`（第 4 节）即可，**`lessonNo` 取 `scheduledCount + 1`**（前端从 `courseInstance.detail.scheduledCount` 取值）。
-> 冲突检测/错误返回结构与"批量生成"完全一致（`422` + `data.conflicts`），前端可复用。
+> 用 `POST /api/v1/lesson-schedules`（第 4 节）即可。
+>
+> **2026-07-06 bugfix** —— `lessonNo` 推荐不传：
+> - 历史: 文档建议前端用 `scheduledCount + 1` 推算；但 `scheduledCount` 是 `countDocuments`, 删除几节后该值下降、`+1` 反而命中已存在的 `lessonNo`, 触发 `(courseInstance, lessonNo)` 唯一索引冲突 → "字段 courseInstance 已存在"。
+> - 修法: 业务方**不传 `lessonNo`** 时, 服务端按 `max(lessonNo)+1` 自动分配（同一开班内递增, 与删课兼容）。返回值的 `data.lessonNo` 即分配的节号。
+> - `courseInstance.detail` 自 2026-07-06 也新增 `maxLessonNo` 字段, 前端"显示用"可基于此 `+1` 算出下一节号, 与后端最终分配保持一致。
+>
+> 冲突检测/错误返回结构与"批量生成"完全一致（`422` + `data.conflicts`）, 前端可复用。
 > 副作用：自动为该开班下持有有效 StudentProduct 的 enrolled 学生生成 LessonAttendance。
 
 ## 9. 冲突预检（独立 GET）

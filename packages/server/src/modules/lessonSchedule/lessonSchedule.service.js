@@ -9,6 +9,8 @@ const Room = require('@models/Room.model')
 const User = require('@models/User.model')
 // 招生试听 (2026-06): 试听预约表; 排课处 usage check + detail 字段需要
 const TrialBooking = require('@models/TrialBooking.model')
+// 学员作品 (2026-07-06 bugfix: 此前未 require, 删除排课时 usage check 报 StudentWork is not defined)
+const StudentWork = require('@models/StudentWork.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { CourseEnrollmentStatus, AttendanceStatus, LessonScheduleStatus, CourseInstanceStatus } = require('@shared/enums')
@@ -437,21 +439,37 @@ function buildScheduleEntries({
  *  - 对每一节 entry，单独跑 detectConflict（按它的 teacher/room/时间区间）
  *  - 这样不会把「在大区间内但与具体那节不重叠」的已有排课误报为冲突
  *  - 返回的 conflicts 每项带 entryLessonNo（指本次预览的第几节冲突），方便前端精确标红
+ *
+ * entriesMap (2026-07-06 用户决策):
+ *   - 预览表支持改时间/老师/教室; 传 { [lessonNo]: { startTime, endTime, teacher, room } }
+ *   - 未在 map 中的节用全局 startTime/endTime + teacher/room
+ *   - 仅影响 conflict 检测 + 最终插入; 日期仍按 schedulePlan 自动算 (date 是 entry 的"锚点")
+ *   - 校验: startTime/endTime 必须合法 HH:mm 且 startTime < endTime
+ *
+ * keepLessonNos (2026-07-06 bugfix):
+ *   - 前端预览表可逐行删除; 后端默认严格按 schedulePlan 重算所有节, 删掉的行会被"复活"
+ *   - 修法: 传 { [lessonNo: number] } 显式告诉后端要保留哪些课次
+ *   - 元素是正整数 lessonNo; 不传则保持全部 (向后兼容老版前端)
+ *   - 过滤顺序: 先按 schedulePlan 生成所有 entries, 再以 keepLessonNos 截断
+ *   - 与 entriesMap 同时使用时, 优先级是"先 keepLessonNos 截断, 再 entriesMap 覆盖"
  */
-async function buildPlanAndDetectConflicts({ orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, overrideCount }) {
+async function buildPlanAndDetectConflicts({ orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, overrideCount, entriesMap, keepLessonNos }) {
   const inst = await CourseInstance.findOne({ _id: courseInstance, org: orgId, deletedAt: null })
     .select('schedulePlan teacher room')
     .lean()
   if (!inst) throw ApiError.notFound('开班不存在')
 
   // 教师/教室：未传则回落到开班默认值
-  const finalTeacher = teacher || inst.teacher
-  const finalRoom = room || inst.room
-  if (!finalTeacher) throw ApiError.badRequest('teacher 必填（schedulePlan 未指定老师，请在请求里传）')
-  if (!finalRoom) throw ApiError.badRequest('room 必填（开班未指定教室，请在请求里传）')
+  const defaultTeacher = teacher || inst.teacher
+  const defaultRoom = room || inst.room
+  if (!defaultTeacher) throw ApiError.badRequest('teacher 必填（schedulePlan 未指定老师，请在请求里传）')
+  if (!defaultRoom) throw ApiError.badRequest('room 必填（开班未指定教室，请在请求里传）')
 
   if (!startDate) throw ApiError.badRequest('startDate 必填')
   if (!startTime || !endTime) throw ApiError.badRequest('startTime / endTime 必填（HH:mm）')
+  if (!/^\d{2}:\d{2}$/.test(startTime) || !/^\d{2}:\d{2}$/.test(endTime)) {
+    throw ApiError.badRequest('startTime/endTime 必须是 HH:mm')
+  }
 
   const sp = inst.schedulePlan || {}
   const mode = sp.mode || 'weekly'
@@ -490,19 +508,56 @@ async function buildPlanAndDetectConflicts({ orgId, courseInstance, startDate, s
     })
   }
 
-  // 2) 拼成时刻
-  const entries = datePlans.map((p, idx) => {
-    const plannedStartTime = combineDateTime(p.date, startTime)
-    const plannedEndTime = combineDateTime(p.date, endTime)
+  // 规范化 entriesMap: { [lessonNo]: { startTime?, endTime?, teacher?, room? } } -> { [lessonNo]: ov }
+  // (允许 lessonNo 为 string 或 number,前端发的 key 是 number)
+  const normEntriesMap = {}
+  if (entriesMap && typeof entriesMap === 'object') {
+    for (const k of Object.keys(entriesMap)) {
+      const ov = entriesMap[k]
+      if (!ov || typeof ov !== 'object') continue
+      const norm = {}
+      if (ov.startTime && /^\d{2}:\d{2}$/.test(ov.startTime)) norm.startTime = ov.startTime
+      if (ov.endTime && /^\d{2}:\d{2}$/.test(ov.endTime)) norm.endTime = ov.endTime
+      if (ov.teacher) norm.teacher = ov.teacher
+      if (ov.room) norm.room = ov.room
+      if (Object.keys(norm).length > 0) normEntriesMap[String(k)] = norm
+    }
+  }
+
+  // 2) 拼成时刻 (按 schedulePlan 算日期, 时间/老师/教室按 entriesMap 覆盖)
+  let entries = datePlans.map((p, idx) => {
+    const lessonNo = startLessonNo + idx
+    const ov = normEntriesMap[String(lessonNo)] || {}
+    const ovStartTime = ov.startTime || startTime
+    const ovEndTime = ov.endTime || endTime
+    // 校验 startTime < endTime
+    if (ovStartTime >= ovEndTime) {
+      throw ApiError.badRequest(`第 ${lessonNo} 课的开始时间必须早于结束时间 (${ovStartTime} >= ${ovEndTime})`)
+    }
+    const plannedStartTime = combineDateTime(p.date, ovStartTime)
+    const plannedEndTime = combineDateTime(p.date, ovEndTime)
     return {
-      lessonNo: startLessonNo + idx,
+      lessonNo,
       plannedStartTime,
       plannedEndTime,
-      teacher: finalTeacher,
-      room: finalRoom,
+      teacher: ov.teacher || defaultTeacher,
+      room: ov.room || defaultRoom,
       title: title || undefined
     }
   })
+
+  // 2.5) keepLessonNos 过滤 (2026-07-06 bugfix)
+  //   - 前端预览表可逐行删除某几节; 不传则保留全部 (向后兼容老版前端)
+  //   - 规范化: 接受 string/number 元素, 转 Set<number> 方便 O(1) 查
+  //   - 注: 只按 lessonNo 过滤, 不影响 entriesMap 的应用顺序 (entriesMap 在步骤 2 已应用)
+  if (Array.isArray(keepLessonNos) && keepLessonNos.length > 0) {
+    const keepSet = new Set(keepLessonNos.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))
+    const before = entries.length
+    entries = entries.filter((e) => keepSet.has(Number(e.lessonNo)))
+    if (entries.length === 0 && before > 0) {
+      throw ApiError.badRequest('keepLessonNos 过滤后排课为空; 至少保留 1 节')
+    }
+  }
 
   // 3) 逐节精确检测（每节单独查它的时间区间内、它的老师/教室下的已有排课）
   //    用 entryLessonNo 标记冲突对应的本次节号，前端按节号精确标红
@@ -559,8 +614,20 @@ async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plann
     )
   }
 
+  // 2026-07-06 bugfix: lessonNo 不传时自动取 max+1 (避免前端用"count+1"撞唯一索引)
+  //   - 历史问题: 前端 AddLessonDialog 用 `scheduledCount + 1` 算下一节, 但 scheduledCount 是 countDocuments, 删除课程后 count 下降, +1 会与现有 lessonNo 撞 (courseInstance, lessonNo) 唯一索引
+  //   - 修法: 不传 lessonNo 后端默认 max(lessonNo)+1; 业务方拿返回值里的 .lessonNo 即可
+  let finalLessonNo = lessonNo
+  if (finalLessonNo == null) {
+    const maxDoc = await LessonSchedule.findOne({ courseInstance, org: orgId })
+      .select('lessonNo')
+      .sort({ lessonNo: -1 })
+      .lean()
+    finalLessonNo = (maxDoc?.lessonNo || 0) + 1
+  }
+
   const doc = await LessonSchedule.create({
-    org: orgId, courseInstance, lessonNo, plannedStartTime: start, plannedEndTime: end,
+    org: orgId, courseInstance, lessonNo: finalLessonNo, plannedStartTime: start, plannedEndTime: end,
     teacher, room, status, title, notes,
     isTrialLesson: !!isTrialLesson
   })
@@ -576,10 +643,12 @@ async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plann
 }
 
 // ─── 批量预览（不入库） ───────────────────────────────
-async function preview({ orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, count }) {
+async function preview({ orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, count, entriesMap, keepLessonNos }) {
   return buildPlanAndDetectConflicts({
     orgId, courseInstance, startDate, startTime, endTime, teacher, room, title,
-    overrideCount: count
+    overrideCount: count,
+    entriesMap,
+    keepLessonNos
   })
 }
 
@@ -587,11 +656,16 @@ async function preview({ orgId, courseInstance, startDate, startTime, endTime, t
 /**
  * @param {Object} params
  * @param {String} params.title       全局默认主题（未在 titleMap 中指定 lessonNo 的则用此）
- * @param {Object} params.titleMap    { [lessonNo:number]: string } 每节主题覆盖
+ * @param {Object} params.titleMap    { [lessonNo:number]: string } 历史字段; 主题列下线后默认空
+ * @param {Object} params.entriesMap  { [lessonNo:number]: { startTime?, endTime?, teacher?, room? } }
+ *                                    2026-07-06 用户决策: 预览表支持改时间/老师/教室;
+ *                                    这些 override 在 conflict 检测 + insert 时均生效
+ * @param {Number[]} params.keepLessonNos  2026-07-06 bugfix: 显式保留的 lessonNo 列表;
+ *                                    未传 → 全部保留 (向后兼容); 有值 → 严格截断
  */
-async function generate({ orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, titleMap }) {
+async function generate({ orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, titleMap, entriesMap, keepLessonNos }) {
   const plan = await buildPlanAndDetectConflicts({
-    orgId, courseInstance, startDate, startTime, endTime, teacher, room, title
+    orgId, courseInstance, startDate, startTime, endTime, teacher, room, title, entriesMap, keepLessonNos
   })
   if (plan.entries.length === 0) {
     return { created: 0, entries: [], conflicts: plan.conflicts }
@@ -602,6 +676,7 @@ async function generate({ orgId, courseInstance, startDate, startTime, endTime, 
   }
 
   // 批量插入：每节的主题优先取 titleMap[lessonNo]，否则回落到全局 title
+  // entries 已含 entriesMap 解析后的 plannedStartTime/plannedEndTime/teacher/room
   const docs = plan.entries.map((e) => ({
     org: orgId,
     courseInstance,
@@ -691,6 +766,24 @@ async function update(id, orgId, payload) {
   const start = payload.plannedStartTime ? new Date(payload.plannedStartTime) : exist.plannedStartTime
   const end = payload.plannedEndTime ? new Date(payload.plannedEndTime) : exist.plannedEndTime
   if (!(start < end)) throw ApiError.badRequest('开始时间必须早于结束时间')
+
+  // 2026-07-06: lessonNo 课次可编辑 (ScheduleList.vue inline-edit)
+  //   - 改了 lessonNo 时, 必须检查同开班下没有其他课占这个号, 否则撞 (courseInstance, lessonNo) 唯一索引
+  //   - 与"时间/老师/教室冲突"是不同维度, 单独抛 422 + data.code=lessonNoDuplicate
+  if (payload.lessonNo !== undefined && Number(payload.lessonNo) !== Number(exist.lessonNo)) {
+    const dup = await LessonSchedule.findOne({
+      org: orgId,
+      courseInstance: exist.courseInstance,
+      lessonNo: Number(payload.lessonNo),
+      _id: { $ne: exist._id }
+    }).select('_id lessonNo').lean()
+    if (dup) {
+      throw ApiError.unprocessable(
+        `课次 ${payload.lessonNo} 已被同开班下另一节课占用`,
+        { code: 'lessonNoDuplicate', conflictLessonNo: dup.lessonNo }
+      )
+    }
+  }
 
   // 6) 仅当 老师/教室/时间 真的变了才重做冲突检测
   const timeChanged = start.getTime() !== exist.plannedStartTime.getTime() ||

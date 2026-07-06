@@ -100,9 +100,29 @@
     </el-form>
     <template #footer>
       <el-button @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="submitting" :disabled="!canSubmit || conflict" @click="onSubmit">
-        添加
-      </el-button>
+      <!--
+        2026-07-06 用户决策: 禁用态给"添加"加 tooltip 说明原因
+        - el-button disabled 时鼠标事件被吞, 必须在外面包一层才能触发 tooltip
+        - 优先级: 冲突 > 字段未填完整 > 后端失败
+      -->
+      <el-tooltip
+        :disabled="!disableReason"
+        :content="disableReason || ''"
+        placement="top"
+        effect="light"
+        :show-after="200"
+      >
+        <span class="inline-block">
+          <el-button
+            type="primary"
+            :loading="submitting"
+            :disabled="!!disableReason"
+            @click="onSubmit"
+          >
+            添加
+          </el-button>
+        </span>
+      </el-tooltip>
     </template>
   </el-dialog>
 </template>
@@ -142,8 +162,16 @@ const overrideRoom = ref(false)
 const conflict = ref('')
 
 // 当前开班的"下一个 lessonNo"
+// 2026-07-06 bugfix: 用 max(lessonNo) + 1 而不是 count + 1
+//   - 历史问题: scheduledCount = countDocuments, 删课后下降; count+1 会与现有 lessonNo 撞唯一索引
+//   - 修法: 后端 courseInstance.detail 现在回 maxLessonNo 字段; 前端这里用它算下一节号
+//   - 后端 create 也支持不传 lessonNo (自动 max+1), 即便前端错算也不会撞索引, 但显示要对得上
 const nextLessonNo = computed(() => {
   if (!props.courseInstance) return 1
+  // 优先用 maxLessonNo (后端 2026-07-06 新增); 兜底 scheduledCount+1 (兼容老后端)
+  if (typeof props.courseInstance.maxLessonNo === 'number') {
+    return (props.courseInstance.maxLessonNo || 0) + 1
+  }
   return (props.courseInstance.scheduledCount || 0) + 1
 })
 
@@ -164,8 +192,34 @@ const roomLabel = computed(() => {
   return r.name || '?'
 })
 
-const canSubmit = computed(() => {
-  return form.date && form.startTime && form.endTime && form.teacher && form.room
+/**
+ * 禁用原因 (2026-07-06 用户决策: disabled 时显示 hover 提示)
+ *   - 返回非空字符串 -> 按钮 disabled + tooltip 显示该字符串
+ *   - 返回空字符串 -> 按钮可点
+ *   优先级从高到低:
+ *     1) 实时检测到的冲突 (前端 checkConflicts 已给出描述)
+ *     2) 必填字段为空 (按字段标签逐个列出, 用户一眼看到缺啥)
+ *     3) 时间合法性 (start < end)
+ */
+const disableReason = computed(() => {
+  // 1) 冲突优先 (与已有排课冲突)
+  if (conflict.value) return conflict.value
+  // 2) 必填字段逐个检查
+  const missing = []
+  if (!form.date) missing.push('日期')
+  if (!form.startTime) missing.push('开始时间')
+  if (!form.endTime) missing.push('结束时间')
+  if (!form.teacher) missing.push('老师')
+  if (!form.room) missing.push('教室')
+  if (missing.length) {
+    if (missing.length === 1) return `请填写${missing[0]}`
+    return `请填写完整 (${missing.join(' / ')})`
+  }
+  // 3) 时间合法性 (start < end)
+  if (form.startTime && form.endTime && form.startTime >= form.endTime) {
+    return '结束时间必须晚于开始时间'
+  }
+  return ''
 })
 
 watch(() => props.modelValue, (v) => {
@@ -264,8 +318,10 @@ watch([() => form.teacher, () => form.room, () => form.date, () => form.startTim
 
 async function onSubmit() {
   if (!props.courseInstance) return
-  if (!canSubmit.value) {
-    ElMessage.warning('请填写完整（日期 / 时间 / 老师 / 教室）')
+  if (disableReason.value) {
+    // 按钮已禁用时这个分支理论上走不到 (UI 层挡住了),
+    // 但保留作"用户键盘快速 Tab+Enter 绕过 disabled"的兜底。
+    ElMessage.warning(disableReason.value)
     return
   }
   if (conflict.value) {
@@ -276,9 +332,12 @@ async function onSubmit() {
   try {
     const start = new Date(`${form.date}T${form.startTime}:00`)
     const end = new Date(`${form.date}T${form.endTime}:00`)
-    await lessonScheduleApi.create({
+    // 2026-07-06 bugfix: 不再把 nextLessonNo 传给 create — 改由后端按 max(lessonNo)+1 自动分配
+    //   - 历史问题: scheduledCount 是 countDocuments, 删除课程后 count 下降, nextLessonNo = count+1 会撞唯一索引
+    //   - 修法: 不传 lessonNo → 后端 max(lessonNo)+1
+    const result = await lessonScheduleApi.create({
       courseInstance: props.courseInstance._id,
-      lessonNo: nextLessonNo.value,
+      // lessonNo: <不传> — 后端自动 max(lessonNo)+1
       plannedStartTime: start.toISOString(),
       plannedEndTime: end.toISOString(),
       teacher: form.teacher,
@@ -286,7 +345,8 @@ async function onSubmit() {
       title: form.title || undefined,
       notes: form.notes || undefined
     })
-    ElMessage.success(`已添加第 ${nextLessonNo.value} 节`)
+    const assignedLessonNo = result.data?.lessonNo || nextLessonNo.value
+    ElMessage.success(`已添加第 ${assignedLessonNo} 节`)
     emit('done')
     emit('update:modelValue', false)
   } catch (e) {
@@ -307,4 +367,7 @@ async function onSubmit() {
 .muted { color: #909399; font-size: 12px; margin-left: 4px; }
 .dash { padding: 0 8px; color: #909399; }
 .locked-field { display: flex; align-items: center; gap: 8px; }
+/* 2026-07-06: el-tooltip 包 disabled el-button 的 inline-block wrapper
+   (Element Plus 官方推荐模式; 否则 tooltip 事件被 disabled 吞) */
+.inline-block { display: inline-block; }
 </style>

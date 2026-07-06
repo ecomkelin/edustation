@@ -158,18 +158,22 @@ planning ── enrolling ── active ── closed
   - `* → cancelled`：仅平台超管可设置；进入死胡同后不可再变更。
   - `closed → *`：不可变更（不可逆终态）。
   - `enrolling → planning` / `active → enrolling`：**可逆**，但要求当前不存在有效 `CourseEnrollment`（`enrolled`）且不存在 `LessonSchedule`；违反时返回 `400`。
-  - **`enrolling → active` 硬规则**：要求**已排满** —— `scheduledCount >= schedulePlan.totalPlannedLessons`；未排满返回 `400` + 提示文案（"尚未排满：已排 X / Y 节，请先排满所有排课"）。`schedulePlan.totalPlannedLessons <= 0` 时同样拒绝。
+  - **`enrolling → active` 硬规则** (2026-07-06 用户决策: 拆掉"必须排满"闸门; 保留软护栏):
+    - `schedulePlan.totalPlannedLessons >= 1`（避免开班没计划就进"进行中"）— 不满足 → `400 + "排课计划未配置..."`
+    - 至少 1 个有效 `CourseEnrollment(status='enrolled')` — 不满足 → `400 + "该开班暂无学生报名..."`
+    - 所有报名学生都绑定了主用 `studentProduct` (非空) — 不满足 → `400 + "有 N 名学生未绑定主用课包..."`
+    - 历史曾要求 `scheduledCount >= totalPlannedLessons`（"排满"），2026-07-06 拆掉。原因：一对一私教 / 滚动开班 / 不规律排课场景下, 开班本身就可能不排满; 该闸门对私教业务不合理。
   - `schedulePlan.totalPlannedLessons` 为 0 或缺失时，不能进入"进行中"。
 - **成功响应** (`200 OK`)：返回 `CourseInstance` 详情（含最新的 `statusLog`）。
 - **失败**：
-  - `400`：状态不允许 / `reason` 为空 / 未排满 / 存在排课或报名却要回退。
+  - `400`：状态不允许 / `reason` 为空 / 排课计划未配 / 无有效报名 / 学生未绑课包 / 存在排课或报名却要回退。
   - `403`：非超管尝试切到 `cancelled`。
   - `404`：开班不存在。
 
-### 已排满检查的边界
+### "进行中"硬规则的边界
 
-- `scheduledCount` 通过 `LessonSchedule.countDocuments({ courseInstance: id, org })` 计算，**包含所有状态的排课**（含已取消）。如需更精确，可改为"排除 cancelled"—— 当前实现统一计数，简单可靠。
-- `totalPlannedLessons` 取自 `schedulePlan`；如果开班的 `schedulePlan.totalPlannedLessons` 在中途被下调（仅筹备状态外允许下调），未排满检查会自动反映新值。
+- `schedulePlan.totalPlannedLessons` 取自 `schedulePlan`；如果开班的 `schedulePlan.totalPlannedLessons` 在中途被下调（仅筹备状态外允许下调），入参校验会自动反映新值。
+- **不再做"已排满"闸门**：2026-07-06 用户决策后, `scheduledCount` 不参与 enrolling→active 校验; 0 节排课也能进"进行中"（语义上: 课还没排但学期已经开始）。后续可在该状态下继续加节(`加一节` 流程)，前端的"排课进度"卡仍然按 `scheduledCount / totalPlannedLessons` 显示，未排满时显示"未排满 · 还可加 N 节"。
 
 ---
 

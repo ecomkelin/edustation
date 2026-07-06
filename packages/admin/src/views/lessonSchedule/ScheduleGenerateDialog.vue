@@ -139,7 +139,7 @@
         </el-select>
       </el-form-item>
 
-      <!-- 4. 预览：每节一个"本节主题"输入框（题目本来就是逐节不同的） -->
+      <!-- 4. 预览：日期/星期只读(按 schedulePlan 自动算),时间/老师/教室可逐节改 (2026-07-06 用户决策) -->
       <template v-if="previewItems && previewItems.length">
         <el-divider content-position="left">
           <span>预览</span>
@@ -147,7 +147,7 @@
             可生成 {{ previewTotalCount }} 节
           </el-tag>
           <span v-if="previewItems.length < previewTotalCount" class="muted" style="margin-left: 8px">
-            （仅展示前 {{ previewItems.length }} 节，下方表格里可逐节填主题）
+            （仅展示前 {{ previewItems.length }} 节，下方表格里可逐节改时间/老师/教室）
           </span>
         </el-divider>
         <el-alert
@@ -195,26 +195,58 @@
           <el-table-column label="星期" width="60">
             <template #default="{ row }">{{ WEEKDAYS[new Date(row.plannedStartTime).getDay()] }}</template>
           </el-table-column>
-          <el-table-column label="时间" width="120">
+          <!-- 时间逐节可改：每行的 startTime/endTime 改完即时回填 plannedStartTime / plannedEndTime -->
+          <el-table-column label="时间" width="180">
             <template #default="{ row }">
-              {{ formatDate(row.plannedStartTime, 'HH:mm') }}-{{ formatDate(row.plannedEndTime, 'HH:mm') }}
+              <el-time-picker
+                v-model="row.startTime"
+                size="small"
+                format="HH:mm"
+                value-format="HH:mm"
+                placeholder="开始"
+                style="width: 78px"
+                @change="onRowTimeChange(row)"
+              />
+              <span class="dash">-</span>
+              <el-time-picker
+                v-model="row.endTime"
+                size="small"
+                format="HH:mm"
+                value-format="HH:mm"
+                placeholder="结束"
+                style="width: 78px"
+                @change="onRowTimeChange(row)"
+              />
             </template>
           </el-table-column>
-          <el-table-column label="老师" min-width="90">
-            <template #default="{ row }">{{ row.teacherLabel || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="教室" min-width="90">
-            <template #default="{ row }">{{ row.roomLabel || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="本节主题" min-width="180">
+          <!-- 老师逐节可改 -->
+          <el-table-column label="老师" min-width="120">
             <template #default="{ row }">
-              <el-input
-                v-model="row.title"
+              <el-select
+                v-model="row.teacher"
                 size="small"
-                maxlength="100"
-                show-word-limit
-                placeholder="可选"
-              />
+                filterable
+                placeholder="老师"
+                style="width: 100%"
+                @change="onRowTeacherChange(row)"
+              >
+                <el-option v-for="t in teachers" :key="t.id" :label="t.realName || t.mobile" :value="String(t.id)" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <!-- 教室逐节可改 -->
+          <el-table-column label="教室" min-width="120">
+            <template #default="{ row }">
+              <el-select
+                v-model="row.room"
+                size="small"
+                filterable
+                placeholder="教室"
+                style="width: 100%"
+                @change="onRowRoomChange(row)"
+              >
+                <el-option v-for="r in rooms" :key="r._id" :label="r.name" :value="String(r._id)" />
+              </el-select>
             </template>
           </el-table-column>
           <el-table-column label="" width="72" align="center" fixed="right">
@@ -501,19 +533,23 @@ async function onPreview() {
       endTime: form.endTime,
       teacher: form.teacher || undefined,
       room: form.room || undefined,
-      count: 50 // 拉更多用于编辑主题（仍然可在 generate 时按 remaining 截断）
+      count: 50
     })
     const teacherMap = new Map(teachers.value.map((t) => [String(t.id), t.realName || t.mobile]))
     const roomMap = new Map(rooms.value.map((r) => [String(r._id), r.name]))
     const finalTeacher = form.teacher || (currentInst.value?.teacher && currentInst.value.teacher._id)
     const finalRoom = form.room || (currentInst.value?.room && currentInst.value.room._id)
+    // 每行带 可编辑字段 startTime/endTime/teacher/room + 派生时间戳 + 显示用 label
+    // (2026-07-06 用户决策:预览行支持改时间/老师/教室,日期仍按 schedulePlan 自动算)
     previewItems.value = r.data.entries.map((e) => ({
       ...e,
-      title: '', // 每节主题可单独填
+      startTime: formatDate(e.plannedStartTime, 'HH:mm'),
+      endTime: formatDate(e.plannedEndTime, 'HH:mm'),
+      teacher: String(e.teacher || finalTeacher || ''),
+      room: String(e.room || finalRoom || ''),
       teacherLabel: teacherMap.get(String(e.teacher)) || teacherMap.get(String(finalTeacher)) || '—',
       roomLabel: roomMap.get(String(e.room)) || roomMap.get(String(finalRoom)) || '—'
     }))
-    // 后端返回的 remaining 是该开班的实际剩余节数（preview / generate 都用这个上限）
     previewTotalCount.value = r.data.remaining || r.data.entries.length
     conflicts.value = r.data.conflicts || []
     if (r.data.entries.length === 0) {
@@ -530,14 +566,67 @@ async function onPreview() {
   }
 }
 
+// 行级编辑后,即时同步 label + plannedStartTime/plannedEndTime (冲突重检在用户按"生成"时由后端做)
+// 这里不重跑 detectConflict,前端只做派生计算;否则每个 keystroke 都查库会卡
+const _teacherMap = computed(() => new Map(teachers.value.map((t) => [String(t.id), t.realName || t.mobile])))
+const _roomMap = computed(() => new Map(rooms.value.map((r) => [String(r._id), r.name])))
+
+function onRowTimeChange(row) {
+  if (!row) return
+  const baseDate = new Date(row.plannedStartTime)
+  const dateYMD = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}-${String(baseDate.getDate()).padStart(2, '0')}`
+  // 解析 HH:mm + YMD → Date
+  const [sh, sm] = String(row.startTime || '00:00').split(':').map(Number)
+  const [eh, em] = String(row.endTime || '00:00').split(':').map(Number)
+  const s = new Date(dateYMD)
+  s.setHours(sh || 0, sm || 0, 0, 0)
+  const e = new Date(dateYMD)
+  e.setHours(eh || 0, em || 0, 0, 0)
+  row.plannedStartTime = s
+  row.plannedEndTime = e
+}
+function onRowTeacherChange(row) {
+  if (!row) return
+  row.teacherLabel = _teacherMap.value.get(String(row.teacher)) || '—'
+}
+function onRowRoomChange(row) {
+  if (!row) return
+  row.roomLabel = _roomMap.value.get(String(row.room)) || '—'
+}
+
 async function onSubmit() {
   if (!form.courseInstance) return
   loadingSubmit.value = true
   try {
-    // 收集每节主题：lessonNo -> title（只发非空的，节省 body 大小）
-    const titleMap = {}
+    // 2026-07-06: 收集每节的 overrides (startTime/endTime/teacher/room)；
+    // 只发跟"全局默认值"不同的行,减少 body 大小. 后端 service 用这些逐节生成.
+    // 未在 entriesMap 里出现的节使用 form.startTime/endTime + form.teacher/room.
+    //
+    // 2026-07-06 bugfix: 也发 keepLessonNos (前端预览里"保留下来"的课次);
+    // 后端原本严格按 schedulePlan 重算所有节,删掉的行会被"复活"。
+    // 现在以后端生成的 lessonNo 集合 ∩ keepLessonNos 作为最终保留集合。
+    const defaultTeacher = form.teacher || String(currentInst.value?.teacher?._id || currentInst.value?.teacher || '')
+    const defaultRoom = form.room || String(currentInst.value?.room?._id || currentInst.value?.room || '')
+    const defaultStart = form.startTime
+    const defaultEnd = form.endTime
+    const entriesMap = {}
+    const keepLessonNos = []
     for (const e of (previewItems.value || [])) {
-      if (e.title && e.title.trim()) titleMap[e.lessonNo] = e.title.trim()
+      keepLessonNos.push(Number(e.lessonNo))
+      const ov = {}
+      // 时间变化且合法(startTime+endTime 都 HH:mm) → 发 startTime/endTime
+      const sTime = String(e.startTime || defaultStart)
+      const eTime = String(e.endTime || defaultEnd)
+      if (sTime !== defaultStart || eTime !== defaultEnd) {
+        ov.startTime = sTime
+        ov.endTime = eTime
+      }
+      // 老师/教室变化 → 发 teacher/room (空字符串视为 "用默认")
+      const tId = String(e.teacher || '')
+      const rId = String(e.room || '')
+      if (tId && tId !== String(defaultTeacher)) ov.teacher = tId
+      if (rId && rId !== String(defaultRoom)) ov.room = rId
+      if (Object.keys(ov).length > 0) entriesMap[e.lessonNo] = ov
     }
     const r = await lessonScheduleApi.generate({
       courseInstance: form.courseInstance,
@@ -546,7 +635,8 @@ async function onSubmit() {
       endTime: form.endTime,
       teacher: form.teacher || undefined,
       room: form.room || undefined,
-      titleMap
+      entriesMap,
+      keepLessonNos
     })
     ElMessage.success(`已生成 ${r.data.created} 节排课`)
     emit('done')

@@ -76,7 +76,26 @@
     </el-card>
 
     <el-table :data="items" v-loading="loading" border style="margin-top: 12px" @row-click="onRowClick">
-      <el-table-column label="课次" width="70" prop="lessonNo" />
+      <!--
+        2026-07-06 用户决策: 课次列可编辑 (inline 数字框)
+        - 业务价值: 教务手动调整节号顺序
+        - 后端: service.update 检测 (courseInstance, lessonNo) 唯一冲突
+      -->
+      <el-table-column label="课次" width="90">
+        <template #default="{ row }">
+          <el-input-number
+            v-if="canEditLessonNo(row)"
+            :model-value="row.lessonNo"
+            :min="1"
+            :max="9999"
+            size="small"
+            controls-position="right"
+            style="width: 80px"
+            @change="(v) => onLessonNoChange(row, v)"
+          />
+          <span v-else>{{ row.lessonNo }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="开班" min-width="200">
         <template #default="{ row }">
           <div class="cell-strong">
@@ -558,6 +577,44 @@ async function loadDeps() {
 
 function onGenerateDone() {
   load()
+}
+
+// ─── 课次 (lessonNo) inline 编辑 (2026-07-06 用户决策) ───
+// 守卫: 已完成/已归档/已取消 的课禁止改 lessonNo (与 service.update 状态机一致)
+function canEditLessonNo(row) {
+  if (!row) return false
+  return !['completed', 'archived', 'cancelled'].includes(row.status)
+}
+
+/**
+ * 改课次: el-input-number @change 触发
+ * - 后端 PUT /lesson-schedules/:id + body { lessonNo }
+ * - 后端 service.update 已加唯一性冲突检测; 同开班下其他课占这个号 → 422 + data.conflictLessonNo
+ * - 失败时回退 row.lessonNo (Vue 响应式跟踪)
+ */
+async function onLessonNoChange(row, newLessonNo) {
+  if (!row || !row._id) return
+  const old = row.lessonNo
+  const v = Number(newLessonNo)
+  if (!Number.isFinite(v) || v < 1) {
+    ElMessage.warning('课次必须为正整数')
+    row.lessonNo = old
+    return
+  }
+  if (v === old) return
+  row.lessonNo = v
+  try {
+    await lessonScheduleApi.update(row._id, { lessonNo: v })
+    ElMessage.success(`已调整第 ${old} 课 → 第 ${v} 课`)
+  } catch (e) {
+    row.lessonNo = old
+    const data = e?.response?.data?.data
+    if (data?.code === 'lessonNoDuplicate' && data.conflictLessonNo) {
+      ElMessage.error(`课次 ${v} 已被第 ${data.conflictLessonNo} 课占用`)
+    } else {
+      ElMessage.error(e?.response?.data?.message || '调整课次失败')
+    }
+  }
 }
 
 onMounted(() => {

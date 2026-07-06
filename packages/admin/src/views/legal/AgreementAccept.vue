@@ -30,7 +30,7 @@
               <div class="title-line">
                 <span class="doc-title">{{ doc.title }}</span>
                 <el-tag size="small" type="info" class="ml">v{{ doc.version }}</el-tag>
-                <el-tag size="small" :type="doc.type === 'platform' ? '' : 'success'" class="ml">
+                <el-tag size="small" :type="doc.type === 'platform' ? 'info' : 'success'" class="ml">
                   {{ doc.type === 'platform' ? '平台协议' : '本机构协议' }}
                 </el-tag>
               </div>

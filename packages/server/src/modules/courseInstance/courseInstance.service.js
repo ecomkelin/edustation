@@ -276,6 +276,13 @@ async function detail(id, orgId) {
     status: 'enrolled',
     $or: [{ studentProduct: null }, { studentProduct: { $exists: false } }]
   })
+  // 2026-07-06: 当前开班的 lessonNo 最大值 — "加一节"对话框用它显示真正下一节号
+  // (countDocuments 在删课后下降, 但 max(lessonNo) 不会下降; 前端 AddLessonDialog 改用这个)
+  const maxLessonDoc = await LessonSchedule.findOne({ courseInstance: inst._id })
+    .select('lessonNo')
+    .sort({ lessonNo: -1 })
+    .lean()
+  inst.maxLessonNo = maxLessonDoc?.lessonNo || 0
   return inst
 }
 
@@ -629,20 +636,18 @@ async function setStatus(id, orgId, toStatus, by, reason, isPlatformAdmin) {
   if (!allowedNext[from] || !allowedNext[from].includes(toStatus)) {
     throw ApiError.badRequest(`状态 ${from} → ${toStatus} 不允许`)
   }
-    // 硬规则：enrolling → active 必须已排满 + 至少 1 个有效报名
-    // 业务语义："进行中" = 已经在上课
-    //   1) 必须把 schedulePlan.totalPlannedLessons 全部排完；
-    //   2) 必须至少有 1 个 status='enrolled' 的 CourseEnrollment（没学生报名的开班不能进"进行中"）。
+    // 进入"进行中"的硬规则 (2026-07-06 用户决策: 拆掉"必须排满"闸门)
+    // 业务语义: "进行中" = 已经在上课 (哪怕只排了 1 节; 私教/不规律排课也允许进)
+    // 保留的硬护栏:
+    //   1) schedulePlan 已配置 (totalPlannedLessons >= 1), 否则没意义;
+    //   2) 至少 1 个有效报名 (status='enrolled') — 没学生报名的开班进"进行中"无意义;
+    //   3) 每个报名的学生都必须有主用课包 — 没课包无法消课/考勤.
+    // 拆掉的护栏:
+    //   - scheduled >= totalPlanned (排满): 一对一私教、滚动开班等场景可能根本不计划排满.
     if (from === 'enrolling' && toStatus === 'active') {
       const totalPlanned = Number(cur.schedulePlan?.totalPlannedLessons || 0)
-      const scheduledCount = await LessonSchedule.countDocuments({ courseInstance: id, org: orgId })
       if (totalPlanned <= 0) {
         throw ApiError.badRequest('排课计划未配置（totalPlannedLessons 缺失），无法进入"进行中"')
-      }
-      if (scheduledCount < totalPlanned) {
-        throw ApiError.badRequest(
-          `尚未排满：已排 ${scheduledCount} / ${totalPlanned} 节，无法进入"进行中"。请先排满所有排课。`
-        )
       }
       const enrolledCount = await CourseEnrollment.countDocuments({
         courseInstance: id,

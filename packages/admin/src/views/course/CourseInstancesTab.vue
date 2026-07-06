@@ -682,7 +682,22 @@
       </div>
       <template #footer>
         <el-button @click="enrollmentSpDialog = false">取消</el-button>
-        <el-button type="primary" :loading="enrollmentSpSaving" :disabled="!enrollmentSpDirty" @click="submitEnrollmentPickSp">保存</el-button>
+        <!--
+          保存按钮 disabled 时(当前选择 = 原始绑定)用 tooltip 解释原因。
+          Element Plus disabled 按钮吞事件, 外层包 span 让 tooltip 鼠标可达。
+          2026-07-06 用户反馈: 选课包弹窗"为啥不能保存"无说明。
+        -->
+        <el-tooltip
+          v-if="!enrollmentSpDirty"
+          :content="enrollmentSpDirty ? '' : (enrollmentSpTarget?.studentProduct ? '当前课包未变更, 无需保存' : '请先选择一个课包')"
+          placement="top"
+          :disabled="enrollmentSpDirty"
+        >
+          <span class="inline-block">
+            <el-button type="primary" :loading="enrollmentSpSaving" :disabled="!enrollmentSpDirty" @click="submitEnrollmentPickSp">保存</el-button>
+          </span>
+        </el-tooltip>
+        <el-button v-else type="primary" :loading="enrollmentSpSaving" :disabled="!enrollmentSpDirty" @click="submitEnrollmentPickSp">保存</el-button>
       </template>
     </el-dialog>
 
@@ -720,13 +735,12 @@
           </el-card>
         </template>
       </div>
-      <!-- 详情页 footer：操作按钮区（2026-06-26：把列表里的 编辑/改状态/取消 搬到这） -->
+      <!-- 详情页 footer：操作按钮区 (2026-06-26：把列表里的 编辑/改状态/取消 搬到这)；
+           「为该开班排课」入口移到「排课信息」抽屉 footer（2026-07-06：用户决策 — 排课入口紧邻排课表更顺） -->
       <template #footer>
         <div class="detail-footer-actions">
           <el-button @click="detailDrawer = false">关闭</el-button>
           <div class="detail-footer-right">
-            <!-- 2026-06-26: 排课入口从「排课列表/排课日历 header」挪到这里 — 对单开班的批量排课更直观 -->
-            <el-button v-if="detailRow" type="success" @click="openGenerateForDetail">为该开班排课</el-button>
             <el-button v-if="detailRow && canCancel(detailRow)" type="warning" @click="openCancelDialog(detailRow)">取消</el-button>
             <el-button v-if="detailRow && canChangeStatus(detailRow)" @click="openStatusDialog(detailRow)">改状态</el-button>
             <el-button v-if="detailRow" type="primary" @click="openEdit(detailRow)">编辑</el-button>
@@ -942,7 +956,27 @@
               :image-size="80"
             />
             <el-table v-else :data="scheduleInfoSchedules" border size="small">
-              <el-table-column label="课次" prop="lessonNo" width="60" />
+              <!--
+                2026-07-06 用户决策: 课次列可编辑 (inline 数字框)
+                - 业务价值: 教务手动调整节号顺序、排课错位修正
+                - 后端: service.update 检测 (courseInstance, lessonNo) 唯一冲突, 422 + data.conflictLessonNo
+                - UI 守卫: 已完成/已归档/已取消 的课禁止改 (与 service.update 一致)
+              -->
+              <el-table-column label="课次" width="90">
+                <template #default="{ row }">
+                  <el-input-number
+                    v-if="canEditLessonNo(row)"
+                    :model-value="row.lessonNo"
+                    :min="1"
+                    :max="9999"
+                    size="small"
+                    controls-position="right"
+                    style="width: 80px"
+                    @change="(v) => onLessonNoChange(row, v)"
+                  />
+                  <span v-else>{{ row.lessonNo }}</span>
+                </template>
+              </el-table-column>
               <el-table-column label="日期" width="110">
                 <template #default="{ row }">{{ formatDate(row.plannedStartTime, 'YYYY-MM-DD') }}</template>
               </el-table-column>
@@ -976,10 +1010,13 @@
           </el-card>
         </template>
       </div>
-      <!-- 排课信息抽屉 footer：只有"关闭"，不放状态流转按钮 -->
+      <!-- 排课信息抽屉 footer (2026-07-06 用户决策:把「为该开班排课」从详情抽屉挪到这里 — 排课入口紧邻已排课列表语义更顺) -->
       <template #footer>
         <div class="detail-footer-actions">
           <el-button @click="scheduleInfoDrawer = false">关闭</el-button>
+          <div class="detail-footer-right">
+            <el-button v-if="scheduleInfoRow" type="success" @click="openGenerateForScheduleInfo">为该开班排课</el-button>
+          </div>
         </div>
       </template>
     </el-drawer>
@@ -1386,29 +1423,30 @@ function openScheduleDialog(row) {
   scheduleTarget.value = row
   scheduleDialog.value = true
 }
-// 2026-06-26: 详情抽屉 footer 的「为该开班排课」复用同一入口; 先关详情抽屉避免叠层视觉冲突
-function openGenerateForDetail() {
-  const row = detailRow.value
+// 2026-07-06 用户决策: 「为该开班排课」入口从详情抽屉 footer 挪到排课信息抽屉 footer
+// (排课入口紧邻已排课列表语义更顺); 复用同一 ScheduleGenerateDialog, 先关抽屉避免叠层
+function openGenerateForScheduleInfo() {
+  const row = scheduleInfoRow.value
   if (!row) return
-  detailDrawer.value = false
+  scheduleInfoDrawer.value = false
   // 下一个 tick 开 dialog, 让 drawer 关闭动画先跑, 避免两个 el-dialog 叠层闪烁
   nextTick(() => openScheduleDialog(row))
 }
 
 const nextStatusOptions = computed(() => STATUS_NEXT[statusForm.from] || [])
 
-// 进入"进行中"的前置条件：
-//   1) 已排满（与后端 service.setStatus 校验保持一致）
-//   2) 至少 1 个有效报名（status='enrolled'）—— 没学生的开班不能进"进行中"
-//   3) 所有报名学生都绑定了主用课包（enrollment.studentProduct 非空）
+// 进入"进行中"的前置条件 (2026-07-06 用户决策: 拆掉"必须排满")
+//   1) schedulePlan 已配置 (totalPlannedLessons >= 1) — 与后端 service.setStatus 一致
+//   2) 至少 1 个有效报名 (status='enrolled') — 没学生的开班不能进"进行中"
+//   3) 所有报名学生都绑定了主用课包 (enrollment.studentProduct 非空)
+//   (旧版还检查: scheduled >= totalPlanned. 一对一私教 / 不规律排课场景不适用, 已拆)
 const canGoActive = computed(() => {
   const src = statusForm._source
   if (!src) return false
   const total = src.schedulePlan?.totalPlannedLessons || 0
-  const scheduled = src.scheduledCount || 0
   const enrolled = src.enrolledCount || 0
   const noSp = src.enrollmentsWithoutSp || 0
-  return total > 0 && scheduled >= total && enrolled > 0 && noSp === 0
+  return total > 0 && enrolled > 0 && noSp === 0
 })
 
 // 各阻塞原因的具体文案已下沉到 targetBlockReason(target) 里,
@@ -1445,17 +1483,16 @@ function isTargetDisabled(target) {
 // 每个被禁用的目标状态对应的具体原因:
 //   - 用于在 el-option 标签后追加 "（原因）" 让用户一眼看到为什么不能选
 //   - 文案与后端 service.setStatus 的校验保持一致,避免前后端不一致导致误解
+//   - 2026-07-06 用户决策: enrolling → active 拆掉"尚未排满"后, 阻塞原因只剩 3 项
 function targetBlockReason(target) {
   const src = statusForm._source
   if (!src) return ''
-  // enrolling → active 的四种阻塞原因
+  // enrolling → active 的三种阻塞原因 (排满闸门已拆, 不再是阻塞)
   if (statusForm.from === 'enrolling' && target === 'active') {
     const total = src.schedulePlan?.totalPlannedLessons || 0
-    const scheduled = src.scheduledCount || 0
     const enrolled = src.enrolledCount || 0
     const noSp = src.enrollmentsWithoutSp || 0
     if (total <= 0) return '排课计划未配置'
-    if (scheduled < total) return `尚未排满（${scheduled} / ${total}）`
     if (enrolled === 0) return '该开班暂无学生报名'
     if (noSp > 0) return `${noSp} 名学生未绑定主用课包`
     return ''
@@ -1703,17 +1740,32 @@ function goScheduleListFromInfo() {
 const addLessonDialog = ref(false)
 const addLessonTarget = ref(null)
 
-function openAddLesson() {
+async function openAddLesson() {
   if (!detailRow.value) return
-  // 重新拉一份最新 detail 进来（确保 scheduledCount 是最新的）
-  addLessonTarget.value = detailRow.value
+  // 重新拉一份最新 detail 进来 (确保 maxLessonNo / scheduledCount 都是最新的)
+  // 2026-07-06 bugfix: 详情抽屉"加一节"按钮也走这条; 之前只传内存 row, 删过课后会拿到过期 count
+  try {
+    const r = await courseInstanceApi.detail(detailRow.value._id)
+    addLessonTarget.value = r.data
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载开班详情失败')
+    return
+  }
   addLessonDialog.value = true
 }
 
-function openAddLessonFromInfo() {
+async function openAddLessonFromInfo() {
   if (!scheduleInfoRow.value) return
-  // 重新拉一份最新 detail 进来（确保 scheduledCount 是最新的）
-  addLessonTarget.value = scheduleInfoRow.value
+  // 重新拉一份最新 detail 进来 (确保 maxLessonNo / scheduledCount 都是最新的)
+  // 2026-07-06 bugfix: 之前这里只把已有 row 传过去, 用户删过几节后, 内存里的 scheduledCount 是旧的,
+  // 导致 AddLessonDialog 用 count+1 算出已存在的 lessonNo, 撞 (courseInstance, lessonNo) 唯一索引
+  try {
+    const r = await courseInstanceApi.detail(scheduleInfoRow.value._id)
+    addLessonTarget.value = r.data
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '加载开班详情失败')
+    return
+  }
   addLessonDialog.value = true
 }
 
@@ -1959,6 +2011,46 @@ async function onEditScheduleDone() {
     await openDetail(detailRow.value)
   }
   load()
+}
+
+// ─── 课次 (lessonNo) inline 编辑 (2026-07-06 用户决策) ───
+// 守卫: 已完成 / 已归档 / 已取消 的课禁止改 lessonNo (与 service.update 状态机一致)
+function canEditLessonNo(row) {
+  if (!row) return false
+  return !['completed', 'archived', 'cancelled'].includes(row.status)
+}
+
+/**
+ * 改课次: el-input-number @change 触发
+ * - 后端 PUT /lesson-schedules/:id + body { lessonNo }
+ * - 后端 service.update 已加唯一性冲突检测; 同开班下其他课占这个号 → 422 + data.conflictLessonNo
+ * - 失败时回退 row.lessonNo (Vue 响应式跟踪)
+ */
+async function onLessonNoChange(row, newLessonNo) {
+  if (!row || !row._id) return
+  const old = row.lessonNo
+  const v = Number(newLessonNo)
+  if (!Number.isFinite(v) || v < 1) {
+    ElMessage.warning('课次必须为正整数')
+    row.lessonNo = old
+    return
+  }
+  if (v === old) return
+  // 乐观更新 (UI 立即反映)
+  row.lessonNo = v
+  try {
+    await lessonScheduleApi.update(row._id, { lessonNo: v })
+    ElMessage.success(`已调整第 ${old} 课 → 第 ${v} 课`)
+  } catch (e) {
+    // 回退 + 友好提示 (后端会给出具体冲突节号)
+    row.lessonNo = old
+    const dup = e?.response?.data?.data?.conflictLessonNo
+    if (e?.response?.data?.data?.code === 'lessonNoDuplicate' && dup) {
+      ElMessage.error(`课次 ${v} 已被第 ${dup} 课占用`)
+    } else {
+      ElMessage.error(e?.response?.data?.message || '调整课次失败')
+    }
+  }
 }
 
 // ─── 删除单条排课（中风险：要求教务.password 二次确认 + 互锁预检） ───
