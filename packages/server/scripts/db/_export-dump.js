@@ -38,7 +38,7 @@ const COLLECTIONS = [
   'course_products',
   'parents',
   'child_leads',
-  'trial_bookings',
+  // 2026-07-06 删 trial_bookings: seed 不再写试听记录, 这里也不再导出空 collection
   'user_consents',
   'refresh_tokens'
 ]

@@ -76,7 +76,7 @@ function loadDump() {
 //   - schools/rooms/course_products: 引用 orgs (+ categories for courseProducts)
 //   - parents: 引用 orgs + users (createdBy); child_leads 引用 parents
 //   - child_leads: 引用 parents + categories (Subject字典 trialSubjects) + schools + users (createdBy)
-//   - trial_bookings: 引用 child_leads + parents + categories (subject) + users (teacher/consultant/createdBy)
+//   (2026-07-06 用户决策: 删掉 trial_bookings seed — 不再批量写"待排"试听单, 招生/试听链路在运行时按需手动建)
 const LOAD_ORDER = [
   'regions',
   'categories',
@@ -90,7 +90,6 @@ const LOAD_ORDER = [
   'course_products',
   'parents',
   'child_leads',
-  'trial_bookings',
   'user_consents',
   'refresh_tokens'
 ]
@@ -108,7 +107,7 @@ const COLLECTION_TO_MODEL = {
   course_products: CourseProduct,
   parents: Parent,
   child_leads: ChildLead,
-  trial_bookings: require('@models/TrialBooking.model'),
+  // 2026-07-06: trial_bookings 已从 LOAD_ORDER 移除, 这里也不再挂 model 映射
   user_consents: UserConsent,
   refresh_tokens: RefreshToken
 }
