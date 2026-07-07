@@ -15,7 +15,7 @@ exports.detail = async (req, res) => {
 }
 
 exports.create = async (req, res) => {
-  const data = await service.create({ orgId: req.orgId, ...req.body })
+  const data = await service.create({ orgId: req.orgId, currentUser: req.user, ...req.body })
   res.status(201).json(ApiResponse.created(data))
 }
 
@@ -35,7 +35,7 @@ exports.removableCheck = async (req, res) => {
 }
 
 exports.setGuardians = async (req, res) => {
-  const data = await service.setGuardians(req.params.id, req.orgId, req.body.guardians)
+  const data = await service.setGuardians(req.params.id, req.orgId, req.body.guardians, req.user)
   res.json(ApiResponse.ok(data))
 }
 

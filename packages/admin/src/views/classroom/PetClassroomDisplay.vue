@@ -126,34 +126,10 @@
           />
         </div>
 
-        <!-- 2026-06-22: 装饰区 — SVG chip 点击 toggle 装备
-             有框 = 已装备；无框 = 已解锁但未装备；点 chip 在 equip / unequip 间切
-             蛋态不显示（蛋在概念上没有装饰）-->
-        <div class="stat-card" v-if="pet?.state === 'alive'">
-          <div class="label">装饰 · 点 SVG 切换装备</div>
-          <div class="equip-categories">
-            <div v-for="slot in PET_ITEM_SLOTS" :key="slot" class="cat-row">
-              <div class="cat-label">{{ PET_ITEM_SLOT_LABELS[slot] }}</div>
-              <div class="cat-chips">
-                <div
-                  v-for="entry in unlockedEntriesBySlot[slot]"
-                  :key="slot + ':' + entry.key"
-                  class="equip-chip"
-                  :class="{ framed: pet?.equipped?.[slot] === entry.key }"
-                  :title="entry.name + (pet?.equipped?.[slot] === entry.key ? ' (已装备，点击卸下)' : ' (点击装备)')"
-                  @click="onToggleEquip(slot, entry.key)"
-                >
-                  <img v-if="entry.visualType === 'image' && entry.imageFile?.url" :src="entry.imageFile.url" :alt="entry.name" />
-                  <span v-else-if="entry.visualType === 'svg' && entry.svgContent" class="chip-svg" v-html="entry.svgContent" />
-                  <span v-else class="chip-emoji">🎁</span>
-                </div>
-                <span v-if="!unlockedEntriesBySlot[slot] || unlockedEntriesBySlot[slot].length === 0" class="slot-empty">未解锁</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- 2026-07-06 用户决策: 装饰 / 食物两块位置互换; 食物移到上方(积分消耗在前)
+             (旧顺序: 装饰 → 食物; 顺序调整: 食物 → 装饰) -->
 
-        <!-- 2026-06-22: 食物区 — SVG chip 显示积分 + +exp + +hunger；点击代买 -->
+        <!-- 食物区 — SVG chip 显示积分 + +exp + +hunger；点击代买 -->
         <div class="stat-card" v-if="canWrite && pet?.state === 'alive'">
           <div class="label">食物 · 点 SVG 代买喂食</div>
           <div class="food-grid">
@@ -177,6 +153,33 @@
               </div>
             </div>
             <span v-if="consumableEntries.length === 0" class="slot-empty">无可购食物</span>
+          </div>
+        </div>
+
+        <!-- 装饰区 — SVG chip 点击 toggle 装备
+             有框 = 已装备；无框 = 已解锁但未装备；点 chip 在 equip / unequip 间切
+             蛋态不显示（蛋在概念上没有装饰）-->
+        <div class="stat-card" v-if="pet?.state === 'alive'">
+          <div class="label">装饰 · 点 SVG 切换装备</div>
+          <div class="equip-categories">
+            <div v-for="slot in PET_ITEM_SLOTS" :key="slot" class="cat-row">
+              <div class="cat-label">{{ PET_ITEM_SLOT_LABELS[slot] }}</div>
+              <div class="cat-chips">
+                <div
+                  v-for="entry in unlockedEntriesBySlot[slot]"
+                  :key="slot + ':' + entry.key"
+                  class="equip-chip"
+                  :class="{ framed: pet?.equipped?.[slot] === entry.key }"
+                  :title="entry.name + (pet?.equipped?.[slot] === entry.key ? ' (已装备，点击卸下)' : ' (点击装备)')"
+                  @click="onToggleEquip(slot, entry.key)"
+                >
+                  <img v-if="entry.visualType === 'image' && entry.imageFile?.url" :src="entry.imageFile.url" :alt="entry.name" />
+                  <span v-else-if="entry.visualType === 'svg' && entry.svgContent" class="chip-svg" v-html="entry.svgContent" />
+                  <span v-else class="chip-emoji">🎁</span>
+                </div>
+                <span v-if="!unlockedEntriesBySlot[slot] || unlockedEntriesBySlot[slot].length === 0" class="slot-empty">未解锁</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

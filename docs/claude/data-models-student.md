@@ -40,6 +40,19 @@
 2. `Student.create` 从 `ChildLead` 拷贝 name/gender/school/grade/className
 3. 次孩转化：复用已有 User（同 mobile），新建独立 Student
 
+## 直接新建学生也 upsert Parent + 建 converted ChildLead（2026-07-07）
+
+> 消除"家长画像"割裂 + 让直接建的学员出现在潜客管理:此前只有招生转化来的学员才有 `Parent`/`ChildLead`，直接"新建学生"的学员 `parentId=null` → 家长画像按钮禁用（"未关联潜客档案"）。
+
+`student.service.linkStudentToRecruit`（被 `create` 与 `setGuardians` 复用）把学员收敛进招生域，与 `trialBooking.service.convert` 统一：
+
+- 按 `(org, guardianMobile)` **upsert Parent**（`user` 始终 `$set` 回填；已存在则复用，不覆盖）。
+- 以 `convertedStudent=学员` 为幂等键 **建/迁 ChildLead**：无则新建一条 `status='converted'`、`convertedRemark='直接新建学员自动生成'`；改绑监护人时把已有 ChildLead 迁到新 Parent。
+- 末尾 `parentService.recomputeLifecycle` 重算两侧 Parent，`已转化数/lifecycle` 与真实 ChildLead 一致（单孩直接建 → `full`）。
+- 手机号须匹配 `/^1[3-9]\d{9}$/`（student validator 只校验长度=11）；不匹配则整体跳过，不阻断建学生。
+- `ChildLead.createdBy` 取当前操作人，缺失时兜底用监护人 User（防止非请求上下文调用崩）。
+- 结果：所有学员（无论来源）都有 Parent + ChildLead，家长画像统一可用、潜客管理孩子/已转化列正确。**三态里的 `parentId=null` 从此基本只出现在手机号非法/无监护人的边缘场景。**
+
 ## 学生与课包 / 排课的关联
 
 - `Order.student` / `StudentProduct.student`：一对一购课关系

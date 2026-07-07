@@ -83,18 +83,14 @@
           {{ formatDate(row.lastFedAt) }}
         </template>
       </el-table-column>
-      <!-- 2026-06-22: 代喂食 + 课堂展示 + 事件 放到列表行 (与详情并列)；代买装饰/食物仍走详情弹窗 -->
-      <el-table-column label="操作" width="320" fixed="right">
+      <!-- 2026-07-07: 删除列表行的「代喂食」按钮 (课堂展示里已有, 详情弹窗只展示不可写);
+           留详情 / 课堂展示 / 事件 三个按钮, 操作列宽度从 320 缩到 280 -->
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-tooltip content="详情/破壳/置换/降阶/代买装饰/代买食物" placement="top">
+          <el-tooltip content="宠物详情（只读）" placement="top">
             <el-button size="small" @click="openDetail(row)">详情</el-button>
           </el-tooltip>
-          <el-tooltip :disabled="row.state === 'alive'" content="仅存活状态可喂食" placement="top">
-            <el-button size="small" type="primary" :disabled="row.state !== 'alive'" @click="openFeedDialog(row)">
-              <el-icon style="margin-right:2px;vertical-align:-2px"><Bowl /></el-icon>代喂食
-            </el-button>
-          </el-tooltip>
-          <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看）" placement="top">
+          <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看，含喂食操作）" placement="top">
             <el-button size="small" type="primary" plain @click="openClassroom(row)">课堂展示</el-button>
           </el-tooltip>
           <el-tooltip content="查看该宠物的事件流" placement="top">
@@ -117,14 +113,6 @@
 
     <!-- 详情弹窗 -->
     <PetDetailDialog v-model="detailVisible" :pet-id="selectedPetId" @updated="onDetailUpdated" />
-
-    <!-- 代喂食弹窗（每行点击触发，复用 FeedOnBehalfDialog 组件） -->
-    <FeedOnBehalfDialog
-      v-model:visible="feedDialogVisible"
-      :pet="feedPet"
-      :student-name="feedStudentName"
-      @success="onFeedSuccess"
-    />
 
     <!-- 单宠物事件流弹窗（2026-06-22 调整：列表行按钮触发） -->
     <PetEventsDialog
@@ -181,18 +169,17 @@
 
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Bowl, Tickets } from '@element-plus/icons-vue'
+import { Plus, Tickets } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
 import { studentApi } from '@/api/student'
 import { effectiveHungerDecayMinutes } from '@/utils/pet'
 import { formatDate } from '@/utils/format'
 import PetDetailDialog from './PetDetailDialog.vue'
-import FeedOnBehalfDialog from '@/components/Pet/FeedOnBehalfDialog.vue'
 import PetEventsDialog from '@/components/Pet/PetEventsDialog.vue'
 
 export default {
   name: 'PetAdmin',
-  components: { PetDetailDialog, FeedOnBehalfDialog, PetEventsDialog },
+  components: { PetDetailDialog, PetEventsDialog },
   data() {
     return {
       filters: { keyword: '', state: '', tier: '' },
@@ -213,11 +200,6 @@ export default {
       pickedStudent: null,
       adopting: false,
       studentSearchTimer: null,
-
-      // 代喂食弹窗状态（2026-06-22: 从详情移过来）
-      feedDialogVisible: false,
-      feedPet: null,
-      feedStudentName: '',
 
       // 单宠物事件流弹窗状态（2026-06-22: 列表行按钮触发）
       eventsDialogVisible: false,
@@ -250,23 +232,6 @@ export default {
     openDetail(row) {
       this.selectedPetId = row._id
       this.detailVisible = true
-    },
-
-    // ─── 代喂食（列表行） ───
-    async openFeedDialog(row) {
-      // 列表行只有 summary 字段；调一次详情接口拿完整 pet（含 unlocked/equipped）
-      try {
-        const r = await petAdminApi.get(row._id)
-        const payload = r?.data?.pet ? r.data : r
-        this.feedPet = payload?.pet || null
-        this.feedStudentName = row.studentName || ''
-        this.feedDialogVisible = true
-      } catch (e) {
-        ElMessage.error(e?.response?.data?.message || '加载宠物失败')
-      }
-    },
-    onFeedSuccess() {
-      this.fetchList()
     },
 
     // ─── 课堂展示（列表行） ───

@@ -12,8 +12,10 @@ const LessonSchedule = require('@models/LessonSchedule.model')
 // 2026-07-05: listMyKidsStats 加 org populate, 给前端 "孩子所属机构" 显示用 (kid-card 头部右侧红框)
 const Org = require('@models/Org.model')
 const Parent = require('@models/Parent.model')
+const ChildLead = require('@models/ChildLead.model')
 const PetAccount = require('@models/PetAccount.model')
 const parentProfile = require('@modules/parent/parent.profile')
+const parentService = require('@modules/parent/parent.service')
 const { isValidStudentKey } = require('@shared/avatars')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
@@ -174,7 +176,55 @@ async function detail(id, orgId) {
   return s
 }
 
-async function create({ orgId, name, gender, birthday, guardianMobile, guardians = [], school, notes, avatarSvgKey }) {
+/**
+ * 把"直接建/改绑监护人"的学员收敛进招生域,与招生转化(trialBooking.service.convert)统一到同一套
+ * Parent + ChildLead 数据,消除"家长画像"割裂 + 让学员出现在潜客管理的家长/孩子视图里。
+ *
+ * 幂等 & 安全:
+ *   - 手机号须匹配 Parent.phone 正则(/^1[3-9]\d{9}$/);不匹配直接返回,不阻断建学生。
+ *   - Parent 按 (org, phone) upsert;已存在(来自招生)则复用,不覆盖 lifecycle。
+ *   - ChildLead 以 convertedStudent=学员 为幂等键:已存在则(必要时)改挂到新 Parent,否则新建一条
+ *     status='converted' 的记录。改绑监护人重复调用安全。
+ *   - 末尾 recompute 两侧 Parent 的 lifecycle(旧/新),保证 已转化数/状态 与真实 ChildLead 一致。
+ *
+ * @returns {Promise<void>}
+ */
+async function linkStudentToRecruit({ orgId, mobile, guardianUserId, student, currentUserId }) {
+  if (!/^1[3-9]\d{9}$/.test(mobile || '')) return
+  const parent = await Parent.findOneAndUpdate(
+    { org: orgId, phone: mobile },
+    { $setOnInsert: { org: orgId, phone: mobile }, $set: { user: guardianUserId } },
+    { upsert: true, new: true }
+  )
+
+  const existing = await ChildLead.findOne({ org: orgId, convertedStudent: student._id })
+    .select('_id parent')
+    .lean()
+  let oldParentId = null
+  if (!existing) {
+    await ChildLead.create({
+      org: orgId,
+      parent: parent._id,
+      name: student.name,
+      gender: student.gender || null,
+      school: student.school || null,
+      status: 'converted',
+      convertedStudent: student._id,
+      convertedAt: new Date(),
+      convertedRemark: '直接新建学员自动生成',
+      createdBy: currentUserId || guardianUserId
+    })
+  } else if (String(existing.parent) !== String(parent._id)) {
+    // 改绑监护人:把该学员的 ChildLead 一并迁到新 Parent(旧 Parent 稍后 recompute)
+    oldParentId = existing.parent
+    await ChildLead.updateOne({ _id: existing._id }, { $set: { parent: parent._id } })
+  }
+
+  await parentService.recomputeLifecycle(parent._id)
+  if (oldParentId) await parentService.recomputeLifecycle(oldParentId)
+}
+
+async function create({ orgId, currentUser, name, gender, birthday, guardianMobile, guardians = [], school, notes, avatarSvgKey }) {
   // 如果传 guardianMobile，自动按手机号查 / 创 user，并建立与本机构的关联（家长角色）
   if (guardianMobile) {
     let u = await User.findOne({ mobile: guardianMobile })
@@ -237,6 +287,17 @@ async function create({ orgId, name, gender, birthday, guardianMobile, guardians
     // 2026-07-05: avatarSvgKey (6 个预制 SVG 手动指定, schema enum 校验)
     avatarSvgKey: isValidStudentKey(avatarSvgKey) ? avatarSvgKey : null
   })
+  // 2026-07-07: 收敛进招生域(upsert Parent + 建 converted ChildLead + recompute lifecycle),
+  //   让家长画像可用 + 学员出现在潜客管理。见 linkStudentToRecruit 注释。
+  if (guardianMobile) {
+    await linkStudentToRecruit({
+      orgId,
+      mobile: guardianMobile,
+      guardianUserId: s.guardianUser,
+      student: s,
+      currentUserId: currentUser && currentUser.id
+    })
+  }
   return detail(s._id, orgId)
 }
 
@@ -282,7 +343,7 @@ async function removableCheck(id, orgId) {
   return removable.check(orgId, studentUsageChecks(orgId, id))
 }
 
-async function setGuardians(id, orgId, guardians) {
+async function setGuardians(id, orgId, guardians, currentUser) {
   // 校验所有 guardian 至少与本 org 有关联
   if (guardians.length) {
     const valid = await UserOrgRel.countDocuments({ user: { $in: guardians }, org: orgId })
@@ -294,6 +355,19 @@ async function setGuardians(id, orgId, guardians) {
     { new: true }
   )
   if (!s) throw ApiError.notFound('学生不存在')
+  // 与 create 一致:改绑主监护人后收敛进招生域(upsert Parent + 迁/建 converted ChildLead + recompute)。
+  if (guardians[0]) {
+    const primary = await User.findById(guardians[0]).select('mobile').lean()
+    if (primary) {
+      await linkStudentToRecruit({
+        orgId,
+        mobile: primary.mobile,
+        guardianUserId: primary._id,
+        student: s,
+        currentUserId: currentUser && currentUser.id
+      })
+    }
+  }
   return detail(s._id, orgId)
 }
 

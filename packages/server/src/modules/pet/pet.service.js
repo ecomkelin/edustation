@@ -781,11 +781,17 @@ async function getMine({ orgId, studentId }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId')
   if (!studentId) throw ApiError.badRequest('缺少 studentId')
 
-  // 2026-07-05 修: 未报班的学生不要懒创建 egg, 也不返现有 egg
-  // 之前 ensurePetAccount 无差别创建, 客户端看到蛋点击破壳 → POST /pet/hatch 被 requireEnrolledStudent 挡 → 422
-  // 链: GET /pet/me 懒创建 → 显示蛋 → 点破壳 → 写端点 422 (数据可见不可写)
-  // 修法: 先查 enrollment, 没 enrolled 就返 {pet:null, noEnrollment:true}, 客户端 detail.vue 走 "请先报名" 空态
-  // 注: 即使 DB 里有遗留 egg (历史 bug 创建的), 也一并返 noEnrollment 阻断, 不让用户对着蛋干瞪眼
+  // 2026-07-07 改: 先查 pet 文档, 有就直接返 (不管 enrollment — admin 已代领养的情况)
+  // 之前: 无条件先查 enrollment, 没报班就 noEnrollment=true → 已存在的 pet 也被隐藏 (张小明有 pet 没 enrollment 被 C 端误判)
+  // 链: GET /pet/me → 没 enrollment → 返 noEnrollment=true → C 端显示"领养引导" 但其实有 pet
+  // 修法: 先 findOne PetAccount, 有就 decorate 返 (admin 代领养后即使没报班也能看到)
+  //       没 pet 才查 enrollment, 没报班才 noEnrollment
+  //       有 enrollment 没 pet 才调 ensurePetAccount 懒创建 (正常自助流程)
+  const existing = await PetAccount.findOne({ org: orgId, student: studentId }).lean()
+  if (existing) {
+    return { pet: await decoratePet(existing) }
+  }
+
   const enrolledCount = await CourseEnrollment.countDocuments({
     org: orgId,
     student: studentId,
@@ -798,8 +804,6 @@ async function getMine({ orgId, studentId }) {
   const pet = await ensurePetAccount(orgId, studentId)
   // 2026-07-03 修: 包成 {pet} 结构, 与 admin /admin/pet/accounts-by-student 的 {pet: ...} 形态一致;
   // 前端 detail.vue 取 r.pet (response 解包后), 不会因为 pet 字段空字符串而被判成 null。
-  // 老 data 影响: 直接旧值 `await petApi.me()` 还是拿到裸 pet 对象, 但 detail.vue 用 r?.pet 取值
-  //   会拿到 {species, state, ...} (这些是字段名, 不是 'pet' 字段) - 错位.
   return { pet: await decoratePet(pet) }
 }
 

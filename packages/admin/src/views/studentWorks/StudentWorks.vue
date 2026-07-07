@@ -24,9 +24,10 @@
     <!-- 工具栏：左侧视图切换，右侧操作 -->
     <div class="toolbar">
       <div class="toolbar-left">
+        <!-- 2026-07-06 bugfix: label= 在 Element Plus 3.0 已 deprecated, 改 value= (与 admin 其他模块对齐) -->
         <el-radio-group v-model="viewMode" size="small">
-          <el-radio-button label="list">列表</el-radio-button>
-          <el-radio-button label="card">卡片</el-radio-button>
+          <el-radio-button value="list">列表</el-radio-button>
+          <el-radio-button value="card">卡片</el-radio-button>
         </el-radio-group>
       </div>
       <div class="toolbar-right">
