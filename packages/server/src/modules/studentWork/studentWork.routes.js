@@ -44,6 +44,12 @@ router.patch('/:id', mws.requirePermission('studentWork.write'), asyncHandler(c.
 // 物理删除（"误操"场景）：超管+密码二次确认（作品是孤儿数据，无业务互锁）
 router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove)) // R-1604
 // 预检：作品无业务引用，始终 canRemove=true
-router.get('/:id/removable-check', mws.requirePermission('studentWork.read'), asyncHandler(c.removableCheck)) // R-1605
+router.get('/:id/removable-check', mws.requirePermission('studentWork.read'), asyncHandler(c.removableCheck))
+
+// 2026-07-08: 归档 / 取消归档 (软隐藏, 与物理删除互为补充; 复用 studentWork.write 权限)
+// R-1607 POST /student-works/:id/archive
+router.post('/:id/archive', mws.requirePermission('studentWork.write'), asyncHandler(c.archive))
+// R-1608 POST /student-works/:id/unarchive
+router.post('/:id/unarchive', mws.requirePermission('studentWork.write'), asyncHandler(c.unarchive)) // R-1605
 
 module.exports = router

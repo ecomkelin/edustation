@@ -53,8 +53,14 @@ const READONLY_SCHEDULE_STATUSES = [
   LessonScheduleStatus.CANCELLED
 ]
 
-async function list({ orgId, lessonSchedule, courseInstance, student, status }) {
+async function list({ orgId, lessonSchedule, courseInstance, student, status, archived }) {
   const filter = { org: orgId }
+  // 2026-07-08: 归档过滤 — 默认隐藏, ?archived=true 看历史
+  if (archived === true || archived === 'true') {
+    filter.archived = true
+  } else {
+    filter.archived = { $ne: true }
+  }
   // courseInstance: 走 lessonSchedule.courseInstance 二级关联过滤（前端选课程→学生→考勤时使用）
   if (courseInstance) {
     const scheduleIds = await LessonSchedule.find({ org: orgId, courseInstance }).select('_id').lean()
@@ -261,6 +267,7 @@ async function works({ id, orgId }) {
 async function updateEvaluation({ id, orgId, actorId, patch }) {
   const att = await LessonAttendance.findOne({ _id: id, org: orgId })
   if (!att) throw ApiError.notFound('考勤记录不存在')
+  if (att.archived) throw ApiError.unprocessable('考勤已归档,不可修改;请先取消归档')
   if (att.status !== AttendanceStatus.COMPLETED && att.status !== AttendanceStatus.MADEUP) {
     throw ApiError.badRequest('仅「已消课/已补」的考勤可写课评')
   }
@@ -602,6 +609,31 @@ async function makeup({ id, orgId, actualStartTime, actualEndTime, remark }) {
  }
 }
 
+// ─── 归档 / 取消归档 (2026-07-08) ────────────────
+// 考勤按学期滚数据, 老学期考勤量大, 用软隐藏即可
+// 权限: 教务/管理员 (lessonSchedule.write 持有者)
+async function archive({ id, orgId, actor }) {
+  const att = await LessonAttendance.findOne({ _id: id, org: orgId })
+  if (!att) throw ApiError.notFound('考勤记录不存在')
+  if (att.archived) return att.toObject() // 幂等
+  att.archived = true
+  att.archivedAt = new Date()
+  att.archivedBy = actor.id || actor.userId
+  await att.save()
+  return att.toObject()
+}
+
+async function unarchive({ id, orgId, actor }) {
+  const att = await LessonAttendance.findOne({ _id: id, org: orgId })
+  if (!att) throw ApiError.notFound('考勤记录不存在')
+  if (!att.archived) return att.toObject() // 幂等
+  att.archived = false
+  att.archivedAt = null
+  att.archivedBy = null
+  await att.save()
+  return att.toObject()
+}
+
 module.exports = {
   list,
   checkIn,
@@ -613,5 +645,8 @@ module.exports = {
   bulkCompleteForSchedule,
   ensureAttendanceForStudent,
   addManual,
- makeup
+  makeup,
+  // 2026-07-08: 归档
+  archive,
+  unarchive
 }

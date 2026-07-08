@@ -73,12 +73,20 @@ async function assertCanEnroll({ orgId, courseInstance }) {
   return inst
 }
 
-async function list({ orgId, courseInstance, courseInstanceStatus, courseInstanceTeacher, student, status, enrolledFrom, enrolledTo, page, pageSize }) {
+async function list({ orgId, courseInstance, courseInstanceStatus, courseInstanceTeacher, student, status, enrolledFrom, enrolledTo, page, pageSize, archived }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
+  // 2026-07-08: 归档过滤 — CourseEnrollment 用 status=archived 标记
+  //   ?archived=true → 只看已归档; 默认 → 排除 archived
+  if (status) {
+    filter.status = status // 用户显式 status 优先
+  } else if (archived === true || archived === 'true') {
+    filter.status = 'archived'
+  } else {
+    filter.status = { $ne: 'archived' }
+  }
   if (courseInstance) filter.courseInstance = courseInstance
   if (student) filter.student = student
-  if (status) filter.status = status
   // 报名时间段 (2026-06-26): 按 enrolledAt 区间过滤; 闭区间 [from, to+1天) 避免同日漏
   if (enrolledFrom || enrolledTo) {
     filter.enrolledAt = {}

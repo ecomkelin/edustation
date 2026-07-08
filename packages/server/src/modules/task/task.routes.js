@@ -6,8 +6,9 @@
  * 路由编号: R-3900 ~ R-3919 (MM=39, 任务模块)
  *   端点与权限码映射见 api.desc.md
  *
- * §8.1 物理删除防护:
- *   - DELETE /tasks/:id → requirePlatformPassword (超管+密码)
+ * §8.1 物理删除防护 (2026-07-08 调整, 工作流类弱化):
+ *   - DELETE /tasks/:id → requirePermission('task.delete') + requireBodyPassword
+ *     业务侧 service.remove 再校验: 平台超管 OR 任务 creator 本人
  *   - GET /tasks/:id/removable-check → requirePermission('task.read') 普通岗
  */
 
@@ -55,6 +56,12 @@ router.get('/:id', mws.requirePermission('task.read'), asyncHandler(c.detail))
 // R-3911 GET /tasks/:id/removable-check
 router.get('/:id/removable-check', mws.requirePermission('task.read'), asyncHandler(c.removableCheck))
 
+// 2026-07-08: 归档 / 取消归档 (软隐藏, 复用 task.delete 权限; 与物理删除互为补充)
+// R-3920 POST /tasks/:id/archive
+router.post('/:id/archive', mws.requirePermission('task.delete'), asyncHandler(c.archive))
+// R-3921 POST /tasks/:id/unarchive
+router.post('/:id/unarchive', mws.requirePermission('task.delete'), asyncHandler(c.unarchive))
+
 // ─── 状态机端点 (子操作) ─────────────────────
 
 // R-3905 POST /tasks/:id/submit
@@ -70,6 +77,8 @@ router.post('/:id/cancel', mws.requirePermission('task.write'), v.cancel, mws.va
 router.post('/:id/items', mws.requirePermission('task.write'), v.addItem, mws.validateRequest, asyncHandler(c.addItem))
 // R-3909 PATCH /tasks/:id/items/:itemId
 router.patch('/:id/items/:itemId', mws.requirePermission('task.read'), v.toggleItem, mws.validateRequest, asyncHandler(c.toggleItem))
+// R-3922 DELETE /tasks/:id/items/:itemId (2026-07-08: 配合 task 物理删除挡板, 让用户清空 checklist 后能删任务)
+router.delete('/:id/items/:itemId', mws.requirePermission('task.write'), asyncHandler(c.removeItem))
 
 // ─── 评论 ────────────────────────────────────
 
@@ -83,9 +92,21 @@ router.post('/', mws.requirePermission('task.write'), v.create, mws.validateRequ
 // R-3903 PATCH /tasks/:id
 router.patch('/:id', mws.requirePermission('task.write'), v.update, mws.validateRequest, asyncHandler(c.update))
 
-// ─── §8.1 物理删除防护 ─────────────────────
-
-// R-3904 DELETE /tasks/:id  →  requirePlatformPassword
-router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
+// ─── §8.1 物理删除防护 (2026-07-08 调整) ────────
+//
+// 任务 (Task) 是工作流类实体, 不同于核心业务实体 (Org/CourseProduct/Room):
+//   - 任务的子表 (TaskItem/Review/Comment) 都是任务自己生成的, 物理删除即级联
+//   - 任务创建者 (creator) 对自己创建的工作流应有终决权
+//   - §0 开发阶段可重写, 不必向旧 requirePlatformPassword 模型兼容
+//
+// 因此: 平台超管 (isPlatformAdmin) OR 任务 creator + 持 task.delete 权限 + 输密码
+//
+// 与 requirePlatformPassword 的区别:
+//   - requirePlatformPassword: 仅限 isPlatformAdmin, 用于跨机构核心实体
+//   - requireBodyPassword:     不限超管, 任意登录用户 + 输对自身密码即可
+//                             (再由 service.remove 校验"creator / 平台超管")
+//
+// R-3904 DELETE /tasks/:id  →  requirePermission('task.delete') + requireBodyPassword
+router.delete('/:id', mws.requirePermission('task.delete'), mws.requireBodyPassword, asyncHandler(c.remove))
 
 module.exports = router

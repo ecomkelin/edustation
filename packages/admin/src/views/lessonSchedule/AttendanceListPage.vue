@@ -52,6 +52,10 @@
           <el-button type="primary" :loading="loading" @click="onSearch">查询</el-button>
           <el-button @click="onReset">重置</el-button>
         </el-form-item>
+        <!-- 2026-07-08: 归档开关 -->
+        <el-form-item>
+          <el-checkbox v-model="filter.showArchived" @change="onSearch">显示已归档</el-checkbox>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -182,7 +186,9 @@ const filter = reactive({
  status: null,
  evalState: null,
  page:1,
- pageSize:20
+ pageSize:20,
+ // 2026-07-08: 归档开关
+ showArchived: false
 })
 const dateRange = ref(null)
 
@@ -221,7 +227,9 @@ async function fetchList() {
  courseInstance: filter.courseInstance || undefined,
  status: filter.status || undefined,
  from: dateRange.value?.[0],
- to: dateRange.value?.[1]
+ to: dateRange.value?.[1],
+ // 2026-07-08: 归档过滤
+ archived: filter.showArchived ? 'true' : undefined
  }
  const r = await lessonAttendanceApi.list(params)
  let raw = r.data?.items || r.data || []

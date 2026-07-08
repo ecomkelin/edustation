@@ -142,8 +142,16 @@ function assertSchedulePlanValid(schedulePlan) {
   }
 }
 
-async function list({ orgId, status, statuses, subject, teacher, room, keyword, includeTrial }) {
-  const filter = { org: orgId, deletedAt: null }
+async function list({ orgId, status, statuses, subject, teacher, room, keyword, includeTrial, archived }) {
+  // 2026-07-08: 归档过滤 — 默认隐藏已软删 (deletedAt != null), ?archived=true 看历史
+  //   CourseInstance 早就用 deletedAt 当 "软删" 机制 (CLAUDE.md §8.1 禁用物理删除);
+  //   历史上叫"软删" 现在我们把它统一叫"归档", archived query 参数语义 = show deleted
+  const filter = { org: orgId }
+  if (archived === true || archived === 'true') {
+    filter.deletedAt = { $ne: null }
+  } else {
+    filter.deletedAt = null
+  }
   // statuses: 逗号分隔的多值（如 "enrolling,active"）→ 用 $in
   if (statuses) {
     const arr = String(statuses).split(',').map((s) => s.trim()).filter(Boolean)
@@ -251,8 +259,11 @@ async function countEnrollmentsWithoutStudentProduct(courseInstanceIds, orgId) {
   return new Map(rows.map((r) => [String(r._id), r.count]))
 }
 
-async function detail(id, orgId) {
-  const inst = await CourseInstance.findOne({ _id: id, org: orgId, deletedAt: null })
+async function detail(id, orgId, includeArchived) {
+  // 2026-07-08: includeArchived=true 走时也返已软删 (deletedAt != null) 的开班
+  const filter = { _id: id, org: orgId }
+  if (!includeArchived) filter.deletedAt = null
+  const inst = await CourseInstance.findOne(filter)
     .populate('courseProduct subject teacher room acceptedCourseProducts')
     .populate('statusLog.by', 'realName mobile')
     .lean()
@@ -836,6 +847,18 @@ async function removableCheck(id, orgId) {
   return removable.check(orgId, courseInstanceUsageChecks(orgId, id))
 }
 
+// ─── 2026-07-08: 取消归档 (recover) ────────────────
+// 复用 archived/deletedAt 机制: 把 deletedAt 清空即可。
+// 与 softDelete 对称, 走 requirePlatformPassword (恢复是高风险操作, 防止误操作)
+async function recover({ id, orgId }) {
+  const cur = await CourseInstance.findOne({ _id: id, org: orgId, deletedAt: { $ne: null } })
+  if (!cur) throw ApiError.notFound('开班不存在或未被软删, 无需恢复')
+  cur.deletedAt = null
+  // 恢复后 status 仍是软删前的值, 管理员要手动 setStatus 切到 planning 才能用 — 这是有意的, 避免"以为恢复了就让学生报名"
+  await cur.save()
+  return cur.toObject()
+}
+
 /**
  * 招生试听: 为机构创建/获取 [试听专用] CourseInstance.
  *
@@ -882,7 +905,7 @@ async function ensureTrialCourseInstance(orgId) {
 
 module.exports = {
   list, detail, forClientStudent, create, update,
-  setStatus, softDelete, removableCheck,
+  setStatus, softDelete, removableCheck, recover,
   computeEstimatedEndDate,
   assertSchedulePlanValid,
   ensureTrialCourseInstance

@@ -9,11 +9,24 @@ const ApiError = require('@utils/ApiError')
 const removable = require('@utils/removable')
 const { StudentProductSource } = require('@shared/enums')
 
-async function list({ orgId, student, isActive, source, page, pageSize }) {
+async function list({ orgId, student, isActive, source, page, pageSize, archived }) {
   const filter = { org: orgId }
   if (student) filter.student = student
-  if (isActive === 'true' || isActive === true) filter.isActive = true
-  if (isActive === 'false' || isActive === false) filter.isActive = false
+  // 2026-07-08: 归档 (停用) 过滤
+  //   - 显式 isActive=true/false: 严格按用户
+  //   - 显式 isActive=undefined (C 端 /me): 不过滤, 返所有
+  //   - 不传: 默认 isActive=true (隐式 "在用")
+  //   - ?archived=true: 只看 isActive=false
+  if (isActive === 'true' || isActive === true) {
+    filter.isActive = true
+  } else if (isActive === 'false' || isActive === false) {
+    filter.isActive = false
+  } else if (archived === true || archived === 'true') {
+    filter.isActive = false
+  } else if (isActive !== undefined) {
+    filter.isActive = true
+  }
+  // isActive === undefined 走 "不应用 isActive 过滤" — C 端要所有课包
   if (source) filter.source = source
 
   const ps = Math.max(1, Math.min(200, parseInt(pageSize, 10) || 20))

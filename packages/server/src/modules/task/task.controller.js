@@ -14,6 +14,8 @@ exports.list = async (req, res) => res.json(ApiResponse.ok(await s.list({
 exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail({
   id: req.params.id,
   orgId: req.orgId,
+  // 2026-07-08: 已归档任务默认 403, 前端在「已归档」tab 点详情要显式传 ?includeArchived=true
+  includeArchived: req.query.includeArchived === 'true' || req.query.includeArchived === true,
   actor: req.user
 })))
 
@@ -38,12 +40,27 @@ exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update({
 
 exports.remove = async (req, res) => res.json(ApiResponse.ok(await s.remove({
   id: req.params.id,
-  orgId: req.orgId
+  orgId: req.orgId,
+  // 2026-07-08: 物理删除权限放宽 (task.delete 持有者 + creator / 平台超管), 需传 actor 给 service 校验
+  actor: req.user
 })))
 
 exports.removableCheck = async (req, res) => res.json(ApiResponse.ok(await s.removableCheck({
   id: req.params.id,
   orgId: req.orgId
+})))
+
+// 2026-07-08: 归档 / 取消归档
+exports.archive = async (req, res) => res.json(ApiResponse.ok(await s.archive({
+  id: req.params.id,
+  orgId: req.orgId,
+  actor: req.user
+})))
+
+exports.unarchive = async (req, res) => res.json(ApiResponse.ok(await s.unarchive({
+  id: req.params.id,
+  orgId: req.orgId,
+  actor: req.user
 })))
 
 // ─── 状态机 ───────────────────────────────────
@@ -75,6 +92,14 @@ exports.toggleItem = async (req, res) => res.json(ApiResponse.ok(await s.toggleI
   orgId: req.orgId,
   done: req.body.done,
   assignee: req.body.assignee,
+  actor: req.user
+})))
+
+// 2026-07-08: 删除 checklist 条目 (配合挡板, 让用户清空 checklist 后能物理删除任务)
+exports.removeItem = async (req, res) => res.json(ApiResponse.ok(await s.removeItem({
+  id: req.params.id,
+  itemId: req.params.itemId,
+  orgId: req.orgId,
   actor: req.user
 })))
 

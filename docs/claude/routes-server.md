@@ -44,7 +44,8 @@ Auth 列简写:
 - `AUTH` = 仅 authenticate
 - `PERM` = authenticate + requirePermission('xxx')
 - `ADMIN` = authenticate + requirePlatformAdmin
-- `ADMIN_PWD` = authenticate + requirePlatformPassword (高风险删)
+- `ADMIN_PWD` = authenticate + requirePlatformPassword (高风险删, 平台超管)
+- `PERM+PWD` = authenticate + requirePermission('xxx') + requireBodyPassword (工作流类弱化, 2026-07-08 立项)
 - `GUARD` = authenticate + activeStudent (+ requireEnrolledStudent)
 - `HMAC` = webhookAuth (webhook 验签)
 - `NONE` = 直连, 无中间件 (health 等)
@@ -246,8 +247,9 @@ Auth 列简写:
 | R-1101A | GET | /course-instances/:id/me | C-END | (activeStudent) | C 端开班详情 | 跳过 courseInstance.read 权限码;校验 activeStudent 是该开班报名学生 (允许回看退班/已结课);复用 detail 返回 + 增 myEnrollmentStatus;2026-07-04 立项修复 C 端 instance-detail 403 |
 | R-1102 | POST | /course-instances | PERM | courseInstance.write | 新建开班 | |
 | R-1103 | PUT | /course-instances/:id | PERM | courseInstance.write | 更新 | |
-| R-1104 | DELETE | /course-instances/:id | ADMIN_PWD | — | 软删 | 状态互锁 |
+| R-1104 | DELETE | /course-instances/:id | ADMIN_PWD | — | 软删 (deletedAt) | 状态互锁 |
 | R-1105 | GET | /course-instances/:id/removable-check | PERM | courseInstance.read | 删除预检 | |
+| R-1106 | POST | /course-instances/:id/recover | ADMIN_PWD | — | 取消归档 (recover) | 2026-07-08 立项;把已软删的开班恢复, 仍需超管+密码 |
 | R-1113 | PUT | /course-instances/:id/status | PERM | courseInstance.write/setStatus | 状态变更 | cancelled 仅超管 |
 
 ### MM=12 courseEnrollment (URL: /course-enrollments)
@@ -312,6 +314,8 @@ Auth 列简写:
 | R-1542 | POST | /lesson-attendances/bulk-mark | PERM | lessonAttendance.write | 批量登记 | 一次保存整节课 |
 | R-1536 | GET | /lesson-attendances/me | GUARD | — | 我的考勤 | C 端家长; active student 上下文; 默认 status∈{scheduled,completed,madeup,leave} 适合上传作品 |
 | R-1562 | POST | /lesson-attendances/:id/makeup | PERM | lessonAttendance.write | 补课 | 补建 completed 记录 |
+| R-1563 | POST | /lesson-attendances/:id/archive | PERM | lessonAttendance.write | 归档 | 2026-07-08; 软隐藏已结束学期的考勤, 反归档可逆 |
+| R-1564 | POST | /lesson-attendances/:id/unarchive | PERM | lessonAttendance.write | 取消归档 | 同上 |
 
 ### MM=16 studentWork (URL: /student-works)
 
@@ -326,6 +330,8 @@ Auth 列简写:
 | R-1606 | GET | /student-works/stats | PERM | studentWork.read | KPI 聚合 | 本期/上一期 total·ratedCount·avgLevel·unratedCount |
 | R-1640 | GET | /student-works/export.csv | PERM | studentWork.read | CSV 导出 | BOM + ; 分隔 (Excel 友好); 仿 AuditLogs.exportCsv |
 | R-1670 | GET | /student-works/me | GUARD | — | 我的作品 | C 端家长; active student 上下文 |
+| R-1607 | POST | /student-works/:id/archive | PERM | studentWork.write | 归档 | 2026-07-08; 软隐藏老作品, 反归档可逆; 不需密码 |
+| R-1608 | POST | /student-works/:id/unarchive | PERM | studentWork.write | 取消归档 | 同上 |
 
 **§16.1 R-1600 新增 Query 参数**（2026-07-01）:
 
@@ -667,7 +673,7 @@ Auth 列简写:
 | 2026-06-25 | 订单退款端点 R-1722 上线 (支持部分退款 + SP 软停用) | R-1722 | add |
 | 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |
 | 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |
-| 2026-07-08 | 员工任务模块 MM=39 上线 (三角色协作 + checklist + 监督人审批 + 看板 + 周期任务模板 + cron; 6 model + 20 端点 + 5 admin 视图; §8.1 物理删除防护) | R-3900 ~ R-3919 | add |
+| 2026-07-08 | 员工任务模块 MM=39 上线 (三角色协作 + checklist + 监督人审批 + 看板 + 周期任务模板 + cron; 6 model + 22 端点 + 5 admin 视图; §8.1 物理删除防护) | R-3900 ~ R-3919, R-3920/21 归档, R-3922 item 删除 | add |
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
 | 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
@@ -743,7 +749,7 @@ Auth 列简写:
 | R-3901 | GET | /tasks | PERM | task.read | 列表 (含可见性过滤) | query: myRole/status/type/priority/assignee/creator/supervisor/keyword/dueBefore/dueAfter/page/pageSize; 无 task.read 时只看我相关 |
 | R-3902 | GET | /tasks/:id | PERM | task.read | 详情 (含 items/reviews/comments) | service.canViewTask 校验可见性,否则 403 |
 | R-3903 | PATCH | /tasks/:id | PERM | task.write | 编辑任务 | 仅 creator / task.write 可改; 终态 (approved/cancelled/expired) 拒绝; status 只能走专用端点 |
-| R-3904 | DELETE | /tasks/:id | ADMIN_PWD | — | **超管物理删除** (§8.1) | 业务硬门挡 submitted/approved; 互锁 TaskItem/TaskReview/TaskComment |
+| R-3904 | DELETE | /tasks/:id | PERM+PWD | task.delete | 物理删除任务 (工作流类, §8.1 弱化) | **2026-07-08 改**: 平台超管 OR 任务 creator 本人; 中间件 `requirePermission('task.delete') + requireBodyPassword` (前者挡权限位, 后者校验 body.password); 业务硬门挡 submitted/approved; 互锁 TaskItem/TaskReview/TaskComment |
 | R-3905 | POST | /tasks/:id/submit | PERM | task.read | 执行人「提交完成」 | 校验自己所有条目 done; 写 Task.assignees[].status=submitted |
 | R-3906 | POST | /tasks/:id/review | PERM | task.review | 监督人审批 | 必填 result (approved/rejected/requested_changes); 写 TaskReview 留痕 |
 | R-3907 | POST | /tasks/:id/cancel | PERM | task.write | 取消任务 | 仅 creator / task.write; 可选 reason (作为评论留痕) |
@@ -759,3 +765,15 @@ Auth 列简写:
 | R-3917 | DELETE | /tasks/templates/:id | PERM | task.delete | 删除模板 | 已有 Task 不受影响 (Task.fromTemplate 软引用) |
 | R-3918 | POST | /tasks/templates/:id/run-now | PERM | task.write | 立即跑一次 (测试用) | 写 TaskGenerationLog (status=success) |
 | R-3919 | POST | /tasks/templates/:id/pause \| /resume | PERM | task.write | 暂停/恢复模板 | pause → nextRunAt=null; resume → 重算 nextRunAt |
+| R-3920 | POST | /tasks/:id/archive | PERM | task.delete | 归档 (软隐藏) | 2026-07-08 立项; list/kanban/stats 默认隐藏, 写操作全部 422; 不需密码 |
+| R-3921 | POST | /tasks/:id/unarchive | PERM | task.delete | 取消归档 | 同上; 反归档可逆, 幂等 |
+| R-3922 | DELETE | /tasks/:id/items/:itemId | PERM | task.write | 删除 checklist 条目 | 2026-07-08 立项 (堵 R-3904 挡板无入口的洞); **2026-07-08 改**: 权限扩到「条目 assignee / 任务 creator / 平台超管 / task.write / task.delete」(解死锁: creator 想删任务必先能清空 checklist); 终态/归档态 422; 触发 recomputeTaskState |
+
+**§39.1 归档 query 参数**（2026-07-08）:
+
+- `?archived=true` 列表只看已归档; 默认隐藏
+- `?includeArchived=true` 详情 bypass 403 (从归档 tab 跳详情用)
+
+---
+
+

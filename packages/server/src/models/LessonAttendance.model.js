@@ -78,6 +78,12 @@ const LessonAttendanceSchema = new Schema(
       evaluatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       evaluatedAt: { type: Date, default: null }
     },
+    // ─── 归档 (2026-07-08) ──────────────────────────────
+    //   考勤按"开班一学期"粒度滚数据, 旧学期考勤价值低但不能删 (财务/课评溯源);
+    //   软隐藏即可, 反归档可逆; 默认 list 隐藏
+    archived: { type: Boolean, default: false, index: true },
+    archivedAt: { type: Date, default: null },
+    archivedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     //扩展字段
     meta: { type: Schema.Types.Mixed, default: {} }
   },
@@ -99,5 +105,7 @@ LessonAttendanceSchema.index({ student: 1 })
 // 课包消费明细反查（管理后台「学生课包」点击"剩余/总课时"列弹窗）；
 //  之前 studentProduct 删除互锁也走这个 filter，没索引只能 collection scan
 LessonAttendanceSchema.index({ org: 1, studentProduct: 1 })
+// 2026-07-08: 归档过滤主索引 — list 默认 archived=false
+LessonAttendanceSchema.index({ org: 1, archived: 1, status: 1, plannedStartTime: -1 })
 
 module.exports = model('LessonAttendance', LessonAttendanceSchema)

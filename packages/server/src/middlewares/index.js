@@ -7,6 +7,7 @@ module.exports = {
   requirePermission: require('./requirePermission'),
   requirePlatformAdmin: require('./requirePlatformAdmin'),
   requirePlatformPassword: require('./requirePlatformPassword'),
+  requireBodyPassword: require('./requireBodyPassword'),
   activeStudent: require('./activeStudent'),
   requireEnrolledStudent: require('./requireEnrolledStudent'),
   validateRequest: require('./validateRequest'),

@@ -301,6 +301,36 @@ TaskGenerationLogSchema.index({ template: 1, runAt: -1 })
 
 ---
 
+## 9.5. 归档 (2026-07-08 立项)
+
+**业务硬门**：`status ∈ {approved, submitted}` 不允许物理删除 — 走归档 (软隐藏) 替代。
+
+**字段**：
+- `archived: boolean` (默认 false, index: true)
+- `archivedAt: Date` (归档时间)
+- `archivedBy: User ref` (归档操作人, 默认 task.delete 持有者)
+
+**行为**：
+- 列表 / 看板 / 统计 默认 `archived=false` (隐藏已归档)
+- `?archived=true` query 看历史
+- 详情默认 403 '任务已归档, 请在「已归档」列表中查看', `?includeArchived=true` 绕过
+- 所有写操作 (update / submit / review / cancel / addItem / toggleItem / addComment) 拦截, 返回 422 '任务已归档, 不可操作; 请先取消归档'
+- 看板 / 统计不计入已归档任务 (与"业务终止"语义对齐)
+
+**端点**：
+- `POST /tasks/:id/archive` (require task.delete)
+- `POST /tasks/:id/unarchive` (require task.delete)
+
+**与状态机 (status) 区别**：
+- `status=approved` 表达"任务做完了", 是**业务终态**
+- `archived=true` 表达"运维上不再活跃", 是**运维动作**
+- 两者**正交**: `approved + archived=true` 是合理的 (做完 + 不再看了)
+- 自动化建议: cron 把 `status ∈ {approved, cancelled, expired} && dueAt < 90d前 && archived=false` 自动归档
+
+详见 [§14 跨模型归档范式]。
+
+---
+
 ## 10. 物理删除互锁（§8.1）
 
 ```js
@@ -321,7 +351,7 @@ function taskUsageChecks(orgId, taskId) {
 
 ## 11. 端点编号
 
-MM=39（避开 article=36 / video=38），R-3900~R-3919 共 20 个端点。详见 [routes-server.md](routes-server.md) §MM=39。
+MM=39（避开 article=36 / video=38），R-3900~R-3919 共 20 个主体端点 + R-3920/R-3921 归档 + **R-3922 checklist 条目删除**（2026-07-08 补, 堵物理删除挡板无入口的洞）。详见 [routes-server.md](routes-server.md) §MM=39。
 
 ---
 
@@ -338,3 +368,4 @@ MM=39（避开 article=36 / video=38），R-3900~R-3919 共 20 个端点。详�
 ## 13. 变更记录
 
 - 2026-07-08 立项：MM=39 任务模块上线，6 表 + 20 端点 + 5 视图 + 周期任务模板 + cron
+- 2026-07-08 补：R-3922 `DELETE /tasks/:id/items/:itemId` — 配合挡板, 让用户清空 checklist 后能物理删除任务 (R-3904 业务硬门 `submitted/approved` → 走归档, 但其他状态仍可走物理删除, 需先清空条目)

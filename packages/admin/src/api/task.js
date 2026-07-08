@@ -12,7 +12,7 @@ import http from './http'
 export const taskApi = {
   // ─── 任务主体 ─────────────────────────────
   list: (params) => http.get('/tasks', { params }),
-  detail: (id) => http.get(`/tasks/${id}`),
+  detail: (id, { includeArchived } = {}) => http.get(`/tasks/${id}`, { params: includeArchived ? { includeArchived: 'true' } : {} }),
   create: (data) => http.post('/tasks', data),
   update: (id, data) => http.patch(`/tasks/${id}`, data),
   remove: (id, { password } = {}) => http.delete(`/tasks/${id}`, { data: { password } }),
@@ -23,9 +23,15 @@ export const taskApi = {
   review: (id, data) => http.post(`/tasks/${id}/review`, data),
   cancel: (id, data) => http.post(`/tasks/${id}/cancel`, data || {}),
 
+  // ─── 归档 (2026-07-08) ───────────────────
+  archive: (id) => http.post(`/tasks/${id}/archive`),
+  unarchive: (id) => http.post(`/tasks/${id}/unarchive`),
+
   // ─── 条目 ──────────────────────────────
   addItem: (id, data) => http.post(`/tasks/${id}/items`, data),
   toggleItem: (id, itemId, data) => http.patch(`/tasks/${id}/items/${itemId}`, data),
+  // 2026-07-08: 配合物理删除挡板, 让用户清空 checklist 后能删任务
+  removeItem: (id, itemId) => http.delete(`/tasks/${id}/items/${itemId}`),
 
   // ─── 评论 ──────────────────────────────
   addComment: (id, data) => http.post(`/tasks/${id}/comments`, data),

@@ -106,6 +106,16 @@ const TaskSchema = new Schema(
     },
     // 是否由周期模板生成（便于追溯）
     fromTemplate: { type: Schema.Types.ObjectId, ref: 'TaskTemplate', default: null },
+    // ─── 归档 (2026-07-08) ──────────────────────────────
+    //   业务硬门: 终态 (approved/cancelled/expired) 仍可被引用 (统计 / 财务 / 退课溯源);
+    //   物理删除走 §8.1 三重防护, 但「不想再看到」就用归档:
+    //     - archived=true: list / kanban / stats 默认不返; 详情 403 '已归档, 不可操作'
+    //     - 反归档可逆 (unarchive 端点), 适合"误归档/需要再拿出来"
+    //     - 与 status=approved 不同: 业务终态表达"任务结束了", archived 表达"运维上不再活跃"
+    //   触发: 超管 / task.delete 持有者手动归档; 或 cron 把"approved/cancelled/expired + dueAt<90d前"自动归档
+    archived: { type: Boolean, default: false, index: true },
+    archivedAt: { type: Date, default: null },
+    archivedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     // 扩展属性
     meta: { type: Schema.Types.Mixed, default: {} }
   },
@@ -127,5 +137,7 @@ TaskSchema.index({ org: 1, supervisors: 1 })
 TaskSchema.index({ status: 1, dueAt: 1 })
 // 模板追溯
 TaskSchema.index({ fromTemplate: 1 })
+// 归档过滤主索引: list / kanban / stats 默认 archived=false
+TaskSchema.index({ org: 1, archived: 1, status: 1, dueAt: 1 })
 
 module.exports = model('Task', TaskSchema)

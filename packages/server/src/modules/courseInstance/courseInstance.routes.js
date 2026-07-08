@@ -30,5 +30,8 @@ router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
 // 预检:只读,业务岗(.read 权限)可看阻挡原因;不做删除。
 // R-1105 GET /course-instances/:id/removable-check
 router.get('/:id/removable-check', mws.requirePermission('courseInstance.read'), asyncHandler(c.removableCheck))
+// 2026-07-08: 取消归档 (recover) — 把软删的开班恢复, 仍需超管+密码 (高风险)
+// R-1106 POST /course-instances/:id/recover
+router.post('/:id/recover', mws.requirePlatformPassword, asyncHandler(c.recover))
 
 module.exports = router

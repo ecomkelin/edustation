@@ -39,5 +39,10 @@ router.get('/:id/works', mws.requirePermission('studentWork.read'), asyncHandler
 // 「补课」：为已结束/已归档排课的某条未消课考勤补建一条 completed记录
 // R-1562 POST /lesson-attendances/:id/makeup
 router.post('/:id/makeup', mws.requirePermission('lessonAttendance.write'), v.makeup, mws.validateRequest, asyncHandler(c.makeup))
+// 2026-07-08: 归档 / 取消归档
+// R-1563 POST /lesson-attendances/:id/archive
+router.post('/:id/archive', mws.requirePermission('lessonAttendance.write'), asyncHandler(c.archive))
+// R-1564 POST /lesson-attendances/:id/unarchive
+router.post('/:id/unarchive', mws.requirePermission('lessonAttendance.write'), asyncHandler(c.unarchive))
 
 module.exports = router

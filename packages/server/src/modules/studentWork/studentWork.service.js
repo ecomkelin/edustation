@@ -131,10 +131,17 @@ async function list({
   maxLevel,
   page,
   pageSize,
-  sort
+  sort,
+  archived
 }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
+  // 2026-07-08: 归档过滤 — 默认隐藏, ?archived=true 才看历史
+  if (archived === true || archived === 'true') {
+    filter.archived = true
+  } else {
+    filter.archived = { $ne: true }
+  }
   if (lessonAttendance) filter.lessonAttendance = lessonAttendance
   if (lessonSchedule) filter.lessonSchedule = lessonSchedule
   if (courseInstance) filter.courseInstance = courseInstance
@@ -194,8 +201,9 @@ async function list({
 /**
  * 单条详情。
  * populate 全部 4 个 snapshot 字段 + student + uploadedBy。
+ * 2026-07-08: 已归档默认 403, ?includeArchived=true 绕过
  */
-async function detail({ id, orgId }) {
+async function detail({ id, orgId, includeArchived }) {
   const doc = await StudentWork.findOne({ _id: id, org: orgId })
     .populate('student', 'name')
     .populate('uploadedBy', 'realName mobile')
@@ -205,6 +213,9 @@ async function detail({ id, orgId }) {
     .populate('subject', 'name')
     .lean()
   if (!doc) throw ApiError.notFound('作品不存在')
+  if (doc.archived && !includeArchived) {
+    throw ApiError.forbidden('作品已归档,请在「已归档」列表中查看')
+  }
   return doc
 }
 
@@ -453,6 +464,7 @@ async function create({ orgId, operatorId, lessonAttendance, title, description,
 async function update({ id, orgId, payload }) {
   const doc = await StudentWork.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('作品不存在')
+  if (doc.archived) throw ApiError.unprocessable('作品已归档,不可编辑;请先取消归档')
 
   // 白名单 strip
   const ALLOWED = ['title', 'description', 'fileUrls', 'level']
@@ -538,4 +550,29 @@ async function removableCheck({ id, orgId }) {
   return { canRemove: true, blockers: [] }
 }
 
-module.exports = { list, detail, stats, create, update, remove, removableCheck, exportCsv }
+// ─── 归档 / 取消归档 (2026-07-08) ────────────────
+// 作品增长快, 软隐藏是首选; 反归档可逆
+// 权限: studentWork.delete 持有者 (与物理删除同权限, 但不用密码)
+async function archive({ id, orgId, actor }) {
+  const doc = await StudentWork.findOne({ _id: id, org: orgId })
+  if (!doc) throw ApiError.notFound('作品不存在')
+  if (doc.archived) return doc.toObject() // 幂等
+  doc.archived = true
+  doc.archivedAt = new Date()
+  doc.archivedBy = actor.id || actor.userId
+  await doc.save()
+  return doc.toObject()
+}
+
+async function unarchive({ id, orgId, actor }) {
+  const doc = await StudentWork.findOne({ _id: id, org: orgId })
+  if (!doc) throw ApiError.notFound('作品不存在')
+  if (!doc.archived) return doc.toObject() // 幂等
+  doc.archived = false
+  doc.archivedAt = null
+  doc.archivedBy = null
+  await doc.save()
+  return doc.toObject()
+}
+
+module.exports = { list, detail, stats, create, update, remove, removableCheck, exportCsv, archive, unarchive }

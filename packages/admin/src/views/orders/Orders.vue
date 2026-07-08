@@ -52,6 +52,10 @@
         <el-button @click="resetFilters">重置</el-button>
         <el-button v-if="canCreate" type="primary" @click="openCreate">新建订单</el-button>
       </el-form-item>
+      <!-- 2026-07-08: 已退款/已取消 开关 -->
+      <el-form-item>
+        <el-checkbox v-model="filter.showArchived" @change="load">显示已退款/已取消</el-checkbox>
+      </el-form-item>
     </el-form>
 
     <!-- ───── 列表 ───── -->
@@ -499,7 +503,9 @@ const filter = reactive({
   student: '',
   status: '',
   paymentMethod: '',
-  dateRange: []
+  dateRange: [],
+  // 2026-07-08: 显示已退款/已取消
+  showArchived: false
 })
 
 // ─── 新建弹窗状态 ───
@@ -733,6 +739,8 @@ async function load() {
       params.start = filter.dateRange[0]
       params.end = filter.dateRange[1]
     }
+    // 2026-07-08: 显示已退款/已取消
+    if (filter.showArchived) params.archived = 'true'
     const r = await orderApi.list(params)
     items.value = r.data.items || []
     total.value = r.data.total || 0

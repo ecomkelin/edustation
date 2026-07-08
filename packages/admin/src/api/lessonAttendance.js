@@ -12,5 +12,8 @@ export const lessonAttendanceApi = {
   works: (id) => http.get(`/lesson-attendances/${id}/works`),
   // 「补课」：为已结束/已归档排课的某条未消课考勤补建一条 completed记录
   // 返回 { attendance, studentProduct }：新考勤 + 扣减后的产品摘要
-  makeup: (id, data) => http.post(`/lesson-attendances/${id}/makeup`, data || {})
+  makeup: (id, data) => http.post(`/lesson-attendances/${id}/makeup`, data || {}),
+  // 2026-07-08: 归档 / 取消归档
+  archive: (id) => http.post(`/lesson-attendances/${id}/archive`),
+  unarchive: (id) => http.post(`/lesson-attendances/${id}/unarchive`)
 }

@@ -12,9 +12,14 @@ exports.list = async (req, res) =>
 
 /**
  * 单条详情。
+ * 2026-07-08: ?includeArchived=true 才能看已归档作品
  */
 exports.detail = async (req, res) =>
-  res.json(ApiResponse.ok(await s.detail({ id: req.params.id, orgId: req.orgId })))
+  res.json(ApiResponse.ok(await s.detail({
+    id: req.params.id,
+    orgId: req.orgId,
+    includeArchived: req.query.includeArchived === 'true' || req.query.includeArchived === true
+  })))
 
 /**
  * R-1670 GET /student-works/me (2026-07-01 立项)
@@ -103,3 +108,10 @@ exports.remove = async (req, res) =>
 
 exports.removableCheck = async (req, res) =>
   res.json(ApiResponse.ok(await s.removableCheck({ id: req.params.id, orgId: req.orgId })))
+
+// 2026-07-08: 归档 / 取消归档 (复用 studentWork.write 权限, 不需要超管+密码)
+exports.archive = async (req, res) =>
+  res.json(ApiResponse.ok(await s.archive({ id: req.params.id, orgId: req.orgId, actor: req.user })))
+
+exports.unarchive = async (req, res) =>
+  res.json(ApiResponse.ok(await s.unarchive({ id: req.params.id, orgId: req.orgId, actor: req.user })))

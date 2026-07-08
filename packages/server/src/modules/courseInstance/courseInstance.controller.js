@@ -4,7 +4,12 @@ const s = require('./courseInstance.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, ...req.query })))
-exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(req.params.id, req.orgId)))
+// 2026-07-08: 归档 tab 跳详情要带 ?includeArchived=true 才能拿到已软删的开班
+exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail(
+  req.params.id,
+  req.orgId,
+  req.query.includeArchived === 'true' || req.query.includeArchived === true
+)))
 // R-1101A GET /course-instances/:id/me — C 端开班详情,跳过 courseInstance.read 权限码,只校验 activeStudent
 exports.forClientStudent = async (req, res) => res.json(ApiResponse.ok(await s.forClientStudent({
   id: req.params.id,
@@ -15,6 +20,8 @@ exports.create = async (req, res) => res.status(201).json(ApiResponse.created(aw
 exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update(req.params.id, req.orgId, req.body)))
 exports.remove = async (req, res) => res.json(ApiResponse.ok(await s.softDelete(req.params.id, req.orgId, req.user.id, req.user.isPlatformAdmin)))
 exports.removableCheck = async (req, res) => res.json(ApiResponse.ok(await s.removableCheck(req.params.id, req.orgId)))
+// 2026-07-08: 取消归档 (从已软删恢复), 与软删对称
+exports.recover = async (req, res) => res.json(ApiResponse.ok(await s.recover({ id: req.params.id, orgId: req.orgId })))
 exports.setStatus = async (req, res) => res.json(ApiResponse.ok(await s.setStatus(
   req.params.id,
   req.orgId,

@@ -85,7 +85,14 @@ const StudentWorkSchema = new Schema(
     // 不在 immutable 列表里：员工可后期通过 PATCH 接口评/改/清
     level: { type: Number, min: 1, max: 5, default: null },
     // 实际上传者（老师/家长/学员本人）；用于审计和作品归属
-    uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
+    uploadedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    // ─── 归档 (2026-07-08) ──────────────────────────────
+    //   作品增长极快 (1 学员 1 学期 50+ 张), 半年后历史作品拉慢 list;
+    //   物理删除走 §8.1 (孤儿数据, 可删但不写旧) + 误操风险;
+    //   归档是"软隐藏", 反归档可逆, 默认 list 隐藏, ?archived=true 才看历史
+    archived: { type: Boolean, default: false, index: true },
+    archivedAt: { type: Date, default: null },
+    archivedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null }
   },
   { timestamps: true, collection: 'student_works' }
 )
@@ -126,6 +133,8 @@ StudentWorkSchema.index({ org: 1, courseInstance: 1, createdAt: -1 })
 StudentWorkSchema.index({ student: 1, createdAt: -1 })
 // 按考勤查作品（attendance.works 接口）
 StudentWorkSchema.index({ org: 1, lessonAttendance: 1 })
+// 2026-07-08: 归档过滤主索引 — list 默认 archived=false
+StudentWorkSchema.index({ org: 1, archived: 1, createdAt: -1 })
 // 同一考勤下 title 不能重复
 StudentWorkSchema.index({ lessonAttendance: 1, title: 1 }, { unique: true })
 

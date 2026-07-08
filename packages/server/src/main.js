@@ -38,6 +38,11 @@ async function bootstrap() {
   // - 每 60s: 1) 过期扫描; 2) 周期任务模板触发生成
   require('@modules/task/taskCron')
 
+  // 1.5.2 自动归档 cron (2026-07-08 §8.2 阶段 4 启动)
+  // - 每 12h tick 一次; 涵盖 Task(90d)/StudentWork(365d)/LessonAttendance(90d) 自动归档
+  // - 与 taskCron/petCron 一致: setInterval(...).unref() 不阻塞进程退出
+  require('@modules/common/archiveCron')
+
   // 1.6 Pet catalog 种子 (2026-06-22 user SVG 决策)
   // 启动时硬清三表 + 灌入内联 SVG 种子（platform 级共享）
   // 遵循 [[dev-stage-no-backcompat]] 开发期硬迁移原则

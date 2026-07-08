@@ -72,6 +72,10 @@
         <el-form-item>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
+        <!-- 2026-07-08: 归档开关 (LessonSchedule 用 status=archived) -->
+        <el-form-item>
+          <el-checkbox v-model="filters.showArchived" @change="load">显示已归档</el-checkbox>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -351,7 +355,9 @@ const filters = reactive({
   from: '',
   to: '',
   page: 1,
-  pageSize: 20
+  pageSize: 20,
+  // 2026-07-08: 归档开关 (LessonSchedule 用 status=archived)
+  showArchived: false
 })
 // 默认日期窗口:7 天前 0 点 起 30 天(到 today+29d 的 0 点)。
 // 用本地日期生成 YYYY-MM-DD 串(避开 toISOString 的 UTC 漂移)。
@@ -556,6 +562,8 @@ async function load() {
     }
     if (filters.from) params.from = filters.from
     if (filters.to) params.to = filters.to
+    // 2026-07-08: 归档过滤
+    if (filters.showArchived) params.archived = 'true'
     const r = await lessonScheduleApi.list(params)
     items.value = r.data.items
     total.value = r.data.total

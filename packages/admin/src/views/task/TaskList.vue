@@ -9,6 +9,8 @@
         </div>
       </div>
       <div class="actions">
+        <!-- 2026-07-08: 已归档开关 -->
+        <el-checkbox v-model="showArchived" @change="reload">显示已归档</el-checkbox>
         <el-radio-group v-model="view" size="default">
           <el-radio-button value="list">列表</el-radio-button>
           <el-radio-button value="kanban">看板</el-radio-button>
@@ -39,12 +41,14 @@
     </div>
 
     <!-- 列表视图 -->
-    <el-table v-if="view === 'list'" :data="rows" v-loading="loading" @row-click="goDetail" stripe>
+    <el-table v-if="view === 'list'" :data="rows" v-loading="loading" @row-click="goDetail" stripe
+      :row-class-name="rowCls">
       <el-table-column label="标题" min-width="240">
         <template #default="{ row }">
           <div class="title-cell">
             <span class="title-cell__title">{{ row.title }}</span>
             <el-tag v-if="row.fromTemplate" size="small" type="info" effect="plain">周期</el-tag>
+            <el-tag v-if="row.archived" size="small" type="warning" effect="plain">已归档</el-tag>
           </div>
           <div v-if="row.tags && row.tags.length" class="title-cell__tags">
             <el-tag v-for="t in row.tags" :key="t" size="small" effect="plain">{{ t }}</el-tag>
@@ -88,9 +92,11 @@
           <span :class="{ 'overdue': isOverdue(row) }">{{ formatDate(row.dueAt) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" link @click.stop="goDetail(row)">详情</el-button>
+          <el-button size="small" link @click.stop="goDetail(row, showArchived)">详情</el-button>
+          <el-button v-if="canDelete && !row.archived" size="small" link type="warning" @click.stop="onArchive(row)">归档</el-button>
+          <el-button v-if="canDelete && row.archived" size="small" link @click.stop="onUnarchive(row)">取消归档</el-button>
           <el-button v-if="canDelete" size="small" link type="danger" @click.stop="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -164,6 +170,8 @@ const typeLabels = TASK_TYPE_LABELS
 const priorityLabels = TASK_PRIORITY_LABELS
 
 const view = ref(route.query.view === 'kanban' ? 'kanban' : 'list')
+// 2026-07-08: 归档开关 — 默认隐藏已归档, ?showArchived=true 进 archived tab
+const showArchived = ref(route.query.archived === 'true')
 const filter = ref({
   myRole: '',
   status: '',
@@ -223,8 +231,8 @@ async function reload() {
 async function loadList() {
   loading.value = true
   try {
-    const params = { ...filter.value, page: page.value, pageSize: pageSize.value }
-    Object.keys(params).forEach((k) => { if (!params[k]) delete params[k] })
+    const params = { ...filter.value, page: page.value, pageSize: pageSize.value, archived: showArchived.value }
+    Object.keys(params).forEach((k) => { if (params[k] === '' || params[k] === null || params[k] === undefined) delete params[k] })
     const r = await taskApi.list(params)
     rows.value = r.data?.items || []
     total.value = r.data?.total || 0
@@ -254,7 +262,23 @@ async function loadStats() {
 
 function onPage(p) { page.value = p; loadList() }
 function onPageSize(s) { pageSize.value = s; page.value = 1; loadList() }
-function goDetail(row) { router.push(`/tasks/${row._id}`) }
+function rowCls({ row }) { return row.archived ? 'row-archived' : '' }
+function goDetail(row, fromArchivedTab = false) {
+  // 2026-07-08: 从归档 tab 点详情, 详情要 includeArchived=true 才能查到
+  const q = fromArchivedTab ? '?includeArchived=true' : ''
+  router.push(`/tasks/${row._id}${q}`)
+}
+
+async function onArchive(row) {
+  await taskApi.archive(row._id)
+  ElMessage.success('已归档')
+  await reload()
+}
+async function onUnarchive(row) {
+  await taskApi.unarchive(row._id)
+  ElMessage.success('已取消归档')
+  await reload()
+}
 
 const dcRef = ref(null)
 async function onDelete(row) {
@@ -274,6 +298,10 @@ async function doDelete({ row, password }) {
 
 watch(view, (v) => {
   router.replace({ query: { ...route.query, view: v } })
+  reload()
+})
+watch(showArchived, (v) => {
+  router.replace({ query: { ...route.query, archived: v ? 'true' : undefined } })
   reload()
 })
 
@@ -310,6 +338,15 @@ onMounted(reload)
 .kanban__card-title { font-weight: 500; font-size: 14px; flex: 1; }
 .kanban__card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: #909399; }
 .kanban__card-due.overdue { color: #f56c6c; font-weight: 500; }
+
+/* 2026-07-08: 归档行整体灰一档, 一眼能看出"已归档" */
+:deep(.el-table__row.row-archived) {
+  color: #909399;
+  background-color: #fafafa;
+}
+:deep(.el-table__row.row-archived:hover > td.el-table__cell) {
+  background-color: #f0f0f0 !important;
+}
 .kanban__empty { color: #c0c4cc; text-align: center; padding: 20px; font-size: 13px; }
 .assignee-chip { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: #409eff; color: #fff; font-size: 12px; margin-right: 2px; }
 </style>

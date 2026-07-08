@@ -12,7 +12,14 @@ module.exports = function requirePermission(perm) {
   return async function (req, res, next) {
     try {
       if (!req.user) throw ApiError.unauthorized()
-      if (req.user.isPlatformAdmin) return next()
+      // 2026-07-08: 平台超管视作"持所有权限" — 注入 ['*'] 通配符, 让下游 service 的
+      //   perms.includes('task.write') / 'student.delete' 等检查一致通过, 不必每个 service
+      //   单独写 `actor.isPlatformAdmin || perms.includes(code)` 短路
+      //   service 拿到的 `actor.permissions` 行为: 数组, includes() 永远 true
+      if (req.user.isPlatformAdmin) {
+        req.user.permissions = ['*']
+        return next()
+      }
 
       if (!req.orgId) throw ApiError.badRequest('缺少 x-org-id')
 

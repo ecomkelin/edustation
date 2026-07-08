@@ -79,3 +79,9 @@ exports.updateEvaluation = async (req, res) => res.json(
 exports.makeup = async (req, res) => res.json(
  ApiResponse.ok(await s.makeup({ id: req.params.id, orgId: req.orgId, ...req.body }))
 )
+
+// 2026-07-08: 归档 / 取消归档
+exports.archive = async (req, res) =>
+  res.json(ApiResponse.ok(await s.archive({ id: req.params.id, orgId: req.orgId, actor: req.user })))
+exports.unarchive = async (req, res) =>
+  res.json(ApiResponse.ok(await s.unarchive({ id: req.params.id, orgId: req.orgId, actor: req.user })))

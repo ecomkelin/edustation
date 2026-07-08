@@ -173,6 +173,46 @@ server/src/
 - 顶部切换机构，排课界面预留冲突检测。
 - 构建后由 Tauri 打包为桌面应用。在打包文档中写清楚如何打包。
 
+### 8.2 软归档 (Archived, 2026-07-08 立项)
+
+**为什么需要**: 任何"有时间维 + 业务终态"且**不能删**的实体, 数据量起来后**列表/看板/统计都会变慢**。`Task` / `StudentWork` / `LessonSchedule` / `CourseEnrollment` 等都是无限增长, 不能 §8.1 物理删除 (有引用), 但运营上又需要"老数据别总冒出来"。
+
+**两种范式** (按现有模型状态选):
+
+1. **独立字段** `archived: boolean` + `archivedAt/By` (新建模型)
+   - 例: `Task` / `StudentWork` / `LessonAttendance`
+   - 优势: 与 status 完全正交, 业务状态机不受影响
+   - 复合索引 `{org, archived, status, dueAt}` 一把覆盖
+
+2. **复用现有字段** (老模型)
+   - `CourseInstance` 复用 `deletedAt` (CLAUDE.md §8.1 软删) — 加 `recover` 端点
+   - `CourseEnrollment` 复用 `status=archived` (status enum 已有)
+   - `LessonSchedule` 复用 `status=archived` (status enum 已有)
+   - `StudentProduct` 复用 `isActive` — `?archived=true` 即 `isActive=false`
+   - `Order` 复用 `status ∈ {refunded, cancelled, completed}` — 业务终态即归档
+
+**统一约定** (全代码库共通):
+
+- `?archived=true` query 才看历史, 默认隐藏 (与 deletedAt 软删语义统一)
+- `?includeArchived=true` 详情 bypass 403 (用于归档 tab 跳详情)
+- 所有**写操作**拦截已归档: `if (doc.archived) throw ApiError.unprocessable('已归档, 不可操作')`
+- 行操作走 `archive / unarchive` 端点, 不走 §8.1 (无密码), 复用 `xxx.delete` 权限
+- 前端统一 `<el-checkbox v-model="filter.showArchived" @change="load">显示已归档</el-checkbox>` + 行加 chip + 灰一档 (`.row-archived { color: #909399; background: #fafafa }`)
+- 已归档行不可点编辑/删除/审批等写按钮 (前端 v-if 隐藏, 后端兜底)
+
+**自动归档 cron 计划** (阶段 4):
+- `Task`: `status ∈ {approved, cancelled, expired} && dueAt < now-90d` → 自动归档
+- `StudentWork`: `createdAt < now-365d` → 自动归档 (作品生命周期短, 1 年足够)
+- `LessonSchedule`: `status=archived` (本就是终态) → 90 天后改 `archived: true` 软隐藏
+- `LessonAttendance`: 跟随 `LessonSchedule.archived` 级联
+
+**禁止**:
+- ❌ 在 status enum 加 `archived` 状态机污染 (业务终态 vs 运维动作, 语义不同)
+- ❌ archive 用 §8.1 物理删除的"密码"流程 (它是软操作, 不需要二次密码)
+- ❌ 物理删除 + 归档 用同一端点 (语义糊, 用户分不清)
+
+---
+
 ## 11. 客户端 (uni-app)
 - 家长登录后始终显示当前孩子，单子女时简化但保留切换元素。
 - 页面：首页（课表）、宠物乐园、分享、我的。

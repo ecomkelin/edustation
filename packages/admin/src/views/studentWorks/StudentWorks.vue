@@ -31,6 +31,8 @@
         </el-radio-group>
       </div>
       <div class="toolbar-right">
+        <!-- 2026-07-08: 归档开关 -->
+        <el-checkbox v-model="filter.showArchived" @change="reloadAll">显示已归档</el-checkbox>
         <el-button :icon="Download" @click="onExport">导出 CSV</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">新增作品</el-button>
       </div>
@@ -161,9 +163,13 @@
           {{ formatDate(row.createdAt, 'YYYY-MM-DD HH:mm') }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" link type="primary" @click.stop="openEdit(row)">编辑</el-button>
+          <el-button v-if="!row.archived" size="small" link type="primary" @click.stop="openEdit(row)">编辑</el-button>
+          <!-- 2026-07-08: 归档/取消归档 -->
+          <el-button v-if="canWrite && !row.archived" size="small" link type="warning" @click.stop="onArchive(row)">归档</el-button>
+          <el-button v-if="canWrite && row.archived" size="small" link @click.stop="onUnarchive(row)">取消归档</el-button>
+          <el-tag v-if="row.archived" size="small" type="warning" effect="plain">已归档</el-tag>
           <DestructiveConfirm
             v-if="canDelete"
             :target="`作品 ${row.title}`"
@@ -552,6 +558,8 @@ function buildParams() {
     params.createdAtFrom = filter.dateRange[0]
     params.createdAtTo = filter.dateRange[1]
   }
+  // 2026-07-08: 归档过滤 — 默认隐藏, ?archived=true 才看历史
+  if (filter.showArchived) params.archived = 'true'
   return params
 }
 
@@ -691,6 +699,27 @@ async function onRemoveConfirm(row, { password }) {
     loadStats()
   } catch (e) {
     await handleRemoveError(e, '无法删除 · 中风险', `作品 ${row.title}`)
+  }
+}
+
+// ─── 2026-07-08: 归档 / 取消归档 ──────────────────────
+const canWrite = computed(() => hasPermInOrg(auth, 'studentWork.write'))
+async function onArchive(row) {
+  try {
+    await studentWorkApi.archive(row._id)
+    ElMessage.success('已归档')
+    load()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '归档失败')
+  }
+}
+async function onUnarchive(row) {
+  try {
+    await studentWorkApi.unarchive(row._id)
+    ElMessage.success('已取消归档')
+    load()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '取消归档失败')
   }
 }
 

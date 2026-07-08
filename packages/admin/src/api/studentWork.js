@@ -2,7 +2,8 @@ import http from './http'
 
 export const studentWorkApi = {
   list: (params) => http.get('/student-works', { params }),
-  detail: (id) => http.get(`/student-works/${id}`),
+  // 2026-07-08: 已归档作品默认 403, 详情要 includeArchived=true 绕过
+  detail: (id, { includeArchived } = {}) => http.get(`/student-works/${id}`, { params: includeArchived ? { includeArchived: 'true' } : {} }),
   /**
    * 创建作品。文件先经 /storage/upload-many?scope=work 上传后拿到 fileIds，
    * 再以 JSON 形式调本端点。
@@ -13,6 +14,9 @@ export const studentWorkApi = {
   update: (id, payload) => http.patch(`/student-works/${id}`, payload),
   remove: (id, { password } = {}) => http.delete(`/student-works/${id}`, { data: { password } }),
   removableCheck: (id) => http.get(`/student-works/${id}/removable-check`),
+  // 2026-07-08: 归档 / 取消归档 (软隐藏, 不需要密码)
+  archive: (id) => http.post(`/student-works/${id}/archive`),
+  unarchive: (id) => http.post(`/student-works/${id}/unarchive`),
   /**
    * R-1606 GET /student-works/stats
    * 顶部 KPI：本期作品数 / 已评数 / 未评数 / 平均等级，对比上一期

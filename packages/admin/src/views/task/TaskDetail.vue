@@ -1,5 +1,10 @@
 <template>
   <div class="page" v-loading="loading">
+    <!-- 2026-07-08: 归档态顶部 banner 提醒, 操作按钮全禁用 -->
+    <el-alert v-if="task.archived" type="warning" show-icon :closable="false" class="archive-banner"
+      title="该任务已归档"
+      description="所有写操作 (编辑/提交/审批/取消/勾选/评论) 已被后端拦截, 如需修改请先「取消归档」。">
+    </el-alert>
     <div class="page__header">
       <div>
         <h2>{{ task.title }}</h2>
@@ -16,6 +21,9 @@
         <el-button v-if="canReview" type="success" @click="openReview('approved')">通过</el-button>
         <el-button v-if="canReview" type="warning" @click="openReview('rejected')">打回</el-button>
         <el-button v-if="canCancel" @click="openCancel">取消任务</el-button>
+        <!-- 2026-07-08: 归档按钮 (task.delete 权限) -->
+        <el-button v-if="canDelete && !task.archived" type="warning" plain @click="onArchive">归档</el-button>
+        <el-button v-if="canDelete && task.archived" plain @click="onUnarchive">取消归档</el-button>
         <el-button v-if="canDelete" type="danger" @click="onDelete">删除</el-button>
       </div>
     </div>
@@ -49,6 +57,14 @@
               <span v-if="it.done && it.doneBy" class="items__meta">
                 ✓ {{ userName(it.doneBy) }} · {{ formatDate(it.doneAt) }}
               </span>
+              <el-button
+                v-if="canRemoveItem(it)"
+                size="small"
+                type="danger"
+                link
+                :icon="Delete"
+                :loading="itemRemovingId === it._id"
+                @click="onRemoveItem(it)" />
             </div>
             <div v-if="items.length === 0" class="items__empty">暂无条目</div>
           </div>
@@ -189,7 +205,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Delete } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermInOrg } from '@/utils/permissionHelper'
@@ -268,10 +284,39 @@ function canToggleItem(it) {
   return String(it.assignee?._id || it.assignee) === myId.value || hasPermInOrg(auth, 'task.write')
 }
 
+// 2026-07-08: 允许删除条目的条件 — 与 service.removeItem 对齐
+//   条目 assignee 本人 / 任务 creator / 平台超管 / task.write / task.delete 任一即可
+//   (解死锁: creator 想删整个任务, 必先能清空它的 checklist)
+function canRemoveItem(it) {
+  if (task.value.archived) return false
+  if (isFinal.value) return false
+  if (isCreator.value) return true
+  if (String(it.assignee?._id || it.assignee) === myId.value) return true
+  if (hasPermInOrg(auth, 'task.write')) return true
+  if (hasPermInOrg(auth, 'task.delete')) return true
+  return false
+}
+
+const itemRemovingId = ref(null)
+async function onRemoveItem(it) {
+  if (!confirm(`确认删除 checklist 条目「${it.title}」?`)) return
+  itemRemovingId.value = it._id
+  try {
+    await taskApi.removeItem(route.params.id, it._id)
+    ElMessage.success('已删除条目')
+    await loadDetail()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '删除失败')
+  } finally {
+    itemRemovingId.value = null
+  }
+}
+
 async function loadDetail() {
   loading.value = true
   try {
-    const r = await taskApi.detail(route.params.id)
+    // 2026-07-08: includeArchived=true 当从归档 tab 跳过来时 query 上有, 否则不传 (默认 403 已归档)
+    const r = await taskApi.detail(route.params.id, { includeArchived: route.query.includeArchived === 'true' })
     task.value = r.data || {}
     items.value = r.data?.items || []
     reviews.value = r.data?.reviews || []
@@ -281,6 +326,17 @@ async function loadDetail() {
   } finally {
     loading.value = false
   }
+}
+
+async function onArchive() {
+  await taskApi.archive(route.params.id)
+  ElMessage.success('已归档')
+  await loadDetail()
+}
+async function onUnarchive() {
+  await taskApi.unarchive(route.params.id)
+  ElMessage.success('已取消归档')
+  await loadDetail()
 }
 
 async function onToggleItem(it, done) {
@@ -389,6 +445,7 @@ onMounted(loadDetail)
 
 <style scoped>
 .page { padding: 16px; }
+.archive-banner { margin-bottom: 12px; }
 .page__header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
 .meta { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 .meta__item { color: #909399; font-size: 13px; }

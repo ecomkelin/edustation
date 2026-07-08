@@ -103,7 +103,7 @@ function conflictResponsePayload(conflict) {
   return Array.from(map.values())
 }
 
-async function list({ orgId, from, to, courseInstance, teacher, room, statuses, page, pageSize, isTrialLesson }) {
+async function list({ orgId, from, to, courseInstance, teacher, room, statuses, page, pageSize, isTrialLesson, archived }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (courseInstance) filter.courseInstance = courseInstance
@@ -115,10 +115,18 @@ async function list({ orgId, from, to, courseInstance, teacher, room, statuses, 
   // 状态筛选: 数组 / 逗号分隔字符串
   //  - statuses: 数组 (axios paramsSerializer 把 ?statuses=a&statuses=b 展成数组)
   //  - statuses: 字符串 'a,b,c' (前端 join 后的扁平串)
+  // 2026-07-08: 归档过滤 — LessonSchedule 用 status=archived 标记
+  //   显式 statuses 优先; 否则 ?archived=true 只看已归档, 默认排除 archived
   let rawStatuses = []
   if (Array.isArray(statuses)) rawStatuses = statuses
   else if (typeof statuses === 'string' && statuses.length) {
     rawStatuses = statuses.split(',').map((s) => s.trim()).filter(Boolean)
+  }
+  if (rawStatuses.length === 0 && (archived === true || archived === 'true')) {
+    rawStatuses = ['archived']
+  } else if (rawStatuses.length === 0) {
+    // 默认排除 archived (用 $nin 更稳, 不耦合 enum 值)
+    filter.status = { $nin: ['archived'] }
   }
   if (rawStatuses.length === 1) filter.status = rawStatuses[0]
   else if (rawStatuses.length > 1) filter.status = { $in: rawStatuses }

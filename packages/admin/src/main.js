@@ -11,7 +11,27 @@ import { useAuthStore } from './stores/auth'
 import { useSiteConfigStore } from './stores/siteConfig'
 import './styles/index.scss'
 
+// 2026-07-08: 过滤 Vue 3 dev mode 已知误报 — "Property X was accessed during render but is
+//   not defined on instance"。Vue 3.4 + <script setup> + Element Plus 2.7 组合下, EP 的
+//   useFormItem / ElTabs 内部 watch 触发 instance.proxy[key], key 可能是 'reload' 等
+//   内部组件方法, dev warn 误报成模板未定义。功能不受影响, 仅 dev mode console 噪音。
+//   仅当不是真正的 props/emit 警告时才沉默; 真错误仍走 console.error。
+const KNOWN_FALSE_POSITIVE_RENDER_PATTERNS = [
+  /Property ["']?[a-zA-Z]+["']? was accessed during render but is not defined on instance/,
+  // Vue 3.4 还在 ElFormItem 的 addInputId/removeInputId 触发另一种 warn
+  /Set operation on key ["']?\w+["']? failed: target is readonly/
+]
+
 const app = createApp(App)
+
+// 必须在 createApp 之后挂 (TDZ: app 是 const, 创建前访问会抛 ReferenceError)
+app.config.warnHandler = (msg, instance, trace) => {
+  if (typeof msg === 'string' && KNOWN_FALSE_POSITIVE_RENDER_PATTERNS.some((re) => re.test(msg))) {
+    return  // 已知误报, 静默
+  }
+  // 其余 warn / trace 走原生通道
+  console.warn(`[Vue warn]: ${msg}${trace ? `\n${trace}` : ''}`)
+}
 
 // 全局注册 ElementPlus 图标
 for (const [key, comp] of Object.entries(ElIcons)) {

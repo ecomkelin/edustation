@@ -269,11 +269,21 @@ async function create({ orgId, student, items, actualPrice, paymentMethod, paidA
   return populated
 }
 
-async function list({ orgId, student, status, page, pageSize }) {
+async function list({ orgId, student, status, page, pageSize, archived }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (student) filter.student = student
-  if (status) filter.status = status
+  // 2026-07-08: 终态过滤 — 订单已退款 / 已取消不参与日常业务, 默认隐藏
+  //   - 显式 status: 严格按用户
+  //   - ?archived=true: 只看终态 (refunded/cancelled/completed)
+  //   - 默认: 排除终态
+  if (status) {
+    filter.status = status
+  } else if (archived === true || archived === 'true') {
+    filter.status = { $in: ['refunded', 'cancelled', 'completed'] }
+  } else {
+    filter.status = { $nin: ['refunded', 'cancelled', 'completed'] }
+  }
   const [items, total] = await Promise.all([
     Order.find(filter)
       .populate('student', 'name org')

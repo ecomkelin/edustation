@@ -11,6 +11,10 @@
         <el-form-item>
           <el-button type="primary" @click="openCreate">新建开班</el-button>
         </el-form-item>
+        <!-- 2026-07-08: 已归档开关 (CourseInstance 用 deletedAt 软删) -->
+        <el-form-item>
+          <el-checkbox v-model="filters.showArchived" @change="load">显示已归档</el-checkbox>
+        </el-form-item>
         <el-form-item label="开班名称">
           <el-input v-model="filters.keyword" clearable placeholder="模糊搜索" style="width: 180px" @input="onKeywordInput" />
         </el-form-item>
@@ -159,15 +163,32 @@
         </template>
       </el-table-column>
       <!--
-        操作列 (2026-07-06 瘦身: 380→200, 「误操删除」搬到详情页 footer)。
-        列表只留两个高频入口「报名信息 / 排课信息」; 危险操作走详情抽屉走
-        canDelete 校验(仅超管 + 仅 planning/cancelled), 物理视觉上远离高频操作,
-        避免误触, 与 CLAUDE.md §8.1 三重防护一致。
+        操作列 (2026-07-06 进一步瘦身再扩: 200→260, 把「改状态」加回来)。
+        列表入口: 报名信息 / 排课信息 / 改状态。
+        「改状态」+「误操删除」都做"不可用也显示 + hover tooltip" 范式, 详情页 footer 只剩「关闭 / 取消 / 编辑」三类。
       -->
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button size="small" type="primary" @click="openEnrollmentInfo(row)">报名信息</el-button>
           <el-button size="small" @click="openScheduleInfo(row)">排课信息</el-button>
+          <!--
+            改状态按钮 (2026-07-06 用户决策: 状态变更高频, 列表直接操作; 不可用 hover tooltip 说明)
+            - 始终渲染, disabled 由 changeStatusDisabledReason 决定
+            - el-tooltip 触发条件: 有 disabled 原因时
+          -->
+          <el-tooltip
+            :content="changeStatusDisabledReason(row)"
+            placement="top"
+            :disabled="!changeStatusDisabledReason(row)"
+          >
+            <span class="inline-block">
+              <el-button
+                size="small"
+                :disabled="!canChangeStatus(row)"
+                @click="openStatusDialog(row)"
+              >改状态</el-button>
+            </span>
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
@@ -763,7 +784,7 @@
               </span>
             </el-tooltip>
             <el-button v-if="detailRow && canCancel(detailRow)" type="warning" @click="openCancelDialog(detailRow)">取消</el-button>
-            <el-button v-if="detailRow && canChangeStatus(detailRow)" @click="openStatusDialog(detailRow)">改状态</el-button>
+            <!-- 2026-07-06: 「改状态」搬到列表操作列(高频入口), 详情页 footer 不再展示 -->
             <el-button v-if="detailRow" type="primary" @click="openEdit(detailRow)">编辑</el-button>
           </div>
         </div>
@@ -1216,7 +1237,9 @@ const filters = reactive({
   subject: '',
   teacher: '',
   room: '',
-  statuses: [...DEFAULT_STATUS_FILTER]
+  statuses: [...DEFAULT_STATUS_FILTER],
+  // 2026-07-08: 归档开关 (CourseInstance 用 deletedAt 软删, 列表过滤语义)
+  showArchived: false
 })
 
 // 搜索框 300ms 防抖：避免每按一个键就触发一次 load
@@ -1578,6 +1601,21 @@ function deleteDisabledReason(row) {
   if (!auth.isPlatformAdmin) return '仅平台超管可执行该操作'
   if (!['planning', 'cancelled'].includes(row.status)) {
     return `当前开班状态为「${statusLabel(row.status)}」, 需先切到「筹备」或「已取消」后才能物理删除(已招生/已上课的开班请用「取消」)`
+  }
+  return ''
+}
+
+// 「改状态」按钮 disabled 时的原因 (2026-07-06 用户决策: 改状态搬到列表, 不可用时也保持可见+hover 说明)
+// 返回空字符串 = 可执行(不显示 tooltip)
+function changeStatusDisabledReason(row) {
+  if (!row) return '开班数据未加载'
+  // cancelled 复生: 仅超管可见
+  if (row.status === 'cancelled' && !auth.isPlatformAdmin) return '仅平台超管可从「已取消」复生开班'
+  // closed 是真正的终态, 不可逆
+  if (row.status === 'closed') return `当前开班已「已结班」, 终态不可变更`
+  // 其他状态: 看 STATUS_NEXT 有没有下一步
+  if ((STATUS_NEXT[row.status] || []).length === 0) {
+    return `当前开班状态「${statusLabel(row.status)}」没有可选的下一状态`
   }
   return ''
 }
@@ -2112,6 +2150,8 @@ async function load() {
     if (filters.room) params.room = filters.room
     // statuses 多选用逗号串发；空数组表示"全部不选 → 后端返回空"
     params.statuses = filters.statuses.join(',')
+    // 2026-07-08: 归档过滤 (CourseInstance 用 deletedAt 当软删/归档)
+    if (filters.showArchived) params.archived = 'true'
     const r = await courseInstanceApi.list(params)
     list.value = r.data
   } finally {

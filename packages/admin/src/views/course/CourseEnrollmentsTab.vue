@@ -88,6 +88,10 @@
         <el-button @click="openRecover">补报(进行中开班)</el-button>
         <el-button @click="resetFilters">重置</el-button>
       </el-form-item>
+      <!-- 2026-07-08: 归档开关 (CourseEnrollment 用 status=archived) -->
+      <el-form-item>
+        <el-checkbox v-model="filter.showArchived" @change="load">显示已归档</el-checkbox>
+      </el-form-item>
     </el-form>
 
     <el-table :data="items" v-loading="loading" style="margin-top: 12px">
@@ -288,7 +292,9 @@ const filter = reactive({
   student: '',
   status: '',
   enrolledFrom: '',
-  enrolledTo: ''
+  enrolledTo: '',
+  // 2026-07-08: 归档开关 (CourseEnrollment 用 status=archived 标记)
+  showArchived: false
 })
 const enrolledDateRange = ref([])
 function onEnrolledDateChange(v) {
@@ -414,6 +420,8 @@ async function load() {
     if (filter.enrolledFrom) params.enrolledFrom = filter.enrolledFrom
     if (filter.enrolledTo) params.enrolledTo = filter.enrolledTo
     if (filter.status) params.status = filter.status
+    // 2026-07-08: 归档过滤 (CourseEnrollment 用 status=archived)
+    if (filter.showArchived) params.archived = 'true'
     const r = await courseEnrollmentApi.list(params)
     items.value = r.data.items
     total.value = r.data.total

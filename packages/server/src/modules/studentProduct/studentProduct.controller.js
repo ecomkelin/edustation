@@ -11,8 +11,15 @@ exports.getUsage = async (req, res) => res.json(ApiResponse.ok(await s.getUsage(
 
 // C 端 /student-products/me (R-2079 2026-07-01): 当前 active child 的 StudentProduct
 // 复用 service.list,强制 student=req.activeStudentId,避免越权读到别人孩子的课包
+// 2026-07-08: C 端要包括已用完/过期的课包 (顶部展示全部), 不走 service.list 默认的 isActive=true
+//   显式传 isActive=undefined 绕过, 同时忽略 req.query 里的 archived (C 端无归档概念)
 exports.mine = async (req, res) =>
-  res.json(ApiResponse.ok(await s.list({ orgId: req.orgId, student: req.activeStudentId, ...req.query })))
+  res.json(ApiResponse.ok(await s.list({
+    orgId: req.orgId,
+    student: req.activeStudentId,
+    isActive: undefined,
+    archived: undefined
+  })))
 
 /**
  * 赠课：员工直接为学生创建一个 StudentProduct（source='gift'）。

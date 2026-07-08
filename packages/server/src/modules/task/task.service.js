@@ -13,7 +13,9 @@
  *   - 进度 (Task.progress + assignees[].progress) 由 service 显式聚合并写回,
  *     列表/看板读取时不用每次重算 (避免 N+1 与 5k 行的 TaskItem 全表扫)
  *   - 状态机的"全员 submitted 才进 submitted"由 service 在每次勾选/提交后重算
- *   - 物理删除走 §8.1 三重防护: 路由 requirePlatformPassword + service removableCheck
+ *   - 物理删除走 §8.1 弱化版 (2026-07-08 改, 工作流类特殊): 路由 requirePermission('task.delete') +
+ *     requireBodyPassword (密码二次确认, 不限超管) + service.remove 校验「平台超管 OR 任务 creator」+ removableCheck
+ *     (区别: 核心实体 Org/CourseProduct/Room 等仍走 requirePlatformPassword 强门挡)
  */
 
 const Task = require('@models/Task.model')
@@ -163,9 +165,16 @@ async function canViewTask(actor, task) {
 
 // ─── 列表 ──────────────────────────────────────
 
-async function list({ orgId, status, type, priority, assignee, creator, supervisor, myRole, keyword, dueBefore, dueAfter, page, pageSize, actor }) {
+async function list({ orgId, status, type, priority, assignee, creator, supervisor, myRole, keyword, dueBefore, dueAfter, page, pageSize, archived, actor }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
+  // 2026-07-08: 归档过滤 — 默认隐藏已归档, ?archived=true 才看历史
+  //   undefined → 默认 false (隐藏); 'true' / true → 看归档
+  if (archived === true || archived === 'true') {
+    filter.archived = true
+  } else {
+    filter.archived = { $ne: true }
+  }
   if (status) filter.status = status
   if (type) filter.type = type
   if (priority) filter.priority = priority
@@ -211,7 +220,7 @@ async function list({ orgId, status, type, priority, assignee, creator, supervis
 
 // ─── 详情 ──────────────────────────────────────
 
-async function detail({ id, orgId, actor }) {
+async function detail({ id, orgId, includeArchived, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
     .populate('creator', 'realName avatar')
     .populate('assignees.user', 'realName avatar')
@@ -221,6 +230,11 @@ async function detail({ id, orgId, actor }) {
   // 可见性
   if (!(await canViewTask(actor, task))) {
     throw ApiError.forbidden('无权查看该任务')
+  }
+  // 2026-07-08: 已归档的任务默认不可看 (前端要先 toggle "显示已归档" 才能看)
+  //   反向场景: 前端在归档 tab 里点"查看详情", 必须显式传 includeArchived=true 绕过
+  if (task.archived && !includeArchived) {
+    throw ApiError.forbidden('任务已归档,请在「已归档」列表中查看')
   }
   // 关联 items / reviews / comments
   const [items, reviews, comments] = await Promise.all([
@@ -287,6 +301,7 @@ async function create({ orgId, title, description, type, priority, creator, assi
 async function update({ id, orgId, body, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
   if (!task) throw ApiError.notFound('任务不存在')
+  assertNotArchived(task)
   // 权限: creator / 持有 task.write
   const perms = (actor && actor.permissions) || []
   const isCreator = String(task.creator) === String(actor.userId)
@@ -332,7 +347,7 @@ function taskUsageChecks(orgId, taskId) {
       model: TaskItem,
       filter: { org: orgId, task: taskId },
       label: '任务条目',
-      hint: '请先删除该任务的 checklist 条目'
+      hint: '请先在任务详情页右侧 checklist 区域, 用条目后的「删除」按钮清空条目'
     },
     {
       model: TaskReview,
@@ -349,9 +364,18 @@ function taskUsageChecks(orgId, taskId) {
   ]
 }
 
-async function remove({ id, orgId }) {
-  const task = await Task.findOne({ _id: id, org: orgId }).select('_id status').lean()
+async function remove({ id, orgId, actor }) {
+  const task = await Task.findOne({ _id: id, org: orgId }).select('_id status creator').lean()
   if (!task) throw ApiError.notFound('任务不存在')
+  // 2026-07-08: 业务权限 — 平台超管 OR 任务 creator 本人才能物理删除
+  //   (路由层 requirePermission('task.delete') + requireBodyPassword 已挡了一轮;
+  //    这里再加 creator 校验, 防止 task.delete 持有者删别人的任务)
+  if (!actor) throw ApiError.unauthorized()
+  const isPlatformAdmin = !!actor.isPlatformAdmin
+  const isCreator = String(task.creator) === String(actor.userId)
+  if (!isPlatformAdmin && !isCreator) {
+    throw ApiError.forbidden('仅任务创建人或平台超管可物理删除该任务')
+  }
   await removable.assertUnused(orgId, taskUsageChecks(orgId, id))
   // 级联删除子表
   await Promise.all([
@@ -383,11 +407,54 @@ async function removableCheck({ id, orgId }) {
   return removable.check(orgId, taskUsageChecks(orgId, id))
 }
 
+// ─── 归档 / 取消归档 (2026-07-08) ────────────────
+// 归档是「软隐藏」, 反归档可逆, 与 §8.1 物理删除互为补充:
+//   - 物理删除: 移除所有子表 + 任务本体, 不可逆, 走超管+密码
+//   - 归档: 只翻 archived 标志位, 子表保留, 列表/看板/统计默认隐藏
+// 权限: task.delete 持有者 (超管默认 true)
+async function archive({ id, orgId, actor }) {
+  const task = await Task.findOne({ _id: id, org: orgId })
+  if (!task) throw ApiError.notFound('任务不存在')
+  if (task.archived) {
+    return task.toObject() // 幂等
+  }
+  task.archived = true
+  task.archivedAt = new Date()
+  task.archivedBy = actor.userId
+  await task.save()
+  return task.toObject()
+}
+
+async function unarchive({ id, orgId, actor }) {
+  const task = await Task.findOne({ _id: id, org: orgId })
+  if (!task) throw ApiError.notFound('任务不存在')
+  if (!task.archived) {
+    return task.toObject() // 幂等
+  }
+  task.archived = false
+  task.archivedAt = null
+  task.archivedBy = null
+  await task.save()
+  return task.toObject()
+}
+
+/**
+ * 内部工具: 校验写操作时 task 未归档
+ * 列表/详情/归档/取消归档/物理删除 走自己的 filter (已 include archived);
+ * 写操作 (update/submit/review/cancel/addItem/toggleItem/addComment) 必须确保没归档
+ */
+function assertNotArchived(task) {
+  if (task && task.archived) {
+    throw ApiError.unprocessable('任务已归档,不可操作;请先取消归档')
+  }
+}
+
 // ─── 状态机：执行人提交 ────────────────────────
 
 async function submit({ id, orgId, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
   if (!task) throw ApiError.notFound('任务不存在')
+  assertNotArchived(task)
   if (!['assigned', 'in_progress', 'partial_submitted', 'rejected'].includes(task.status)) {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可提交`)
   }
@@ -416,6 +483,7 @@ async function submit({ id, orgId, actor }) {
 async function review({ id, orgId, result, comment, score, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
   if (!task) throw ApiError.notFound('任务不存在')
+  assertNotArchived(task)
   // 监督人校验
   const isSupervisor = task.supervisors.some((s) => String(s) === String(actor.userId))
   if (!isSupervisor) {
@@ -456,6 +524,7 @@ async function review({ id, orgId, result, comment, score, actor }) {
 async function cancel({ id, orgId, reason, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
   if (!task) throw ApiError.notFound('任务不存在')
+  assertNotArchived(task)
   if (['approved', 'cancelled', 'expired'].includes(task.status)) {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可取消`)
   }
@@ -480,11 +549,13 @@ async function cancel({ id, orgId, reason, actor }) {
 // ─── 条目操作 ──────────────────────────────────
 
 async function addItem({ id, orgId, item, actor }) {
-  const task = await Task.findOne({ _id: id, org: orgId }).select('assignees').lean()
+  const task = await Task.findOne({ _id: id, org: orgId }).select('assignees status archived').lean()
   if (!task) throw ApiError.notFound('任务不存在')
+  if (task.archived) throw ApiError.unprocessable('任务已归档,不可加条目')
   if (task.status === 'approved' || task.status === 'cancelled' || task.status === 'expired') {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可加条目`)
   }
+  // 校验 assignee ⊂ assignees
   // 校验 assignee ⊂ assignees
   const ok = task.assignees.some((a) => String(a.user) === String(item.assignee))
   if (!ok) throw ApiError.badRequest('条目执行人必须在任务执行人列表中')
@@ -500,14 +571,16 @@ async function addItem({ id, orgId, item, actor }) {
 }
 
 async function toggleItem({ id, itemId, orgId, done, assignee, actor }) {
-  const task = await Task.findOne({ _id: id, org: orgId }).select('assignees status').lean()
+  const task = await Task.findOne({ _id: id, org: orgId }).select('assignees status archived').lean()
   if (!task) throw ApiError.notFound('任务不存在')
+  if (task.archived) throw ApiError.unprocessable('任务已归档,不可勾选条目')
   if (task.status === 'approved' || task.status === 'cancelled' || task.status === 'expired') {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可勾选条目`)
   }
   const item = await TaskItem.findOne({ _id: itemId, org: orgId, task: id })
   if (!item) throw ApiError.notFound('条目不存在')
   // 权限: 条目 assignee 本人 / task.write
+  // (requirePermission 已为 isPlatformAdmin 注入 ['*'] 通配符, perms.includes() 始终 true)
   const perms = (actor && actor.permissions) || []
   const isAssignee = String(item.assignee) === String(actor.userId)
   if (!isAssignee && !perms.includes('task.write')) {
@@ -530,11 +603,38 @@ async function toggleItem({ id, itemId, orgId, done, assignee, actor }) {
   return item.toObject()
 }
 
+// 删除条目 (2026-07-08): 配合挡板, 让用户删空 checklist 后能物理删除整个任务
+async function removeItem({ id, itemId, orgId, actor }) {
+  const task = await Task.findOne({ _id: id, org: orgId }).select('_id status archived creator').lean()
+  if (!task) throw ApiError.notFound('任务不存在')
+  if (task.archived) throw ApiError.unprocessable('任务已归档,不可删条目;请先取消归档')
+  if (task.status === 'approved' || task.status === 'cancelled' || task.status === 'expired') {
+    throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可删条目`)
+  }
+  // 2026-07-08 扩: 权限模型从「assignee/task.write」扩到「assignee/task.write/task.delete/任务 creator」
+  //   死锁场景: 任务创建者想删整个任务, 但他不是 item.assignee, 又没 task.write → 永远清不掉 checklist
+  //   → 任务本身也永远删不掉. 加 task.delete 持有者 (任务模块超管) + 任务 creator 两条, 解死锁.
+  //   (requirePermission 已为 isPlatformAdmin 注入 ['*'] 通配符, perms.includes() 始终 true)
+  const perms = (actor && actor.permissions) || []
+  const item = await TaskItem.findOne({ _id: itemId, org: orgId, task: id }).select('assignee')
+  if (!item) throw ApiError.notFound('条目不存在')
+  const isAssignee = String(item.assignee) === String(actor.userId)
+  const isCreator = String(task.creator) === String(actor.userId)
+  const isPlatformAdmin = !!(actor && actor.isPlatformAdmin)
+  if (!isAssignee && !isCreator && !isPlatformAdmin && !perms.includes('task.write') && !perms.includes('task.delete')) {
+    throw ApiError.forbidden('只能删除分配给自己的条目,或持有 task.write/task.delete,或是任务创建人')
+  }
+  await TaskItem.deleteOne({ _id: itemId, org: orgId, task: id })
+  await recomputeTaskState(id)
+  return { success: true, id: itemId }
+}
+
 // ─── 评论 ──────────────────────────────────────
 
 async function addComment({ id, orgId, content, mentions, actor }) {
-  const task = await Task.findOne({ _id: id, org: orgId }).select('_id').lean()
+  const task = await Task.findOne({ _id: id, org: orgId }).select('_id archived').lean()
   if (!task) throw ApiError.notFound('任务不存在')
+  if (task.archived) throw ApiError.unprocessable('任务已归档,不可评论;请先取消归档')
   const c = await TaskComment.create({
     task: id, org: orgId, author: actor.userId, content, mentions: mentions || []
   })
@@ -546,7 +646,7 @@ async function addComment({ id, orgId, content, mentions, actor }) {
 async function kanban({ orgId, assignee, type, priority, scope, actor }) {
   const perms = (actor && actor.permissions) || []
   const canSeeAll = actor && (actor.isPlatformAdmin || perms.includes('task.read'))
-  const baseFilter = { org: orgId }
+  const baseFilter = { org: orgId, archived: { $ne: true } }
   if (assignee) baseFilter['assignees.user'] = assignee
   if (type) baseFilter.type = type
   if (priority) baseFilter.priority = priority
@@ -585,7 +685,7 @@ async function kanban({ orgId, assignee, type, priority, scope, actor }) {
 async function stats({ orgId, actor }) {
   const meId = actor.userId
   const now = new Date()
-  const filter = { org: orgId }
+  const filter = { org: orgId, archived: { $ne: true } }
   // 限定到与我相关
   filter.$or = [
     { creator: meId },
@@ -819,6 +919,9 @@ module.exports = {
   update,
   remove,
   removableCheck,
+  // 归档 (2026-07-08)
+  archive,
+  unarchive,
   // 状态机
   submit,
   review,
@@ -826,6 +929,7 @@ module.exports = {
   // 条目
   addItem,
   toggleItem,
+  removeItem,
   // 评论
   addComment,
   // 看板/统计
