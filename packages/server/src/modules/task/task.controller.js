@@ -20,7 +20,13 @@ exports.detail = async (req, res) => res.json(ApiResponse.ok(await s.detail({
 exports.create = async (req, res) => res.status(201).json(ApiResponse.created(await s.create({
   orgId: req.orgId,
   ...req.body,
-  creator: req.user.userId
+  // 2026-07-08: 平台超管可选发起人 (默认 = 机构管理员); 普通员工只能 creator=self
+  creator: (req.body.creator && req.user.isPlatformAdmin)
+    ? req.body.creator
+    : req.user.userId,
+  // 2026-07-08: post-create detail() 必须用真实请求者 (req.user), 不能用新 creator
+  //   否则 canViewTask 用新 creator 校验可见性, 她可能没 task.read 权限, 抛 403
+  actor: req.user
 })))
 
 exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update({

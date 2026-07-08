@@ -34,6 +34,10 @@ module.exports = async function authenticate(req, res, next) {
 
     req.user = {
       id: String(user._id),
+      // 2026-07-08: 业务侧 service 一律用 actor.userId (e.g. task.service / order.service),
+      //   authenticate 之前只设 id → actor.userId 永远是 undefined, 所有写操作 (author/reviewer/doneBy) 必崩.
+      //   同步加 userId 字段, service 端零修改.
+      userId: String(user._id),
       mobile: user.mobile,
       realName: user.realName,
       avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,

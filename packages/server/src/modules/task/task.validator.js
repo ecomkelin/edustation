@@ -26,7 +26,10 @@ const create = [
   body('assignees.*').isMongoId().withMessage('assignees 必须是 User._id 数组'),
   body('supervisors').isArray({ min: 1 }).withMessage('至少 1 个监督人'),
   body('supervisors.*').isMongoId(),
-  body('startAt').optional({ nullable: true }).isISO8601(),
+  // 2026-07-08: 平台超管可选 creator (默认 = 机构管理员), 普通员工只能 creator=self (后端 controller 会兜底)
+  body('creator').optional().isMongoId(),
+  // 2026-07-08: 开始时间改必填 (前端默认今天)
+  body('startAt').isISO8601().withMessage('startAt 必填且为 ISO8601 时间'),
   body('dueAt').isISO8601().withMessage('dueAt 必填且为 ISO8601 时间'),
   body('tags').optional().isArray(),
   body('tags.*').optional().isString().isLength({ max: 30 }),
@@ -158,7 +161,11 @@ const templateUpdate = [
   body('schedule.hour').optional().isArray(),
   body('schedule.weekdays').optional().isArray(),
   body('schedule.daysOfMonth').optional().isArray(),
-  body('schedule.cron').optional().isString().isLength({ max: 100 }),
+  // 2026-07-08: nullable:true 修模板 update 时 cron/startAt/endAt=null 的 "Invalid value" 400
+  //   (前端 loadTemplate 把整张模板 spread 进 form, 模板里没设过的字段是 null, 不是 undefined)
+  body('schedule.cron').optional({ nullable: true }).isString().isLength({ max: 100 }),
+  body('schedule.startAt').optional({ nullable: true }).isISO8601(),
+  body('schedule.endAt').optional({ nullable: true }).isISO8601(),
   body('isActive').optional().isBoolean()
 ]
 

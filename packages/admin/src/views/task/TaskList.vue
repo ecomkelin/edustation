@@ -26,13 +26,13 @@
         <el-option label="全部" value="all" />
       </el-select>
       <el-select v-model="filter.status" placeholder="状态" clearable style="width: 140px" @change="reload">
-        <el-option v-for="(label, val) in statusLabels" :key="val" :label="label" :value="val" />
+        <el-option v-for="o in STATUS_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
       <el-select v-model="filter.type" placeholder="类型" clearable style="width: 120px" @change="reload">
-        <el-option v-for="(label, val) in typeLabels" :key="val" :label="label" :value="val" />
+        <el-option v-for="o in TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
       <el-select v-model="filter.priority" placeholder="优先级" clearable style="width: 120px" @change="reload">
-        <el-option v-for="(label, val) in priorityLabels" :key="val" :label="label" :value="val" />
+        <el-option v-for="o in PRIORITY_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
       <el-input v-model="filter.keyword" placeholder="搜索标题" clearable style="width: 200px" @keyup.enter="reload" @clear="reload" />
       <el-button @click="reload">查询</el-button>
@@ -143,13 +143,22 @@ import { Plus } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermInOrg } from '@/utils/permissionHelper'
-import { TASK_STATUS_LABELS, TASK_TYPE_LABELS, TASK_PRIORITY_LABELS } from '@shared/enums.mjs'
+import {
+  TASK_STATUSES, TASK_STATUS_LABELS,
+  TASK_TYPES, TASK_TYPE_LABELS,
+  TASK_PRIORITIES, TASK_PRIORITY_LABELS
+} from '@shared/enums.mjs'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
+// canonical pattern: 把 (TYPES, LABELS) 拍平为 [{value, label}] 数组
+const STATUS_OPTIONS = TASK_STATUSES.map((v) => ({ value: v, label: TASK_STATUS_LABELS[v] || v }))
+const TYPE_OPTIONS = TASK_TYPES.map((v) => ({ value: v, label: TASK_TYPE_LABELS[v] || v }))
+const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] || v }))
+// 模板里仍要用 statusLabels[task.status] 渲染 chip, 保留 LABELS 对象引用
 const statusLabels = TASK_STATUS_LABELS
 const typeLabels = TASK_TYPE_LABELS
 const priorityLabels = TASK_PRIORITY_LABELS
@@ -189,13 +198,13 @@ const statsList = computed(() => [
 ])
 
 function priorityTagType(p) {
-  return { urgent: 'danger', high: 'warning', normal: 'primary', low: 'info' }[p] || ''
+  return { urgent: 'danger', high: 'warning', normal: 'primary', low: 'info' }[p]
 }
 function statusTagType(s) {
   return {
     draft: 'info', assigned: 'primary', in_progress: 'warning', partial_submitted: 'warning',
     submitted: 'success', approved: 'success', rejected: 'danger', expired: 'danger', cancelled: 'info'
-  }[s] || ''
+  }[s]
 }
 function isOverdue(row) {
   return row.dueAt && new Date(row.dueAt) < new Date() && !['approved', 'cancelled', 'expired'].includes(row.status)

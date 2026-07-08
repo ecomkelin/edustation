@@ -739,7 +739,7 @@ Auth 列简写:
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-3900 | POST | /tasks | PERM | task.write | 创建任务 | body 必填 title/dueAt/assignees/supervisors; items 可选; service 校验 assignees ⊂ 同机构 |
+| R-3900 | POST | /tasks | PERM | task.write | 创建任务 | body 必填 title/startAt/dueAt/assignees/supervisors; items 可选; service 校验 assignees ⊂ 同机构; **2026-07-08 加**: body.creator 可选 — 仅 `req.user.isPlatformAdmin=true` 接受(默认 = 机构管理员, 前端从 userOptions 筛), 普通员工 controller 强制 creator=self; **2026-07-08 修**: post-create detail() 必须传 req.user 作 actor, 不能用新 creator (否则 canViewTask 用新 creator 校验, 她可能没 task.read 权限 → 403) |
 | R-3901 | GET | /tasks | PERM | task.read | 列表 (含可见性过滤) | query: myRole/status/type/priority/assignee/creator/supervisor/keyword/dueBefore/dueAfter/page/pageSize; 无 task.read 时只看我相关 |
 | R-3902 | GET | /tasks/:id | PERM | task.read | 详情 (含 items/reviews/comments) | service.canViewTask 校验可见性,否则 403 |
 | R-3903 | PATCH | /tasks/:id | PERM | task.write | 编辑任务 | 仅 creator / task.write 可改; 终态 (approved/cancelled/expired) 拒绝; status 只能走专用端点 |

@@ -233,7 +233,7 @@ async function detail({ id, orgId, actor }) {
 
 // ─── 创建 ──────────────────────────────────────
 
-async function create({ orgId, title, description, type, priority, creator, assignees, supervisors, startAt, dueAt, tags, relatedTo, items = [] }) {
+async function create({ orgId, title, description, type, priority, creator, assignees, supervisors, startAt, dueAt, tags, relatedTo, items = [], actor }) {
   if (!Array.isArray(assignees) || assignees.length === 0) {
     throw ApiError.badRequest('至少 1 个执行人')
   }
@@ -276,7 +276,10 @@ async function create({ orgId, title, description, type, priority, creator, assi
       done: false
     })))
   }
-  return await detail({ id: task._id, orgId, actor: { userId: creator, isPlatformAdmin: false, permissions: [] } })
+  // 2026-07-08: post-create detail() 必须用真实请求者 (actor), 不能用新 creator
+  //   场景: 超管创建时把 creator 改成"机构管理员", 但 detail 内部 canViewTask 用新 creator 校验,
+  //   若新 creator 没 task.read 权限则抛 403 "无权查看该任务". 这里 actor 来自 controller 透传的 req.user.
+  return await detail({ id: task._id, orgId, actor: actor || { userId: creator, isPlatformAdmin: false, permissions: [] } })
 }
 
 // ─── 编辑 ──────────────────────────────────────

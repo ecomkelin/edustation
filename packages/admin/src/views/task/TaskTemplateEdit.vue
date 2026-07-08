@@ -13,12 +13,12 @@
       </el-form-item>
       <el-form-item label="类型">
         <el-select v-model="form.type" style="width: 200px">
-          <el-option v-for="(label, val) in typeLabels" :key="val" :label="label" :value="val" />
+          <el-option v-for="o in TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
         </el-select>
       </el-form-item>
       <el-form-item label="优先级">
         <el-select v-model="form.priority" style="width: 200px">
-          <el-option v-for="(label, val) in priorityLabels" :key="val" :label="label" :value="val" />
+          <el-option v-for="o in PRIORITY_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
         </el-select>
       </el-form-item>
       <el-form-item label="默认执行人" prop="defaultAssignees">
@@ -91,21 +91,43 @@ import { Plus } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
-import { TASK_TYPE_LABELS, TASK_PRIORITY_LABELS } from '@shared/enums.mjs'
+import {
+  TASK_TYPES, TASK_TYPE_LABELS,
+  TASK_PRIORITIES, TASK_PRIORITY_LABELS
+} from '@shared/enums.mjs'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const typeLabels = TASK_TYPE_LABELS
-const priorityLabels = TASK_PRIORITY_LABELS
+// canonical pattern: 拍平为 [{value, label}] 数组
+const TYPE_OPTIONS = TASK_TYPES.map((v) => ({ value: v, label: TASK_TYPE_LABELS[v] || v }))
+const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] || v }))
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 const isNew = computed(() => route.params.id === 'new')
 const saving = ref(false)
 const userOptions = ref([])
 const formRef = ref(null)
-const defaultAssigneeUsers = ref([])
+
+// 2026-07-08: computed 双向绑定, 让 el-select 和 form.validate 共享同一份数据.
+//   get 把 form.defaultAssignees ([{user: id|populateDoc}]) 抽成 id 数组给 el-select 渲染;
+//   set 把 el-select 选出来的 id 数组写回 form.defaultAssignees 的 [{user: id}] 形态, 给后端 PATCH.
+//   单一数据源避免「el-select 选了人但 form 校验还是空」这类错位.
+const defaultAssigneeUsers = computed({
+  get() {
+    return (form.value.defaultAssignees || [])
+      .map((a) => {
+        const u = a && a.user
+        if (!u) return null
+        return typeof u === 'string' ? u : String(u._id || u.id || '')
+      })
+      .filter(Boolean)
+  },
+  set(ids) {
+    form.value.defaultAssignees = (ids || []).map((id) => ({ user: id }))
+  }
+})
 
 // form.schedule.hour/array 双向: 多个 el-select
 const form = ref({
@@ -133,6 +155,51 @@ async function loadUsers() {
   userOptions.value = r.data?.items || []
 }
 
+/**
+ * 兜底: 模板的 defaultAssignees / defaultSupervisors 可能引用本机构外的 user
+ *   (e.g. 种子 fallback 到平台超管), userOptions 里没有, el-select 会显示 raw id.
+ *   这种情况按 id 单独拉一次补进 userOptions.
+ *
+ * @param {Array<string|Object|ObjectId>} ids 既能接收 id 字符串也能接收 populate 出来的 User 文档
+ *   (字符串化场景: `String({...})` → "[object Object]", URL 会爆; 故先抽 _id)
+ */
+function normalizeUserId(id) {
+  if (!id) return null
+  if (typeof id === 'string') return id
+  // ObjectId 实例 (mongoose.Types.ObjectId) 没有 _id 也没有 id, 但 .toString() 返回 hex
+  // - populate 出来的 User 文档有 _id 字段
+  // - 兜底: 抽 hex / 数字段 / 字符串化, 任一非默认 (排除 "[object Object]") 即用
+  let s = ''
+  if (typeof id === 'object') {
+    s = String(id._id || id.id || '')
+    if (!s || s === '[object Object]') s = String(id) // ObjectId instance fallback
+  } else {
+    s = String(id)
+  }
+  return s && s !== '[object Object]' ? s : null
+}
+
+async function ensureUsersByIds(ids) {
+  const idSet = new Set()
+  for (const raw of ids || []) {
+    const id = normalizeUserId(raw)
+    if (id) idSet.add(id)
+  }
+  const missing = [...idSet].filter(
+    (id) => !userOptions.value.find((u) => String(u.id) === String(id))
+  )
+  if (missing.length === 0) return
+  // 并行拉, 失败的忽略 (用户可能已被删除; el-select 会显示 raw id 但不影响保存)
+  const results = await Promise.all(
+    missing.map((id) =>
+      userApi.detail(id).then((r) => r.data).catch(() => null)
+    )
+  )
+  for (const u of results) {
+    if (u && u.id) userOptions.value.push(u)
+  }
+}
+
 async function loadTemplate() {
   if (isNew.value) return
   const r = await taskApi.templateList({ page: 1, pageSize: 100 })
@@ -147,7 +214,23 @@ async function loadTemplate() {
     ...t,
     schedule: { ...form.value.schedule, ...t.schedule }
   }
-  defaultAssigneeUsers.value = (t.defaultAssignees || []).map((a) => a.user?._id || a.user)
+  // 拍平 populate 出来的 User 文档到 id 字符串数组:
+  //   - defaultSupervisors 直接绑 el-select v-model, 必须是 id 数组 (后端 validator isMongoId);
+  //     否则保存时数组里是对象, 全炸 "Invalid value"
+  //   - defaultAssignees 通过 defaultAssigneeUsers 间接绑, 也先拍平更稳妥
+  const assigneeIds = (t.defaultAssignees || [])
+    .map((a) => normalizeUserId(a.user?._id || a.user))
+    .filter(Boolean)
+  const supervisorIds = (t.defaultSupervisors || [])
+    .map((s) => normalizeUserId(s))
+    .filter(Boolean)
+
+  // 覆盖 spread 进来的 populate 文档数组
+  form.value.defaultSupervisors = supervisorIds
+  // 2026-07-08: 直接写 form 的最终形态 ([{user: id}]), form 校验和 PATCH 都直接用,
+  //   不必走 defaultAssigneeUsers.setter (那是 el-select 改选时才触发).
+  form.value.defaultAssignees = assigneeIds.map((id) => ({ user: id }))
+  await ensureUsersByIds([...assigneeIds, ...supervisorIds])
 }
 
 async function onSubmit() {
@@ -157,8 +240,8 @@ async function onSubmit() {
     // 校验失败: Element Plus 已经把错误显示在表单上了
     return
   }
-  // 把 defaultAssigneeUsers 转 defaultAssignees
-  form.value.defaultAssignees = defaultAssigneeUsers.value.map((u) => ({ user: u }))
+  // 2026-07-08: form.defaultAssignees 已被 defaultAssigneeUsers.computed setter 实时同步为 [{user: id}] 形态,
+  //   这里不再拍平, 直接 PATCH. (loadTemplate 也已经写好 form 的最终形态.)
   saving.value = true
   try {
     if (isNew.value) {

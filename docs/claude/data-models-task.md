@@ -14,7 +14,7 @@
 - `description`（描述，markdown / plain text，≤ 5000 字）
 - `type`（任务类型，见 [§5 类型 / 优先级](#5-类型--优先级)）
 - `priority`（优先级，见 [§5](#5-类型--优先级)）
-- `creator`（发起人 User ref）
+- `creator`（发起人 User ref；**平台超管** 可在创建时改成"机构管理员"，**普通员工**只能 creator=self，由 [task.controller.create](packages/server/src/modules/task/task.controller.js) 强制兜底）
 - `assignees`（执行人列表，**≥ 1**，子文档数组 — 见 [§2](#2-执行人子文档)）
 - `supervisors`（监督人列表，**必填 ≥ 1**，默认 = creator，User ref 数组）
 - `startAt`（开始时间，可选；空 = 创建时间）

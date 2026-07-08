@@ -244,14 +244,14 @@ const canCancel = computed(() => (isCreator.value || hasPermInOrg(auth, 'task.wr
 const canDelete = computed(() => hasPermInOrg(auth, 'task.delete'))
 const canEdit = computed(() => (isCreator.value || hasPermInOrg(auth, 'task.write')) && !isFinal.value)
 
-function priorityTagType(p) { return { urgent: 'danger', high: 'warning', normal: 'primary', low: 'info' }[p] || '' }
+function priorityTagType(p) { return { urgent: 'danger', high: 'warning', normal: 'primary', low: 'info' }[p] }
 function statusTagType(s) {
   return {
     draft: 'info', assigned: 'primary', in_progress: 'warning', partial_submitted: 'warning',
     submitted: 'success', approved: 'success', rejected: 'danger', expired: 'danger', cancelled: 'info'
-  }[s] || ''
+  }[s]
 }
-function reviewType(r) { return { approved: 'success', rejected: 'danger', requested_changes: 'warning' }[r] || '' }
+function reviewType(r) { return { approved: 'success', rejected: 'danger', requested_changes: 'warning' }[r] }
 function reviewLabel(r) { return TASK_REVIEW_RESULT_LABELS[r] }
 function assigneeStatusLabel(s) { return TASK_ASSIGNEE_STATUS_LABELS[s] || s }
 function isOverdue() { return task.value.dueAt && new Date(task.value.dueAt) < new Date() && !isFinal.value }
@@ -371,8 +371,9 @@ async function onAddItem() {
 
 async function onDelete() {
   const check = await taskApi.removableCheck(route.params.id)
-  if (!check.canRemove) {
-    ElMessage.warning(check.blockers.map((b) => b.hint).join('；'))
+  // http 拦截器不真正解包, 取 .data 才能拿到 {canRemove, blockers}
+  if (!check.data?.canRemove) {
+    ElMessage.warning((check.data?.blockers || []).map((b) => b.hint).join('；'))
     return
   }
   dcRef.value.open({ _id: route.params.id })
