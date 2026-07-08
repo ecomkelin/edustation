@@ -34,6 +34,10 @@ async function bootstrap() {
   // require 即触发 setInterval(...).unref()，参照 captcha.service 模式
   require('@modules/pet/petCron')
 
+  // 1.5.1 员工任务 cron (2026-07-08 立项)
+  // - 每 60s: 1) 过期扫描; 2) 周期任务模板触发生成
+  require('@modules/task/taskCron')
+
   // 1.6 Pet catalog 种子 (2026-06-22 user SVG 决策)
   // 启动时硬清三表 + 灌入内联 SVG 种子（platform 级共享）
   // 遵循 [[dev-stage-no-backcompat]] 开发期硬迁移原则

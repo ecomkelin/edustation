@@ -90,7 +90,13 @@ const routes = [
       // 招生看板 (2026-06)
       { path: 'reports/recruit', component: () => import('@/views/reports/RecruitReport.vue') },
       // 首登强改密 (2026-06): 路由守卫拦截, 改密成功后清标志
-      { path: 'reset-password', component: () => import('@/views/ResetPassword.vue'), meta: { auth: true } }
+      { path: 'reset-password', component: () => import('@/views/ResetPassword.vue'), meta: { auth: true } },
+      // 员工任务 (2026-07-08 立项, MM=36): 列表 / 看板 / 详情 / 创建 / 模板
+      { path: 'tasks', component: () => import('@/views/task/TaskList.vue') },
+      { path: 'tasks/new', component: () => import('@/views/task/TaskCreate.vue') },
+      { path: 'tasks/templates', component: () => import('@/views/task/TaskTemplates.vue') },
+      { path: 'tasks/templates/:id', component: () => import('@/views/task/TaskTemplateEdit.vue') },
+      { path: 'tasks/:id', component: () => import('@/views/task/TaskDetail.vue') }
     ]
   },
   // 课堂展示 (2026-06-21 pet-system-v2-ext): 独立 layout (ClassroomLayout), 全屏深色背景

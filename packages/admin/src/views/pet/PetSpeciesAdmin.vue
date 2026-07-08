@@ -24,15 +24,15 @@
           <el-icon v-else :size="32" color="#ccc"><Picture /></el-icon>
         </template>
       </el-table-column>
-      <el-table-column prop="key" label="Key" width="160" />
-      <el-table-column prop="name" label="名称" width="160" />
-      <el-table-column label="阶" width="80">
+      <el-table-column prop="key" label="Key" width="160" sortable />
+      <el-table-column prop="name" label="名称" width="160" sortable />
+      <el-table-column label="阶" width="80" sortable :sort-by="tierSortKey" prop="tier">
         <template #default="{ row }">
           <el-tag :type="tierTagType(row.tier)" size="small">{{ PET_TIER_LABELS[row.tier] || row.tier }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="weight" label="权重" width="80" />
-      <el-table-column label="衰减" width="100">
+      <el-table-column prop="weight" label="权重" width="80" sortable />
+      <el-table-column label="衰减" width="100" sortable prop="hungerDecayMinutes">
         <template #default="{ row }">
           <el-tag size="small">{{ row.hungerDecayMinutes || 60 }} 分/点</el-tag>
         </template>
@@ -45,7 +45,7 @@
           <el-tag :type="row.isActive ? 'success' : 'info'" size="small">{{ row.isActive ? '是' : '否' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="更新时间" width="180">
+      <el-table-column label="更新时间" width="180" sortable prop="updatedAt">
         <template #default="{ row }">{{ formatDate(row.updatedAt) }}</template>
       </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
@@ -154,6 +154,10 @@ export default {
   components: { FilePicker, DestructiveConfirm },
   setup() {
     const filter = reactive({ tier: '', isActive: true, keyword: '' })
+
+    // 2026-07-08: 阶列按 PET_TIERS 数组索引升序 (C→B→A→S)
+    const TIER_RANK = { C: 0, B: 1, A: 2, S: 3 }
+    const tierSortKey = (row) => (TIER_RANK[row.tier] ?? 999)
     const items = ref([])
     const loading = ref(false)
     const dialog = ref(false)
@@ -191,7 +195,17 @@ export default {
           keyword: filter.keyword || undefined
         }
         const { data } = await petCatalogApi.listSpecies(params)
-        items.value = data.items || []
+        // 2026-07-08: JS 端预排序 (阶升序 C→B→A→S, 同阶内按衰减分钟数升序)
+        // Element Plus default-sort + :sort-by 在 initial render 时不调用 sort-by 函数,
+        // 手动点表头才生效, 所以这里直接预先排好
+        const list = data.items || []
+        const TIER_ORDER = { C: 0, B: 1, A: 2, S: 3 }
+        items.value = list.slice().sort((a, b) => {
+          const ta = TIER_ORDER[a.tier] ?? 999
+          const tb = TIER_ORDER[b.tier] ?? 999
+          if (ta !== tb) return ta - tb
+          return (a.hungerDecayMinutes || 60) - (b.hungerDecayMinutes || 60)
+        })
       } catch (e) {
         items.value = []
         ElMessage.error('加载物种失败：' + (e?.message || 'unknown'))
@@ -305,6 +319,7 @@ export default {
       filter, items, loading, dialog, saving, form, formRef, rules,
       imagePicker, previewOpen, previewRow,
       PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
+      tierSortKey,
       Plus, Upload, Picture,
       petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm,

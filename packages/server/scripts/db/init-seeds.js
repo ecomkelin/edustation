@@ -20,6 +20,8 @@ const petCatalogSeed = require('./seeds/pet-catalog.seed')
 const financeSeed = require('./seeds/finance.seed')
 // 平台科普文章 + 小游戏 (2026-07-03 立项 MM=36 + MM=37): org=null 平台级, 跨机构对家长可见
 const contentSeed = require('./seeds/content.seed')
+// 员工任务模块 (2026-07-08 立项 MM=36): 系统岗位权限码 + 示例模板
+const taskSeed = require('./seeds/task.seed')
 
 async function initSeeds() {
   // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
@@ -55,6 +57,10 @@ async function initSeeds() {
   //    (2026-07-03 同日加 videos: 与 article 一致评级, 平台超管发布, C 端 web-view 播放)
   //    2026-07-04: 游戏模块下线, content.seed 删 GAMES
   await contentSeed.run()
+
+  // 8. 员工任务 (2026-07-08): 给系统岗位 (admin/教务/老师/财务/招生) 批量加 task 权限码
+  //    + 给每个 org 写一个示例模板 (默认 isActive=false 让用户自己启用)
+  await taskSeed.run()
 }
 
 module.exports = { initSeeds }

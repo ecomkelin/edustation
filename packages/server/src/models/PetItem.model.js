@@ -1,21 +1,31 @@
 'use strict'
 
 const { Schema, model } = require('mongoose')
-const { PET_ITEM_SLOTS, PET_ITEM_UNLOCK_TYPES, PET_TIERS } = require('@shared/enums')
+const { PET_ITEM_SLOTS, PET_TIERS } = require('@shared/enums')
 
 /**
- * 宠物装饰图鉴（PetItem，2026-06-21 pet-system-v2-ext / 2026-06-22 重构）
+ * 宠物装饰图鉴（PetItem，2026-06-21 pet-system-v2-ext / 2026-06-22 重构 / 2026-07-08 拆分）
  *
  * 6 个 slot：hat / scarf / clothes / accessory / halo / background
- *   - hat/scarf/clothes/accessory：升级解锁（unlockType='level', unlockLevel 阈值）
- *   - halo/background：升阶解锁（unlockType='tier', unlockTier 阈值；累积：B 解锁 C+B）
+ *
+ * 2026-07-08 改造：删除 unlockType enum，改为两个独立字段：
+ *   - unlockLevel (Number, nullable)
+ *       - 非空 → 当 pet.level ≥ unlockLevel 时解锁
+ *   - unlockTier  (enum C/B/A/S, nullable)
+ *       - 非空 → 当 pet.tier ≥ unlockTier 时解锁（累积：B 解锁 C+B）
+ *
+ * 两字段独立可选：
+ *   - 只设 unlockLevel → 纯升级解锁（hat/scarf/clothes/accessory 类）
+ *   - 只设 unlockTier  → 纯升阶解锁（halo/background 类）
+ *   - 两个都设 → AND 同时满足才解锁
+ *   - 两个都空 → 视为永久不可解锁（admin 必须至少填一个）
  *
  * 平台级共享（2026-06-22 改造：去除 per-org override）：
  *   - 全部由平台超管统一管理
  *
  * 字段：
  *   - key / name / slot
- *   - unlockType / unlockTier / unlockLevel
+ *   - unlockTier / unlockLevel （2026-07-08 拆字段，删 unlockType）
  *   - imageFile (装饰贴图)
  *   - compatibleSpecies []  (宽松 UI 提示，不强制)
  *   - isActive / description / meta
@@ -31,12 +41,11 @@ const PetItemSchema = new Schema(
     // slot
     slot: { type: String, enum: PET_ITEM_SLOTS, required: true, index: true },
 
-    // 解锁类型
-    unlockType: { type: String, enum: PET_ITEM_UNLOCK_TYPES, required: true },
-
-    // 升级解锁时：unlockTier + unlockLevel
-    unlockTier: { type: String, enum: PET_TIERS, default: null },
+    // 升级解锁阈值（2026-07-08 拆字段：unlockType 取消）
     unlockLevel: { type: Number, default: null, min: 1, max: 100 },
+
+    // 升阶解锁阈值（2026-07-08 拆字段：unlockType 取消）
+    unlockTier: { type: String, enum: PET_TIERS, default: null },
 
     // 2026-06-22 pet-shop：购买积分（>=0）。null 表示不可购买（仅自动解锁）。
     pointCost: { type: Number, default: null, min: 0, max: 100000 },
@@ -77,7 +86,9 @@ const PetItemSchema = new Schema(
 // 列表查询索引：按 slot + isActive 过滤
 PetItemSchema.index({ slot: 1, isActive: 1 })
 
-// 解锁查询索引：按 unlockType + unlockTier 过滤（升阶时批量取 halo/background）
-PetItemSchema.index({ unlockType: 1, unlockTier: 1 })
+// 解锁查询索引：按 unlockTier 过滤（升阶时批量取 halo/background）
+PetItemSchema.index({ unlockTier: 1 })
+// 解锁查询索引：按 unlockLevel 过滤（升级时批量取 hat/scarf/clothes/accessory）
+PetItemSchema.index({ unlockLevel: 1 })
 
 module.exports = model('PetItem', PetItemSchema)

@@ -1,15 +1,18 @@
 'use strict'
 
 /**
- * 宠物装饰 service（pet-system-v2 2026-06-21 + pet-system-v2-ext 2026-06-21）
+ * 宠物装饰 service（pet-system-v2 2026-06-21 + pet-system-v2-ext 2026-06-21 / 2026-07-08 拆字段）
  *
  * 职责：
  *   - 列出图鉴（按 slot 分组 / 标注已解锁 / 已装备）
  *   - 装备 / 卸下（equip 接口）
  *
- * 解锁规则（由 pet.service.feed / hatch 触发）：
- *   - hat/scarf/clothes/accessory  → 升 Lv 自动解锁（unlockType=level）
- *   - halo/background              → 升阶自动解锁（unlockType=tier；D4 不自动装备）
+ * 解锁规则（2026-07-08 拆字段）：
+ *   解锁 = (unlockTier 为空 || pet.tier ≥ unlockTier)
+ *        AND (unlockLevel 为空 || pet.level ≥ unlockLevel)
+ *   - 纯 unlockLevel（hat/scarf/clothes/accessory）→ 升 Lv 自动解锁
+ *   - 纯 unlockTier  (halo/background, unlockLevel=null) → 升阶自动解锁
+ *   - 两字段都填 → AND 同时满足
  *
  * 装备校验（equip 接口）：
  *   - itemKey 必须存在
@@ -69,15 +72,16 @@ async function listCatalog({ orgId, studentId }) {
         unlockTier: it.unlockTier,
         unlockLevel: it.unlockLevel,
         compatibleSpecies: it.compatibleSpecies || [],
-        // 解锁规则 (前端 chip 可显示), 任一条件满足就视为可见:
+        // 解锁规则 (前端 chip 可显示), 2026-07-08 拆字段后 AND 语义:
         //   a) pet.unlocked[slot] 手动解锁过
-        //   b) item.unlockType === 'tier' 且 unlockTier 满足 pet 当前阶
-        //   c) item.unlockType === 'level' 且 unlockLevel 满足 pet 当前等级
+        //   b) (unlockTier 为空 || pet.tier ≥ unlockTier) AND
+        //      (unlockLevel 为空 || pet.level ≥ unlockLevel)
         unlocked:
           (unlocked[slot] || []).includes(it.key) ||
-          (it.unlockType === 'tier' && pet.tier && it.unlockTier && tierOrder(it.unlockTier) <= tierOrder(pet.tier)) ||
-          (it.unlockType === 'level' && pet.level && it.unlockLevel != null && pet.level >= it.unlockLevel) ||
-          (!it.unlockType),
+          (
+            (it.unlockTier == null || (pet.tier && tierOrder(it.unlockTier) <= tierOrder(pet.tier))) &&
+            (it.unlockLevel == null || (pet.level && pet.level >= it.unlockLevel))
+          ),
         equipped: equipped[slot] === it.key
       }))
     }

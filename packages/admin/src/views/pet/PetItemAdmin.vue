@@ -24,17 +24,19 @@
           <el-icon v-else :size="32" color="#ccc"><Picture /></el-icon>
         </template>
       </el-table-column>
-      <el-table-column prop="key" label="Key" width="160" />
-      <el-table-column prop="name" label="名称" width="140" />
-      <el-table-column label="槽位" width="100">
+      <el-table-column prop="key" label="Key" width="160" sortable />
+      <el-table-column prop="name" label="名称" width="140" sortable />
+      <el-table-column label="槽位" width="100" sortable :sort-by="slotSortKey" prop="slot">
         <template #default="{ row }">
           <el-tag size="small">{{ PET_ITEM_SLOT_LABELS[row.slot] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="解锁" width="120">
+      <el-table-column label="解锁" width="160" sortable :sort-by="unlockSortKey">
         <template #default="{ row }">
-          <span v-if="row.unlockType === 'level'">Lv.{{ row.unlockLevel }}</span>
-          <span v-else>{{ PET_TIER_LABELS[row.unlockTier] }} 阶</span>
+          <!-- 2026-07-08 拆字段: 两字段独立显示, 任意一个非空即展示 -->
+          <span v-if="row.unlockLevel != null" class="lock-chip lock-chip--level">Lv.{{ row.unlockLevel }}</span>
+          <span v-if="row.unlockTier != null" class="lock-chip lock-chip--tier">{{ PET_TIER_LABELS[row.unlockTier] }}</span>
+          <span v-if="row.unlockLevel == null && row.unlockTier == null" class="muted">—</span>
         </template>
       </el-table-column>
       <el-table-column label="适用物种" width="180">
@@ -79,18 +81,22 @@
             <el-option v-for="s in PET_ITEM_SLOTS" :key="s" :label="PET_ITEM_SLOT_LABELS[s]" :value="s" />
           </el-select>
         </el-form-item>
-        <el-form-item label="解锁类型" prop="unlockType">
-          <el-radio-group v-model="form.unlockType">
-            <el-radio v-for="u in PET_ITEM_UNLOCK_TYPES" :key="u" :value="u">{{ PET_ITEM_UNLOCK_TYPE_LABELS[u] }}</el-radio>
-          </el-radio-group>
+        <el-form-item label="升级解锁" prop="unlockLevel">
+          <el-input-number
+            v-model="form.unlockLevel"
+            :min="1"
+            :max="30"
+            placeholder="留空 = 不按等级解锁"
+            controls-position="right"
+            style="width:180px"
+          />
+          <span class="hint">留空 = 不按等级解锁；填值 = 升到指定 Lv 自动解锁</span>
         </el-form-item>
-        <el-form-item v-if="form.unlockType === 'level'" label="解锁等级" prop="unlockLevel">
-          <el-input-number v-model="form.unlockLevel" :min="1" :max="30" />
-        </el-form-item>
-        <el-form-item v-else label="解锁阶" prop="unlockTier">
-          <el-radio-group v-model="form.unlockTier">
-            <el-radio v-for="t in PET_TIERS" :key="t" :value="t">{{ PET_TIER_LABELS[t] }}</el-radio>
-          </el-radio-group>
+        <el-form-item label="升阶解锁" prop="unlockTier">
+          <el-select v-model="form.unlockTier" placeholder="留空 = 不按阶解锁" clearable style="width:180px">
+            <el-option v-for="t in PET_TIERS" :key="t" :label="PET_TIER_LABELS[t]" :value="t" />
+          </el-select>
+          <span class="hint">留空 = 不按阶解锁；选阶 = 升到该阶自动解锁（halo/background 用）</span>
         </el-form-item>
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
@@ -154,13 +160,28 @@ import { storageApi } from '@/api/storage'
 import FilePicker from '@/components/FilePicker.vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { handleRemoveError } from '@/utils/removable'
-import { PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS, PET_ITEM_UNLOCK_TYPES, PET_ITEM_UNLOCK_TYPE_LABELS } from '@/utils/constants'
+import { PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS } from '@/utils/constants'
 
 export default {
   name: 'PetItemAdmin',
   components: { FilePicker, DestructiveConfirm },
   setup() {
     const filter = reactive({ slot: '', isActive: true, keyword: '' })
+
+    // 2026-07-08: 表格排序 sort-by 函数
+    //   - 槽位按 PET_ITEM_SLOTS 数组索引升序 (hat→scarf→clothes→accessory→halo→background)
+    //   - 解锁按 (tier rank, level) 组合升序; 缺字段视为无限大, 排到最后
+    const TIER_RANK = { C: 0, B: 1, A: 2, S: 3 }
+    const slotSortKey = (row) => {
+      const idx = PET_ITEM_SLOTS.indexOf(row.slot)
+      return idx === -1 ? 999 : idx
+    }
+    const unlockSortKey = (row) => {
+      const t = row.unlockTier != null ? (TIER_RANK[row.unlockTier] ?? 999) : 999
+      const l = row.unlockLevel != null ? row.unlockLevel : 9999
+      // 返回组合 key: tier rank 在前 (主导), level 在后
+      return t * 10000 + l
+    }
     const items = ref([])
     const speciesOptions = ref([])
     const loading = ref(false)
@@ -172,8 +193,10 @@ export default {
     const previewRow = ref(null)
     const form = reactive({
       _id: null,
-      key: '', name: '', slot: 'hat', unlockType: 'level',
-      unlockTier: 'C', unlockLevel: 1,
+      key: '', name: '', slot: 'hat',
+      // 2026-07-08 拆字段: unlockLevel / unlockTier 独立, 都可为 null (UI 留空)
+      unlockLevel: null,
+      unlockTier: null,
       visualType: 'image', imageFile: null, svgContent: '',
       compatibleSpecies: [], isActive: true, description: ''
     })
@@ -181,8 +204,24 @@ export default {
       key: [{ required: true, message: 'key 必填', trigger: 'blur' }],
       name: [{ required: true, message: '名称 必填', trigger: 'blur' }],
       slot: [{ required: true, message: '槽位 必填', trigger: 'change' }],
-      unlockType: [{ required: true, message: '解锁类型 必填', trigger: 'change' }],
-      visualType: [{ required: true, message: '视觉类型 必填', trigger: 'change' }]
+      visualType: [{ required: true, message: '视觉类型 必填', trigger: 'change' }],
+      // 2026-07-08: 升级解锁等级 + 升阶解锁阶 至少填一个 (前端二次兜底, 后端兜底必填校验)
+      unlockLevel: [{
+        validator: (rule, value, cb) => {
+          if ((value == null || value === '') && (form.unlockTier == null || form.unlockTier === '')) {
+            cb(new Error('升级解锁等级 / 升阶解锁阶 至少填一个'))
+          } else { cb() }
+        },
+        trigger: 'change'
+      }],
+      unlockTier: [{
+        validator: (rule, value, cb) => {
+          if ((value == null || value === '') && (form.unlockLevel == null || form.unlockLevel === '')) {
+            cb(new Error('升级解锁等级 / 升阶解锁阶 至少填一个'))
+          } else { cb() }
+        },
+        trigger: 'change'
+      }]
     }
 
     async function load() {
@@ -194,7 +233,22 @@ export default {
           keyword: filter.keyword || undefined
         }
         const { data } = await petCatalogApi.listItems(params)
-        items.value = data.items || []
+        // 2026-07-08: JS 端预排序 (槽位→升阶解锁→升级解锁等级, 同组内保留原顺序)
+        // Element Plus default-sort + :sort-by 在 initial render 不调用 sort-by,
+        // 所以直接预先排好
+        const TIER_ORDER = { C: 0, B: 1, A: 2, S: 3 }
+        const SLOT_ORDER = ['hat', 'scarf', 'clothes', 'accessory', 'halo', 'background']
+        const list = (data.items || []).slice().sort((a, b) => {
+          const sa = SLOT_ORDER.indexOf(a.slot); const sb = SLOT_ORDER.indexOf(b.slot)
+          if (sa !== sb) return sa - sb
+          const ta = a.unlockTier ? (TIER_ORDER[a.unlockTier] ?? 999) : 999
+          const tb = b.unlockTier ? (TIER_ORDER[b.unlockTier] ?? 999) : 999
+          if (ta !== tb) return ta - tb
+          const la = a.unlockLevel ?? 9999
+          const lb = b.unlockLevel ?? 9999
+          return la - lb
+        })
+        items.value = list
       } catch (e) {
         items.value = []
       } finally {
@@ -213,8 +267,8 @@ export default {
 
     function resetForm() {
       Object.assign(form, {
-        _id: null, key: '', name: '', slot: 'hat', unlockType: 'level',
-        unlockTier: 'C', unlockLevel: 1,
+        _id: null, key: '', name: '', slot: 'hat',
+        unlockLevel: null, unlockTier: null,
         visualType: 'image', imageFile: null, svgContent: '',
         compatibleSpecies: [], isActive: true, description: ''
       })
@@ -230,8 +284,10 @@ export default {
       resetForm()
       Object.assign(form, {
         _id: row._id, key: row.key, name: row.name,
-        slot: row.slot, unlockType: row.unlockType,
-        unlockTier: row.unlockTier || 'C', unlockLevel: row.unlockLevel || 1,
+        slot: row.slot,
+        // 2026-07-08 拆字段: 两字段独立读取, 缺字段视为 null
+        unlockLevel: row.unlockLevel ?? null,
+        unlockTier: row.unlockTier ?? null,
         visualType: row.visualType || 'image',
         imageFile: row.imageFile || null,
         svgContent: row.svgContent || '',
@@ -261,9 +317,10 @@ export default {
       try {
         const payload = {
           key: form.key.trim(), name: form.name.trim(),
-          slot: form.slot, unlockType: form.unlockType,
-          unlockTier: form.unlockType === 'tier' ? form.unlockTier : 'C',
-          unlockLevel: form.unlockType === 'level' ? form.unlockLevel : 1,
+          slot: form.slot,
+          // 2026-07-08 拆字段: 独立传, null/undefined 都透传给后端
+          unlockLevel: form.unlockLevel == null ? null : Number(form.unlockLevel),
+          unlockTier:  form.unlockTier  == null ? null : form.unlockTier,
           visualType: form.visualType,
           imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
@@ -307,7 +364,8 @@ export default {
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
       speciesOptions, imagePicker, previewOpen, previewRow,
-      PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS, PET_ITEM_UNLOCK_TYPES, PET_ITEM_UNLOCK_TYPE_LABELS,
+      PET_TIERS, PET_TIER_LABELS, PET_ITEM_SLOTS, PET_ITEM_SLOT_LABELS,
+      slotSortKey, unlockSortKey,
       Plus, Upload, Picture,
       petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm, openPreview
@@ -321,6 +379,19 @@ export default {
 .hint { margin-left: 12px; color: #999; font-size: 12px; }
 .preview { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .muted { color: #999; font-size: 12px; }
+
+/* 2026-07-08 拆字段: 解锁列 chip 双标签 */
+.lock-chip {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.lock-chip--level { background: #ecf5ff; color: #409eff; border: 1px solid #b3d8ff; }
+.lock-chip--tier  { background: #fdf6ec; color: #e6a23c; border: 1px solid #f5dab1; }
 .thumb { display: flex; align-items: center; justify-content: center; }
 .svg-thumb { width: 48px; height: 48px; }
 .svg-thumb svg { width: 100%; height: 100%; }

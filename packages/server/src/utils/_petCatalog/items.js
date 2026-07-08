@@ -13,9 +13,10 @@
  *   - halo        6 (B:2, A:2, S:2)
  *   - background  6 (B:2, A:2, S:2)
  *
- * 解锁方式：
- *   - unlockType='level' + unlockLevel  → 升级解锁
- *   - unlockType='tier'  + unlockTier  → 升阶解锁（halo/background 专用）
+ * 解锁方式（2026-07-08 拆分 unlockType → unlockLevel / unlockTier 独立字段）：
+ *   - unlockLevel（非空）+ unlockTier=null  → 纯升级解锁（hat/scarf/clothes/accessory）
+ *   - unlockLevel=1 + unlockTier=B/A/S    → 纯升阶解锁（halo/background）
+ *   - 两者都非空 → AND 同时满足才解锁
  *
  * compatibleSpecies = []  (D2 决策：宽松提示，equip 不校验)
  * 所有图统一 viewBox 0 0 60 60（贴图尺寸，叠加到 100x100 的 pet 上）
@@ -26,7 +27,6 @@ const ITEMS = [
     key: 'hat_party',
     name: '派对帽',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 1,
     visualType: 'svg',
@@ -57,7 +57,6 @@ const ITEMS = [
     key: 'hat_bow_red',
     name: '蝴蝶结',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 5,
     visualType: 'svg',
@@ -80,7 +79,6 @@ const ITEMS = [
     key: 'hat_wizard',
     name: '巫师帽',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'B',
     unlockLevel: 1,
     visualType: 'svg',
@@ -109,7 +107,6 @@ const ITEMS = [
     key: 'hat_scarf_pink',
     name: '粉色头巾',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'B',
     unlockLevel: 8,
     visualType: 'svg',
@@ -137,7 +134,6 @@ const ITEMS = [
     key: 'hat_helmet',
     name: '骑士盔',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'A',
     unlockLevel: 1,
     visualType: 'svg',
@@ -169,7 +165,6 @@ const ITEMS = [
     key: 'hat_laurel',
     name: '桂冠',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'A',
     unlockLevel: 10,
     visualType: 'svg',
@@ -198,7 +193,6 @@ const ITEMS = [
     key: 'hat_crown',
     name: '黄金王冠',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'S',
     unlockLevel: 1,
     visualType: 'svg',
@@ -233,7 +227,6 @@ const ITEMS = [
     key: 'hat_horns',
     name: '龙角',
     slot: 'hat',
-    unlockType: 'level',
     unlockTier: 'S',
     unlockLevel: 15,
     visualType: 'svg',
@@ -265,7 +258,6 @@ const ITEMS = [
     key: 'scarf_red',
     name: '红围巾',
     slot: 'scarf',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 3,
     visualType: 'svg',
@@ -293,7 +285,6 @@ const ITEMS = [
     key: 'scarf_blue',
     name: '蓝围巾',
     slot: 'scarf',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 8,
     visualType: 'svg',
@@ -318,7 +309,6 @@ const ITEMS = [
     key: 'scarf_gold',
     name: '金围巾',
     slot: 'scarf',
-    unlockType: 'level',
     unlockTier: 'B',
     unlockLevel: 5,
     visualType: 'svg',
@@ -346,7 +336,6 @@ const ITEMS = [
     key: 'scarf_rainbow',
     name: '彩虹围巾',
     slot: 'scarf',
-    unlockType: 'level',
     unlockTier: 'A',
     unlockLevel: 1,
     visualType: 'svg',
@@ -375,7 +364,6 @@ const ITEMS = [
     key: 'scarf_galaxy',
     name: '星云围巾',
     slot: 'scarf',
-    unlockType: 'level',
     unlockTier: 'S',
     unlockLevel: 1,
     visualType: 'svg',
@@ -411,7 +399,6 @@ const ITEMS = [
     key: 'clothes_tshirt',
     name: '小 T 恤',
     slot: 'clothes',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 2,
     visualType: 'svg',
@@ -436,7 +423,6 @@ const ITEMS = [
     key: 'clothes_sweater',
     name: '小毛衣',
     slot: 'clothes',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 7,
     visualType: 'svg',
@@ -466,7 +452,6 @@ const ITEMS = [
     key: 'clothes_suit',
     name: '绅士西装',
     slot: 'clothes',
-    unlockType: 'level',
     unlockTier: 'B',
     unlockLevel: 1,
     visualType: 'svg',
@@ -495,7 +480,6 @@ const ITEMS = [
     key: 'clothes_armor',
     name: '骑士铠甲',
     slot: 'clothes',
-    unlockType: 'level',
     unlockTier: 'A',
     unlockLevel: 1,
     visualType: 'svg',
@@ -529,7 +513,6 @@ const ITEMS = [
     key: 'clothes_robe',
     name: '法师长袍',
     slot: 'clothes',
-    unlockType: 'level',
     unlockTier: 'S',
     unlockLevel: 1,
     visualType: 'svg',
@@ -565,7 +548,6 @@ const ITEMS = [
     key: 'acc_glasses',
     name: '圆框眼镜',
     slot: 'accessory',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 4,
     visualType: 'svg',
@@ -589,7 +571,6 @@ const ITEMS = [
     key: 'acc_bell',
     name: '小铃铛',
     slot: 'accessory',
-    unlockType: 'level',
     unlockTier: 'C',
     unlockLevel: 9,
     visualType: 'svg',
@@ -623,7 +604,6 @@ const ITEMS = [
     key: 'acc_gem_red',
     name: '红宝石',
     slot: 'accessory',
-    unlockType: 'level',
     unlockTier: 'B',
     unlockLevel: 3,
     visualType: 'svg',
@@ -654,7 +634,6 @@ const ITEMS = [
     key: 'acc_gem_blue',
     name: '蓝宝石',
     slot: 'accessory',
-    unlockType: 'level',
     unlockTier: 'A',
     unlockLevel: 1,
     visualType: 'svg',
@@ -681,7 +660,6 @@ const ITEMS = [
     key: 'acc_star',
     name: '小星星',
     slot: 'accessory',
-    unlockType: 'level',
     unlockTier: 'S',
     unlockLevel: 1,
     visualType: 'svg',
@@ -708,7 +686,6 @@ const ITEMS = [
     key: 'halo_basic',
     name: '微光',
     slot: 'halo',
-    unlockType: 'tier',
     unlockTier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -722,7 +699,6 @@ const ITEMS = [
     key: 'halo_sparkle',
     name: '星光',
     slot: 'halo',
-    unlockType: 'tier',
     unlockTier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -741,7 +717,6 @@ const ITEMS = [
     key: 'halo_glow',
     name: '柔光',
     slot: 'halo',
-    unlockType: 'tier',
     unlockTier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -762,7 +737,6 @@ const ITEMS = [
     key: 'halo_rainbow',
     name: '彩虹光环',
     slot: 'halo',
-    unlockType: 'tier',
     unlockTier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -781,7 +755,6 @@ const ITEMS = [
     key: 'halo_divine',
     name: '神圣光环',
     slot: 'halo',
-    unlockType: 'tier',
     unlockTier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -806,7 +779,6 @@ const ITEMS = [
     key: 'halo_solar',
     name: '日冕',
     slot: 'halo',
-    unlockType: 'tier',
     unlockTier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -840,7 +812,6 @@ const ITEMS = [
     key: 'bg_meadow',
     name: '草原',
     slot: 'background',
-    unlockType: 'tier',
     unlockTier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -879,7 +850,6 @@ const ITEMS = [
     key: 'bg_sakura',
     name: '樱花林',
     slot: 'background',
-    unlockType: 'tier',
     unlockTier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -914,7 +884,6 @@ const ITEMS = [
     key: 'bg_clouds',
     name: '云端',
     slot: 'background',
-    unlockType: 'tier',
     unlockTier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -947,7 +916,6 @@ const ITEMS = [
     key: 'bg_ocean',
     name: '深海',
     slot: 'background',
-    unlockType: 'tier',
     unlockTier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -982,7 +950,6 @@ const ITEMS = [
     key: 'bg_galaxy',
     name: '银河',
     slot: 'background',
-    unlockType: 'tier',
     unlockTier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -1023,7 +990,6 @@ const ITEMS = [
     key: 'bg_celestial',
     name: '天宫',
     slot: 'background',
-    unlockType: 'tier',
     unlockTier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">

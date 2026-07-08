@@ -136,7 +136,10 @@ import {
   // 账本管理 (2026-06-25 拆 3 页后) — 钱包图标
   Wallet,
   // 操作留痕 (2026-06-27) — 文档/清单图标
-  Document
+  Document,
+  // 员工任务 (2026-07-08) — 列表 + 齿轮图标
+  List,
+  SetUp
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -326,6 +329,17 @@ const menuGroups = [
       { path: '/reports/points-activity', label: '积分与活跃', icon: Present, perm: 'report.read' },
       // 招生看板 (2026-06)
       { path: '/reports/recruit', label: '招生看板', icon: Promotion, perm: 'recruit.read' }
+    ]
+  },
+  {
+    // 员工任务 (2026-07-08 立项, MM=36): 独立菜单项 (用户决策 2026-07-08)
+    // 列表页自带 list/kanban 切换; 模板是低频配置,放二级
+    key: 'task',
+    title: '任务',
+    icon: List,
+    children: [
+      { path: '/tasks', label: '任务', icon: List, perm: 'task.read' },
+      { path: '/tasks/templates', label: '任务模板', icon: SetUp, perm: 'task.read' }
     ]
   }
 ]

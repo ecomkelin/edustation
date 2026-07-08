@@ -282,9 +282,12 @@ GET    /api/v1/admin/pet/items/:id/removable-check   pet.read  预检
   "key": "hat_party",
   "name": "派对帽",
   "slot": "hat",                 // hat/scarf/clothes/accessory/halo/background
-  "unlockType": "level",          // level/tier
-  "unlockTier": "C",             // unlockType=tier 时必填
-  "unlockLevel": 1,              // unlockType=level 时必填
+  // 2026-07-08 拆字段: 原 unlockType 互斥二选一改为独立两字段
+  //   - unlockLevel (Number|null)  非空 → pet.level ≥ 该值时解锁
+  //   - unlockTier  (C/B/A/S|null) 非空 → pet.tier ≥ 该阶时解锁 (累积: B 解锁 C+B)
+  // 两字段至少填一个; 都填 = AND 双条件解锁
+  "unlockLevel": 1,              // hat/scarf/clothes/accessory 类填等级
+  "unlockTier": null,            // halo/background 类填阶 (如 "B")
   "imageFile": "65...",
   "compatibleSpecies": ["cat_orange", "dog_puppy"],  // 宽松 UI 提示，equip 不强制
   "isActive": true,

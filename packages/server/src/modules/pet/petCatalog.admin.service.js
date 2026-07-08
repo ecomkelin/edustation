@@ -213,8 +213,17 @@ async function getItem({ id }) {
 }
 
 async function createItem({ payload, operatorId }) {
-  if (!payload.key || !payload.name || !payload.slot || !payload.unlockType) {
-    throw ApiError.badRequest('key/name/slot/unlockType 必填')
+  if (!payload.key || !payload.name || !payload.slot) {
+    throw ApiError.badRequest('key/name/slot 必填')
+  }
+  // 2026-07-08: unlockType 拆字段后，unlockLevel / unlockTier 至少填一个
+  //   - 都填 = AND 双条件解锁
+  //   - 只填一个 = 单条件解锁
+  //   - 都空 = 不可解锁（视为配置错误）
+  const hasLevel = payload.unlockLevel != null && payload.unlockLevel !== ''
+  const hasTier  = payload.unlockTier != null && payload.unlockTier !== ''
+  if (!hasLevel && !hasTier) {
+    throw ApiError.badRequest('升级解锁等级 / 升阶解锁阶 至少填一个')
   }
   const exists = await PetItem.findOne({ key: payload.key }).lean()
   if (exists) throw ApiError.conflict(`装饰 key=${payload.key} 已存在`)
@@ -224,9 +233,9 @@ async function createItem({ payload, operatorId }) {
     key: payload.key.trim(),
     name: payload.name.trim(),
     slot: payload.slot,
-    unlockType: payload.unlockType,
-    unlockTier: payload.unlockTier || 'C',
-    unlockLevel: payload.unlockType === 'level' ? (Number(payload.unlockLevel) || 1) : 1,
+    // 2026-07-08 拆字段：两字段独立可选
+    unlockLevel: hasLevel ? Number(payload.unlockLevel) : null,
+    unlockTier:  hasTier  ? String(payload.unlockTier)  : null,
     visualType,
     imageFile: visualType === 'image' ? (payload.imageFile || null) : null,
     svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
@@ -255,9 +264,19 @@ async function updateItem({ id, payload, operatorId }) {
   const updates = {}
   if (payload.name !== undefined) updates.name = String(payload.name).trim()
   if (payload.slot !== undefined) updates.slot = payload.slot
-  if (payload.unlockType !== undefined) updates.unlockType = payload.unlockType
-  if (payload.unlockTier !== undefined) updates.unlockTier = payload.unlockTier
-  if (payload.unlockLevel !== undefined) updates.unlockLevel = Number(payload.unlockLevel) || 1
+  // 2026-07-08 拆字段：unlockType 不再处理
+  if (payload.unlockTier !== undefined) {
+    updates.unlockTier = (payload.unlockTier === '' || payload.unlockTier == null) ? null : String(payload.unlockTier)
+  }
+  if (payload.unlockLevel !== undefined) {
+    updates.unlockLevel = (payload.unlockLevel === '' || payload.unlockLevel == null) ? null : Number(payload.unlockLevel)
+  }
+  // 至少要保留一个解锁条件
+  const finalTier  = updates.unlockTier  !== undefined ? updates.unlockTier  : doc.unlockTier
+  const finalLevel = updates.unlockLevel !== undefined ? updates.unlockLevel : doc.unlockLevel
+  if (finalTier == null && finalLevel == null) {
+    throw ApiError.badRequest('升级解锁等级 / 升阶解锁阶 至少填一个')
+  }
   if (payload.compatibleSpecies !== undefined) updates.compatibleSpecies = Array.isArray(payload.compatibleSpecies) ? payload.compatibleSpecies.filter(Boolean) : []
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
   if (payload.description !== undefined) updates.description = payload.description

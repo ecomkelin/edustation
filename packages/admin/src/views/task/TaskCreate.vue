@@ -1,0 +1,150 @@
+<template>
+  <div class="page">
+    <div class="page__header">
+      <h2>新建任务</h2>
+      <el-button @click="$router.back()">返回</el-button>
+    </div>
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" v-loading="saving">
+      <el-form-item label="标题" prop="title">
+        <el-input v-model="form.title" maxlength="200" show-word-limit />
+      </el-form-item>
+      <el-form-item label="描述">
+        <el-input v-model="form.description" type="textarea" :rows="4" maxlength="5000" show-word-limit />
+      </el-form-item>
+      <el-form-item label="类型">
+        <el-select v-model="form.type" style="width: 200px">
+          <el-option v-for="(label, val) in typeLabels" :key="val" :label="label" :value="val" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="优先级">
+        <el-select v-model="form.priority" style="width: 200px">
+          <el-option v-for="(label, val) in priorityLabels" :key="val" :label="label" :value="val" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="执行人" prop="assignees">
+        <el-select v-model="form.assignees" multiple filterable style="width: 100%" placeholder="至少 1 个">
+          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="监督人" prop="supervisors">
+        <el-select v-model="form.supervisors" multiple filterable style="width: 100%" placeholder="默认 1 个,可多选">
+          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="到期时间" prop="dueAt">
+        <el-date-picker v-model="form.dueAt" type="datetime" style="width: 240px" />
+      </el-form-item>
+      <el-form-item label="开始时间">
+        <el-date-picker v-model="form.startAt" type="datetime" style="width: 240px" />
+      </el-form-item>
+      <el-form-item label="标签">
+        <el-input v-model="tagsInput" placeholder="逗号分隔,例如:紧急,月结" />
+      </el-form-item>
+      <el-form-item label="checklist">
+        <div class="items">
+          <div v-for="(it, idx) in form.items" :key="idx" class="items__row">
+            <el-input v-model="it.title" placeholder="条目内容" style="flex: 1" />
+            <el-select v-model="it.assignee" placeholder="分配给" style="width: 200px" :disabled="form.assignees.length === 0">
+              <el-option v-for="uid in form.assignees" :key="uid" :label="userName(uid)" :value="uid" />
+            </el-select>
+            <el-button link type="danger" @click="form.items.splice(idx, 1)">删除</el-button>
+          </div>
+          <el-button :icon="Plus" @click="addItem">添加条目</el-button>
+          <div class="items__hint">每个条目必须分配给一个执行人</div>
+        </div>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" :loading="saving" @click="onSubmit">创建</el-button>
+        <el-button @click="$router.back()">取消</el-button>
+      </el-form-item>
+    </el-form>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
+import { taskApi } from '@/api/task'
+import { userApi } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
+import { TASK_TYPE_LABELS, TASK_PRIORITY_LABELS } from '@shared/enums.mjs'
+
+const router = useRouter()
+const auth = useAuthStore()
+
+const typeLabels = TASK_TYPE_LABELS
+const priorityLabels = TASK_PRIORITY_LABELS
+
+const formRef = ref(null)
+const saving = ref(false)
+const tagsInput = ref('')
+const userOptions = ref([])
+
+const form = ref({
+  title: '',
+  description: '',
+  type: 'other',
+  priority: 'normal',
+  assignees: [],
+  supervisors: [], // 不预填自己,避免 el-select MULTIPLE 在选项加载完成前显示 raw id 残留 chip
+  startAt: null,
+  dueAt: null,
+  items: []
+})
+
+const rules = {
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  assignees: [{ required: true, type: 'array', min: 1, message: '至少 1 个执行人', trigger: 'change' }],
+  supervisors: [{ required: true, type: 'array', min: 1, message: '至少 1 个监督人', trigger: 'change' }],
+  dueAt: [{ required: true, message: '请选择到期时间', trigger: 'change' }]
+}
+
+function userName(uid) {
+  const u = userOptions.value.find((x) => x.id === uid)
+  return u ? (u.realName || u.name) : uid
+}
+
+function addItem() {
+  form.value.items.push({ title: '', assignee: form.value.assignees[0] || '', order: form.value.items.length })
+}
+
+async function onSubmit() {
+  try {
+    await formRef.value.validate()
+  } catch (_) {
+    // 校验失败: Element Plus 已经把错误显示在表单上了, 不要弹 unhandled rejection
+    return
+  }
+  saving.value = true
+  try {
+    const payload = { ...form.value }
+    if (tagsInput.value) {
+      payload.tags = tagsInput.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+    }
+    if (!payload.startAt) delete payload.startAt
+    const r = await taskApi.create(payload)
+    ElMessage.success('已创建')
+    router.replace(`/tasks/${r.data?._id}`)
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    // roleScope: 'staff' 排除纯家长 (2026-07-08: 任务模块暂不向家长派任务)
+    const r = await userApi.list({ page: 1, pageSize: 500, roleScope: 'staff' })
+    userOptions.value = r.data?.items || []
+  } catch (_) { /* ignore */ }
+})
+</script>
+
+<style scoped>
+.page { padding: 16px; max-width: 900px; }
+.page__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.items { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.items__row { display: flex; gap: 8px; align-items: center; }
+.items__hint { font-size: 12px; color: #909399; }
+</style>

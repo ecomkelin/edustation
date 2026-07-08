@@ -96,13 +96,13 @@ async function rollSpecies({ tier }) {
 
 /* ─── Items ─────────────────────────────────── */
 
-async function listItems({ slot, isActive, unlockType, tier, level, keyword }) {
-  const filterKey = JSON.stringify({ slot, isActive, unlockType, tier, level, keyword })
+async function listItems({ slot, isActive, tier, level, keyword }) {
+  // 2026-07-08: 删 unlockType 参数；unlockTier/unlockLevel 改为 DB 上的独立字段
+  const filterKey = JSON.stringify({ slot, isActive, tier, level, keyword })
   return withCache(`items:global:${filterKey}`, async () => {
     const base = {}
     if (slot) base.slot = slot
     if (isActive !== undefined) base.isActive = isActive
-    if (unlockType) base.unlockType = unlockType
     if (tier) base.unlockTier = tier
     let items = await _listGlobal({ Model: PetItem, baseFilter: base, keyword })
     if (items.length === 0) {
@@ -133,29 +133,46 @@ async function getItem({ key }) {
 }
 
 /**
- * 升级解锁：返回当前等级下应解锁的 item keys（仅 level 解锁型）。
- * 沿用 v1 逻辑：unlockTier ≤ petTier 且 unlockLevel ≤ petLevel 的都解锁。
+ * 升级解锁：返回当前等级下应解锁的 item keys。
+ *
+ * 2026-07-08 新语义（unlockType 拆字段）：
+ *   解锁 = (unlockTier 为空 || pet.tier ≥ unlockTier) AND
+ *          (unlockLevel 为空 || pet.level ≥ unlockLevel)
+ *
+ *   - 纯 unlockLevel（hat/scarf/clothes/accessory）→ 升到指定 Lv 即解锁
+ *   - 纯 unlockTier  (halo/background, unlockLevel=null) → 升到指定阶即解锁
+ *   - 两个都填 → 同时满足（少见但支持）
  */
 async function listItemsUnlockedAtLevel({ tier, level }) {
   const tierOrder = PET_TIERS
   const tierIdx = tierOrder.indexOf(tier)
-  const candidates = await listItems({ unlockType: 'level', isActive: true })
+  const candidates = await listItems({ isActive: true })
   return candidates
     .filter(it => {
-      const itemTierIdx = tierOrder.indexOf(it.unlockTier)
-      if (itemTierIdx > tierIdx) return false
-      return (it.unlockLevel || 1) <= level
+      // unlockTier 条件：null=无要求；否则 pet.tier ≥ unlockTier
+      if (it.unlockTier != null) {
+        const itemTierIdx = tierOrder.indexOf(it.unlockTier)
+        if (itemTierIdx > tierIdx) return false
+      }
+      // unlockLevel 条件：null=无要求；否则 pet.level ≥ unlockLevel
+      if (it.unlockLevel != null) {
+        if (level < it.unlockLevel) return false
+      }
+      return true
     })
     .map(it => it.key)
 }
 
 /**
- * 升阶解锁：返回新阶下应解锁的 halo + background item keys（tier 解锁型）。
+ * 升阶解锁：返回新阶下应解锁的 halo + background item keys。
+ *
+ * 2026-07-08 新语义：按 unlockTier 字段筛选，slot 限定 halo/background。
+ * 注：调用方（pet.service）应保证 pet.level 已重置为 1，所以本函数不校验 level。
  */
 async function listItemsUnlockedAtTier({ tier }) {
-  const candidates = await listItems({ unlockType: 'tier', isActive: true })
+  const candidates = await listItems({ tier, isActive: true })
   return candidates
-    .filter(it => it.unlockTier === tier && ['halo', 'background'].includes(it.slot))
+    .filter(it => ['halo', 'background'].includes(it.slot))
     .map(it => it.key)
 }
 

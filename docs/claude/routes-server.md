@@ -667,6 +667,7 @@ Auth 列简写:
 | 2026-06-25 | 订单退款端点 R-1722 上线 (支持部分退款 + SP 软停用) | R-1722 | add |
 | 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |
 | 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |
+| 2026-07-08 | 员工任务模块 MM=39 上线 (三角色协作 + checklist + 监督人审批 + 看板 + 周期任务模板 + cron; 6 model + 20 端点 + 5 admin 视图; §8.1 物理删除防护) | R-3900 ~ R-3919 | add |
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
 | 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
@@ -727,3 +728,34 @@ Auth 列简写:
 | R-3809 | GET | /videos/admin/row-stats | ADMIN | video.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |
 | R-3810 | POST | /videos/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId |
 | R-3811 | GET | /videos/admin/:id/removable-check | PERM | video.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |
+
+### MM=39 task (URL: /tasks)
+
+> 员工任务模块 (2026-07-08 立项). 三角色协作: creator (1 个) / assignees (≥1) / supervisors (必填 1 个, 默认=creator).
+> 多执行人各自勾选 checklist (TaskItem); 全员 submitted → 任务进 submitted → 监督人 review.
+> 周期任务由 TaskTemplate 模板 + cron 触发,自动生成 Task 实例.
+> C 端不挂 (家长无任务模块). 物理删除走 §8.1 (requirePlatformPassword + 业务门挡 submitted/approved).
+> 详见 [data-models-task.md](data-models-task.md).
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3900 | POST | /tasks | PERM | task.write | 创建任务 | body 必填 title/dueAt/assignees/supervisors; items 可选; service 校验 assignees ⊂ 同机构 |
+| R-3901 | GET | /tasks | PERM | task.read | 列表 (含可见性过滤) | query: myRole/status/type/priority/assignee/creator/supervisor/keyword/dueBefore/dueAfter/page/pageSize; 无 task.read 时只看我相关 |
+| R-3902 | GET | /tasks/:id | PERM | task.read | 详情 (含 items/reviews/comments) | service.canViewTask 校验可见性,否则 403 |
+| R-3903 | PATCH | /tasks/:id | PERM | task.write | 编辑任务 | 仅 creator / task.write 可改; 终态 (approved/cancelled/expired) 拒绝; status 只能走专用端点 |
+| R-3904 | DELETE | /tasks/:id | ADMIN_PWD | — | **超管物理删除** (§8.1) | 业务硬门挡 submitted/approved; 互锁 TaskItem/TaskReview/TaskComment |
+| R-3905 | POST | /tasks/:id/submit | PERM | task.read | 执行人「提交完成」 | 校验自己所有条目 done; 写 Task.assignees[].status=submitted |
+| R-3906 | POST | /tasks/:id/review | PERM | task.review | 监督人审批 | 必填 result (approved/rejected/requested_changes); 写 TaskReview 留痕 |
+| R-3907 | POST | /tasks/:id/cancel | PERM | task.write | 取消任务 | 仅 creator / task.write; 可选 reason (作为评论留痕) |
+| R-3908 | POST | /tasks/:id/items | PERM | task.write | 加 checklist 条目 | 校验 assignee ⊂ Task.assignees; 触发 recomputeTaskState |
+| R-3909 | PATCH | /tasks/:id/items/:itemId | PERM | task.read | 勾/取消条目 | 条目 assignee 本人 / task.write; 可选重新分配; 触发 recomputeTaskState |
+| R-3910 | POST | /tasks/:id/comments | PERM | task.read | 评论 | content 必填; mentions 解析后存 (通知中心用) |
+| R-3911 | GET | /tasks/:id/removable-check | PERM | task.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |
+| R-3912 | GET | /tasks/stats | PERM | task.read | 我的统计 (列表/详情页顶部用) | 返 mineTotal/mineDue/mineOverdue/mineSubmitted/mineReview |
+| R-3913 | GET | /tasks/kanban | PERM | task.read | 看板 4 列分桶 | query: assignee/type/priority/scope=mine\|all; 返 {todo, inProgress, pendingReview, done} |
+| R-3914 | POST | /tasks/templates | PERM | task.write | 创建周期模板 | 必填 title/defaultAssignees/defaultSupervisors/schedule.kind; nextRunAt 自动算 |
+| R-3915 | GET | /tasks/templates | PERM | task.read | 模板列表 | query: isActive/page/pageSize |
+| R-3916 | PATCH | /tasks/templates/:id | PERM | task.write | 编辑模板 | 改 schedule 重新算 nextRunAt |
+| R-3917 | DELETE | /tasks/templates/:id | PERM | task.delete | 删除模板 | 已有 Task 不受影响 (Task.fromTemplate 软引用) |
+| R-3918 | POST | /tasks/templates/:id/run-now | PERM | task.write | 立即跑一次 (测试用) | 写 TaskGenerationLog (status=success) |
+| R-3919 | POST | /tasks/templates/:id/pause \| /resume | PERM | task.write | 暂停/恢复模板 | pause → nextRunAt=null; resume → 重算 nextRunAt |

@@ -378,6 +378,25 @@
         "video.read": { "label": "查看科普视频", "description": "浏览本机构发布的科普视频 (含草稿)" },
         "video.write": { "label": "编辑科普视频", "description": "新建/编辑/上下架本机构的科普视频 (C 端仅本机构家长可见)" }
       }
+    },
+    {
+      "key": "task",
+      "label": "员工任务",
+      "description": "内部协作/工作流任务:发起人 / 执行人 / 监督人协作模式,含 checklist 条目、核查审批、评论、看板视图、周期任务模板。服务于校长/教务/财务/招生/老师等员工岗位的日常工作 (C 端家长不可见)。",
+      "permissions": [
+        "task.read",
+        "task.write",
+        "task.assign",
+        "task.review",
+        "task.delete"
+      ],
+      "permissionLabels": {
+        "task.read": { "label": "查看任务", "description": "浏览本机构全部任务 (看板/列表/统计);无 task.read 时只能看到与自己相关的 (创建/执行/监督/被 @)" },
+        "task.write": { "label": "编辑任务", "description": "新建/编辑任务,调整标题/描述/条目/优先级/到期时间;只对自己创建的任务有完全编辑权" },
+        "task.assign": { "label": "分派任务", "description": "把任务分派给其他员工 (普通岗只能分给自己或同级;管理层可分派给下级)" },
+        "task.review": { "label": "核查审批", "description": "对提交完成的任务进行审批 (通过/打回);仅任务的监督人列表里的人员可执行" },
+        "task.delete": { "label": "删除任务", "description": "物理删除任务 (走 §8.1 三重防护:超管+密码+业务互锁)" }
+      }
     }
   ]
 }

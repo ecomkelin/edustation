@@ -280,19 +280,25 @@ const PET_VISUAL_TYPE_LABELS = Object.freeze({
 })
 
 /**
- * 装饰解锁类型（PetItem.unlockType，2026-06-21 pet-system-v2-ext）
- *   - level: 升级解锁（unlockLevel ≤ 当前等级时解锁）
- *   - tier:  升阶解锁（unlockTier 阶及以下时解锁；累积：B 解锁 C+B）
+ * 装饰解锁字段（2026-07-08 拆字段，原 PetItemUnlockType 废弃）
+ *
+ * 历史：
+ *   - 原 PetItem.unlockType enum: 'level' | 'tier'，互斥二选一
+ *   - 现在改为两个独立字段：
+ *     - unlockLevel (Number, nullable)
+ *         非空 → 当 pet.level ≥ unlockLevel 时解锁
+ *     - unlockTier  (enum C/B/A/S, nullable)
+ *         非空 → 当 pet.tier ≥ unlockTier 时解锁（累积：B 解锁 C+B）
+ *
+ *     两字段独立可选：
+ *       - 只设 unlockLevel → 纯升级解锁
+ *       - 只设 unlockTier  → 纯升阶解锁
+ *       - 两个都设        → AND 同时满足才解锁
+ *       - 两个都空        → 永久不可解锁（视为配置错误）
+ *
+ * 原 PET_ITEM_UNLOCK_TYPES / PET_ITEM_UNLOCK_TYPE_LABELS 已不再导出。
+ * 如有老代码引用，删除 unlockType 即可。
  */
-const PetItemUnlockType = Object.freeze({
-  LEVEL: 'level',
-  TIER: 'tier'
-})
-const PET_ITEM_UNLOCK_TYPES = Object.values(PetItemUnlockType)
-const PET_ITEM_UNLOCK_TYPE_LABELS = Object.freeze({
-  level: '升级解锁',
-  tier: '升阶解锁'
-})
 
 /**
  * 消耗品类型（PetConsumable.kind，2026-06-21 pet-system-v2-ext）
@@ -738,9 +744,8 @@ exports.PET_EVENT_TYPES = PET_EVENT_TYPES
 exports.PetVisualType = PetVisualType
 exports.PET_VISUAL_TYPES = PET_VISUAL_TYPES
 exports.PET_VISUAL_TYPE_LABELS = PET_VISUAL_TYPE_LABELS
-exports.PetItemUnlockType = PetItemUnlockType
-exports.PET_ITEM_UNLOCK_TYPES = PET_ITEM_UNLOCK_TYPES
-exports.PET_ITEM_UNLOCK_TYPE_LABELS = PET_ITEM_UNLOCK_TYPE_LABELS
+// 2026-07-08: PetItemUnlockType / PET_ITEM_UNLOCK_TYPES / PET_ITEM_UNLOCK_TYPE_LABELS 已废弃
+// 原枚举拆为独立字段 unlockLevel / unlockTier, 不再导出
 exports.PetConsumableKind = PetConsumableKind
 exports.PET_CONSUMABLE_KINDS = PET_CONSUMABLE_KINDS
 exports.PET_CONSUMABLE_KIND_LABELS = PET_CONSUMABLE_KIND_LABELS
@@ -801,6 +806,158 @@ exports.FaceConsentPurpose = FaceConsentPurpose
 exports.FACE_CONSENT_PURPOSES = FACE_CONSENT_PURPOSES
 exports.ConsentSubjectType = ConsentSubjectType
 exports.CONSENT_SUBJECT_TYPES = CONSENT_SUBJECT_TYPES
+
+// ─── 员工任务模块 (2026-07-08 立项) ─────────────
+
+/**
+ * 任务状态 (Task.status) — 多执行人协作 + 监督人审批的状态机
+ *
+ *   draft             草稿（仅发起人可见）
+ *   assigned          已分配（待任一执行人动手）
+ *   in_progress       进行中（至少 1 个执行人提交了进展）
+ *   partial_submitted 部分提交（部分执行人已 submitted，全员尚未提交完）
+ *   submitted         全部执行人已提交（待监督人审）
+ *   approved          已通过（监督人批了，终态）
+ *   rejected          已打回（监督人打回 → 任务回到 in_progress 留痕在 TaskReview）
+ *   expired           已逾期（cron 标记；终态）
+ *   cancelled         已取消（发起人取消；终态）
+ */
+const TaskStatus = Object.freeze({
+  DRAFT: 'draft',
+  ASSIGNED: 'assigned',
+  IN_PROGRESS: 'in_progress',
+  PARTIAL_SUBMITTED: 'partial_submitted',
+  SUBMITTED: 'submitted',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  EXPIRED: 'expired',
+  CANCELLED: 'cancelled'
+})
+const TASK_STATUSES = Object.values(TaskStatus)
+const TASK_STATUS_LABELS = Object.freeze({
+  draft: '草稿',
+  assigned: '待办',
+  in_progress: '进行中',
+  partial_submitted: '部分已提交',
+  submitted: '待审核',
+  approved: '已完成',
+  rejected: '已打回',
+  expired: '已逾期',
+  cancelled: '已取消'
+})
+
+/**
+ * 任务类型 (Task.type) — 业务域分类
+ */
+const TaskType = Object.freeze({
+  ADMIN: 'admin',
+  TEACHING: 'teaching',
+  RECRUITING: 'recruiting',
+  FINANCE: 'finance',
+  MARKETING: 'marketing',
+  FACILITY: 'facility',
+  OTHER: 'other'
+})
+const TASK_TYPES = Object.values(TaskType)
+const TASK_TYPE_LABELS = Object.freeze({
+  admin: '行政',
+  teaching: '教务',
+  recruiting: '招生',
+  finance: '财务',
+  marketing: '市场',
+  facility: '后勤',
+  other: '其他'
+})
+
+/**
+ * 任务优先级 (Task.priority)
+ */
+const TaskPriority = Object.freeze({
+  LOW: 'low',
+  NORMAL: 'normal',
+  HIGH: 'high',
+  URGENT: 'urgent'
+})
+const TASK_PRIORITIES = Object.values(TaskPriority)
+const TASK_PRIORITY_LABELS = Object.freeze({
+  low: '低',
+  normal: '中',
+  high: '高',
+  urgent: '紧急'
+})
+
+/**
+ * 任务执行人个人状态 (Task.assignees[].status 子文档)
+ *   not_started  未开始（还未勾过任何条目）
+ *   in_progress  进行中（至少勾过 1 个）
+ *   submitted    已提交完成（自己负责的所有条目都 done 了）
+ */
+const TaskAssigneeStatus = Object.freeze({
+  NOT_STARTED: 'not_started',
+  IN_PROGRESS: 'in_progress',
+  SUBMITTED: 'submitted'
+})
+const TASK_ASSIGNEE_STATUSES = Object.values(TaskAssigneeStatus)
+const TASK_ASSIGNEE_STATUS_LABELS = Object.freeze({
+  not_started: '未开始',
+  in_progress: '进行中',
+  submitted: '已提交'
+})
+
+/**
+ * 任务核查结果 (TaskReview.result)
+ */
+const TaskReviewResult = Object.freeze({
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  REQUESTED_CHANGES: 'requested_changes'
+})
+const TASK_REVIEW_RESULTS = Object.values(TaskReviewResult)
+const TASK_REVIEW_RESULT_LABELS = Object.freeze({
+  approved: '通过',
+  rejected: '打回',
+  requested_changes: '要求修改'
+})
+
+/**
+ * 周期任务规则 (TaskTemplate.schedule.kind)
+ *   daily   每日 N 次（hour 数组）
+ *   weekly  每周几（weekdays 数组）+ hour
+ *   monthly 每月几号（daysOfMonth 数组）+ hour
+ *   cron    cron 表达式（[TODO] 阶段 2）
+ */
+const TaskScheduleKind = Object.freeze({
+  DAILY: 'daily',
+  WEEKLY: 'weekly',
+  MONTHLY: 'monthly',
+  CRON: 'cron'
+})
+const TASK_SCHEDULE_KINDS = Object.values(TaskScheduleKind)
+const TASK_SCHEDULE_KIND_LABELS = Object.freeze({
+  daily: '每天',
+  weekly: '每周',
+  monthly: '每月',
+  cron: '高级'
+})
+
+exports.TaskStatus = TaskStatus
+exports.TASK_STATUSES = TASK_STATUSES
+exports.TASK_STATUS_LABELS = TASK_STATUS_LABELS
+exports.TaskType = TaskType
+exports.TASK_TYPES = TASK_TYPES
+exports.TASK_TYPE_LABELS = TASK_TYPE_LABELS
+exports.TaskPriority = TaskPriority
+exports.TASK_PRIORITIES = TASK_PRIORITIES
+exports.TASK_PRIORITY_LABELS = TASK_PRIORITY_LABELS
+exports.TaskAssigneeStatus = TaskAssigneeStatus
+exports.TASK_ASSIGNEE_STATUSES = TASK_ASSIGNEE_STATUSES
+exports.TASK_ASSIGNEE_STATUS_LABELS = TASK_ASSIGNEE_STATUS_LABELS
+exports.TaskReviewResult = TaskReviewResult
+exports.TASK_REVIEW_RESULTS = TASK_REVIEW_RESULTS
+exports.TASK_REVIEW_RESULT_LABELS = TASK_REVIEW_RESULT_LABELS
+exports.TaskScheduleKind = TaskScheduleKind
+exports.TASK_SCHEDULE_KINDS = TASK_SCHEDULE_KINDS
+exports.TASK_SCHEDULE_KIND_LABELS = TASK_SCHEDULE_KIND_LABELS
 
 // 兜底: module.exports 直接给完整对象 (server 端 require 解构)
 module.exports = exports

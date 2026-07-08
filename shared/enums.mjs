@@ -71,4 +71,24 @@ export const CLIENT_LEVEL = enums.CLIENT_LEVEL
 export const CLIENT_LEVEL_LABEL = enums.CLIENT_LEVEL_LABEL
 export const labelOfClientLevel = enums.labelOfClientLevel
 
+// 员工任务模块 (2026-07-08)
+export const TaskStatus = enums.TaskStatus
+export const TASK_STATUSES = enums.TASK_STATUSES
+export const TASK_STATUS_LABELS = enums.TASK_STATUS_LABELS
+export const TaskType = enums.TaskType
+export const TASK_TYPES = enums.TASK_TYPES
+export const TASK_TYPE_LABELS = enums.TASK_TYPE_LABELS
+export const TaskPriority = enums.TaskPriority
+export const TASK_PRIORITIES = enums.TASK_PRIORITIES
+export const TASK_PRIORITY_LABELS = enums.TASK_PRIORITY_LABELS
+export const TaskAssigneeStatus = enums.TaskAssigneeStatus
+export const TASK_ASSIGNEE_STATUSES = enums.TASK_ASSIGNEE_STATUSES
+export const TASK_ASSIGNEE_STATUS_LABELS = enums.TASK_ASSIGNEE_STATUS_LABELS
+export const TaskReviewResult = enums.TaskReviewResult
+export const TASK_REVIEW_RESULTS = enums.TASK_REVIEW_RESULTS
+export const TASK_REVIEW_RESULT_LABELS = enums.TASK_REVIEW_RESULT_LABELS
+export const TaskScheduleKind = enums.TaskScheduleKind
+export const TASK_SCHEDULE_KINDS = enums.TASK_SCHEDULE_KINDS
+export const TASK_SCHEDULE_KIND_LABELS = enums.TASK_SCHEDULE_KIND_LABELS
+
 export default enums

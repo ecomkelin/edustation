@@ -103,5 +103,8 @@ router.use('/articles', articleRoutes)
 // 内容 - 平台科普视频 (2026-07-03 立项): MM=38, 平台超管发布, C 端公开 + 播放计数; 与 Article 一致评级
 const videoRoutes = require('@modules/video/video.routes')
 router.use('/videos', videoRoutes)
+// 员工任务模块 (2026-07-08 立项): MM=39, 任务/模板/看板/统计; admin 端用, C 端不挂
+const taskRoutes = require('@modules/task/task.routes')
+router.use('/tasks', taskRoutes)
 
 module.exports = router

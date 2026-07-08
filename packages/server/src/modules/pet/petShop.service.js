@@ -94,15 +94,17 @@ async function listShop({ orgId, petAccountId, tier }) {
     if (!skip && currentTier) {
       const tierRank = PET_TIERS.indexOf(currentTier)
       const itemTierRank = it.unlockTier ? PET_TIERS.indexOf(it.unlockTier) : 0
-      // 规则 3：解锁所需的阶 > 当前阶 → 跳过（升阶前买也没意义）
+      // 2026-07-08 拆字段后规则:
+      //   规则 3: 解锁所需的阶 > 当前阶 → 跳过 (升阶前买也没意义)
+      //   规则 2: unlockLevel 字段非空 且 pet 已达成 → 跳过 (自动解锁)
+      //   否则: "提前购买" 场景, 应显示
+      // 注意: 只设 unlockTier 的 halo/background (unlockLevel=null), 阶达标就自动解锁 → skip
       if (tierRank < itemTierRank) {
         skip = true
-      } else if (currentLevel != null && it.unlockLevel != null) {
-        // 规则 2：解锁所需的 level 已达成 → 跳过（自动解锁会处理）
+      } else if (it.unlockLevel != null && currentLevel != null) {
         if (currentLevel >= it.unlockLevel) skip = true
-        // 否则：是"提前购买"场景，应显示
-      } else if (it.unlockType === 'tier') {
-        // halo/background（unlockType=tier）：阶达标即自动解锁
+      } else if (it.unlockTier != null && it.unlockLevel == null) {
+        // halo/background: 阶达标即自动解锁
         skip = true
       }
     }
@@ -113,7 +115,7 @@ async function listShop({ orgId, petAccountId, tier }) {
       key: it.key,
       name: it.name,
       slot: it.slot,
-      unlockType: it.unlockType,
+      // 2026-07-08 拆字段: unlockType 不再返回
       unlockLevel: it.unlockLevel,
       unlockTier: it.unlockTier,
       pointCost: it.pointCost,
@@ -179,7 +181,6 @@ async function listShop({ orgId, petAccountId, tier }) {
     const nextTier = PET_TIERS[nextTierRank]
     if (nextTier) {
       const nextTierItems = await PetItem.find({
-        unlockType: 'tier',
         unlockTier: nextTier,
         isActive: true
       }).lean()

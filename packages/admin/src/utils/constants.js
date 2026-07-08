@@ -153,8 +153,9 @@ export const PET_VISUAL_TYPES = ['image', 'svg']
 export const PET_VISUAL_TYPE_LABELS = { image: '图片', svg: 'SVG' }
 export const PET_ITEM_SLOTS = ['hat', 'scarf', 'clothes', 'accessory', 'halo', 'background']
 export const PET_ITEM_SLOT_LABELS = { hat: '帽子', scarf: '围巾', clothes: '衣服', accessory: '饰品', halo: '光环', background: '背景' }
-export const PET_ITEM_UNLOCK_TYPES = ['level', 'tier']
-export const PET_ITEM_UNLOCK_TYPE_LABELS = { level: '升级解锁', tier: '升阶解锁' }
+// 2026-07-08: PET_ITEM_UNLOCK_TYPES / PET_ITEM_UNLOCK_TYPE_LABELS 已废弃
+// 原互斥枚举 level/tier 拆为两个独立字段 unlockLevel / unlockTier (DB PetItem)
+// UI 现在直接用 PET_TIERS / el-input-number, 不再需要这两个常量
 export const PET_CONSUMABLE_KINDS = ['food', 'toy']
 export const PET_CONSUMABLE_KIND_LABELS = { food: '食物', toy: '玩具' }
 export const PET_CONSUMABLE_APPLICABLE_TIERS = ['C', 'B', 'A', 'S', 'all']
