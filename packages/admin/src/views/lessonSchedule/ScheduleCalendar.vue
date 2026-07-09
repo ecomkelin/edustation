@@ -239,7 +239,73 @@
         />
         <span v-else class="muted">—</span>
       </template>
+      <!--
+        2026-07-09: 补课入口恢复
+          v0.6.61 把 ClassSchedulePage 重构成 ScheduleCalendar + 抽屉时漏了 #row-makeup slot
+          和 makeupDialog, 导致日历抽屉里所有未消课的考勤行 (leave / no_show / scheduled / checked_in)
+          展开后右侧空白, 没有任何补救入口; user 反馈 "孩子请假后 补课的入口我看不到了"。
+          这里把 ClassSchedulePage 旧版 (commit e983a1c^ / 6a26 行) 的实现搬回来, 复用同一个
+          lessonAttendanceApi.makeup 端点, 弹框/loading/remark 字段全部跟旧版对齐。
+          schedule 状态非 completed/archived 时 canMakeupColumn=false, AttendanceRosterTable
+          内部不会渲染这个 slot, 所以这里不需要再做条件判断。
+      -->
+      <template #row-makeup="{ row: attRow }">
+        <el-button
+          type="primary"
+          size="small"
+          link
+          :loading="makeupLoading[attRow.id]"
+          @click="openMakeupDialog(currentSchedule, attRow)"
+        >补课</el-button>
+      </template>
     </AttendanceRosterDialog>
+
+    <!--
+      2026-07-09: 补课弹框（从旧 ClassSchedulePage 复原）
+      已结束/已归档排课的某条未消课考勤 (leave/no_show/scheduled/checked_in) 可点行尾「补课」触发,
+      按 FIFO 从该学生持有的匹配课包中扣减 1 课时, 生成一条新的「已消课」考勤记录。
+    -->
+    <el-dialog v-model="makeupDialog" title="补课" width="480px" :close-on-click-modal="false">
+      <el-form v-if="makeupTarget" label-width="100px">
+        <el-form-item label="学生">
+          <span class="value">{{ makeupTarget.attendance.student?.name || '—' }}</span>
+        </el-form-item>
+        <el-form-item label="原排课">
+          <span class="muted">
+            第 {{ makeupTarget.schedule.lessonNo }} 课 ·
+            {{ formatDate(makeupTarget.schedule.plannedStartTime, 'YYYY-MM-DD HH:mm') }}
+          </span>
+        </el-form-item>
+        <el-form-item label="原考勤状态">
+          <el-tag :type="originalStatusType(makeupTarget.attendance.status)" size="small" effect="plain">
+            {{ originalStatusLabel(makeupTarget.attendance.status) }}
+          </el-tag>
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-alert type="info" :closable="false" show-icon>
+            补课将按 FIFO 自动从该学生持有的匹配课包中扣减 1 课时，生成一条新的「已消课」考勤记录。补课不强求填写课评，可在完成后单独补评。
+          </el-alert>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="makeupForm.remark"
+            type="textarea"
+            :rows="2"
+            maxlength="200"
+            show-word-limit
+            placeholder="可选；记录补课原因/特殊说明"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="makeupDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="makeupLoading[makeupTarget?.attendance?.id]"
+          @click="submitMakeup"
+        >确认补课</el-button>
+      </template>
+    </el-dialog>
 
     <!--
       开始上课弹框（2026-07-09 新增）：教务点「开始上课」后弹出，填实际上课时间（晚开课场景）。
@@ -340,6 +406,8 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
+// 2026-07-09: 补课入口恢复需要调 lessonAttendanceApi.makeup (旧 ClassSchedulePage 复原)
+import { lessonAttendanceApi } from '@/api/lessonAttendance'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { userApi } from '@/api/user'
 import { roomApi } from '@/api/room'
@@ -545,6 +613,48 @@ async function withAction(id, fn) {
   actionLoading[id] = true
   try { return await fn() }
   finally { actionLoading[id] = false }
+}
+
+// ─── 补课 (2026-07-09 从旧 ClassSchedulePage 复原) ──────────────
+//   点 AttendanceRosterTable 展开行尾的「补课」按钮 → 弹框 → 确认后调 lessonAttendanceApi.makeup
+//   后端按 FIFO 扣 1 课时 + 新建一条 completed 考勤, 成功后 reload 抽屉名单。
+const makeupLoading = reactive({})  // { [attendanceId]: boolean }
+const makeupDialog = ref(false)
+const makeupTarget = ref(null)      // { schedule, attendance }
+const makeupForm = reactive({ remark: '' })
+// status 中文/颜色与 AttendanceRosterTable 对齐, 弹框内展示原考勤状态时复用
+const MAKEUP_STATUS_LABELS = {
+  scheduled: '待上课', checked_in: '已签到', completed: '已消课',
+  madeup: '已补', no_show: '未到', leave: '请假'
+}
+const MAKEUP_STATUS_TYPES = {
+  scheduled: 'info', checked_in: 'warning', completed: 'success',
+  madeup: 'warning', no_show: 'danger', leave: 'info'
+}
+function originalStatusLabel(s) { return MAKEUP_STATUS_LABELS[s] || s || '—' }
+function originalStatusType(s) { return MAKEUP_STATUS_TYPES[s] || 'info' }
+
+function openMakeupDialog(schedule, attendance) {
+  makeupTarget.value = { schedule, attendance }
+  makeupForm.remark = ''
+  makeupDialog.value = true
+}
+async function submitMakeup() {
+  if (!makeupTarget.value) return
+  const { attendance } = makeupTarget.value
+  makeupLoading[attendance.id] = true
+  try {
+    await lessonAttendanceApi.makeup(attendance.id, { remark: makeupForm.remark || undefined })
+    ElMessage.success('已补课；学生课包 -1')
+    makeupDialog.value = false
+    // 抽屉名单 + 日历事件一起刷新, 跟旧 ClassSchedulePage 一致
+    await rosterDialogRef.value?.reload?.()
+    await reload()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '补课失败')
+  } finally {
+    makeupLoading[attendance.id] = false
+  }
 }
 
 async function onPrepare() {

@@ -160,6 +160,23 @@ async function save() {
     savedSnapshot.content = ev.content ?? ''
     savedSnapshot.strengths = ev.strengths ?? ''
     savedSnapshot.improvements = ev.improvements ?? ''
+    // 2026-07-09: 回写父对象的 evaluation, 避免塌缩→展开导致 EvaluationEditor 重新挂载时,
+    //   fillFromAttendance() 从陈旧的 props.attendance.evaluation 读到旧值, 把刚刚保存的课评抹掉.
+    //   rosterItems 是 ref([]) 深度响应式, 直接改属性会被 Vue 追踪; 而 fillFromAttendance
+    //   只 watch props.attendance.id (不会因为 evaluation 字段变化而冲掉正在编辑的 draft),
+    //   所以这里安全地只更新"持久快照", 不影响当前编辑状态.
+    const nextEval = {
+      score: savedSnapshot.score,
+      content: savedSnapshot.content,
+      strengths: savedSnapshot.strengths,
+      improvements: savedSnapshot.improvements,
+      evaluatedAt: ev.evaluatedAt || new Date().toISOString()
+    }
+    if (props.attendance.evaluation) {
+      Object.assign(props.attendance.evaluation, nextEval)
+    } else {
+      props.attendance.evaluation = nextEval
+    }
     ElMessage.success('课评已保存')
     emit('saved', {
       attendanceId: props.attendance.id,

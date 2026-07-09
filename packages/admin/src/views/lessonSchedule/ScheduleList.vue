@@ -72,9 +72,19 @@
         <el-form-item>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
-        <!-- 2026-07-08: 归档开关 (LessonSchedule 用 status=archived) -->
+        <!-- 2026-07-09: 归档开关改成"联动 statuses 数组"语义, 修复 archived 参数被后端吞掉的 bug.
+             之前 v-model="filters.showArchived" + load 时附加 ?archived=true,
+             但后端 service 在 rawStatuses 非空时直接忽略 archived (lessonSchedule.service.js:131),
+             导致勾选后状态筛仍只返 scheduled, 看不到 archived 数据.
+             现在 checkbox 是 statuses 数组的镜像:
+               - 勾上 → 往 statuses 里 push 'archived'
+               - 取消 → 从 statuses 里 splice 'archived'
+             状态多选器里也始终暴露「完成归档」选项, 用户可两边任选. -->
         <el-form-item>
-          <el-checkbox v-model="filters.showArchived" @change="load">显示已归档</el-checkbox>
+          <el-checkbox
+            :model-value="filters.statuses.includes('archived')"
+            @change="toggleArchived"
+          >显示已归档</el-checkbox>
         </el-form-item>
       </el-form>
     </el-card>
@@ -350,14 +360,14 @@ const filters = reactive({
   courseInstance: '',
   teacher: '',
   room: '',
-  // 状态多选；默认只看「未上课」(scheduled)
+  // 状态多选；默认只看「未上课」(scheduled)。
+  // 2026-07-09: 移除独立 showArchived 字段, 归档状态通过 statuses 数组里的 'archived' 元素表达.
+  //   checkbox 是 statuses 数组的镜像 (toggleArchived() 双向同步).
   statuses: ['scheduled'],
   from: '',
   to: '',
   page: 1,
-  pageSize: 20,
-  // 2026-07-08: 归档开关 (LessonSchedule 用 status=archived)
-  showArchived: false
+  pageSize: 20
 })
 // 默认日期窗口:7 天前 0 点 起 30 天(到 today+29d 的 0 点)。
 // 用本地日期生成 YYYY-MM-DD 串(避开 toISOString 的 UTC 漂移)。
@@ -545,6 +555,19 @@ function resetFilters() {
   load()
 }
 
+/**
+ * 2026-07-09: 「显示已归档」checkbox 双向同步到 filters.statuses 数组.
+ *   勾上 → push 'archived'; 取消 → splice 'archived'.
+ *   状态多选器里也始终暴露「完成归档」选项, 用户可两边任选.
+ *   双向: checkbox :model-value 读 statuses.includes('archived'), 数组变 → checkbox 自动跟.
+ */
+function toggleArchived(checked) {
+  const idx = filters.statuses.indexOf('archived')
+  if (checked && idx < 0) filters.statuses.push('archived')
+  else if (!checked && idx >= 0) filters.statuses.splice(idx, 1)
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
@@ -562,8 +585,9 @@ async function load() {
     }
     if (filters.from) params.from = filters.from
     if (filters.to) params.to = filters.to
-    // 2026-07-08: 归档过滤
-    if (filters.showArchived) params.archived = 'true'
+    // 2026-07-09: 移除 ?archived=true 单独参数; 'archived' 现在走 statuses 多选
+    //   (checkbox 镜像 statuses.includes('archived'), 后端 service 在 rawStatuses 非空时
+    //   会用 { $in: rawStatuses } 正确合并 — 不再被吞)
     const r = await lessonScheduleApi.list(params)
     items.value = r.data.items
     total.value = r.data.total

@@ -221,8 +221,9 @@
         <template #default="{ row }">
           <el-radio-group
             v-model="row._status"
-            :disabled="readOnly || isConsumedRow(row)"
+            :disabled="readOnly || isConsumedRow(row) || row._saving"
             size="small"
+            @change="() => saveOneRow(row)"
           >
             <el-radio-button value="present">正常</el-radio-button>
             <el-radio-button value="late">迟到</el-radio-button>
@@ -236,10 +237,12 @@
           <el-input
             v-model="row._remark"
             size="small"
-            :disabled="readOnly || isConsumedRow(row)"
+            :disabled="readOnly || isConsumedRow(row) || row._saving"
+            :loading="row._saving"
             maxlength="200"
             show-word-limit
             placeholder="可选"
+            @blur="() => saveRemark(row)"
           />
         </template>
       </el-table-column>
@@ -247,23 +250,11 @@
 
     <!-- 底部批量操作 -->
     <div v-if="rosterItems.length && !readOnly" class="bulk-actions">
-      <el-button size="small" @click="setAll('present')">全部正常</el-button>
-      <el-button size="small" @click="setAll('late')">全部迟到</el-button>
-      <el-button size="small" @click="setAll('leave')">全部请假</el-button>
-      <el-button size="small" @click="setAll('no_show')">全部未到</el-button>
-      <span class="muted">已选：{{ summary.counts.present }} 正常 / {{ summary.counts.late }} 迟到 / {{ summary.counts.leave }} 请假 / {{ summary.counts.no_show }} 未到</span>
-      <span class="spacer" />
-      <!-- 关键：未保存变更提示 + 保存按钮。
-           之前漏了这个按钮，导致用户在 radio 上选「请假/未到」后只改了本地 _status，
-           从未调 bulkMark；点「结束」时后端仍把考勤当 checked_in，错误扣课时。 -->
-      <el-tag v-if="dirtyCount > 0" type="warning" size="small" effect="dark">未保存 {{ dirtyCount }} 处变更</el-tag>
-      <el-button
-        size="small"
-        type="primary"
-        :loading="submitting"
-        :disabled="dirtyCount === 0"
-        @click="onSubmit"
-      >保存考勤</el-button>
+      <el-button size="small" :loading="bulkSaving" @click="setAll('present')">全部正常</el-button>
+      <el-button size="small" :loading="bulkSaving" @click="setAll('late')">全部迟到</el-button>
+      <el-button size="small" :loading="bulkSaving" @click="setAll('leave')">全部请假</el-button>
+      <el-button size="small" :loading="bulkSaving" @click="setAll('no_show')">全部未到</el-button>
+      <span class="muted">已保存：{{ summary.counts.present }} 正常 / {{ summary.counts.late }} 迟到 / {{ summary.counts.leave }} 请假 / {{ summary.counts.no_show }} 未到</span>
     </div>
   </div>
 </template>
@@ -327,8 +318,8 @@ function isConsumed(s) {
 }
 
 const loading = ref(false)
-const submitting = ref(false)
-// [{ id, student, studentProduct, status, evaluation, _status, _remark }]
+const bulkSaving = ref(false)
+// [{ id, student, studentProduct, status, evaluation, _status, _remark, _saving }]
 const rosterItems = ref([])
 
 const courseInstanceName = computed(() => {
@@ -464,29 +455,12 @@ const summary = computed(() => {
   return { counts }
 })
 
-/**
- * 统计「dirty」变更数量：状态或备注相对后端值有变化。
- * 用于：1) 显示「未保存 N 处」标签；2) 保存按钮 disabled 状态；3) 父组件判断「结束前是否需要先 flush」。
- */
-const dirtyCount = computed(() => {
-  let n = 0
-  for (const it of rosterItems.value) {
-    if (isConsumed(it.status)) continue // 已消课/已补 不可改
-    const target = UI_TO_BACKEND[it._status]
-    const statusChanged = (
-      (it.status === 'no_show' && it._status !== 'no_show') ||
-      (it.status === 'leave' && it._status !== 'leave') ||
-      ((it.status === 'scheduled' || it.status === 'checked_in') && (it._status === 'leave' || it._status === 'no_show'))
-    )
-    const remarkChanged = (it._remark || '') !== (it.remark || '')
-    if (statusChanged || remarkChanged) n++
-  }
-  return n
-})
+// 2026-07-09: 改 auto-save 后, dirtyCount 不再被 UI / 父组件引用 (hasDirty 永远返回 false),
+//   移除 dirtyCount computed 以免"留着给人看"变成死代码. dirty 判断走 isDirty() 函数.
 
 function originalStatusLabel(s) { return BACKEND_ORIGINAL_LABELS[s] || s || '待上课' }
 function originalStatusType(s) { return BACKEND_ORIGINAL_TYPES[s] || 'info' }
-// 行级"是否已扣课时"判断（radio / 备注 disable / makeup 按钮 / setAll / onSubmit 复用）
+// 行级"是否已扣课时"判断（radio / 备注 disable / makeup 按钮 / setAll / saveOneRow 复用）
 function isConsumedRow(row) { return isConsumed(row && row.status) }
 
 defineExpose({
@@ -494,12 +468,12 @@ defineExpose({
   async reload() { await loadRoster() },
   /** 当前已加载名单（只读快照） */
   getRoster() { return rosterItems.value.slice() },
-  /** 提交当前 dirty 变更（抽屉仍由自己调用；新页面也复用） */
-  async submit() { await onSubmit() },
-  /** 当前是否有未保存变更（父组件在「结束」前判断要不要先 flush） */
-  hasDirty() { return dirtyCount.value > 0 },
-  /** 当前未保存变更数（用于 toast 展示） */
-  getDirtyCount() { return dirtyCount.value }
+  // 2026-07-09: 改 auto-save 后, 父组件不再需要在「结束」前手动 flush.
+  //   保留 submit/hasDirty/getDirtyCount 是为了不破坏旧调用方 (AttendanceRosterDialog 的 defineExpose
+  //   也透传了它们), 现在都退化为 no-op / 永远 0 / 永远 false.
+  async submit() { /* auto-save: nothing to flush */ },
+  hasDirty() { return false },
+  getDirtyCount() { return 0 }
 })
 
 // 2026-06-26: roster 空时, 拉一遍 CourseEnrollment 把"已报名学生 + 剩余课时"列出来
@@ -593,6 +567,7 @@ async function loadRoster() {
         evaluation: it.evaluation || null,
         _status: ui,
         _remark: it.remark || '',
+        _saving: false,
         _eval: {
           score: it.evaluation?.score ?? null,
           content: it.evaluation?.content ?? '',
@@ -609,49 +584,106 @@ async function loadRoster() {
   }
 }
 
-function setAll(status) {
+// ─────────────────────────────────────────────────────────────
+// 2026-07-09: 改 auto-save 后, 列表行操作全部走"改动即保存"模式:
+//   - radio @change   → saveOneRow (单条 bulkMark)
+//   - 备注 @blur      → saveRemark (单条 bulkMark, 只在有变化时)
+//   - 4 个"全部 X"按钮 → setAll 改完只对实际变化的行一次性 bulkMark
+// 视觉:
+//   - 单行保存中: row._saving=true → 该行 radio/input disabled (视觉禁用 + 防 race)
+//   - 批量保存中: bulkSaving=true  → 4 个批量按钮 loading
+// 反馈:
+//   - 成功: 静默 (避免连点刷屏), 仅在 saved event 计数 > 0 时由父组件决定是否弹
+//   - 失败: ElMessage.error + reload 拉回旧值, 行回到后端实际状态
+// ─────────────────────────────────────────────────────────────
+
+/** 哪些行算"dirty"(相对后端值有变化)— 内部 helper, 复用于单条/批量判断 */
+function isDirty(it) {
+  if (isConsumed(it.status)) return false
+  const target = UI_TO_BACKEND[it._status]
+  const statusChanged = (
+    (it.status === 'no_show' && it._status !== 'no_show') ||
+    (it.status === 'leave' && it._status !== 'leave') ||
+    ((it.status === 'scheduled' || it.status === 'checked_in') && (it._status === 'leave' || it._status === 'no_show'))
+  )
+  const remarkChanged = (it._remark || '') !== (it.remark || '')
+  return statusChanged || remarkChanged
+}
+
+/** 把 row 编译成 bulkMark 接受的 item; 只在 isDirty 时返回, 否则 null */
+function buildBulkItem(it) {
+  if (!isDirty(it)) return null
+  return {
+    attendance: it.id,
+    status: UI_TO_BACKEND[it._status],
+    remark: it._remark || undefined
+  }
+}
+
+/** 单条 PATCH: radio @change 触发 */
+async function saveOneRow(row) {
+  if (!props.schedule || !row || row._saving) return
+  if (isConsumed(row.status)) return
+  const item = buildBulkItem(row)
+  if (!item) return
+  row._saving = true
+  try {
+    await lessonAttendanceApi.bulkMark({
+      lessonSchedule: props.schedule._id,
+      items: [item]
+    })
+    // 不弹 success, 静默; 失败时 ElMessage + reload 让 UI 跟后端对齐
+    await loadRoster()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '考勤保存失败')
+    await loadRoster()
+  } finally {
+    // 注意: loadRoster 会重建 rosterItems, 这里的 row 引用可能失效;
+    // 万一 race, 用下标找到最新对象再清 _saving
+    const cur = rosterItems.value.find((x) => x.id === row.id)
+    if (cur) cur._saving = false
+  }
+}
+
+/** 备注失焦自动保存: 只在 _remark 与后端 remark 不一致时发请求 */
+async function saveRemark(row) {
+  if (!props.schedule || !row || row._saving) return
+  if (isConsumed(row.status)) return
+  if ((row._remark || '') === (row.remark || '')) return // 没变化
+  await saveOneRow(row)
+}
+
+/** 批量设置: 改完只对实际变化的行一次性 bulkMark */
+async function setAll(status) {
+  if (!props.schedule || bulkSaving.value) return
+  const items = []
   for (const it of rosterItems.value) {
     if (isConsumed(it.status)) continue
     it._status = status
   }
-}
-
-async function onSubmit() {
-  if (!props.schedule || !rosterItems.value.length) {
-    ElMessage.warning('本节课暂无学生考勤，无需保存')
+  // 重新计算 dirty (setAll 后所有未消课行 _status 都改了)
+  for (const it of rosterItems.value) {
+    const item = buildBulkItem(it)
+    if (item) items.push(item)
+  }
+  if (items.length === 0) {
+    ElMessage.info('本节课没有可登记的学生')
     return
   }
-  submitting.value = true
+  bulkSaving.value = true
   try {
-    const items = []
-    for (const it of rosterItems.value) {
-      if (isConsumed(it.status)) continue // 已消课/已补 不可改
-      const target = UI_TO_BACKEND[it._status]
-      const statusChanged = (
-        (it.status === 'no_show' && it._status !== 'no_show') ||
-        (it.status === 'leave' && it._status !== 'leave') ||
-        ((it.status === 'scheduled' || it.status === 'checked_in') && (it._status === 'leave' || it._status === 'no_show'))
-      )
-      const remarkChanged = (it._remark || '') !== (it.remark || '')
-      if (!statusChanged && !remarkChanged) continue
-      items.push({ attendance: it.id, status: target, remark: it._remark || undefined })
-    }
-    if (items.length === 0) {
-      ElMessage.info('没有需要保存的变更')
-      emit('saved', { count: 0 })
-      return
-    }
     await lessonAttendanceApi.bulkMark({
       lessonSchedule: props.schedule._id,
       items
     })
-    ElMessage.success(`已保存 ${items.length} 条考勤变更`)
+    ElMessage.success(`已批量保存 ${items.length} 条考勤`)
     emit('saved', { count: items.length })
     await loadRoster()
   } catch (e) {
-    ElMessage.error(e?.response?.data?.message || '保存失败')
+    ElMessage.error(e?.response?.data?.message || '批量保存失败')
+    await loadRoster()
   } finally {
-    submitting.value = false
+    bulkSaving.value = false
   }
 }
 </script>
