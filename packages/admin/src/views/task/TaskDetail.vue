@@ -24,7 +24,17 @@
         <!-- 2026-07-08: 归档按钮 (task.delete 权限) -->
         <el-button v-if="canDelete && !task.archived" type="warning" plain @click="onArchive">归档</el-button>
         <el-button v-if="canDelete && task.archived" plain @click="onUnarchive">取消归档</el-button>
-        <el-button v-if="canDelete" type="danger" @click="onDelete">删除</el-button>
+        <!-- 物理删除 — 走 DestructiveConfirm slot 范式 (组件内自带 precheck + 输密码) -->
+        <DestructiveConfirm
+          v-if="canDelete"
+          target="任务"
+          warning="中风险"
+          :precheck-notes="['任务下 checklist 已清空', '无外部业务引用']"
+          :precheck="() => taskApi.removableCheck(route.params.id).then((r) => r.data)"
+          @confirm="doDelete"
+        >
+          <el-button type="danger">删除</el-button>
+        </DestructiveConfirm>
       </div>
     </div>
 
@@ -196,8 +206,6 @@
         <el-button type="primary" :loading="cancelSaving" @click="onCancel">确认取消</el-button>
       </template>
     </el-dialog>
-
-    <DestructiveConfirm ref="dcRef" entity-label="任务" @confirm="doDelete" />
   </div>
 </template>
 
@@ -245,8 +253,6 @@ const cancelVisible = ref(false)
 const cancelForm = ref({ reason: '' })
 const cancelSaving = ref(false)
 
-const dcRef = ref(null)
-
 // 权限
 const myId = computed(() => String(auth.user?.id || ''))
 const isCreator = computed(() => String(task.value.creator?._id || task.value.creator) === myId.value)
@@ -286,9 +292,9 @@ function canToggleItem(it) {
 
 // 2026-07-08: 允许删除条目的条件 — 与 service.removeItem 对齐
 //   条目 assignee 本人 / 任务 creator / 平台超管 / task.write / task.delete 任一即可
-//   (解死锁: creator 想删整个任务, 必先能清空它的 checklist)
+//   (解死锁: creator 想删整个任务, 必先能清空它的 checklist; 已归档任务也得能删条目, 否则死锁)
+//   2026-07-08 二改: 移除 `task.value.archived` guard — 已归档 + 终态任务的物理删除路径需要清空 checklist
 function canRemoveItem(it) {
-  if (task.value.archived) return false
   if (isFinal.value) return false
   if (isCreator.value) return true
   if (String(it.assignee?._id || it.assignee) === myId.value) return true
@@ -425,15 +431,8 @@ async function onAddItem() {
   }
 }
 
-async function onDelete() {
-  const check = await taskApi.removableCheck(route.params.id)
-  // http 拦截器不真正解包, 取 .data 才能拿到 {canRemove, blockers}
-  if (!check.data?.canRemove) {
-    ElMessage.warning((check.data?.blockers || []).map((b) => b.hint).join('；'))
-    return
-  }
-  dcRef.value.open({ _id: route.params.id })
-}
+// 物理删除 — DestructiveConfirm slot 自带 precheck + 输密码, 这里只接 confirm
+//   走 R-3904 (requirePermission('task.delete') + requireBodyPassword + service 校验 creator/超管)
 async function doDelete({ password }) {
   await taskApi.remove(route.params.id, { password })
   ElMessage.success('已删除')

@@ -16,6 +16,9 @@
  *   - 物理删除走 §8.1 弱化版 (2026-07-08 改, 工作流类特殊): 路由 requirePermission('task.delete') +
  *     requireBodyPassword (密码二次确认, 不限超管) + service.remove 校验「平台超管 OR 任务 creator」+ removableCheck
  *     (区别: 核心实体 Org/CourseProduct/Room 等仍走 requirePlatformPassword 强门挡)
+ *   - 已归档任务的物理删除 (2026-07-08 二改): archived=true 时 removableCheck 跳过 status 检查
+ *     (避免「已归档 + approved/submitted 终态」死锁: 挡板说"先取消或走归档", 但已归档);
+ *     removeItem 同步移除 archived 拦截, 让用户清空 checklist 后能删整个任务
  */
 
 const Task = require('@models/Task.model')
@@ -388,12 +391,17 @@ async function remove({ id, orgId, actor }) {
 }
 
 async function removableCheck({ id, orgId }) {
-  const task = await Task.findOne({ _id: id, org: orgId }).select('_id status').lean()
+  const task = await Task.findOne({ _id: id, org: orgId }).select('_id status archived').lean()
   if (!task) {
     return {
       canRemove: false,
       blockers: [{ entity: 'Task', label: '任务', count: 0, hint: '该任务不存在或不属于本机构' }]
     }
+  }
+  // 2026-07-08: 已归档任务 = §8.2 业务退役, 不再被业务引用, 跳过 status 检查 (终态也可以物理删)
+  //   否则会出现"已归档 + approved 终态"的死锁: 挡板说"先取消或走归档", 但已经归档
+  if (task.archived) {
+    return removable.check(orgId, taskUsageChecks(orgId, id))
   }
   if (['approved', 'submitted'].includes(task.status)) {
     return {
@@ -604,10 +612,11 @@ async function toggleItem({ id, itemId, orgId, done, assignee, actor }) {
 }
 
 // 删除条目 (2026-07-08): 配合挡板, 让用户删空 checklist 后能物理删除整个任务
+//   2026-07-08 二改: 移除 archived 检查 — 物理删除已归档任务的配套动作, 必须放行
+//     (toggleItem/addItem/addComment 仍保留 archived 拦截, 不影响此路径)
 async function removeItem({ id, itemId, orgId, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId }).select('_id status archived creator').lean()
   if (!task) throw ApiError.notFound('任务不存在')
-  if (task.archived) throw ApiError.unprocessable('任务已归档,不可删条目;请先取消归档')
   if (task.status === 'approved' || task.status === 'cancelled' || task.status === 'expired') {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可删条目`)
   }
