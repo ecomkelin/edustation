@@ -309,6 +309,8 @@ const menuGroups = [
       { path: '/students', label: '学生管理', icon: Reading, perm: 'student.read' },
       { path: '/student-products', label: '学生课包', icon: Present, perm: 'studentProduct.read' },
       { path: '/student-works', label: '学生作品', icon: Goods, perm: 'studentWork.read' },
+      // 2026-07-09: 考勤管理从排课菜单迁到学员域 — 业务上属"学员资产"而非"排课生命周期"
+      { path: '/student/attendance', label: '考勤管理', icon: Calendar, perm: 'lessonAttendance.read' },
       { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
       // 积分管理 (2026-06-21): 学员积分账户列表 + 流水 + 手动调整积分
       { path: '/points', label: '积分管理', icon: Present, perm: 'points.read' },
@@ -383,11 +385,13 @@ const visibleGroups = computed(() =>
     .filter((g) => g.children.length > 0)
 )
 
-// 当前侧栏要高亮的菜单路径 (2026-06-26): schedule 父级路由吸收 list/makeup/attendance 子路径,
-// 这样日历视图/列表视图/考勤看板/补课页都让「排课」菜单亮.
+// 当前侧栏要高亮的菜单路径 (2026-06-26): schedule 父级路由吸收 list/makeup 子路径,
+// 这样日历视图/列表视图/补课页都让「排课」菜单亮.
+// 2026-07-09: /schedule/attendance 不再吸收 — 考勤管理已迁到 /student/attendance (学员菜单),
+//   老路径走 redirect 到新路径, 在学员菜单高亮.
 const activeMenuPath = computed(() => {
   const p = route.path
-  if (p === '/schedule/list' || p === '/schedule/makeup' || p === '/schedule/attendance') return '/schedule'
+  if (p === '/schedule/list' || p === '/schedule/makeup') return '/schedule'
   return p
 })
 

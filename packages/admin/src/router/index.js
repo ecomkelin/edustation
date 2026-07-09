@@ -32,7 +32,9 @@ const routes = [
       { path: 'schedule', component: () => import('@/views/lessonSchedule/ScheduleCalendar.vue') },
       // 排课列表视图 (日历的姊妹页): 编辑/批量/补齐名单主战场; 日历只读
       { path: 'schedule/list', component: () => import('@/views/lessonSchedule/ScheduleList.vue') },
-      { path: 'schedule/attendance', component: () => import('@/views/lessonSchedule/AttendanceListPage.vue') },
+      // 2026-07-09: 考勤管理从排课菜单移到学员菜单; 老路由保留 redirect 以兼容书签/链接
+      { path: 'schedule/attendance', redirect: 'student/attendance' },
+      { path: 'student/attendance', component: () => import('@/views/lessonSchedule/AttendanceListPage.vue') },
       { path: 'schedule/makeup', component: () => import('@/views/lessonSchedule/MakeupPage.vue') },
       { path: 'orders', component: () => import('@/views/orders/Orders.vue') },
       { path: 'ai-chat', component: () => import('@/views/agent/AiChatTest.vue') },

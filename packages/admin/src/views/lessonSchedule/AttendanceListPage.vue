@@ -29,13 +29,33 @@
             <el-option v-for="o in STATUS_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="课评">
-          <el-select v-model="filter.evalState" clearable placeholder="全部" style="width: 160px">
-            <el-option label="仅已消课" value="completed-only" />
-            <el-option label="已消课已评" value="evaluated" />
-            <el-option label="已消课未评" value="pending" />
-            <el-option label="含补课记录" value="makeup" />
-          </el-select>
+        <!--
+          2026-07-09: 快速筛选 chip 组 (radio-button 风格, 与 task/TaskList 视图切换同款约定)
+            - 全部考勤: 不过滤
+            - 待补课:  status NOT IN [completed,madeup] AND schedule.status IN [completed,archived]
+                       复用 MakeupPage.vue:257-264 的客户端过滤逻辑, 按 plannedStartTime 倒序
+            - 待评价:  status IN [completed,madeup] AND !evaluation.evaluatedAt
+            - 已补:    status === 'madeup'
+          待补课 chip 上的红色 badge 数字 = 当前全量里"待补课"条数 (不管 chip 选啥, 都不变),
+          让教务一眼看到"现在机构内有多少待补课" — 跨 chip 切换的固定指引.
+          取代之前的「课评」select (4 个选项含义与 chip 一一对应, 两套 UI 互相打架).
+        -->
+        <el-form-item label="快速筛选">
+          <el-radio-group v-model="filter.quickFilter" size="default" @change="onSearch">
+            <el-radio-button value="">全部考勤</el-radio-button>
+            <el-radio-button value="pending-makeup">
+              待补课
+              <el-badge
+                v-if="pendingMakeupCount > 0"
+                :value="pendingMakeupCount"
+                type="warning"
+                :max="99"
+                style="margin-left: 4px"
+              />
+            </el-radio-button>
+            <el-radio-button value="pending-eval">待评价</el-radio-button>
+            <el-radio-button value="madeup">已补</el-radio-button>
+          </el-radio-group>
         </el-form-item>
         <el-form-item label="日期范围">
           <el-date-picker
@@ -67,8 +87,9 @@
         style="margin-bottom: 12px"
       >
         <template #title>
-          <span>本页汇总该机构下所有 LessonAttendance，可按学生/开班/状态/课评/日期范围快速定位。
-          点击「跳转排课」跳到「排课日历」并自动打开对应排课的考勤抽屉。</span>
+          <span>本页汇总该机构下所有 LessonAttendance，可按学生/开班/状态/日期范围快速定位。
+          顶部「快速筛选」chip 可一键定位 <strong>待补课</strong>(已结束/已归档排课下的未消课考勤)/ <strong>待评价</strong>(已消课但没写课评)/ <strong>已补</strong>(已用 1-键补课) 三类典型场景。
+          点击行内「跳转排课」跳到「排课日历」并自动打开对应排课的考勤抽屉，在抽屉里点行末「补课」即可 1-键补齐。</span>
         </template>
       </el-alert>
 
@@ -184,7 +205,9 @@ const filter = reactive({
  student: null,
  courseInstance: null,
  status: null,
- evalState: null,
+ // 2026-07-09: 取代旧 evalState select, 4 选项与 chip 1:1 对应:
+ //   '' | 'pending-makeup' | 'pending-eval' | 'madeup'
+ quickFilter: '',
  page:1,
  pageSize:20,
  // 2026-07-08: 归档开关
@@ -197,6 +220,9 @@ const total = ref(0)
 const loading = ref(false)
 const courseInstanceOptions = ref([])
 const studentOptions = ref([])
+// 2026-07-09: 待补课 badge 数字 — 不随 quickFilter 切换改变, 让教务跨 chip 一眼看到机构内
+//   "还有多少待补课"。在 fetchList 后从原始 raw 派生 (chip 切到 pending-makeup 时是同源).
+const pendingMakeupCount = ref(0)
 
 function ciName(row) {
  const ci = row.lessonSchedule && row.lessonSchedule.courseInstance
@@ -233,11 +259,24 @@ async function fetchList() {
  }
  const r = await lessonAttendanceApi.list(params)
  let raw = r.data?.items || r.data || []
- // 课评/补课筛选（前端过滤；如果量大后端可加 support 参数）
- if (filter.evalState === 'completed-only') raw = raw.filter((a) => a.status === 'completed' || a.status === 'madeup')
- if (filter.evalState === 'evaluated') raw = raw.filter((a) => (a.status === 'completed' || a.status === 'madeup') && a.evaluation && a.evaluation.evaluatedAt)
- if (filter.evalState === 'pending') raw = raw.filter((a) => (a.status === 'completed' || a.status === 'madeup') && !(a.evaluation && a.evaluation.evaluatedAt))
- if (filter.evalState === 'makeup') raw = raw.filter((a) => a.status === 'madeup')
+ // 2026-07-09: 待补课 badge 数字 — 必须先算, 后续 chip 过滤会改 raw
+ pendingMakeupCount.value = raw.filter(isPendingMakeup).length
+ // 2026-07-09: 快速筛选 chip — 取代旧 evalState select (4 选项合并成 1 个 radio-button 组)
+ //   pending-makeup / pending-eval / madeup 在拉到的全量数据上客户端二次过滤
+ //   与 MakeupPage.vue:257-264 待补课语义保持一致
+ if (filter.quickFilter === 'pending-makeup') {
+  raw = raw.filter(isPendingMakeup)
+  // 待补课按 plannedStartTime 倒序, 最近的优先 (跟 MakeupPage 一致)
+  raw.sort((a, b) => {
+   const ta = new Date(a.lessonSchedule?.plannedStartTime || 0).getTime()
+   const tb = new Date(b.lessonSchedule?.plannedStartTime || 0).getTime()
+   return tb - ta
+  })
+ } else if (filter.quickFilter === 'pending-eval') {
+  raw = raw.filter((a) => (a.status === 'completed' || a.status === 'madeup') && !(a.evaluation && a.evaluation.evaluatedAt))
+ } else if (filter.quickFilter === 'madeup') {
+  raw = raw.filter((a) => a.status === 'madeup')
+ }
  total.value = raw.length
  const start = (filter.page -1) * filter.pageSize
  items.value = raw.slice(start, start + filter.pageSize)
@@ -253,10 +292,23 @@ function onReset() {
  filter.student = null
  filter.courseInstance = null
  filter.status = null
- filter.evalState = null
+ filter.quickFilter = ''
  filter.page =1
  dateRange.value = null
  fetchList()
+}
+
+/**
+ * 2026-07-09: 「待补课考勤」定义 — 与 MakeupPage.vue:257-264 保持完全一致。
+ * - 考勤 status ∈ {scheduled, checked_in, leave, no_show} (未消课/未补)
+ * - 排课 status ∈ {completed, archived} (课已结束/归档)
+ * 抽出 helper 让 badge 计数和 chip 过滤共用同一份语义, 避免两处实现漂移。
+ */
+function isPendingMakeup(a) {
+ if (a.status === 'completed' || a.status === 'madeup') return false
+ const schedStatus = a.lessonSchedule && a.lessonSchedule.status
+ if (schedStatus !== 'completed' && schedStatus !== 'archived') return false
+ return true
 }
 
 function goToSchedule(row, expandEval = false) {
