@@ -89,7 +89,7 @@
         <template #title>
           <span>本页汇总该机构下所有 LessonAttendance，可按学生/开班/状态/日期范围快速定位。
           顶部「快速筛选」chip 可一键定位 <strong>待补课</strong>(已结束/已归档排课下的未消课考勤)/ <strong>待评价</strong>(已消课但没写课评)/ <strong>已补</strong>(已用 1-键补课) 三类典型场景。
-          点击行内「跳转排课」跳到「排课日历」并自动打开对应排课的考勤抽屉，在抽屉里点行末「补课」即可 1-键补齐。</span>
+          请假 / 未到考勤可点行内「1-键补课」直接补建已消课记录并扣减课包 1 课时；点击「已评 ✓」可在弹窗内查看完整课评。</span>
         </template>
       </el-alert>
 
@@ -116,10 +116,17 @@
             <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
+        <!-- 2026-07-09: 课评列点击 chip 打开弹窗查看详情 (score/content/strengths/improvements),
+             取代旧版「写课评」跳转排课的方式 — 课评只读, 写课评仍走 AttendanceRosterDialog 的 EvaluationEditor -->
         <el-table-column label="课评" min-width="130">
           <template #default="{ row }">
             <template v-if="row.status === 'completed' || row.status === 'madeup'">
-              <el-tag v-if="row.evaluation && row.evaluation.evaluatedAt" type="success" size="small" effect="dark">已评 ✓</el-tag>
+              <el-tag
+                v-if="row.evaluation && row.evaluation.evaluatedAt"
+                type="success" size="small" effect="dark"
+                style="cursor: pointer"
+                @click="openEvalDialog(row)"
+              >已评 ✓</el-tag>
               <el-tag v-else type="warning" size="small" effect="plain">未评 ✗</el-tag>
               <div v-if="row.evaluation && row.evaluation.score" class="muted" style="font-size:12px; margin-top:2px">
                 评分 {{ row.evaluation.score }}/5
@@ -137,22 +144,20 @@
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
+        <!-- 2026-07-09: 操作列瘦身
+             - 移除「跳转排课」(用户决策: 列表已聚合, 跳排课日历没必要)
+             - 「写课评」移除 (EvaluationEditor 入口仍在 AttendanceRosterDialog, 由「排课日历」点事件进入)
+             - 新增「1-键补课」: 仅 status ∈ {leave, no_show} 且排课已完成/已归档时显示 (复用 make isPendingMakeup 的语义) -->
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.lessonSchedule"
+              v-if="canMakeup(row)"
               size="small"
-              link
               type="primary"
-              @click="goToSchedule(row)"
-            >跳转排课</el-button>
-            <el-button
-              v-if="(row.status === 'completed' || row.status === 'madeup') && row.lessonSchedule"
-              size="small"
-              link
-              type="primary"
-              @click="goToSchedule(row, true)"
-            >写课评</el-button>
+              :loading="makeupLoading[row._id || row.id]"
+              @click="confirmOneKeyMakeup(row)"
+            >1-键补课</el-button>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -168,13 +173,63 @@
         @size-change="fetchList"
       />
     </el-card>
+
+    <!--
+      2026-07-09: 课评查看弹窗 — 点列表「已评 ✓」chip 弹出, 完整展示 score/content/strengths/improvements/evaluatedBy/evaluatedAt。
+      列表本身只读, 写课评入口在 AttendanceRosterDialog (排课日历点事件进入)。
+      用 el-descriptions 紧凑展示字段; 评语 / 亮点 / 改进单独 block 防止被压成单行。
+    -->
+    <el-dialog
+      v-model="evalDialog"
+      title="课评详情"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <template v-if="evalTarget">
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item label="学生">
+            {{ evalTarget.student?.name || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="开班 / 课次">
+            {{ ciName(evalTarget) }} · 第 {{ evalTarget.lessonSchedule?.lessonNo || '?' }} 课
+          </el-descriptions-item>
+          <el-descriptions-item label="评分">
+            <el-rate
+              v-model="evalDialogScoreDisplay"
+              disabled
+              show-score
+              :max="5"
+              :score-template="`${evalTarget.evaluation?.score || 0} / 5`"
+            />
+          </el-descriptions-item>
+          <el-descriptions-item label="评语">
+            <div style="white-space: pre-wrap">{{ evalTarget.evaluation?.content || '—' }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="亮点">
+            <div style="white-space: pre-wrap">{{ evalTarget.evaluation?.strengths || '—' }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="待改进">
+            <div style="white-space: pre-wrap">{{ evalTarget.evaluation?.improvements || '—' }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="评价人">
+            {{ evalTarget.evaluation?.evaluatedBy?.realName || evalTarget.evaluation?.evaluatedBy?.mobile || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="评价时间">
+            {{ formatDate(evalTarget.evaluation?.evaluatedAt, 'YYYY-MM-DD HH:mm') }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </template>
+      <template #footer>
+        <el-button @click="evalDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { lessonAttendanceApi } from '@/api/lessonAttendance'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { studentApi } from '@/api/student'
@@ -320,6 +375,50 @@ function goToSchedule(row, expandEval = false) {
  path: '/schedule',
  query: { open: scheduleId, eval: expandEval ? row._id || row.id : undefined }
  })
+}
+
+// ─── 1-键补课 (2026-07-09 新增) ────────────────────────────────────
+// 复用 isPendingMakeup 的语义: 考勤未消课 (status ∈ {scheduled, checked_in, leave, no_show})
+//   + 排课已完成/已归档 + 有 studentProduct 才能扣减课时。
+// leave/no_show 是最常见的两种「未消课」场景, 之前用户必须跳到排课日历再点补, 现在直接在列表点即可。
+const makeupLoading = reactive({}) // { [attendanceId]: boolean }
+function canMakeup(row) {
+ if (!row || !row.lessonSchedule) return false
+ if (!isPendingMakeup(row)) return false
+ // 没学生产品可扣 → 灰掉 (跟 MakeupPage 的 disable 逻辑保持一致)
+ return !!(row.studentProduct && (row.studentProduct.remainingLessons || 0) > 0)
+}
+async function confirmOneKeyMakeup(row) {
+ const id = row._id || row.id
+ try {
+  await ElMessageBox.confirm(
+   `将为「${row.student?.name || '该学生'}」补建已消课记录，并扣减课包 1 课时。是否继续？`,
+   '1-键补课',
+   { type: 'warning', confirmButtonText: '确认补课', cancelButtonText: '取消' }
+  )
+ } catch {
+  return // 取消
+ }
+ makeupLoading[id] = true
+ try {
+  await lessonAttendanceApi.makeup(id)
+  ElMessage.success('已补课；学生课包 -1')
+  await fetchList()
+ } catch (e) {
+  ElMessage.error(e?.response?.data?.message || '补课失败')
+ } finally {
+  makeupLoading[id] = false
+ }
+}
+
+// ─── 课评查看弹窗 (2026-07-09 新增) ─────────────────────────────────
+const evalDialog = ref(false)
+const evalTarget = ref(null)
+// el-rate 的 v-model 必须可写, 用一个 ref 当 display placeholder (实际显示用 evalTarget.evaluation.score)
+const evalDialogScoreDisplay = computed(() => evalTarget.value?.evaluation?.score || 0)
+function openEvalDialog(row) {
+ evalTarget.value = row
+ evalDialog.value = true
 }
 
 onMounted(async () => {

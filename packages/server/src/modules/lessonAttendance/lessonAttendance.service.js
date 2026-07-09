@@ -82,7 +82,15 @@ async function list({ orgId, lessonSchedule, courseInstance, student, status, ar
   return LessonAttendance.find(filter)
     .populate('student', 'name')
     .populate('studentProduct', 'remainingLessons totalLessons expireDate isActive source giftReason giftedBy giftedAt')
-    .populate('lessonSchedule', 'plannedStartTime title lessonNo')
+    // 2026-07-09: 考勤列表页「开班/第几课」列要显示开班名, 必须把 courseInstance 嵌到 lessonSchedule 里
+    //   二级 populate: 第一个选课表字段 (含 courseInstance 引用), 第二个把引用展开成 { name }
+    //   bugfix: 老 populate 没拉 status, 导致客户端 isPendingMakeup (a.lessonSchedule.status) 永远 undefined
+    //           → 待补课 chip 永远 0 条。补上 status 字段
+    .populate({
+      path: 'lessonSchedule',
+      select: 'plannedStartTime title lessonNo status courseInstance',
+      populate: { path: 'courseInstance', select: 'name' }
+    })
     .sort({ createdAt: -1 })
     .lean()
 }
