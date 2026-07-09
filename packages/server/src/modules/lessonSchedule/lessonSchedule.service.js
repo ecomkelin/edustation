@@ -905,7 +905,7 @@ async function prepare({ id, orgId }) {
 //   - 原因：业务上「准备上课」才是生成 LessonAttendance 的入口，跨过去会导致
 //     名单为空 / 无法标记 no_show / finish 时把所有 scheduled 都按「来了」扣课时。
 //   - completed / cancelled / archived 一律拒绝。
-async function start({ id, orgId }) {
+async function start({ id, orgId, actualStartTime, actualStartReason }) {
   const exist = await LessonSchedule.findOne({ _id: id, org: orgId })
   if (!exist) throw ApiError.notFound('排课不存在')
   await assertCourseInstanceActive(exist.courseInstance)
@@ -918,7 +918,11 @@ async function start({ id, orgId }) {
   if (exist.status === LessonScheduleStatus.COMPLETED || exist.status === LessonScheduleStatus.ARCHIVED) {
     throw ApiError.badRequest('已结束/已归档的排课不可再次开始')
   }
-  exist.actualStartTime = new Date()
+  // 2026-07-09: 「开始上课」弹框允许教务指定实际上课时间 + 差异理由（晚开课场景）
+  // 跟 finish 同语义: 不传 actualStartTime 时默认 = now;
+  // 5 分钟差异校验临时跳过, 跟 finish 同步 (TODO[product-flag:REACTIVATE_FINISH_DIFF_VALIDATION])。
+  exist.actualStartTime = actualStartTime ? new Date(actualStartTime) : new Date()
+  if (actualStartReason) exist.actualStartReason = actualStartReason
   exist.status = LessonScheduleStatus.IN_PROGRESS
   await exist.save()
   return detail(exist._id, orgId)

@@ -288,7 +288,7 @@ Auth 列简写:
 | R-1404 | DELETE | /lesson-schedules/:id | ADMIN_PWD | — | 物理删除 | 高风险, 互锁考勤/作品 |
 | R-1405 | GET | /lesson-schedules/:id/removable-check | PERM | lessonSchedule.read | 删除预检 | |
 | R-1420 | POST | /lesson-schedules/:id/prepare | PERM | lessonSchedule.write | 准备上课 | scheduled → preparing |
-| R-1421 | POST | /lesson-schedules/:id/start | PERM | lessonSchedule.write | 开始上课 | preparing → in_progress |
+| R-1421 | POST | /lesson-schedules/:id/start | PERM | lessonSchedule.write | 开始上课 | preparing → in_progress; body 可选 actualStartTime / actualStartReason |
 | R-1422 | POST | /lesson-schedules/:id/finish | PERM | lessonSchedule.write | 完成排课 | → finished |
 | R-1424 | POST | /lesson-schedules/:id/archive | PERM | lessonSchedule.write | 归档 | finished → archived |
 | R-1425 | POST | /lesson-schedules/:id/sync-attendances | PERM | lessonSchedule.write | 补齐名单 | 修 prepare 后报名漏建考勤 |

@@ -258,7 +258,7 @@ async function list({ orgId, courseInstance, courseInstanceStatus, courseInstanc
         attendedLessons: attended
       }
 
-      // 课包(FIFO 选最早过期)
+      // 课包：优先沿用教务手动设置的主用课包；失效才回落到 FIFO 选最早过期
       const accepted = (ci.acceptedCourseProducts && ci.acceptedCourseProducts.length)
         ? ci.acceptedCourseProducts.map(String)
         : (ci.courseProduct && ci.courseProduct._id
@@ -266,7 +266,18 @@ async function list({ orgId, courseInstance, courseInstanceStatus, courseInstanc
             : (ci.courseProduct ? [String(ci.courseProduct)] : []))
 
       const candidates = (sid ? spByStudent.get(String(sid)) : null) || []
-      const picked = candidates.find((sp) => accepted.includes(String(sp.courseProduct))) || null
+      // 优先沿用教务在「选课包」弹窗里手动设置的主用课包（来自前面 populate 的 item.studentProduct）。
+      // candidates 是 isActive + remainingLessons>0 + 未过期的有效课包;
+      // 若手动设置仍在其中, 说明仍有效, 直接沿用; 若不在 (说明已失效/过期/换绑),
+      // 才回落到 FIFO (最早过期) — 见 CourseEnrollment.model.js 注释「本字段代表主用, 排课/消课兜底用 FIFO」。
+      const manualSpId = item.studentProduct && (item.studentProduct._id || item.studentProduct)
+      let picked = null
+      if (manualSpId) {
+        picked = candidates.find((sp) => String(sp._id) === String(manualSpId)) || null
+      }
+      if (!picked) {
+        picked = candidates.find((sp) => accepted.includes(String(sp.courseProduct))) || null
+      }
       if (picked) {
         item.studentProduct = {
           _id: picked._id,
@@ -336,7 +347,9 @@ async function detail(id, orgId) {
           ? [String(ci.courseProduct._id)]
           : (ci.courseProduct ? [String(ci.courseProduct)] : []))
 
-    const picked = sps.find((sp) => accepted.includes(String(sp.courseProduct))) || null
+    const pickedSpId = e.studentProduct && (e.studentProduct._id || e.studentProduct)
+    let picked = pickedSpId ? sps.find((sp) => String(sp._id) === String(pickedSpId)) || null : null
+    if (!picked) picked = sps.find((sp) => accepted.includes(String(sp.courseProduct))) || null
 
     e.progress = {
       totalLessons: total,

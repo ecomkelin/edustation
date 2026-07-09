@@ -46,7 +46,8 @@ router.put('/:id', mws.requirePermission('lessonSchedule.write'), v.update, mws.
 // R-1420 POST /lesson-schedules/:id/prepare
 router.post('/:id/prepare', mws.requirePermission('lessonSchedule.write'), asyncHandler(c.prepare))
 // R-1421 POST /lesson-schedules/:id/start
-router.post('/:id/start', mws.requirePermission('lessonSchedule.write'), asyncHandler(c.start))
+// 2026-07-09: body 可选 actualStartTime / actualStartReason（跟 finish 对称, 弹框改实际上课时间）
+router.post('/:id/start', mws.requirePermission('lessonSchedule.write'), v.start, mws.validateRequest, asyncHandler(c.start))
 // R-1422 POST /lesson-schedules/:id/finish
 router.post('/:id/finish', mws.requirePermission('lessonSchedule.write'), v.finish, mws.validateRequest, asyncHandler(c.finish))
 // R-1424 POST /lesson-schedules/:id/archive

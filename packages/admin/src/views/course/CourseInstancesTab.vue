@@ -791,12 +791,13 @@
       </template>
     </el-drawer>
 
-    <!-- 报名信息抽屉（2026-06-26：与排课信息抽屉对称, 管报名进度 + 已报名学生 + 新增报名） -->
+    <!-- 报名信息抽屉（2026-06-26：与排课信息抽屉对称, 管报名进度 + 已报名学生 + 新增报名）
+         2026-07-09: 抽屉从 720 加宽到 900, 让宽列(课包/报名时间)不被压; 操作列同步瘦身 380→240 -->
     <el-drawer
       v-model="enrollmentInfoDrawer"
       :title="enrollmentInfoTitle"
       direction="rtl"
-      size="720px"
+      size="900px"
       :close-on-click-modal="false"
     >
       <div v-loading="enrollmentInfoLoading" class="detail-content">
@@ -898,8 +899,9 @@
                 <template #default="{ row }">{{ formatDate(row.enrolledAt) }}</template>
               </el-table-column>
               <!-- 操作列 (2026-06-26)：跟课程报名页一致, 4 个行级操作;
-                   仅 enrolled 状态可调整班级/选课包/退班; 误操删除超管可见 -->
-              <el-table-column label="操作" width="380" fixed="right">
+                   仅 enrolled 状态可调整班级/选课包/退班; 误操删除超管可见
+                   2026-07-09: 380→240, size=small 4 个按钮一行可放下, 不再浪费 -->
+              <el-table-column label="操作" width="240" fixed="right">
                 <template #default="{ row }">
                   <el-button v-if="row.status === 'enrolled'" size="small" @click="openEnrollmentTransfer(row)">调整班级</el-button>
                   <el-button v-if="row.status === 'enrolled'" size="small" type="primary" plain @click="openEnrollmentPickSp(row)">选课包</el-button>
@@ -928,12 +930,13 @@
       </template>
     </el-drawer>
 
-    <!-- 排课信息抽屉（2026-06-26：与详情抽屉独立, 管排课进度 + 已排课 + 加一节） -->
+    <!-- 排课信息抽屉（2026-06-26：与详情抽屉独立, 管排课进度 + 已排课 + 加一节）
+         2026-07-09: 720→900 与报名信息抽屉对齐; 课次/日期/时间/老师/教室 + 操作列 6 列在 900 下完整可读 -->
     <el-drawer
       v-model="scheduleInfoDrawer"
       :title="scheduleInfoTitle"
       direction="rtl"
-      size="720px"
+      size="900px"
       :close-on-click-modal="false"
     >
       <div v-loading="scheduleInfoLoading" class="detail-content">

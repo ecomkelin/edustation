@@ -16,8 +16,8 @@ export const lessonScheduleApi = {
   // 批量：preview (不入库) / generate (入库)
   preview: (data) => http.post('/lesson-schedules/preview', data),
   generate: (data) => http.post('/lesson-schedules/generate', data),
-  // 实际上课时间
-  start: (id) => http.post(`/lesson-schedules/${id}/start`),
+  // 实际上课时间（2026-07-09 开始上课弹框允许改时间/填理由；旧版是无参直调）
+  start: (id, data) => http.post(`/lesson-schedules/${id}/start`, data || {}),
   finish: (id, data) => http.post(`/lesson-schedules/${id}/finish`, data || {}),
   // 准备上课：scheduled → preparing（仅 24h 窗口内可转）
   prepare: (id) => http.post(`/lesson-schedules/${id}/prepare`),

@@ -41,6 +41,13 @@ const update = [
   body('objectivesOverride.*').optional().isString().isLength({ max: 200 })
 ]
 
+// 开始上课：可选传 actualStartTime（教务补录晚开课）/ actualStartReason
+// 2026-07-09: 跟 finish 对称, 允许弹框改时间 + 填理由
+const start = [
+  body('actualStartTime').optional({ nullable: true }).isISO8601(),
+  body('actualStartReason').optional({ nullable: true }).isString().isLength({ max: 500 })
+]
+
 // 结束上课：可选传 actualEndTime（教务补录）/ actualEndReason
 const finish = [
   body('actualEndTime').optional({ nullable: true }).isISO8601(),
@@ -95,4 +102,4 @@ const conflicts = [
   query('excludeId').optional().isMongoId()
 ]
 
-module.exports = { create, update, finish, preview, generate, conflicts }
+module.exports = { create, update, start, finish, preview, generate, conflicts }

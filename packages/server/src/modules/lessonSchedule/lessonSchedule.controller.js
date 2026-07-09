@@ -35,7 +35,7 @@ exports.byInstanceForStudent = async (req, res) =>
   })))
 exports.preview = async (req, res) => res.json(ApiResponse.ok(await s.preview({ orgId: req.orgId, ...req.body })))
 exports.generate = async (req, res) => res.status(201).json(ApiResponse.created(await s.generate({ orgId: req.orgId, ...req.body })))
-exports.start = async (req, res) => res.json(ApiResponse.ok(await s.start({ id: req.params.id, orgId: req.orgId })))
+exports.start = async (req, res) => res.json(ApiResponse.ok(await s.start({ id: req.params.id, orgId: req.orgId, ...req.body })))
 exports.prepare = async (req, res) => res.json(ApiResponse.ok(await s.prepare({ id: req.params.id, orgId: req.orgId })))
 exports.finish = async (req, res) => res.json(ApiResponse.ok(await s.finish({ id: req.params.id, orgId: req.orgId, ...req.body })))
 exports.archive = async (req, res) => res.json(ApiResponse.ok(await s.archive({ id: req.params.id, orgId: req.orgId })))

@@ -552,6 +552,21 @@ watch(
   },
   { immediate: true }
 )
+// 2026-07-09: 监听 status 变化 — 后端 prepare / sync 等操作会让 _id 不变但 status 变 (scheduled→preparing),
+//   此时后端可能刚批量生成了考勤. 不监听 status 会导致 roster 一直显示"暂未生成考勤"的空态.
+//   只在 _id 已存在的前提下重新拉, 避免跟上面 _id watcher 在首次挂载时打架.
+watch(
+  () => props.schedule && props.schedule.status,
+  async (newStatus, oldStatus) => {
+    if (!props.schedule || !props.schedule._id) return
+    // 首次挂载时 status 可能为 undefined, 跳过; 仅在真实切换时刷新
+    if (!oldStatus || newStatus === oldStatus) return
+    await loadRoster()
+    if (rosterItems.value.length === 0) {
+      loadEnrolledStudents()
+    }
+  }
+)
 
 async function loadRoster() {
   loading.value = true

@@ -119,6 +119,7 @@
       - completed / archived 自动展开「课评」列
     -->
     <AttendanceRosterDialog
+      ref="rosterDialogRef"
       v-model="rosterDialog"
       :schedule="currentSchedule"
       :read-only="currentScheduleReadOnly"
@@ -239,6 +240,43 @@
         <span v-else class="muted">—</span>
       </template>
     </AttendanceRosterDialog>
+
+    <!--
+      开始上课弹框（2026-07-09 新增）：教务点「开始上课」后弹出，填实际上课时间（晚开课场景）。
+      与结束上课弹框同套交互：
+      - 默认填当前时间（new Date()），可改
+      - 实际时间与计划相差 ≥5 分钟时强制要求填写理由（与 finishNeedsReason 对称）
+      - 成功后 drawer 内的 status tag 自动刷新（事件本身也 reload 一次）
+    -->
+    <el-dialog v-model="startDialog" title="开始上课" width="480px" :close-on-click-modal="false">
+      <el-form label-width="100px">
+        <el-form-item label="计划时间">
+          <span class="muted">
+            {{ currentSchedule ? `${formatDate(currentSchedule.plannedStartTime, 'YYYY-MM-DD HH:mm')} ~ ${formatDate(currentSchedule.plannedEndTime, 'HH:mm')}` : '' }}
+          </span>
+        </el-form-item>
+        <el-form-item label="实际上课时间" required>
+          <el-date-picker
+            v-model="startForm.actualStartTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="差异理由" :required="startNeedsReason">
+          <el-input
+            v-model="startForm.actualStartReason"
+            type="textarea" :rows="2" maxlength="500" show-word-limit
+            :placeholder="startNeedsReason ? '实际时间与计划相差 ≥5 分钟，请填写理由' : '可选'"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="startDialog = false">取消</el-button>
+        <el-button type="primary" :loading="actionLoading[currentSchedule?._id]" @click="submitStart">确定开始</el-button>
+      </template>
+    </el-dialog>
 
     <!--
       结束上课弹框：教务填实际下课时间。日历 drawer 复用，跟 ClassSchedulePage 同套交互：
@@ -454,6 +492,11 @@ const calendarOptions = reactive({
 // 这里转一份 schedule 给 AttendanceRosterTable 用。
 const rosterDialog = ref(false)
 const currentSchedule = ref(null)
+// 2026-07-09: 抽屉 ref — 用于 prepare / start / finish / sync 等生命周期操作后
+//   强制 reload AttendanceRosterTable 的考勤名单。
+//   之前 watch(() => props.schedule._id) 只在排课切换时触发, prepare 后 _id 不变,
+//   名单不会重新拉, 导致后端已经生成的考勤看不到。
+const rosterDialogRef = ref(null)
 // 只读规则跟 ClassSchedulePage 对齐：仅 in_progress 可改考勤，其他状态只读
 const currentScheduleReadOnly = computed(() => {
   if (!currentSchedule.value) return false
@@ -513,6 +556,9 @@ async function onPrepare() {
       ElMessage.success('已进入准备中状态')
       // drawer 内的状态 tag 跟日历块本身都要刷新（status 已变）
       await refreshCurrentScheduleStatus()
+      // 2026-07-09: 后端 prepare 阶段会为 enrolled 学生批量生成 LessonAttendance,
+      //   _id 没变, AttendanceRosterTable 内部 watch(_id) 不会触发, 必须显式 reload
+      await rosterDialogRef.value?.reload?.()
       await reload()
     } catch (e) {
       ElMessage.error(e?.response?.data?.message || '准备上课失败')
@@ -521,12 +567,47 @@ async function onPrepare() {
 }
 
 async function onStart() {
+  // 2026-07-09: 「开始上课」改为弹框填实际上课时间 + 差异理由（晚开课场景），
+  //   跟结束上课弹框同套 UX。先弹框，确认后才发请求。
+  openStartDialog()
+}
+
+// 开始上课弹框
+const startDialog = ref(false)
+const startForm = reactive({ actualStartTime: '', actualStartReason: '' })
+const startNeedsReason = computed(() => {
+  const s = currentSchedule.value
+  if (!s || !startForm.actualStartTime) return false
+  const plan = s.plannedStartTime ? new Date(s.plannedStartTime).getTime() : null
+  if (!plan) return false
+  const act = new Date(startForm.actualStartTime).getTime()
+  if (Number.isNaN(act)) return false
+  return Math.abs(act - plan) >= 5 * 60 * 1000
+})
+function openStartDialog() {
   const s = currentSchedule.value
   if (!s) return
+  // 默认填当前时间, 与 finishDialog(openFinishDialog) 默认填 plannedEndTime 的策略不同 —
+  //   start 多为「到点了开课」, now 更贴近现实; finish 多为「下课了补录」, 计划时间更常用。
+  startForm.actualStartTime = formatDate(new Date(), 'YYYY-MM-DD HH:mm:ss')
+  startForm.actualStartReason = ''
+  startDialog.value = true
+}
+async function submitStart() {
+  const s = currentSchedule.value
+  if (!s) return
+  if (!startForm.actualStartTime) return ElMessage.warning('请填写实际上课时间')
+  if (startNeedsReason.value && !startForm.actualStartReason) {
+    return ElMessage.warning('实际时间与计划相差 ≥5 分钟，请填写理由')
+  }
   await withAction(s._id, async () => {
     try {
-      await lessonScheduleApi.start(s._id)
+      await lessonScheduleApi.start(s._id, {
+        actualStartTime: startForm.actualStartTime,
+        actualStartReason: startForm.actualStartReason || undefined
+      })
       ElMessage.success('已开始上课')
+      startDialog.value = false
       await refreshCurrentScheduleStatus()
       await reload()
     } catch (e) {
@@ -699,6 +780,8 @@ async function onSyncAttendances() {
     ElMessage.success(created > 0 ? `已补齐 ${created} 名学生考勤` : '名单已完整，无需补齐')
     // 1) 刷新 drawer 里的 attendance roster (Calendar 视图 reload 事件也走这里)
     await refreshCurrentScheduleStatus()
+    // 2026-07-09: 后端补齐了考勤, 必须显式 reload roster (否则 _id 没变, watch 不触发)
+    await rosterDialogRef.value?.reload?.()
     // 2) 重新算 toCreate (补齐后归零, 按钮自动隐式消失)
     await refreshSyncPreview()
   } catch (e) {
