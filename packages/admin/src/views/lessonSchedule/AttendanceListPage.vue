@@ -116,8 +116,10 @@
             <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <!-- 2026-07-09: 课评列点击 chip 打开弹窗查看详情 (score/content/strengths/improvements),
-             取代旧版「写课评」跳转排课的方式 — 课评只读, 写课评仍走 AttendanceRosterDialog 的 EvaluationEditor -->
+        <!-- 2026-07-09: 课评列点击 chip 打开弹窗:
+             - 已评 ✓ → 查看弹窗 (evalDialog, 只读 el-descriptions)
+             - 未评 ✗ → 写课评弹窗 (evalEditDialog, 可编辑表单)
+             取消旧版「写课评」跳转排课 — 列表内 1 步完成, 不必绕道日历抽屉。 -->
         <el-table-column label="课评" min-width="130">
           <template #default="{ row }">
             <template v-if="row.status === 'completed' || row.status === 'madeup'">
@@ -127,7 +129,12 @@
                 style="cursor: pointer"
                 @click="openEvalDialog(row)"
               >已评 ✓</el-tag>
-              <el-tag v-else type="warning" size="small" effect="plain">未评 ✗</el-tag>
+              <el-tag
+                v-else
+                type="warning" size="small" effect="plain"
+                style="cursor: pointer"
+                @click="openEvalEditDialog(row)"
+              >未评 ✗</el-tag>
               <div v-if="row.evaluation && row.evaluation.score" class="muted" style="font-size:12px; margin-top:2px">
                 评分 {{ row.evaluation.score }}/5
               </div>
@@ -221,6 +228,91 @@
       </template>
       <template #footer>
         <el-button @click="evalDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!--
+      2026-07-09: 写课评弹窗 — 点列表「未评 ✗」chip 弹出, 录入评分/评语/亮点/待改进, 保存即写课评。
+      与 evalDialog(只读) 解耦, 单一职责: 一个查看, 一个写。
+      表单字段对齐 backend updateEvaluation:
+        - score:    number 1-5 或 null (清除)
+        - content:  string ≤2000 字符
+        - strengths / improvements: string ≤1000 字符
+      全部可选, 跟后端 validator 一致 (任何子集都允许保存)。
+      排他门控:
+        - 后端要求 attendance.status ∈ {completed, madeup} (未消课不允许写课评)
+        - 排课归档后不可改 (READONLY_SCHEDULE_STATUSES.includes 'archived')
+        - 列表 chip 已 v-if 限制 status ∈ {completed, madeup}, 排课归档判断交给后端兜底。
+      保存成功后 mutate row.evaluation in-place (同 evaluation-editor fix 2026-07-09 的思路),
+      让 chip 立即从「未评 ✗」翻成「已评 ✓」+ 显示新分数, 避免 reload 一遍列表。
+    -->
+    <el-dialog
+      v-model="evalEditDialog"
+      title="写课评"
+      width="560px"
+      :close-on-click-modal="false"
+    >
+      <template v-if="evalEditTarget">
+        <el-alert
+          type="info" :closable="false" show-icon
+          style="margin-bottom: 12px"
+        >
+          <template #title>
+            <span>
+              {{ evalEditTarget.student?.name || '—' }} ·
+              {{ ciName(evalEditTarget) }} · 第 {{ evalEditTarget.lessonSchedule?.lessonNo || '?' }} 课
+              · {{ formatDate(evalEditTarget.lessonSchedule?.plannedStartTime, 'MM-DD HH:mm') }}
+            </span>
+          </template>
+        </el-alert>
+        <el-form label-width="80px">
+          <el-form-item label="评分">
+            <el-rate
+              v-model="evalEditForm.score"
+              :max="5"
+              show-score
+              :score-template="`${evalEditForm.score || 0} / 5`"
+            />
+          </el-form-item>
+          <el-form-item label="总体评语">
+            <el-input
+              v-model="evalEditForm.content"
+              type="textarea"
+              :rows="3"
+              maxlength="2000"
+              show-word-limit
+              placeholder="例如：本节课认真听讲，互动积极..."
+            />
+          </el-form-item>
+          <el-form-item label="亮点">
+            <el-input
+              v-model="evalEditForm.strengths"
+              type="textarea"
+              :rows="2"
+              maxlength="1000"
+              show-word-limit
+              placeholder="本节课表现好的地方"
+            />
+          </el-form-item>
+          <el-form-item label="待改进">
+            <el-input
+              v-model="evalEditForm.improvements"
+              type="textarea"
+              :rows="2"
+              maxlength="1000"
+              show-word-limit
+              placeholder="下次可提升的方向"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="evalEditDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="evalEditSaving"
+          @click="saveEvalEdit"
+        >保存课评</el-button>
       </template>
     </el-dialog>
   </div>
@@ -419,6 +511,67 @@ const evalDialogScoreDisplay = computed(() => evalTarget.value?.evaluation?.scor
 function openEvalDialog(row) {
  evalTarget.value = row
  evalDialog.value = true
+}
+
+// ─── 写课评弹窗 (2026-07-09 新增) ─────────────────────────────────
+//   列表行内「未评 ✗」点击触发 → 表单 → 保存即写课评。
+//   表单字段与后端 updateEvaluation validator 对齐 (score/content/strengths/improvements 全部可选)。
+const evalEditDialog = ref(false)
+const evalEditTarget = ref(null)
+const evalEditSaving = ref(false)
+const evalEditForm = reactive({
+ score: null,
+ content: '',
+ strengths: '',
+ improvements: ''
+})
+function openEvalEditDialog(row) {
+ evalEditTarget.value = row
+ // 从已有 evaluation 预填 (这里 row.evaluation 通常为 null, 因为入口是「未评 ✗」chip;
+ //   但接口兜底: 假如有人从其他入口又触发了同函数, 已有数据也不会丢)
+ const ev = row && row.evaluation
+ evalEditForm.score = ev && ev.score != null ? ev.score : null
+ evalEditForm.content = (ev && ev.content) || ''
+ evalEditForm.strengths = (ev && ev.strengths) || ''
+ evalEditForm.improvements = (ev && ev.improvements) || ''
+ evalEditDialog.value = true
+}
+async function saveEvalEdit() {
+ if (!evalEditTarget.value) return
+ if (evalEditSaving.value) return
+ const id = evalEditTarget.value._id || evalEditTarget.value.id
+ evalEditSaving.value = true
+ try {
+  const body = {
+   score: evalEditForm.score,
+   content: evalEditForm.content || null,
+   strengths: evalEditForm.strengths || null,
+   improvements: evalEditForm.improvements || null
+  }
+  const r = await lessonAttendanceApi.updateEvaluation(id, body)
+  const saved = r.data || {}
+  const ev = saved.evaluation || {}
+  // 2026-07-09: 回写父对象的 evaluation (与 evaluation-editor fix 同思路)
+  //   items 是 ref([]) 深度响应式, Object.assign 触发响应式更新;
+  //   行内的「未评 ✗」chip 立即翻成「已评 ✓」+ 显示新分数, 无需 reload 列表。
+  //   后端 fillFromAttendance 的等价逻辑: 不存在 evaluation 时整体赋值, 已有则字段覆盖保留其他字段。
+  const nextEval = {
+   score: ev.score ?? evalEditForm.score ?? null,
+   content: ev.content ?? evalEditForm.content ?? '',
+   strengths: ev.strengths ?? evalEditForm.strengths ?? '',
+   improvements: ev.improvements ?? evalEditForm.improvements ?? '',
+   evaluatedAt: ev.evaluatedAt || new Date().toISOString()
+  }
+  const row = evalEditTarget.value
+  if (row.evaluation) Object.assign(row.evaluation, nextEval)
+  else row.evaluation = nextEval
+  ElMessage.success('课评已保存')
+  evalEditDialog.value = false
+ } catch (e) {
+  ElMessage.error(e?.response?.data?.message || '课评保存失败')
+ } finally {
+  evalEditSaving.value = false
+ }
 }
 
 onMounted(async () => {

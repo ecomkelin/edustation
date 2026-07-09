@@ -228,14 +228,16 @@
         2026-06-26: 注入 #row-extra — 让已结束/已归档排课的学生行能展开课评编辑器。
         关键：read-only 跟 dialog 的 read-only 分开判断：
           - dialog 的 read-only (status !== 'in_progress') 控制"考勤本次登记 radio"（已结束不能再改是否到课）
-          - EvaluationEditor 的 read-only 仅当 status === 'archived'（归档后课评也锁死）
+          - 2026-07-09: EvaluationEditor 的 read-only 仅当 status === 'cancelled'。
+            之前是 archived, 但归档是业务终态 (默认 90 天) 不是文档完成态, 课评常常晚于归档;
+            跟 lessonAttendance.service.js updateEvaluation 的新规则对齐。
         跟 ClassSchedulePage 的 slot 完全对齐 (line 225-233)。
       -->
       <template #row-extra="{ row: attRow }">
         <EvaluationEditor
           v-if="attRow.status === 'completed' || attRow.status === 'madeup'"
           :attendance="attRow"
-          :read-only="currentSchedule?.status === 'archived'"
+          :read-only="currentSchedule?.status === 'cancelled'"
         />
         <span v-else class="muted">—</span>
       </template>

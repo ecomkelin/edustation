@@ -270,7 +270,10 @@ async function works({ id, orgId }) {
  *   - 课评内容全部可选：score / content / strengths / improvements 任意子集；
  *   - 写 evaluatedBy = req.user.id, evaluatedAt = now()；
  *   - 允许"分段保存"，每次只带一个字段也 OK；
- *   - score 范围 1-5，null 表示清除评分。
+ *   - score 范围 1-5，null 表示清除评分；
+ *   - 2026-07-09: 排课归档 (archived) 后仍允许补写课评 — 归档只是业务终态 (默认 90 天后),
+ *     不是"文档完成态", 课评常常晚于归档。已取消 (cancelled) 仍锁 — 业务上"不做这节课"了。
+ *     考勤自己归档 (att.archived) 仍锁 — 那是用户单独对 attendance 调的 archive 端点, 跟排课归档是两件事。
  */
 async function updateEvaluation({ id, orgId, actorId, patch }) {
   const att = await LessonAttendance.findOne({ _id: id, org: orgId })
@@ -279,11 +282,11 @@ async function updateEvaluation({ id, orgId, actorId, patch }) {
   if (att.status !== AttendanceStatus.COMPLETED && att.status !== AttendanceStatus.MADEUP) {
     throw ApiError.badRequest('仅「已消课/已补」的考勤可写课评')
   }
-  // 排课归档 / 取消后不可改课评
+  // 仅已取消的排课锁住; 归档允许补课评
   const sched = await LessonSchedule.findOne({ _id: att.lessonSchedule, org: orgId })
     .select('status').lean()
-  if (sched && READONLY_SCHEDULE_STATUSES.includes(sched.status)) {
-    throw ApiError.badRequest('已归档/已取消的排课不可修改课评')
+  if (sched && sched.status === LessonScheduleStatus.CANCELLED) {
+    throw ApiError.badRequest('已取消的排课不可修改课评')
   }
   const evalDoc = att.evaluation || {}
   if (patch.score !== undefined) {
