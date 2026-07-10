@@ -14,6 +14,10 @@ router.use(mws.authenticate, mws.requireOrg)
 router.use(mws.activeStudent)
 // R-2079 GET /student-products/me (C 端"我的课包")
 router.get('/me', asyncHandler(c.mine))
+// 2026-07-10: C 端家长「课包消费明细」 — 复用 admin /:id/usage 逻辑, 但强制 student == activeStudent 防越权
+//   R-2080 GET /student-products/me/:id/usage
+//   必须在 /me 之后、/:id 之前, 否则 /:id 把这条路径吞了
+router.get('/me/:id/usage', asyncHandler(c.getUsageMe))
 
 // 只读列表/详情/剩余课时 (业务端)
 // R-1800 GET /student-products

@@ -364,6 +364,7 @@ Auth 列简写:
 | R-1869 | POST | /student-products/gift | PERM | studentProduct.gift | 赠课 | 员工直接建 StudentProduct |
 | R-1804 | DELETE | /student-products/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 LessonAttendance.studentProduct + CourseEnrollment.studentProduct |
 | R-1805 | GET | /student-products/:id/removable-check | PERM | studentProduct.read | 删除预检 | |
+| R-2080 | GET | /student-products/me/:id/usage | GUARD | — | 单课包消费明细 (C 端) | 复用 R-1806 getUsage 业务, service 加 activeStudent 校验防越权; 2026-07-10 立项 — 客户端「我的课包」点课包弹层展示, 移除之前走的 toast |
 
 ### MM=19 report (URL: /reports)
 
@@ -674,6 +675,7 @@ Auth 列简写:
 | 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |
 | 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |
 | 2026-07-08 | 员工任务模块 MM=39 上线 (三角色协作 + checklist + 监督人审批 + 看板 + 周期任务模板 + cron; 6 model + 22 端点 + 5 admin 视图; §8.1 物理删除防护) | R-3900 ~ R-3919, R-3920/21 归档, R-3922 item 删除 | add |
+| 2026-07-10 | C 端单课包消费明细 R-2080 上线 (复用 admin R-1806 getUsage 业务; service.getUsageMe 强校验 student == activeStudentId 防越权; 客户端「我的课包」点课包弹层展示, 移除 toast 占位) | R-2080 | add |
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
 | 2026-07-10 | R-0932 /orgs/:id/public 扩展开课信息 courseInstances[] 1 段 (enrolling+active 按 startDate↑; populate teacher + courseProduct.subjects; 限 20; 跳过 isTrial) | R-0932 | modify |

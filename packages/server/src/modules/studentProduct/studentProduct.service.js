@@ -306,4 +306,28 @@ async function getUsage({ orgId, id }) {
   return { studentProduct: sp, summary, items }
 }
 
-module.exports = { list, detail, remaining, gift, listLowRemaining, remove, removableCheck, getUsage }
+/**
+ * C 端家长「课包消费明细」 (2026-07-10 立项)
+ *
+ * 复用 getUsage 返回结构,但强制校验该 StudentProduct.student == req.activeStudentId,
+ * 防止家长横向越权看别人家孩子的课包。
+ *
+ * 若 id 不存在 / 非本机构 / 不是当前 activeStudent 的课包 → 一律 403,不暴露存在性。
+ */
+async function getUsageMe({ orgId, id, activeStudentId }) {
+  if (!activeStudentId) {
+    // activeStudent 中间件正常情况已经挂上了; 兜底防呆
+    throw ApiError.forbidden('缺少当前活跃孩子')
+  }
+  // 1. 仅校验课包归属(activeStudent.student), 不读详情也走最小化查询即可
+  const sp = await StudentProduct.findOne({ _id: id, org: orgId })
+    .select('student')
+    .lean()
+  if (!sp || String(sp.student) !== String(activeStudentId)) {
+    throw ApiError.forbidden('无权查看该课包')
+  }
+  // 2. 走通用 getUsage 拿明细 (会再做存在性 + populate)
+  return getUsage({ orgId, id })
+}
+
+module.exports = { list, detail, remaining, gift, listLowRemaining, remove, removableCheck, getUsage, getUsageMe }
