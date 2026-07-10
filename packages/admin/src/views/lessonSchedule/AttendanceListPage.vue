@@ -154,8 +154,11 @@
         <!-- 2026-07-09: 操作列瘦身
              - 移除「跳转排课」(用户决策: 列表已聚合, 跳排课日历没必要)
              - 「写课评」移除 (EvaluationEditor 入口仍在 AttendanceRosterDialog, 由「排课日历」点事件进入)
-             - 新增「1-键补课」: 仅 status ∈ {leave, no_show} 且排课已完成/已归档时显示 (复用 make isPendingMakeup 的语义) -->
-        <el-table-column label="操作" width="160" fixed="right">
+             - 新增「1-键补课」: 仅 status ∈ {leave, no_show} 且排课已完成/已归档时显示 (复用 make isPendingMakeup 的语义)
+             - 2026-07-10: 新增「添加作品」: 仅 status ∈ {completed, madeup} 时显示 (业务语义:
+                 还没消课 = 还没上课, 没有作品可言; 已消课/已补 才有作品)。
+               弹窗复用 studentWork 那套 UI, 三步选择 (课程/学生/考勤) 跳过, 因为这三个值已经知道 (来自行)。 -->
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="canMakeup(row)"
@@ -164,7 +167,13 @@
               :loading="makeupLoading[row._id || row.id]"
               @click="confirmOneKeyMakeup(row)"
             >1-键补课</el-button>
-            <span v-else class="muted">—</span>
+            <el-button
+              v-if="canUploadWork(row)"
+              size="small"
+              type="success"
+              @click="openAddWorkDialog(row)"
+            >添加作品</el-button>
+            <span v-if="!canMakeup(row) && !canUploadWork(row)" class="muted">—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -315,6 +324,113 @@
         >保存课评</el-button>
       </template>
     </el-dialog>
+
+    <!--
+      2026-07-10: 添加作品 弹窗
+      从考勤行直接发起, 三步选择 (课程/学生/考勤) 跳过 — 来自行内, 已隐式传入。
+      复用 studentWork 既有 UI (upload → uploadMany → create), 不重新发明。
+      文件先经 /storage/upload-many?scope=work 上传拿到 fileIds, 再以 JSON 调
+      /api/v1/student-works 创建。弹窗关闭后调 fetchList 重新拉取考勤列表,
+      行内会出现 "未评" link chip 之前, 作品本身与考勤列表正交, 跨页跳作品列表查看。
+    -->
+    <el-dialog
+      v-model="addWorkDialog"
+      title="添加学生作品"
+      width="640px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <template v-if="addWorkTarget">
+        <el-alert
+          type="info" :closable="false" show-icon
+          style="margin-bottom: 12px"
+        >
+          <template #title>
+            <span>
+              {{ addWorkTarget.student?.name || '—' }} ·
+              {{ ciName(addWorkTarget) }} · 第 {{ addWorkTarget.lessonSchedule?.lessonNo || '?' }} 课
+              · {{ formatDate(addWorkTarget.lessonSchedule?.plannedStartTime, 'MM-DD HH:mm') }}
+            </span>
+          </template>
+          <template #default>
+            <span style="font-size: 12px">
+              学科 / 开班 / 学生 由后端从考勤自动推导，创建后不可改。
+            </span>
+          </template>
+        </el-alert>
+        <el-form :model="addWorkForm" label-width="100px">
+          <el-form-item label="标题" required>
+            <el-input
+              v-model="addWorkForm.title"
+              maxlength="100"
+              show-word-limit
+              placeholder="如：水墨山水-第一节"
+            />
+          </el-form-item>
+          <el-form-item label="描述">
+            <el-input
+              v-model="addWorkForm.description"
+              type="textarea"
+              :rows="3"
+              maxlength="2000"
+              show-word-limit
+              placeholder="可选：作品的内容/教学要点等"
+            />
+          </el-form-item>
+          <el-form-item label="等级">
+            <el-rate
+              v-model="addWorkForm.level"
+              :max="5"
+              show-score
+              :score-template="`${addWorkForm.level || 0} / 5`"
+            />
+            <div class="muted" style="font-size: 12px; margin-top: 4px">
+              1=入门 / 2=初学 / 3=合格 / 4=良好 / 5=优秀；不评 = 留空
+            </div>
+          </el-form-item>
+          <el-form-item label="作品文件" required>
+            <el-upload
+              v-model:file-list="addWorkForm.fileList"
+              :auto-upload="false"
+              multiple
+              list-type="picture"
+              accept="image/*,video/*,audio/*,.pdf"
+            >
+              <el-button>选择新文件</el-button>
+              <template #tip>
+                <div class="muted" style="font-size: 12px">支持图片/视频/音频/PDF，至少 1 个</div>
+              </template>
+            </el-upload>
+            <el-button link style="margin-top: 6px" @click="addWorkPicker = true">从文件库选</el-button>
+            <div
+              v-if="addWorkForm.pickedFileIds && addWorkForm.pickedFileIds.length"
+              class="muted"
+              style="font-size: 12px; margin-top: 4px"
+            >
+              已从文件库选 {{ addWorkForm.pickedFileIds.length }} 个，与上方新文件合并提交
+            </div>
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="addWorkDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="addWorkSaving"
+          :disabled="!canSubmitAddWork"
+          @click="submitAddWork"
+        >提交</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 从文件库选学生作品文件（多选） -->
+    <FilePicker
+      v-model="addWorkPicker"
+      multiple
+      scope="work"
+      title="选择学生作品文件"
+      @select="onAddWorkPickedFiles"
+    />
   </div>
 </template>
 
@@ -325,7 +441,16 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { lessonAttendanceApi } from '@/api/lessonAttendance'
 import { courseInstanceApi } from '@/api/courseInstance'
 import { studentApi } from '@/api/student'
+// 2026-07-10: 添加作品入口走 studentWork.create + storage.uploadMany, 跟作品列表页同套 API
+import { studentWorkApi } from '@/api/studentWork'
+import { storageApi } from '@/api/storage'
+import { hasPermInOrg } from '@/utils/permissionHelper'
+import { useAuthStore } from '@/stores/auth'
+// 2026-07-10: 从文件库选 — 复用 studentWorks 用的 FilePicker 组件
+import FilePicker from '@/components/FilePicker.vue'
 import { formatDate } from '@/utils/format'
+
+const auth = useAuthStore()
 
 const router = useRouter()
 
@@ -572,6 +697,98 @@ async function saveEvalEdit() {
  } finally {
   evalEditSaving.value = false
  }
+}
+
+// ─── 添加作品 (2026-07-10 新增) ──────────────────────────────────────
+// 从考勤列表行直接发起, 跳到「学生作品 > 新增作品」时, 三步选择 (课程/学生/考勤) 已经隐式填好,
+// UI 不重画, 仅保留标题/描述/等级/文件四步, 与 studentWorks/StudentWorks.vue createVisible 对齐。
+// 业务前置:
+//   - 仅 status ∈ {completed, madeup} 显示入口 (其他状态无作品可言)
+//   - 必须有 studentWork.write 权限 (后端 requirePermission 兜底)
+const addWorkDialog = ref(false)
+const addWorkTarget = ref(null)            // 行 row 引用, 含 student / lessonSchedule / ...
+const addWorkSaving = ref(false)
+const addWorkPicker = ref(false)
+const addWorkForm = reactive({
+  title: '',
+  description: '',
+  level: 0,
+  fileList: [],                            // el-upload 本地选择 (未上传)
+  pickedFileIds: []                        // 从 FilePicker 选的已上传 File._id
+})
+function canUploadWork(row) {
+  if (!row) return false
+  if (!hasPermInOrg(auth, 'studentWork.write')) return false
+  return row.status === 'completed' || row.status === 'madeup'
+}
+function openAddWorkDialog(row) {
+  addWorkTarget.value = row
+  // 表单 reset — 用 reactive 但每次都得显式清, 不能简单 = reactive({...})
+  addWorkForm.title = ''
+  addWorkForm.description = ''
+  addWorkForm.level = 0
+  addWorkForm.fileList = []
+  addWorkForm.pickedFileIds = []
+  addWorkDialog.value = true
+}
+function onAddWorkPickedFiles(files) {
+  if (!files || !files.length) return
+  const existing = new Set(addWorkForm.pickedFileIds.map(String))
+  for (const f of files) {
+    const id = String(f._id)
+    if (!existing.has(id)) {
+      addWorkForm.pickedFileIds.push(id)
+      existing.add(id)
+    }
+  }
+}
+const canSubmitAddWork = computed(() => {
+  const hasNew = addWorkForm.fileList && addWorkForm.fileList.length > 0
+  const hasPicked = addWorkForm.pickedFileIds && addWorkForm.pickedFileIds.length > 0
+  return !!(
+    addWorkTarget.value &&
+    String(addWorkForm.title || '').trim() &&
+    (hasNew || hasPicked)
+  )
+})
+async function submitAddWork() {
+  if (!addWorkTarget.value || !canSubmitAddWork.value) return
+  addWorkSaving.value = true
+  try {
+    // 1) 先传本地新文件
+    const rawFiles = (addWorkForm.fileList || [])
+      .map((f) => f.raw || (f.originFileObj) || f)
+      .filter(Boolean)
+    let uploadedIds = []
+    if (rawFiles.length) {
+      const upRes = await storageApi.uploadMany({ files: rawFiles, scope: 'work' })
+      uploadedIds = (upRes.data?.items || []).map((i) => i.id)
+    }
+    const fileIds = [...(addWorkForm.pickedFileIds || []), ...uploadedIds]
+    if (!fileIds.length) {
+      ElMessage.error('请至少上传或选择一个文件')
+      return
+    }
+    // 2) 创建作品
+    const attendanceId = addWorkTarget.value._id || addWorkTarget.value.id
+    const payload = {
+      lessonAttendance: attendanceId,
+      title: String(addWorkForm.title).trim(),
+      fileIds
+    }
+    if (addWorkForm.description) payload.description = addWorkForm.description
+    if (addWorkForm.level) payload.level = String(addWorkForm.level)
+    await studentWorkApi.create(payload)
+    ElMessage.success('作品已上传')
+    addWorkDialog.value = false
+    // 作品跟考勤列表正交 — 跨模块的写入不需要 reload 本页考勤行 (没列字段更新, 性能省下)
+    // 用户如想看作品, 跳到 /studentWorks (左侧菜单"学生作品")。
+  } catch (e) {
+    // http.js 已弹 ElMessage; 错误细节留 ctx
+    console.warn('[addWork]', e)
+  } finally {
+    addWorkSaving.value = false
+  }
 }
 
 onMounted(async () => {
