@@ -1083,6 +1083,7 @@ function eventColor(status, isTrialLesson) {
   switch (status) {
     case 'completed': return '#67c23a'   // 绿：已完成
     case 'in_progress': return '#e6a23c' // 橙：进行中
+    case 'preparing': return '#13c2c2'   // 2026-07-09: 青 — 「准备上课」已生名单但还没开课, 与「已排课」蓝和「进行中」橙都要拉开距离
     case 'cancelled': return '#909399'   // 灰：已取消
     case 'archived': return '#b1b3b8'    // 浅灰：已归档（比 cancelled 更淡，区分于「取消」的中性冻结态）
     case 'scheduled':

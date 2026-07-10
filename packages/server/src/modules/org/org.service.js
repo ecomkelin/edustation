@@ -276,7 +276,15 @@ async function candidatePrincipals(id) {
  *     promotionSummary: { ... },
  *     subjects: [{key, name}],       // 学科字典 (per-org 切片 + 平台默认合并, dedup by key)
  *     teachers: [{id, realName, avatar, title, bio}],
- *     products: [{id, name, subject, cover, totalLessons, price, originalPrice, promotionActive, promotionPrice}]
+ *     products: [{id, name, subject, cover, totalLessons, price, originalPrice, promotionActive, promotionPrice}],
+ *     // 2026-07-10: 开课信息 (enrolling + active 按开课日期升序, 限 20, 跳过 isTrial)
+ *     courseInstances: [{
+ *       id, name,
+ *       startDate, estimatedEndDate,
+ *       totalLessons,
+ *       teacher: { realName, title } | null,
+ *       courseProduct: { name, subject: { key, name } | null } | null
+ *     }]
  *   }
  */
 async function publicOrg(id) {
@@ -291,8 +299,10 @@ async function publicOrg(id) {
   const Category = require('@models/Category.model')
   const UserOrgRel = require('@models/UserOrgRel.model')
   const CourseProduct = require('@models/CourseProduct.model')
+  // 2026-07-10: 开课信息段 (R-0932 扩展 courseInstances[])
+  const CourseInstance = require('@models/CourseInstance.model')
 
-  const [promo, subjectCats, teacherRels, products] = await Promise.all([
+  const [promo, subjectCats, teacherRels, products, instances] = await Promise.all([
     OrgPromotion.findOne({ org: org._id }).lean(),
     // 学科: per-org Category (model=Subject) + platform 默认 (org=null OR $exists:false),
     // dedup by key, 机构优先
@@ -316,6 +326,27 @@ async function publicOrg(id) {
     CourseProduct.find({ org: org._id, isActive: true })
       .populate({ path: 'subjects', select: 'key name' })
       .sort({ createdAt: -1 })
+      .limit(20)
+      .lean(),
+    // 2026-07-10: 即将开设 / 在读中的开班 (status ∈ enrolling|active)
+    //   - 按开课日期升序: 最近要开的最先展示 ("next to open" 优先级)
+    //   - 仅 per-org + 未软删
+    //   - 跳过 isTrial=true 的试听专用开班 (与 list 默认对齐, 详见 CourseInstance.model.js:175)
+    //   - populate teacher (含 isActive 用来过滤已停用老师) + courseProduct (含 subjects 取第一个 emoji)
+    //   - limit 20 防首屏过载 (与 products 对齐)
+    CourseInstance.find({
+      org: org._id,
+      deletedAt: null,
+      isTrial: false,
+      status: { $in: ['enrolling', 'active'] }
+    })
+      .populate({ path: 'teacher', select: 'realName title isActive' })
+      .populate({
+        path: 'courseProduct',
+        select: 'name subjects isActive',
+        populate: { path: 'subjects', select: 'key name' }
+      })
+      .sort({ startDate: 1 })
       .limit(20)
       .lean()
   ])
@@ -409,6 +440,35 @@ async function publicOrg(id) {
         originalPrice: p.originalPrice || p.price || 0,
         promotionActive: !!p.promotionActive,
         promotionPrice: p.promotionPrice || 0
+      }
+    }),
+    // 2026-07-10: 开课信息 (enrolling + active 按 startDate↑; 已在外层 query limit 20)
+    //   - 老师可能未分配 (teacher=null) 或已停用 (isActive=false) → 返回 null 让前端落"老师待定"
+    //   - name 可空字符串 → 客户端需回落 courseProduct.name
+    //   - 课程产品可能已被软删 (populate 后 isActive=false) → 仍保留 name,
+    //     subject 拿不到时为 null (前端 emoji 兜底, 不强删整张卡)
+    //   - schedulePlan 可能缺失 (旧数据 / 软删边缘) → totalLessons 兜底 0
+    courseInstances: (instances || []).map((ci) => {
+      const cp = ci.courseProduct || null
+      const subjects = cp && Array.isArray(cp.subjects) ? cp.subjects : []
+      const firstSubject = subjects[0] || null
+      return {
+        id: String(ci._id),
+        name: ci.name || '',
+        startDate: ci.startDate || null,
+        estimatedEndDate: ci.estimatedEndDate || null,
+        totalLessons: (ci.schedulePlan && ci.schedulePlan.totalPlannedLessons) || 0,
+        teacher: ci.teacher && ci.teacher.isActive !== false
+          ? { realName: ci.teacher.realName || '', title: ci.teacher.title || '' }
+          : null,
+        courseProduct: cp
+          ? {
+              name: cp.name || '',
+              subject: firstSubject
+                ? { key: firstSubject.key, name: firstSubject.name }
+                : null
+            }
+          : null
       }
     })
   }

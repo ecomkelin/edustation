@@ -2,6 +2,7 @@
   机构主页 (R-0932 /orgs/:id/public)
   2026-07-02 立项 (推广信息 + 联系方式)
   2026-07-03 同日扩展: 学科 + 老师 + 课程产品 (即"课包") 3 个 section
+  2026-07-10 扩展: 在课程产品之后插入 开课信息 (courseInstances[]) section
 -->
 <template>
   <view class="org-home">
@@ -147,6 +148,50 @@
           </view>
         </view>
 
+        <!--
+          开课信息 (R-0932 扩展 courseInstances[] 2026-07-10)
+          列出机构正在招生 / 已在读的班, 让家长看完课包后能直接看到"哪几个班快开"
+          - 仅 status ∈ {enrolling, active}, 按 startDate 升序
+          - 老师未分配 → 显示"老师待定", 不让整张卡消失
+          - name 为空 → 回落到 courseProduct.name (服务端不回退, 客户端处理)
+          - 跳转到课包详情 (goProductDetail); instance-detail 走的是 /me 要求已报名, 不适合营销页
+        -->
+        <view v-if="courseInstances.length" class="org-home__section">
+          <view class="org-home__section-title-row">
+            <text class="org-home__section-title">📅 即将开设的课堂</text>
+            <text class="section-title__more">{{ courseInstances.length }} 期</text>
+          </view>
+          <view class="org-home__instances">
+            <view
+              v-for="ci in courseInstances"
+              :key="ci.id"
+              class="org-home__instance-card press"
+              @tap="goProductDetail(ci.courseProduct?.id)"
+            >
+              <view class="org-home__instance-cover">
+                <text class="org-home__instance-emoji">{{ emojiOf(ci.courseProduct?.subject?.name) }}</text>
+              </view>
+              <view class="org-home__instance-body">
+                <text class="org-home__instance-name">
+                  {{ ci.name || ci.courseProduct?.name || '开班名称待公布' }}
+                </text>
+                <text class="org-home__instance-meta">
+                  {{ formatDateRange(ci.startDate, ci.estimatedEndDate) }}
+                </text>
+                <text class="org-home__instance-sub">
+                  {{ ci.teacher?.realName || '老师待定' }}
+                  <text v-if="ci.teacher?.title" class="org-home__instance-title">
+                    · {{ ci.teacher.title }}
+                  </text>
+                  <text class="org-home__instance-sep">·</text>
+                  {{ ci.totalLessons }} 课时
+                </text>
+              </view>
+              <text class="org-home__instance-cta">查看 ›</text>
+            </view>
+          </view>
+        </view>
+
         <!-- 教学特色 -->
         <view v-if="promo?.teachingFeatures?.length" class="org-home__section">
           <text class="org-home__section-title">⭐ 教学特色</text>
@@ -221,7 +266,9 @@ export default {
       // 2026-07-03: R-0932 扩展三段
       subjects: [],
       teachers: [],
-      products: []
+      products: [],
+      // 2026-07-10: R-0932 第四段 — 开课信息 (enrolling + active)
+      courseInstances: []
     }
   },
   computed: {
@@ -264,12 +311,15 @@ export default {
         this.subjects = Array.isArray(d.subjects) ? d.subjects : []
         this.teachers = Array.isArray(d.teachers) ? d.teachers : []
         this.products = Array.isArray(d.products) ? d.products : []
+        // 2026-07-10: 开课信息 — 服务端可能未实现/旧版返回不带此字段, 兜底空数组
+        this.courseInstances = Array.isArray(d.courseInstances) ? d.courseInstances : []
       } catch (e) {
         console.warn('[orgHome.load]', e)
         this.org = null
         this.subjects = []
         this.teachers = []
         this.products = []
+        this.courseInstances = []
       } finally {
         this.loading = false
       }
@@ -330,6 +380,39 @@ export default {
         if (name && name.includes(k)) return map[k]
       }
       return '🎒'
+    },
+
+    // 2026-07-10: 开课时间段格式化 (用于 courseInstances 卡片)
+    //   - startDate 缺省 → '开课时间待定'
+    //   - estimatedEndDate 缺省 → 'MM-DD 开课'
+    //   - 跨年 → 'YYYY-MM-DD ~ YYYY-MM-DD' (避免出现 "12-28 ~ 02-15" 看不出年份)
+    //   - 同年 → 'MM-DD ~ MM-DD'
+    formatDateRange(startDate, estimatedEndDate) {
+      if (!startDate) return '开课时间待定'
+      const s = this.toMonthDay(startDate)
+      if (!estimatedEndDate) return `${s} 开课`
+      const e = this.toMonthDay(estimatedEndDate)
+      const sy = new Date(startDate).getFullYear()
+      const ey = new Date(estimatedEndDate).getFullYear()
+      if (sy !== ey) {
+        return `${this.toYmd(startDate)} ~ ${this.toYmd(estimatedEndDate)}`
+      }
+      return `${s} ~ ${e}`
+    },
+    toMonthDay(iso) {
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return ''
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${m}-${day}`
+    },
+    toYmd(iso) {
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return ''
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
     }
   }
 }
@@ -661,6 +744,77 @@ export default {
   &__product-cta {
     font-size: $font-xs;
     color: $primary;
+  }
+
+  // 2026-07-10: 开课信息卡 (结构与 __product-card 同, 但内容更轻 — 没价格)
+  //   卡片层级: 名字 > 时间 pill > 老师+课时
+  &__instances {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-sm;
+  }
+  &__instance-card {
+    display: flex;
+    align-items: stretch;
+    background: $bg-page;
+    border-radius: $radius-md;
+    overflow: hidden;
+    transition: all $transition-fast;
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+  &__instance-cover {
+    width: 140rpx;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, $accent-light, $primary-lighter);
+    @include flex-center;
+  }
+  &__instance-emoji {
+    font-size: 64rpx;
+  }
+  &__instance-body {
+    flex: 1;
+    padding: $spacing-sm $spacing-md;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  &__instance-name {
+    font-size: $font-md;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+    margin-bottom: 4rpx;
+    @include multi-ellipsis(1);
+  }
+  &__instance-meta {
+    align-self: flex-start;
+    font-size: $font-xs;
+    color: $primary;
+    background: $primary-lighter;
+    padding: 2rpx 12rpx;
+    border-radius: $radius-pill;
+    margin-bottom: $spacing-xs;
+  }
+  &__instance-sub {
+    font-size: $font-sm;
+    color: $text-secondary;
+    @include multi-ellipsis(1);
+  }
+  &__instance-title {
+    color: $text-tertiary;
+  }
+  &__instance-sep {
+    margin: 0 6rpx;
+    color: $text-tertiary;
+  }
+  &__instance-cta {
+    align-self: center;
+    padding-right: $spacing-md;
+    font-size: $font-xs;
+    color: $primary;
+    flex-shrink: 0;
   }
 
   // 联系方式

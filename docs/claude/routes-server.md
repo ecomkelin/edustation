@@ -221,7 +221,7 @@ Auth 列简写:
 | R-0917 | POST | /orgs/:id/toggle-active | ADMIN | — | 启用/停用 | 机构禁物理删除 |
 | R-0930 | GET | /orgs/:id/promotion | PERM | org-promotion.read | 推广信息 | orgPromotion 子路由 |
 | R-0931 | PUT | /orgs/:id/promotion | PERM | org-promotion.write | 更新推广信息 | |
-| R-0932 | GET | /orgs/:id/public | AUTH | — | 公开机构主页 | C 端家长; 白名单字段 (隐藏合规 PII); 2026-07-03 扩展 subjects[]/teachers[]/products[] 3 段 (并发 Category/UserOrgRel/CourseProduct) |
+| R-0932 | GET | /orgs/:id/public | AUTH | — | 公开机构主页 | C 端家长; 白名单字段 (隐藏合规 PII); 2026-07-03 扩展 subjects[]/teachers[]/products[] 3 段 (并发 Category/UserOrgRel/CourseProduct); 2026-07-10 扩展 courseInstances[] 1 段 (status ∈ enrolling/active; populate teacher + courseProduct.subjects; startDate↑; 限 20; 跳过 isTrial) |
 | R-0953 | GET | /orgs/:id/candidate-principals | ADMIN | — | 候选法人 | 平台超管 |
 
 ### MM=10 courseProduct (URL: /course-products)
@@ -676,6 +676,7 @@ Auth 列简写:
 | 2026-07-08 | 员工任务模块 MM=39 上线 (三角色协作 + checklist + 监督人审批 + 看板 + 周期任务模板 + cron; 6 model + 22 端点 + 5 admin 视图; §8.1 物理删除防护) | R-3900 ~ R-3919, R-3920/21 归档, R-3922 item 删除 | add |
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
+| 2026-07-10 | R-0932 /orgs/:id/public 扩展开课信息 courseInstances[] 1 段 (enrolling+active 按 startDate↑; populate teacher + courseProduct.subjects; 限 20; 跳过 isTrial) | R-0932 | modify |
 | 2026-07-03 | 内容模块 MM=36 article + MM=37 game 上线 (平台超管发, C 端探索 tab 展示; 6+7=13 端点; admin CRUD + 公开端点 + viewCount/playCount 原子计数; tab2 child → explore 改名 + globe 图标) | R-3600 ~ R-3605 / R-3700 ~ R-3706 | add |
 | 2026-07-03 | 内容模块 MM=38 video 上线 (科普视频平台级; 8 端点; 与 Article/Game 一致评级; C 端 explore tab 视频 section 默认 1 个 (R-3800 featured) + 文章 4 个 (1 头条+3 列表) + 游戏 加载更多式分页; seed 6 段 mp4 demo) | R-3800 ~ R-3807 | add |
 | 2026-07-03 | 内容模块 MM=36/37/38 下放 per-org: service filter org=null → org=req.orgId (强制 x-org-id); 写操作 requirePlatformAdmin → requirePermission('xx.write'); admin 菜单移到「机构管理 → 科普内容」; C 端 explore.vue 无改动靠 x-org-id 自动隔离; seed Org.find 循环每个启用 Org 各一份 | R-3602~3605/R-3703~3706/R-3804~3807 + 所有公开 GET | modify |

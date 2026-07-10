@@ -70,7 +70,52 @@
               实际: {{ formatTime(attendance.actualStartTime) }} - {{ formatTime(attendance.actualEndTime) }}
             </text>
           </view>
-          <text v-if="attendance.evaluation" class="lesson-detail__eval">老师评语:{{ attendance.evaluation }}</text>
+
+          <!--
+            2026-07-09: 老师评语 — evaluation 是结构化对象 { score, content, strengths, improvements, evaluatedBy, evaluatedAt }。
+            老版本 {{ attendance.evaluation }} 直接 stringify 渲染 JSON, 用户体验差。
+            改成卡片化展示: 评分 (★) / 评语 / 亮点 / 待改进 / 评价人 / 评价时间。
+            各字段均独立判定 (v-if), 老师没填的部分不显示空标签, 不堆"暂无"。
+            shape 对齐 packages/admin/src/views/lessonSchedule/AttendanceListPage.vue 的 evalDialog。
+          -->
+          <view v-if="attendance.evaluation && attendance.evaluation.evaluatedAt" class="lesson-detail__eval">
+            <view class="lesson-detail__eval-header">
+              <text class="lesson-detail__eval-title">💬 老师评语</text>
+              <view v-if="attendance.evaluation.score" class="lesson-detail__eval-score">
+                <text
+                  v-for="n in 5"
+                  :key="n"
+                  class="lesson-detail__star"
+                  :class="{ 'is-on': n <= attendance.evaluation.score }"
+                >★</text>
+                <text class="lesson-detail__eval-score-text">{{ attendance.evaluation.score }}/5</text>
+              </view>
+            </view>
+
+            <view v-if="attendance.evaluation.content" class="lesson-detail__eval-item">
+              <text class="lesson-detail__eval-label">📝 评语</text>
+              <text class="lesson-detail__eval-text">{{ attendance.evaluation.content }}</text>
+            </view>
+
+            <view v-if="attendance.evaluation.strengths" class="lesson-detail__eval-item">
+              <text class="lesson-detail__eval-label">🌟 亮点</text>
+              <text class="lesson-detail__eval-text">{{ attendance.evaluation.strengths }}</text>
+            </view>
+
+            <view v-if="attendance.evaluation.improvements" class="lesson-detail__eval-item">
+              <text class="lesson-detail__eval-label">🎯 待改进</text>
+              <text class="lesson-detail__eval-text">{{ attendance.evaluation.improvements }}</text>
+            </view>
+
+            <view class="lesson-detail__eval-footer">
+              <text v-if="evaluationByName" class="lesson-detail__eval-meta">
+                评价人：{{ evaluationByName }}
+              </text>
+              <text v-if="attendance.evaluation.evaluatedAt" class="lesson-detail__eval-meta">
+                {{ formatDateTime(attendance.evaluation.evaluatedAt) }}
+              </text>
+            </view>
+          </view>
         </view>
       </view>
 
@@ -140,6 +185,15 @@ export default {
       if (c === '#F5C148') return 'tag-gold'
       if (c === '#B89AE6') return 'tag-purple'
       return 'tag-info'
+    },
+    // 2026-07-09: 评价人 — evaluatedBy 在 evaluation 子文档里 (不是顶层字段),
+    //   后端 populate 'evaluation.evaluatedBy' 后是 {realName, mobile} 对象 / ObjectId 字符串 / null,
+    //   三种形态都兼容; 都没有则空串, 模板里 v-if 不渲染整行。
+    evaluationByName() {
+      const by = this.attendance?.evaluation?.evaluatedBy
+      if (!by) return ''
+      if (typeof by === 'string') return ''
+      return by.realName || by.mobile || ''
     }
   },
   onLoad(query) {
@@ -353,13 +407,74 @@ export default {
   }
 
   &__eval {
-    display: block;
-    margin-top: $spacing-sm;
-    padding-top: $spacing-sm;
+    margin-top: $spacing-md;
+    padding-top: $spacing-md;
     border-top: 1rpx solid $divider-light;
+  }
+
+  &__eval-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: $spacing-sm;
+  }
+
+  &__eval-title {
+    font-size: $font-base;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+  }
+
+  &__eval-score {
+    display: flex;
+    align-items: center;
+    gap: 2rpx;
+  }
+
+  &__star {
+    font-size: $font-base;
+    color: $divider;
+    &.is-on { color: #F5C148; }
+  }
+
+  &__eval-score-text {
+    margin-left: $spacing-xs;
+    font-size: $font-xs;
+    color: $text-secondary;
+  }
+
+  &__eval-item {
+    margin-bottom: $spacing-sm;
+  }
+
+  &__eval-label {
+    display: block;
+    font-size: $font-xs;
+    color: $text-secondary;
+    margin-bottom: $spacing-xs;
+  }
+
+  &__eval-text {
+    display: block;
     font-size: $font-sm;
     color: $text-primary;
-    line-height: 1.6;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__eval-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: $spacing-sm;
+    padding-top: $spacing-sm;
+    border-top: 1rpx dashed $divider-light;
+  }
+
+  &__eval-meta {
+    font-size: $font-xs;
+    color: $text-tertiary;
   }
 
   &__works-scroll {

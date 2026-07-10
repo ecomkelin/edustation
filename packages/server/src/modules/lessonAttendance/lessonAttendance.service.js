@@ -81,6 +81,11 @@ async function list({ orgId, lessonSchedule, courseInstance, student, status, ar
   }
   return LessonAttendance.find(filter)
     .populate('student', 'name')
+    // 2026-07-09: 客户端课程详情「老师评语」卡片要显示评价人姓名 (C 端家长视角)
+    //   bugfix: evaluatedBy 是 evaluation 子文档的字段, 不是顶层字段,
+    //   之前直接 .populate('evaluatedBy') 会抛 "Cannot populate non-existent path" → 500。
+    //   必须用点路径 'evaluation.evaluatedBy', populate 完字段挂回 evaluation.evaluatedBy。
+    .populate('evaluation.evaluatedBy', 'realName mobile')
     .populate('studentProduct', 'remainingLessons totalLessons expireDate isActive source giftReason giftedBy giftedAt')
     // 2026-07-09: 考勤列表页「开班/第几课」列要显示开班名, 必须把 courseInstance 嵌到 lessonSchedule 里
     //   二级 populate: 第一个选课表字段 (含 courseInstance 引用), 第二个把引用展开成 { name }

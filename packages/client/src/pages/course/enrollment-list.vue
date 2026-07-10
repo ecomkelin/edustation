@@ -60,11 +60,11 @@
             <view class="enroll-list__card-bar">
               <view
                 class="enroll-list__card-bar-fill"
-                :style="{ width: progressPct(e.attendedLessons, e.totalLessons) }"
+                :style="{ width: progressPct(e.progress && e.progress.attendedLessons, e.progress && e.progress.totalLessons) }"
               />
             </view>
             <text class="enroll-list__card-progress-label">
-              已上 {{ e.attendedLessons || 0 }}/{{ e.totalLessons || 0 }} 节
+              已上 {{ (e.progress && e.progress.attendedLessons) || 0 }}/{{ (e.progress && e.progress.totalLessons) || 0 }} 节
             </text>
           </view>
         </view>
