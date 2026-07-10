@@ -184,7 +184,15 @@
               <text>{{ formatTime(lesson.plannedStartTime) }}</text>
             </view>
             <view class="home__day-info">
-              <text class="home__day-title">{{ lesson.courseInstance?.name || lesson.subject?.name || '课程' }}</text>
+              <view class="home__day-title-row">
+                <text class="home__day-title">{{ lesson.courseInstance?.name || lesson.subject?.name || '课程' }}</text>
+                <!-- 2026-07-10: 显示「第N节」, 让家长一眼看出第几次课。
+                     lessonNo 可能为 null (排课未排次) 或字符串/数字, 兜底隐藏整 chip -->
+                <text
+                  v-if="lesson.lessonNo != null && lesson.lessonNo !== ''"
+                  class="home__day-lesson-no"
+                >第 {{ lesson.lessonNo }} 节</text>
+              </view>
               <text class="home__day-meta">{{ lesson.teacher?.realName || '老师' }}</text>
             </view>
           </view>
@@ -1295,10 +1303,32 @@ export default {
     margin-left: $spacing-sm;
   }
 
+  // 2026-07-10: 课程名 + 「第 N 节」 同行的容器, 让 chip 浮在右侧
+  &__day-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: $spacing-xs;
+    min-width: 0;
+  }
+
   &__day-title {
     font-size: $font-base;
     color: $text-primary;
     display: block;
+    flex: 1;
+    min-width: 0;
+    @include multi-ellipsis(1);
+  }
+
+  &__day-lesson-no {
+    flex-shrink: 0;
+    font-size: $font-xs;
+    color: $primary;
+    background: $primary-lighter;
+    padding: 2rpx 12rpx;
+    border-radius: $radius-pill;
+    line-height: 1.4;
+    font-weight: $font-weight-medium;
   }
 
   &__day-meta {
