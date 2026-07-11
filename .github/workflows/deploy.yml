@@ -1,0 +1,85 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  # ---------- 前端构建（产物作为 artifact，供后续 job 部署） ----------
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (可选, 无 lint 脚本时自动跳过)
+        run: pnpm -r run lint || true
+
+      - name: Build admin
+        run: pnpm --filter @edustation/admin build
+
+      - name: Build client H5
+        run: pnpm --filter @edustation/client build:h5
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: |
+            packages/admin/dist
+            packages/client/dist/build/h5
+
+  # ---------- 部署到生产 ----------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production  # GitHub 会要求手动确认
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            cd /home/deploy/edustation
+
+            echo "[deploy] pull latest"
+            git pull origin main
+
+            echo "[deploy] install deps"
+            pnpm install --frozen-lockfile
+
+            echo "[deploy] build admin + client"
+            pnpm --filter @edustation/admin build
+            pnpm --filter @edustation/client build:h5
+
+            echo "[deploy] restart API"
+            pm2 restart edustation-api
+            pm2 save
+
+            echo "[deploy] reload nginx"
+            sudo systemctl reload nginx
+
+            echo "[deploy] done at $(date)"
+
+      - name: Smoke test
+        run: |
+          sleep 5
+          curl -fsS https://api.yourdomain.com/api/v1/health || exit 1

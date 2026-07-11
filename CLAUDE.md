@@ -282,6 +282,7 @@ server/src/
 | 改经营看板 / 报表 / 聚合管道 | [docs/claude/dashboards.md](docs/claude/dashboards.md) |
 | 改 推送通知 / 通知模板 / 用户偏好 / 渠道分发 / inbox / 红点 (MM=40 v0.9) | [docs/claude/data-models-notification.md](docs/claude/data-models-notification.md) |
 | 改 / 加 / 删 / 查后端 API 路由（编号、Auth、跨模块） | [docs/claude/routes-server.md](docs/claude/routes-server.md) |
+| 上云 / 部署 / 扩容 / 备份 / CI/CD（云厂选型、Nginx、PM2、迁移） | [docs/claude/deploy-guide.md](docs/claude/deploy-guide.md) |
 
 ## 15. 新增知识到本仓库的约定
 
