@@ -70,7 +70,8 @@ router.post('/:id/unarchive', mws.requirePermission('task.delete'), asyncHandler
 // ─── 状态机端点 (子操作) ─────────────────────
 
 // R-3905 POST /tasks/:id/submit
-router.post('/:id/submit', mws.requirePermission('task.read'), asyncHandler(c.submit))
+// 2026-07-11: 提交完成是执行人操作, OR(task.read, task.read.own)
+router.post('/:id/submit', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.submit))
 // R-3906 POST /tasks/:id/review
 router.post('/:id/review', mws.requirePermission('task.review'), v.review, mws.validateRequest, asyncHandler(c.review))
 // R-3907 POST /tasks/:id/cancel
@@ -81,14 +82,16 @@ router.post('/:id/cancel', mws.requirePermission('task.write'), v.cancel, mws.va
 // R-3908 POST /tasks/:id/items
 router.post('/:id/items', mws.requirePermission('task.write'), v.addItem, mws.validateRequest, asyncHandler(c.addItem))
 // R-3909 PATCH /tasks/:id/items/:itemId
-router.patch('/:id/items/:itemId', mws.requirePermission('task.read'), v.toggleItem, mws.validateRequest, asyncHandler(c.toggleItem))
+// 2026-07-11: 勾选子任务是执行人操作, OR(task.read, task.read.own)
+router.patch('/:id/items/:itemId', mws.requirePermission('task.read', 'task.read.own'), v.toggleItem, mws.validateRequest, asyncHandler(c.toggleItem))
 // R-3922 DELETE /tasks/:id/items/:itemId (2026-07-08: 配合 task 物理删除挡板, 让用户清空 checklist 后能删任务)
 router.delete('/:id/items/:itemId', mws.requirePermission('task.write'), asyncHandler(c.removeItem))
 
 // ─── 评论 ────────────────────────────────────
 
 // R-3910 POST /tasks/:id/comments
-router.post('/:id/comments', mws.requirePermission('task.read'), v.addComment, mws.validateRequest, asyncHandler(c.addComment))
+// 2026-07-11: 评论是任何能看到任务的人都能发, OR(task.read, task.read.own)
+router.post('/:id/comments', mws.requirePermission('task.read', 'task.read.own'), v.addComment, mws.validateRequest, asyncHandler(c.addComment))
 
 // ─── 写操作 (主体) ────────────────────────────
 

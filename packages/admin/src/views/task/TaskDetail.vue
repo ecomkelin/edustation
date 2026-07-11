@@ -262,8 +262,11 @@ const isFinal = computed(() => ['approved', 'cancelled', 'expired'].includes(tas
 
 const canSubmit = computed(() => isAssignee.value && !isFinal.value && task.value.status !== 'submitted')
 const canReview = computed(() => isSupervisor.value && task.value.status === 'submitted')
-const canCancel = computed(() => (isCreator.value || hasPermInOrg(auth, 'task.write')) && !isFinal.value)
-const canDelete = computed(() => hasPermInOrg(auth, 'task.delete'))
+// 2026-07-11: 取消/归档/取消归档/物理删除 全部仅 platform admin 或 task creator
+//   原 canCancel 用 task.write 兜底 → 老师持 task.write 也能取消别人任务, 是 bug
+//   原 canDelete 用 task.delete → 任何持有者都能归档/删除别人的任务, 是 bug
+const canCancel = computed(() => (isCreator.value || auth.isPlatformAdmin) && !isFinal.value)
+const canDelete = computed(() => isCreator.value || auth.isPlatformAdmin)
 const canEdit = computed(() => (isCreator.value || hasPermInOrg(auth, 'task.write')) && !isFinal.value)
 
 function priorityTagType(p) { return { urgent: 'danger', high: 'warning', normal: 'primary', low: 'info' }[p] }

@@ -68,11 +68,13 @@ async function assertUsersInOrg(orgId, userIds) {
  *   - 至少 1 个执行人开始(assignee.status != not_started) → in_progress (前提不是 submitted/approved)
  *
  * 注意: 如果 task 已经在 approved/expired/cancelled 终态, 不再覆盖
+ * 2026-07-11: 从早退名单移除 'rejected' — rejected 是「被打回等待重做」, 不是审批中/终态
+ *   assignees 重新提交后, 状态应按 assignees 重算 (全部 submitted → submitted 进入二次审批)
  */
 async function recomputeTaskState(taskId) {
   const task = await Task.findById(taskId)
   if (!task) return null
-  if (['approved', 'expired', 'cancelled', 'submitted', 'rejected'].includes(task.status)) {
+  if (['approved', 'expired', 'cancelled', 'submitted'].includes(task.status)) {
     // 终态/审批中: 不重算状态(避免审批中又把任务标为 in_progress);只重算 progress
     return await recomputeProgressOnly(task)
   }
@@ -433,10 +435,15 @@ async function removableCheck({ id, orgId }) {
 // 归档是「软隐藏」, 反归档可逆, 与 §8.1 物理删除互为补充:
 //   - 物理删除: 移除所有子表 + 任务本体, 不可逆, 走超管+密码
 //   - 归档: 只翻 archived 标志位, 子表保留, 列表/看板/统计默认隐藏
-// 权限: task.delete 持有者 (超管默认 true)
+// 2026-07-11: 归档仅 platform admin 或任务 creator (与 remove 对齐)
+//   原逻辑任何持有 task.delete 的人都能归档别人任务, 是 bug
 async function archive({ id, orgId, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
   if (!task) throw ApiError.notFound('任务不存在')
+  const isCreator = refId(task.creator) === String(actor.userId)
+  if (!actor.isPlatformAdmin && !isCreator) {
+    throw ApiError.forbidden('仅任务发起人可归档')
+  }
   if (task.archived) {
     return task.toObject() // 幂等
   }
@@ -450,6 +457,10 @@ async function archive({ id, orgId, actor }) {
 async function unarchive({ id, orgId, actor }) {
   const task = await Task.findOne({ _id: id, org: orgId })
   if (!task) throw ApiError.notFound('任务不存在')
+  const isCreator = refId(task.creator) === String(actor.userId)
+  if (!actor.isPlatformAdmin && !isCreator) {
+    throw ApiError.forbidden('仅任务发起人可取消归档')
+  }
   if (!task.archived) {
     return task.toObject() // 幂等
   }
@@ -550,11 +561,11 @@ async function cancel({ id, orgId, reason, actor }) {
   if (['approved', 'cancelled', 'expired'].includes(task.status)) {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可取消`)
   }
-  // 权限: creator / 持有 task.write
-  const perms = (actor && actor.permissions) || []
+  // 2026-07-11: 取消任务仅 platform admin 或任务 creator, 移除原 task.write 兜底
+  //   原逻辑让持有 task.write 的执行人/监督人也能取消别人的任务, 是 bug
   const isCreator = refId(task.creator) === String(actor.userId)
-  if (!isCreator && !perms.includes('task.write')) {
-    throw ApiError.forbidden('仅任务发起人或持有 task.write 可取消')
+  if (!actor.isPlatformAdmin && !isCreator) {
+    throw ApiError.forbidden('仅任务发起人可取消')
   }
   task.status = 'cancelled'
   await task.save()
