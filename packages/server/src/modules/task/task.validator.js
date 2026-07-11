@@ -27,7 +27,9 @@ const create = [
   body('supervisors').isArray({ min: 1 }).withMessage('至少 1 个监督人'),
   body('supervisors.*').isMongoId(),
   // 2026-07-08: 平台超管可选 creator (默认 = 机构管理员), 普通员工只能 creator=self (后端 controller 会兜底)
-  body('creator').optional().isMongoId(),
+  // 2026-07-11: 加 nullable:true 修普通员工 (creator 默认 null) 的 "Invalid value" 400
+  //   (参照同文件 templateUpdate 的 cron/startAt/endAt nullable:true 历史教训)
+  body('creator').optional({ nullable: true }).isMongoId(),
   // 2026-07-08: 开始时间改必填 (前端默认今天)
   body('startAt').isISO8601().withMessage('startAt 必填且为 ISO8601 时间'),
   body('dueAt').isISO8601().withMessage('dueAt 必填且为 ISO8601 时间'),
