@@ -71,7 +71,9 @@ const DEFAULT_POSITIONS = [
       // 财务模块 (2026-06-25): 教务可看账, 不可记账
       'finance.read',
       // 内容模块下放 per-org (2026-07-03): 教务只看本机构科普, 不可编辑; 2026-07-04 游戏模块下线, 去掉 game.read
-      'article.read', 'video.read'
+      'article.read', 'video.read',
+      // 任务模块 (2026-07-11): 拆权限 task.read + task.read.own, 教务看自己相关任务
+      'task.read.own'
     ]
   },
   {
@@ -86,7 +88,9 @@ const DEFAULT_POSITIONS = [
       'lessonAttendance.read', 'lessonAttendance.write',
       'studentWork.read', 'studentWork.write',
       'report.read',
-      'accessControl.read'
+      'accessControl.read',
+      // 任务模块 (2026-07-11): 老师看自己相关任务 (执行教学任务)
+      'task.read.own'
     ]
   },
   {
@@ -110,7 +114,9 @@ const DEFAULT_POSITIONS = [
       'report.read',
       'accessControl.read',
       // 财务模块 (2026-06-25): 财务岗本职
-      'finance.read', 'finance.write'
+      'finance.read', 'finance.write',
+      // 任务模块 (2026-07-11): 财务看自己相关任务 (工资/提成/对账任务)
+      'task.read.own'
     ]
   }
 ]

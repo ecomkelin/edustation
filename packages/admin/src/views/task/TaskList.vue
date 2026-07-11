@@ -84,6 +84,16 @@
           </div>
         </template>
       </el-table-column>
+      <el-table-column label="监督人" width="160">
+        <template #default="{ row }">
+          <div class="assignees">
+            <el-tag v-for="s in row.supervisors" :key="s._id || s"
+              size="small" type="success" effect="plain">
+              {{ s.realName || s.name || s.id }}
+            </el-tag>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="发起人" width="90">
         <template #default="{ row }">{{ row.creator && (row.creator.realName || row.creator.name) }}</template>
       </el-table-column>

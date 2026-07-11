@@ -167,8 +167,11 @@ function refId(v) {
 async function canViewTask(actor, task) {
   if (!actor) return false
   if (actor.isPlatformAdmin) return true
-  // actor.permissions 是后端 requirePermission 中间件解析后的数组
+  // actor.permissions 是后端 requirePermission 中间件解析后的数组 (见 packages/server/src/middlewares/requirePermission.js)
   const perms = actor.permissions || []
+  // 2026-07-11: 拆权限后 task.read = 看全部; task.read.own 也可"进入任务模块", 由路由层 OR 守门,
+  //   此处只看 task.read 判断"能否看全部"; 若无 task.read, 走下面 4 个 fallback:
+  //   自己是创建人 / 执行人 / 监督人 / 被 @  (mentioned: 服务端 MVP 暂未实现 Comment 联合查询)
   if (perms.includes('task.read')) return true
   if (refId(task.creator) === String(actor.userId)) return true
   if ((task.assignees || []).some((a) => refId(a.user) === String(actor.userId))) return true
@@ -200,7 +203,8 @@ async function list({ orgId, status, type, priority, assignee, creator, supervis
     if (dueBefore) filter.dueAt.$lte = new Date(dueBefore)
     if (dueAfter) filter.dueAt.$gte = new Date(dueAfter)
   }
-  // 可见性: 无 task.read 时只能看自己相关
+  // 可见性: 无 task.read 时只能看自己相关 (task.read.own 持有者进得了接口但只能看自己的)
+  // 路由层已经 OR 守门 (requirePermission('task.read', 'task.read.own')) — 此处只要判 task.read 看全部即可
   const perms = (actor && actor.permissions) || []
   const canSeeAll = actor && (actor.isPlatformAdmin || perms.includes('task.read'))
   if (!canSeeAll) {
@@ -663,6 +667,7 @@ async function addComment({ id, orgId, content, mentions, actor }) {
 // ─── 看板 ──────────────────────────────────────
 
 async function kanban({ orgId, assignee, type, priority, scope, actor }) {
+  // 2026-07-11: 与 list 同语义 — task.read.own 持有者能进接口但只能看自己的 (走 $or)
   const perms = (actor && actor.permissions) || []
   const canSeeAll = actor && (actor.isPlatformAdmin || perms.includes('task.read'))
   const baseFilter = { org: orgId, archived: { $ne: true } }

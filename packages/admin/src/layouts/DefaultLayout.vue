@@ -343,7 +343,9 @@ const menuGroups = [
     title: '任务',
     icon: List,
     children: [
-      { path: '/tasks', label: '任务', icon: List, perm: 'task.read' },
+      // 2026-07-11: task.read (看全部) / task.read.own (看自己) 二选一可见, OR 关系
+      { path: '/tasks', label: '任务', icon: List, perm: ['task.read', 'task.read.own'] },
+      // 模板是管理层功能 (创建/编辑/暂停模板), 仅 task.read 可见
       { path: '/tasks/templates', label: '任务模板', icon: SetUp, perm: 'task.read' }
     ]
   }

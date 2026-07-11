@@ -318,11 +318,13 @@ async function onRemoveItem(it) {
   }
 }
 
-async function loadDetail() {
+async function loadDetail(opts = {}) {
   loading.value = true
   try {
     // 2026-07-08: includeArchived=true 当从归档 tab 跳过来时 query 上有, 否则不传 (默认 403 已归档)
-    const r = await taskApi.detail(route.params.id, { includeArchived: route.query.includeArchived === 'true' })
+    // 2026-07-11: opts.forceIncludeArchived 用于 onArchive/onUnarchive 后 reload, 此时任务已变更归档状态, 不带必 403
+    const includeArchived = opts.forceIncludeArchived || route.query.includeArchived === 'true'
+    const r = await taskApi.detail(route.params.id, { includeArchived })
     task.value = r.data || {}
     items.value = r.data?.items || []
     reviews.value = r.data?.reviews || []
@@ -337,12 +339,12 @@ async function loadDetail() {
 async function onArchive() {
   await taskApi.archive(route.params.id)
   ElMessage.success('已归档')
-  await loadDetail()
+  await loadDetail({ forceIncludeArchived: true })
 }
 async function onUnarchive() {
   await taskApi.unarchive(route.params.id)
   ElMessage.success('已取消归档')
-  await loadDetail()
+  await loadDetail({ forceIncludeArchived: true })
 }
 
 async function onToggleItem(it, done) {

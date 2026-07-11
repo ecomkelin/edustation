@@ -22,12 +22,14 @@ router.use(mws.authenticate, mws.requireOrg)
 
 // ─── 我的统计 (列表页顶部用) ─────────────────────
 // R-3912 GET /tasks/stats
-router.get('/stats', mws.requirePermission('task.read'), asyncHandler(c.stats))
+// 2026-07-11: OR(task.read, task.read.own) — task.read.own 持有者 (普通员工) 也能进任务模块看自己的
+router.get('/stats', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.stats))
 
 // ─── 看板 ─────────────────────────────────────
 // R-3913 GET /tasks/kanban
 // 顺序要求: 必须在 /:id 之前
-router.get('/kanban', mws.requirePermission('task.read'), v.kanban, mws.validateRequest, asyncHandler(c.kanban))
+// 2026-07-11: 同上, OR 任一即可进入看板
+router.get('/kanban', mws.requirePermission('task.read', 'task.read.own'), v.kanban, mws.validateRequest, asyncHandler(c.kanban))
 
 // ─── 模板 ─────────────────────────────────────
 // 顺序要求: 必须在 /:id 之前
@@ -50,11 +52,14 @@ router.delete('/templates/:id', mws.requirePermission('task.delete'), asyncHandl
 // ─── 任务列表 / 详情 / 预检 ────────────────────
 
 // R-3901 GET /tasks
-router.get('/', mws.requirePermission('task.read'), v.list, mws.validateRequest, asyncHandler(c.list))
+// 2026-07-11: OR(task.read, task.read.own) — task.read.own 持有者 (普通员工) 也能进任务列表看自己的
+router.get('/', mws.requirePermission('task.read', 'task.read.own'), v.list, mws.validateRequest, asyncHandler(c.list))
 // R-3902 GET /tasks/:id
-router.get('/:id', mws.requirePermission('task.read'), asyncHandler(c.detail))
+// 2026-07-11: 同上, task.read.own 持有者能查看自己相关任务的详情
+router.get('/:id', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.detail))
 // R-3911 GET /tasks/:id/removable-check
-router.get('/:id/removable-check', mws.requirePermission('task.read'), asyncHandler(c.removableCheck))
+// 2026-07-11: 同上, 普通员工也要能对自己创建的任务做删除预检
+router.get('/:id/removable-check', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.removableCheck))
 
 // 2026-07-08: 归档 / 取消归档 (软隐藏, 复用 task.delete 权限; 与物理删除互为补充)
 // R-3920 POST /tasks/:id/archive

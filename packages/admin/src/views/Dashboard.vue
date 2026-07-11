@@ -4,7 +4,7 @@
       <h2>欢迎回来，{{ auth.user?.realName || auth.user?.mobile || '同事' }}</h2>
     </div>
 
-    <!-- ───── 核心 1 块：经营总览的"今日要闻"6 Kpi（走 ReportBoard + 权限兜底） ───── -->
+    <!-- ───── 核心 1 块：经营总览的"今日要闻"6 Kpi（2026-07-11: 无权限直接整块不渲染，不再用 NoPermission 占位；与下方"招生活跃"行为一致） ───── -->
     <div v-if="perm.orderRead">
       <ReportBoard
         v-model="currentRange"
@@ -45,7 +45,7 @@
         </template>
       </ReportBoard>
     </div>
-    <NoPermission v-else module="order.read" />
+    <!-- 2026-07-11: v-else <NoPermission> 已删 — 用户诉求"首页不要显示"，无权限直接不渲染整块；与下方"招生活跃"行为一致 -->
 
     <!-- ───── 招生 KPI (2026-06 新增) ───── -->
     <el-card v-if="perm.recruitRead" class="board" shadow="never">
@@ -117,7 +117,7 @@ import { useReportApi } from '@/composables/useReportApi'
 import { fmtMoney, fmtPct } from '@/utils/report'
 import http from '@/api/http'
 import KpiCard from '@/components/KpiCard.vue'
-import NoPermission from '@/components/NoPermission.vue'
+// 2026-07-11: NoPermission 不再被使用（首页无权限直接不渲染整块），保留文件供其他模块参考
 import ReportBoard from '@/components/report/ReportBoard.vue'
 
 const auth = useAuthStore()
@@ -193,6 +193,10 @@ async function loadRecruitKpi() {
 //   若后续想加"今日排课时间线"或"快捷入口", 再单独定义数组
 
 async function reloadByRange(next) {
+  // 2026-07-11: 没权限就不要打接口 — 否则后端 requirePermission('report.read') 拒 → 403 → axios 拦截器
+  //   弹"无权限访问该看板"。与 loadRecruitKpi() 内部的 !perm.value.recruitRead 守卫对称。
+  //   模板里 v-if 已经不渲染, 这里再挡一次请求, 避免「UI 隐藏 + 接口报错 toast」割裂感。
+  if (!perm.value.orderRead) return
   currentRange.value = { ...next }
   await load(next)
 }
