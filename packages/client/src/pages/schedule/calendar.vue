@@ -16,7 +16,8 @@
     </view>
 
     <view class="calendar-page__weekdays">
-      <text v-for="d in ['日', '一', '二', '三', '四', '五', '六']" :key="d" class="calendar-page__weekday">
+      <!-- 2026-07-11: 中国人习惯周一开头,周日放最后; 与下方 calendarDays 网格对齐 -->
+      <text v-for="d in ['一', '二', '三', '四', '五', '六', '日']" :key="d" class="calendar-page__weekday">
         {{ d }}
       </text>
     </view>
@@ -61,17 +62,20 @@
           @tap="goDetail(lesson._id)"
         >
           <view class="calendar-page__item-time">
-            <text class="calendar-page__item-time-h">{{ formatTime(lesson.plannedStartTime) }}</text>
-            <text class="calendar-page__item-time-dur">{{ durationLabel(lesson) }}</text>
+            <text>{{ formatTime(lesson.plannedStartTime) }}</text>
           </view>
           <view class="calendar-page__item-info">
-            <text class="calendar-page__item-title">{{ lesson.courseInstance?.name || lesson.subject?.name || '课程' }}</text>
+            <view class="calendar-page__item-title-row">
+              <text class="calendar-page__item-title">{{ lesson.courseInstance?.name || lesson.subject?.name || '课程' }}</text>
+              <!-- 2026-07-11: 跟 home.vue 本周课表统一, 显示「第N节」让家长一眼看出第几次课 -->
+              <text
+                v-if="lesson.lessonNo != null && lesson.lessonNo !== ''"
+                class="calendar-page__item-lesson-no"
+              >第 {{ lesson.lessonNo }} 节</text>
+            </view>
             <text class="calendar-page__item-meta">
-              {{ lesson.teacher?.realName || '老师' }} · {{ lesson.room?.name || '教室' }}
+              {{ durationLabel(lesson) }} · {{ lesson.teacher?.realName || '老师' }} · {{ lesson.room?.name || '教室' }}
             </text>
-          </view>
-          <view class="calendar-page__item-arrow">
-            <text>›</text>
           </view>
         </view>
       </view>
@@ -110,7 +114,11 @@ export default {
     calendarDays() {
       const firstDay = new Date(this.year, this.month - 1, 1)
       const lastDay = new Date(this.year, this.month, 0)
-      const startWeekday = firstDay.getDay()
+      // 2026-07-11: 中国习惯周一开头, 周日放最后
+      //   Date.getDay(): 周日=0 周一=1 ... 周六=6
+      //   中国顺序:    周一=0 周二=1 ... 周六=5 周日=6
+      //   偏移公式: (getDay() + 6) % 7  → 周一=0, 周日=6
+      const startWeekday = (firstDay.getDay() + 6) % 7
       const daysInMonth = lastDay.getDate()
       const today = date.fmtDate(new Date())
       const selected = this.selectedDate || today
@@ -416,60 +424,66 @@ export default {
   }
 
   &__day-list {
+    margin-top: $spacing-md;
     display: flex;
     flex-direction: column;
-    gap: $spacing-sm;
+    gap: $spacing-xs;
   }
 
+  // 2026-07-11: 跟 home.vue 本周课表 card 严格对齐
+  //   - 左侧大字号时间 (font-sm ~ $font-xl 范围, 粗体, 主题色)
+  //   - 右侧 info (title + 「第 N 节」chip + 时长/老师/教室 一行)
   &__item {
     display: flex;
     align-items: center;
-    padding: $spacing-md;
+    padding: $spacing-sm $spacing-md;
     background: $bg-card;
-    border-radius: $radius-md;
+    border-radius: $radius-sm;
     box-shadow: $shadow-card;
   }
 
   &__item-time {
-    min-width: 120rpx;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  &__item-time-h {
-    font-size: $font-xl;
-    font-weight: $font-weight-bold;
+    min-width: 100rpx;
+    font-size: $font-sm;
     color: $primary;
-  }
-
-  &__item-time-dur {
-    font-size: $font-xs;
-    color: $text-tertiary;
-    margin-top: 4rpx;
+    font-weight: $font-weight-semibold;
   }
 
   &__item-info {
     flex: 1;
-    margin-left: $spacing-md;
+    margin-left: $spacing-sm;
+  }
+
+  &__item-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: $spacing-xs;
+    min-width: 0;
   }
 
   &__item-title {
-    font-size: $font-md;
-    font-weight: $font-weight-semibold;
+    font-size: $font-base;
     color: $text-primary;
     display: block;
-    margin-bottom: 4rpx;
+    flex: 1;
+    min-width: 0;
+    @include multi-ellipsis(1);
+  }
+
+  &__item-lesson-no {
+    flex-shrink: 0;
+    font-size: $font-xs;
+    color: $primary;
+    background: $primary-lighter;
+    padding: 2rpx 12rpx;
+    border-radius: $radius-pill;
+    line-height: 1.4;
+    font-weight: $font-weight-medium;
   }
 
   &__item-meta {
     font-size: $font-xs;
     color: $text-secondary;
-  }
-
-  &__item-arrow {
-    font-size: 40rpx;
-    color: $text-tertiary;
   }
 }
 </style>

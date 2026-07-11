@@ -200,8 +200,22 @@
             </view>
           </view>
         </view>
+        <!-- 2026-07-11: 空状态分 3 档, 提示家长更友好
+             1) 今天没课但未来 30 天内有课 → "下一节课在明天 16:00 · 周五"
+             2) 今天没课且整 30 天都没课  → "还没有安排课程" (友好兜底)
+             3) 用户切到非今日的某天且该日无课 → 同样走 nextUpcomingLesson 找下一天
+             2026-07-11 修正: uni-app 不允许 <text> 嵌套 <template>/<view>, 用 <view> 容器包裹 -->
         <view v-else class="home__day-empty">
-          <text>{{ selectedDay?.isToday ? '今天没有课哦' : (selectedDay?.name || '该日') + '没有课' }}</text>
+          <view v-if="nextUpcomingLesson" class="home__day-empty-main">
+            <text v-if="selectedDay?.isToday">今天没有课哦 · </text>
+            <text v-else>{{ selectedDay?.name || '该日' }}没有课 · </text>
+            <text>下一节在{{ nextUpcomingLabel }} · {{ nextUpcomingDateLabel }}</text>
+          </view>
+          <view v-else class="home__day-empty-main">
+            <text v-if="selectedDay?.isToday">今天没有课哦</text>
+            <text v-else>{{ selectedDay?.name || '该日' }}没有课</text>
+            <view class="home__day-empty-sub">还没有安排课程</view>
+          </view>
         </view>
       </view>
 
@@ -441,6 +455,54 @@ export default {
         .filter((l) => date.fmtDate(l.plannedStartTime) === this.selectedDate)
         .sort((a, b) => new Date(a.plannedStartTime) - new Date(b.plannedStartTime))
     },
+    // 2026-07-11: 空状态提示用 — 找到 selectedDate 之后最近的一节排课
+    //   返回 { daysUntil, lesson, date } 或 null (整 30 天都没排课)
+    //   用 selectedDate 而不是 today, 这样用户切到任意一天都有正确提示
+    nextUpcomingLesson() {
+      if (!this.selectedDate) return null
+      const selected = new Date(this.selectedDate)
+      const future = this.weekLessons
+        .filter((l) => l && l.plannedStartTime && new Date(l.plannedStartTime) > selected)
+        .sort((a, b) => new Date(a.plannedStartTime) - new Date(b.plannedStartTime))
+      if (!future.length) return null
+      const next = future[0]
+      const nextDate = new Date(next.plannedStartTime)
+      const nextDateStr = date.fmtDate(nextDate)
+      // 计算距离 selectedDate 多少天 (向上取整, 半天算 1 天)
+      const ms = nextDate.getTime() - selected.getTime()
+      const daysUntil = Math.max(1, Math.ceil(ms / (24 * 60 * 60 * 1000)))
+      return { daysUntil, lesson: next, date: nextDate, dateStr: nextDateStr }
+    },
+    // 2026-07-11: 把 nextUpcomingLesson.daysUntil 转成中文短语
+    //   1 → "明天", 2 → "后天", 3-7 → "3 天后", 8+ → "N 天后"
+    nextUpcomingLabel() {
+      const n = this.nextUpcomingLesson
+      if (!n) return ''
+      if (n.daysUntil === 1) return '明天'
+      if (n.daysUntil === 2) return '后天'
+      return `${n.daysUntil} 天后`
+    },
+    // 2026-07-11: nextUpcomingLesson 的友好日期标签, 给空状态用
+    //   同一周显示 "周X HH:mm", 跨周显示 "MM-DD 周X HH:mm", 跨月加 "M月"
+    nextUpcomingDateLabel() {
+      const n = this.nextUpcomingLesson
+      if (!n) return ''
+      const today = new Date()
+      const todayYmd = date.fmtDate(today)
+      const nextMd = `${n.date.getMonth() + 1}/${n.date.getDate()}`
+      const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][n.date.getDay()]
+      const time = new Date(n.date).toTimeString().slice(0, 5)
+      // 同月内只显示 MM/DD; 跨月显示 M月DD日; 跨年显示 YYYY-MM-DD
+      if (n.date.getFullYear() === today.getFullYear()) {
+        if (n.date.getMonth() === today.getMonth()) return `${nextMd} ${weekday} ${time}`
+        return `${n.date.getMonth() + 1}月${n.date.getDate()}日 ${weekday} ${time}`
+      }
+      return `${date.fmtDate(n.date)} ${weekday} ${time}`
+    },
+    // 2026-07-11: 30 天窗口内完全没有排课时, 模板走"还没有安排课程"友好兜底
+    hasNoUpcomingIn30Days() {
+      return !this.nextUpcomingLesson
+    },
     // 2026-07-02 fix: 模板 line 196 用 selectedDay.isToday/name, 但 data 只声明了 selectedDate (字符串)
     // 从 weekDays 里反查选中的 day 对象, 模板就不报 undefined 了
     selectedDay() {
@@ -573,7 +635,8 @@ export default {
       try {
         const now = new Date()
         const start = date.startOfWeek()
-        const end = date.addDays(start, 14) // 取两周更稳
+        // 2026-07-11: 拉到 30 天, 给空状态提示"最近 N 天后有课"用 (不再只到下周)
+        const end = date.addDays(start, 30)
         // 2026-07-02 fix: 改用 C 端 myCalendar (R-1492),不走 admin /calendar
         // admin /calendar 需要 lessonSchedule.read 权限码,家长没有 → 返空 → 今日课永远空
         const res = await lessonScheduleApi.myCalendar({
@@ -1387,8 +1450,27 @@ export default {
     margin-top: $spacing-md;
     text-align: center;
     padding: $spacing-md;
+  }
+
+  // 2026-07-11: 空状态主行 (一节课都没有的日子)
+  //   注意: 这是 <view> 容器, 内部包多个 <text>, 不要改 display: inline
+  &__day-empty-main {
+    text-align: center;
     color: $text-tertiary;
     font-size: $font-sm;
+    line-height: 1.6;
+
+    text {
+      color: inherit;
+      font-size: inherit;
+    }
+  }
+  // 2026-07-11: 30 天内彻底没排课时显示的小灰字
+  &__day-empty-sub {
+    display: block;
+    margin-top: 6rpx;
+    color: $text-tertiary;
+    font-size: $font-xs;
   }
 
   // 作品墙 (2026-07-03: 替换原快捷入口)
