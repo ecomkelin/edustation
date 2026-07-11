@@ -12,6 +12,9 @@
 ---
 
 ## 当前版本
+**v0.8.24 ** （2026-07-11）
+- 新增 client 调试文档 client-test-guide.md
+
 **v0.8.23 ** （2026-07-11）
 - 新增部署文档 deploy-guide.md + PM2/备份/CI-CD 脚本
 
