@@ -29,7 +29,7 @@ const TICK_INTERVAL_MS = 60 * 1000 // 1 分钟
  * @returns {Promise<{expired: number, generated: number, errors: number}>}
  */
 async function tickAll() {
-  const stats = { expired: 0, generated: 0, errors: 0 }
+  const stats = { expired: 0, generated: 0, notified: 0, errors: 0 }
   // 1. 过期扫描
   try {
     const r = await taskService.expireOverdue()
@@ -38,6 +38,16 @@ async function tickAll() {
     stats.errors++
     // eslint-disable-next-line no-console
     console.warn(`[taskCron] expireOverdue failed: ${e.message}`)
+  }
+  // 1.5 (2026-07-11 v0.9 通知): 今天到期的任务给 assignee+supervisor+creator 发 task_due 通知
+  try {
+    const r = await taskService.notifyDueToday()
+    stats.notified = r.notified
+    stats.errors += r.errors
+  } catch (e) {
+    stats.errors++
+    // eslint-disable-next-line no-console
+    console.warn(`[taskCron] notifyDueToday failed: ${e.message}`)
   }
   // 2. 周期任务生成
   const now = new Date()
@@ -71,9 +81,9 @@ async function tickAll() {
 const tickTimer = setInterval(async () => {
   try {
     const stats = await tickAll()
-    if (stats.expired > 0 || stats.generated > 0 || stats.errors > 0) {
+    if (stats.expired > 0 || stats.generated > 0 || stats.notified > 0 || stats.errors > 0) {
       // eslint-disable-next-line no-console
-      console.log(`[taskCron] tick: expired=${stats.expired} generated=${stats.generated} errors=${stats.errors}`)
+      console.log(`[taskCron] tick: expired=${stats.expired} generated=${stats.generated} notified=${stats.notified} errors=${stats.errors}`)
     }
   } catch (e) {
     // eslint-disable-next-line no-console

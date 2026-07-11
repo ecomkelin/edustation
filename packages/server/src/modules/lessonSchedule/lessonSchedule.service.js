@@ -11,6 +11,10 @@ const User = require('@models/User.model')
 const TrialBooking = require('@models/TrialBooking.model')
 // 学员作品 (2026-07-06 bugfix: 此前未 require, 删除排课时 usage check 报 StudentWork is not defined)
 const StudentWork = require('@models/StudentWork.model')
+// 学员档案 (2026-07-11 v0.9 通知): 课程前 1h 提醒需要拉 Student.guardians 找家长
+const Student = require('@models/Student.model')
+// 通知服务 (2026-07-11 v0.9 立项): 课程前 1h 提醒通过 notificationService.publish 调度
+const notificationService = require('@modules/notification/notification.service')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const { CourseEnrollmentStatus, AttendanceStatus, LessonScheduleStatus, CourseInstanceStatus } = require('@shared/enums')
@@ -322,7 +326,96 @@ async function generateAttendancesForSchedule({ orgId, courseInstance, lessonSch
   // 预过滤之后 docs 已无重复，insertMany 不会触发 partial unique 冲突；
   // 保留 ordered:false 仅作为并发兜底（极小概率）。
   await LessonAttendance.insertMany(docs, { ordered: false })
+
+  // (2026-07-11 v0.9 通知) 给每个考勤发「上课前 1h」定时通知
+  //   - cron 每 5 分钟 tick 一次，扫 scheduledFor ≤ now 的 pending 通知
+  //   - 失败不阻塞考勤创建；catch + console.warn
+  try {
+    await publishLessonReminder1h(orgId, courseInstance, lessonScheduleId, docs)
+  } catch (e) {
+    console.warn('[lessonSchedule] publishLessonReminder1h failed:', e.message)
+  }
+
   return docs.length
+}
+
+/**
+ * 给某节排课下刚生成的考勤，每个学生的家长发"上课前 1h"定时通知。
+ * - 定时到 scheduledFor = plannedStartTime - 1h
+ * - 模板渲染: {studentName} {courseName} {time} {room}
+ * - 学生无 guardians (孤儿学员) 跳过
+ * - 已存在的同 type+recipient+entityId 通知幂等 (依赖 Notification entityId unique 仅在 memo
+ *   里说明; 此处通过 Notification.findOne 主动幂等, 避免重复)
+ */
+async function publishLessonReminder1h(orgId, courseInstance, lessonScheduleId, attendanceDocs) {
+  if (!attendanceDocs || !attendanceDocs.length) return
+  const [sched, inst] = await Promise.all([
+    LessonSchedule.findOne({ _id: lessonScheduleId, org: orgId })
+      .select('plannedStartTime plannedEndTime room courseInstance').lean(),
+    CourseInstance.findById(courseInstance).select('name courseProduct').lean()
+  ])
+  if (!sched || !sched.plannedStartTime) return
+
+  // 提前 1h；若已过去则改为即时发 (cron 立即 tick)
+  const remindAt = new Date(sched.plannedStartTime.getTime() - 60 * 60 * 1000)
+
+  const courseName = (inst && inst.name) || ''
+  const timeText = formatTimeText(sched.plannedStartTime, sched.plannedEndTime)
+
+  // 批量拉学生 → guardians
+  const studentIds = attendanceDocs.map((d) => d.student)
+  const students = await Student.find({ _id: { $in: studentIds } })
+    .select('_id name guardians').lean()
+  const studentMap = new Map(students.map((s) => [String(s._id), s]))
+
+  // 幂等：先查已有的同 (type, recipient, entityId) 通知，避免 cron 多次 publish 重复
+  const existing = await require('@models/Notification.model').find({
+    org: orgId,
+    type: 'lesson_remind_1h',
+    'payload.entityId': { $in: attendanceDocs.map((d) => d._id) }
+  }).select('payload.entityId').lean()
+  const publishedSet = new Set(existing.map((n) => String(n.payload && n.payload.entityId)))
+
+  for (const a of attendanceDocs) {
+    if (publishedSet.has(String(a._id))) continue
+    const s = studentMap.get(String(a.student))
+    if (!s) continue
+    const guardians = (s.guardians || []).map((g) => String(g))
+    if (!guardians.length) continue
+    for (const recipientId of guardians) {
+      notificationService.publish({
+        orgId,
+        recipientId,
+        type: 'lesson_remind_1h',
+        activeStudentId: String(s._id),
+        payload: {
+          entityType: 'lessonAttendance',
+          entityId: a._id,
+          deeplink: `/pages/lesson/detail?attendanceId=${a._id}`
+        },
+        vars: {
+          studentName: s.name,
+          courseName,
+          time: timeText,
+          room: sched.room ? String(sched.room) : ''
+        },
+        scheduledFor: remindAt,
+        source: 'event'
+      }).catch((e) => {
+        console.warn('[lessonSchedule.publishLessonReminder1h] publish error:', e.message)
+      })
+    }
+  }
+}
+
+function formatTimeText(start, end) {
+  if (!start) return ''
+  const fmt = (d) => {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  if (end) return `${fmt(start)} ~ ${fmt(end)}`
+  return fmt(start)
 }
 
 // ─── 日期生成（按 schedulePlan.mode 走分支） ─────────────

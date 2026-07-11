@@ -98,7 +98,10 @@ const routes = [
       { path: 'tasks/new', component: () => import('@/views/task/TaskCreate.vue') },
       { path: 'tasks/templates', component: () => import('@/views/task/TaskTemplates.vue') },
       { path: 'tasks/templates/:id', component: () => import('@/views/task/TaskTemplateEdit.vue') },
-      { path: 'tasks/:id', component: () => import('@/views/task/TaskDetail.vue') }
+      { path: 'tasks/:id', component: () => import('@/views/task/TaskDetail.vue') },
+      // 通知管理 (2026-07-11 v0.9 立项, MM=40): 模板编辑 + 发送流水
+      { path: 'notifications/templates', component: () => import('@/views/notifications/Templates.vue') },
+      { path: 'notifications/logs', component: () => import('@/views/notifications/Logs.vue') }
     ]
   },
   // 课堂展示 (2026-06-21 pet-system-v2-ext): 独立 layout (ClassroomLayout), 全屏深色背景

@@ -15,6 +15,9 @@
         </view>
         <view class="home__notif press" @tap="onNotif">
           <text class="home__notif-icon">🔔</text>
+          <view v-if="notifUnread > 0" class="home__notif-dot">
+            <text class="home__notif-dot-text">{{ notifUnread > 99 ? '99+' : notifUnread }}</text>
+          </view>
         </view>
       </view>
 
@@ -331,6 +334,7 @@ import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PendingConsents from '@/components/auth/PendingConsents.vue'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
+import { notificationApi } from '@/api/notification'
 import { pointsApi } from '@/api/points'
 import { petApi } from '@/api/pet'
 import { studentProductApi } from '@/api/studentProduct'
@@ -374,7 +378,9 @@ export default {
       worksLoading: false,
       // 2026-07-04 学习画像: 学生 profile (端点 /students/:id/profile 返 personality/learningGoal/weakness...)
       profile: null,
-      profileLoading: false
+      profileLoading: false,
+      // 2026-07-11 v0.9: 顶部铃铛未读数 (R-4003), >0 时显示红点
+      notifUnread: 0
     }
   },
   computed: {
@@ -559,6 +565,7 @@ export default {
   onShow() {
     if (!this.selectedDate) this.selectedDate = date.fmtDate(new Date())
     this.load()
+    this.loadUnreadCount()
   },
   methods: {
     async load() {
@@ -907,7 +914,19 @@ export default {
     },
 
     onNotif() {
-      uni.showToast({ title: '通知中心 (待开发)', icon: 'none' })
+      // 2026-07-11 v0.9: 跳到消息 tab (R-4002 inbox); 红点自动由 messages.vue 维护
+      uni.switchTab({ url: '/pages/tabbar/messages' })
+    },
+
+    async loadUnreadCount() {
+      // 2026-07-11 v0.9: 顶部铃铛红点; 失败静默 (不影响首页其他功能)
+      try {
+        const res = await notificationApi.unreadCount()
+        const data = res && res.data ? res.data : res
+        this.notifUnread = (data && (data.count != null ? data.count : data.unread)) || 0
+      } catch (e) {
+        this.notifUnread = 0
+      }
     },
 
     onLower() {
@@ -1003,10 +1022,35 @@ export default {
     align-items: center;
     justify-content: center;
     backdrop-filter: blur(8rpx);
+    position: relative;
   }
 
   &__notif-icon {
     font-size: 36rpx;
+  }
+
+  // 2026-07-11 v0.9: 红点徽标
+  &__notif-dot {
+    position: absolute;
+    top: 4rpx;
+    right: 4rpx;
+    min-width: 32rpx;
+    height: 32rpx;
+    padding: 0 8rpx;
+    background: #f56c6c;
+    border-radius: 16rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2rpx solid #fff;
+    box-sizing: border-box;
+  }
+
+  &__notif-dot-text {
+    color: #fff;
+    font-size: 20rpx;
+    line-height: 1;
+    font-weight: 600;
   }
 
   &__top-content {

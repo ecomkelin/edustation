@@ -280,6 +280,7 @@ server/src/
 | 改人脸识别 / 门禁 / 接送授权 | [docs/claude/data-models-access.md](docs/claude/data-models-access.md) |
 | 改 AI 助手 / RAG / 会话持久化 / 平台客服永久会话 (R-2830) | [docs/claude/ai-assistant.md](docs/claude/ai-assistant.md) |
 | 改经营看板 / 报表 / 聚合管道 | [docs/claude/dashboards.md](docs/claude/dashboards.md) |
+| 改 推送通知 / 通知模板 / 用户偏好 / 渠道分发 / inbox / 红点 (MM=40 v0.9) | [docs/claude/data-models-notification.md](docs/claude/data-models-notification.md) |
 | 改 / 加 / 删 / 查后端 API 路由（编号、Auth、跨模块） | [docs/claude/routes-server.md](docs/claude/routes-server.md) |
 
 ## 15. 新增知识到本仓库的约定

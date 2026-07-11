@@ -10,7 +10,8 @@
       }
     },
     {
-      "path": "pages/tabbar/chat",
+      // 2026-07-11 v0.9: chat.vue → messages.vue, 二级 tab 切 Inbox/AI 客服
+      "path": "pages/tabbar/messages",
       "style": {
         "navigationBarTitleText": "消息"
       }
@@ -328,6 +329,13 @@
       "style": {
         "navigationBarTitleText": "意见反馈"
       }
+    },
+    {
+      // 2026-07-11 v0.9: 通知偏好 (C 端 /me/preferences)
+      "path": "pages/me/notification-preferences",
+      "style": {
+        "navigationBarTitleText": "通知偏好"
+      }
     }
   ],
   "globalStyle": {
@@ -365,10 +373,9 @@
         "selectedIconPath": "static/tabbar/explore-active.png"
       },
       {
-        "pagePath": "pages/tabbar/chat",
-        // 2026-07-02: "消息" 改成 "chat" 跟 chat.vue 业务名对齐; 图标也换了 (放大镜→对话气泡)
-        // 2026-07-03: 跟 org 对调位置
-        "text": "chat",
+        // 2026-07-11 v0.9: tabBar pagePath 同步改名 chat → messages
+        "pagePath": "pages/tabbar/messages",
+        "text": "消息",
         "iconPath": "static/tabbar/chat.png",
         "selectedIconPath": "static/tabbar/chat-active.png"
       },

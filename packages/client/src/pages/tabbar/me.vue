@@ -184,6 +184,8 @@ export default {
     },
     settings() {
       return [
+        // 2026-07-11 v0.9 通知: 通知偏好开关
+        { label: '通知偏好', icon: '🔔', url: '/pages/me/notification-preferences' },
         { label: '接送授权', icon: '🚪', url: '/pages/access/pickups' },
         { label: '进出记录', icon: '📋', url: '/pages/access/events' },
         { label: '协议条款', icon: '📜', url: '/pages/legal/list' },

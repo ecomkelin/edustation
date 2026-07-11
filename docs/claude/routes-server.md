@@ -89,7 +89,8 @@ Auth 列简写:
 | 33 | health | /health | health/ | 1 |
 | 34 | finance | /finance | finance/ | 17 |
 | 35 | audit | /audit-logs | audit/ | 5 |
-| **合计** | | | | **~299** |
+| 40 | notification (v0.9) | /notifications | notification/ | 12 |
+| **合计** | | | | **~311** |
 
 ## 3. 路由总表 (按 MM 排序)
 
@@ -656,6 +657,46 @@ Auth 列简写:
 | R-3503 | GET | /audit-logs/export.csv | ADMIN | — | 导出 CSV (BOM, Excel 友好) | |
 | R-3504 | GET | /audit-logs/:id | ADMIN | — | 详情 | |
 
+### MM=40 notification (URL: /notifications)
+
+> 推送通知模块 (2026-07-11 v0.9 立项). 三层架构: Channel Adapter → NotificationService → Notification 模型.
+> MVP 仅站内 Inbox; C 端 /me/* 跳过 requirePermission 仅 activeStudent 校验 (沿用 c-end-me-endpoint-pattern);
+> 管理后台 publish/templates/logs 走 notification.* 权限码. 详见 [data-models-notification.md](data-models-notification.md).
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-4001 | POST | /notifications/publish | PERM | notification.send | 内部发布通知 | body 必填 type/recipientId; payload/vars/scheduledFor 可选; 业务触发 (lessonSchedule/taskCron) 与代发都走这里 |
+| R-4002 | GET | /notifications/me | AUTH | — | 我的 inbox | query: page/pageSize/status/archived/activeStudentId; 默认隐藏已归档 |
+| R-4003 | GET | /notifications/me/unread-count | AUTH | — | 红点未读数 | query: activeStudentId; 仅 count, 聚合不拉详情 |
+| R-4004 | POST | /notifications/:id/read | AUTH | — | 标记已读 | 资源属主校验 (recipient == req.user.id); 幂等 (已读再调不动) |
+| R-4005 | POST | /notifications/me/read-all | AUTH | — | 一键已读 | query: activeStudentId |
+| R-4006 | POST | /notifications/:id/archive | AUTH | — | 归档 | 资源属主校验; 归档同时若 unread 自动标 read |
+| R-4007 | POST | /notifications/me/archive-all | AUTH | — | 一键归档 | query: activeStudentId |
+| R-4008 | GET | /notifications/me/preferences | AUTH | — | 我的偏好 | 懒创建: 首次调用按默认策略建 |
+| R-4009 | PUT | /notifications/me/preferences | AUTH | — | 改我的偏好 (白名单) | body 白名单: globalEnabled / categories.* / channels.*.enabled / quietHours |
+| R-4010 | GET | /notifications/templates | PERM | notification.read | 模板列表 (机构 + 平台默认合并) | 机构优先, 平台默认兜底; 用于管理后台 |
+| R-4011 | PUT | /notifications/templates/:type/:channel | PERM | notification.write | 新增 / 编辑模板 | 机构维度覆盖平台默认; 唯一索引 (org, type, channel) |
+| R-4012 | GET | /notifications/admin/logs | PERM | notification.read | 发送流水 (30 天) | query: channel/status/page/pageSize; NotificationLog TTL 30d |
+
+**§40.1 默认偏好策略**（2026-07-11）:
+
+- 总开关: `globalEnabled=true` (默认)
+- 分类默认: lesson/task/order/evaluation/access/system = `enabled=true` (channels=['inbox']); point/pet = `enabled=false`
+- 渠道默认: inbox=`enabled=true capability=true` (永远); wechatMini=`enabled=true capability=绑微信?`; wechatPublic/sms/push=`enabled=false`
+- `isChannelEnabled` 综合判定: 全关 globalEnabled / category / channel / capability 四道闸门
+- inbox 必到: publish 时强制把 'inbox' 放 channels[] 第一行, 即便其他渠道全 skip
+
+**§40.2 触发点**（MVP）:
+
+- `lessonSchedule.generateAttendancesForSchedule` → 给每个考勤的 guardians 发 `lesson_remind_1h` (scheduledFor=plannedStart-1h)
+- `taskCron.notifyDueToday` (每分钟 tick) → 给今天到期任务的 assignee+supervisor+creator 发 `task_due` (即时)
+
+**§40.3 扩展路线**:
+
+- Phase 2: 微信小程序订阅消息 + wechatMini ChannelAdapter (需先在微信公众平台申请订阅消息模板 ID)
+- Phase 3: 短信 (阿里云) + 微信公众号模板消息
+- Phase 4: WebSocket 实时推送 + UniPush (小程序关闭时保底)
+
 ## 4. 变更日志
 
 ### 4.1 废弃路由 (Deprecated)
@@ -669,6 +710,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-07-11 | 通知模块 MM=40 v0.9 立项: 4 model + 3 service + inbox adapter + cron + 12 端点 R-4001~R-4012; MVP 仅站内 Inbox (C 端 /me/* + 管理后台 publish/templates/logs); 触发点 lesson_remind_1h (lessonSchedule) + task_due (taskCron); 默认偏好 lesson/task/order/access 开 + point/pet 关; seed 2 平台默认模板 | R-4001 ~ R-4012 | add |
 | 2026-07-11 | 机构协议 R-3132 PUT 允许 contentMarkdown 为空 (validator `optional({values:'falsy'})` + service 兼容空字符串); 新增 5 个空白占位 key seed (org-about/org-faq/points-rule/share-rule/org-contact), 接入 init-seeds.js 跑 legal.seed | R-3132 | modify |
 | 2026-06-22 | 路由编号方案落地 | 全部 | init |
 | 2026-06-25 | 订单/课包物理删除门控上线 (中风险范式) | R-1704 / R-1705 / R-1804 / R-1805 | add |

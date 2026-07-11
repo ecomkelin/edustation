@@ -748,6 +748,80 @@ async function expireOverdue() {
   return { modified: result.modifiedCount || 0 }
 }
 
+/**
+ * (2026-07-11 v0.9 通知): 扫"今天到期"的任务, 给每个 assignee + supervisor 发 task_due 通知
+ *   - 触发时机: taskCron 每分钟 tick, 任务 dueAt 是今天且当前时间 ≥ 当天 9:00 时
+ *   - 幂等: 通过 Notification.findOne({ type, 'payload.entityId': taskId }) 防止重复发送
+ *   - 单条失败不影响其他任务
+ *
+ * @returns {Promise<{notified: number, skipped: number, errors: number}>}
+ */
+async function notifyDueToday() {
+  const notificationService = require('@modules/notification/notification.service')
+  const Notification = require('@models/Notification.model')
+
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59)
+  // 仅当当前 ≥ 9:00 才发 (一天只发一次, 上午提醒)
+  if (now.getHours() < 9) return { notified: 0, skipped: 0, errors: 0 }
+
+  const stats = { notified: 0, skipped: 0, errors: 0 }
+  // 找今天到期、且非终态的任务
+  const tasks = await Task.find({
+    dueAt: { $gte: todayStart, $lte: todayEnd },
+    status: { $nin: ['approved', 'cancelled', 'expired'] }
+  })
+    .select('_id org title dueAt assignees supervisors creator')
+    .limit(200)
+    .lean()
+  if (!tasks.length) return stats
+
+  for (const t of tasks) {
+    try {
+      // 幂等: 已发过则跳过
+      const existing = await Notification.findOne({
+        org: t.org,
+        type: 'task_due',
+        'payload.entityId': t._id
+      }).select('_id').lean()
+      if (existing) { stats.skipped++; continue }
+
+      const recipients = new Set()
+      for (const a of (t.assignees || [])) recipients.add(String(a))
+      for (const s of (t.supervisors || [])) recipients.add(String(s))
+      if (t.creator) recipients.add(String(t.creator))
+      if (!recipients.size) { stats.skipped++; continue }
+
+      for (const recipientId of recipients) {
+        notificationService.publish({
+          orgId: t.org,
+          recipientId,
+          type: 'task_due',
+          payload: {
+            entityType: 'task',
+            entityId: t._id,
+            deeplink: `/admin/tasks/${t._id}`
+          },
+          vars: {
+            reason: t.title,
+            time: t.dueAt ? `${String(t.dueAt.getMonth() + 1).padStart(2, '0')}-${String(t.dueAt.getDate()).padStart(2, '0')} ${String(t.dueAt.getHours()).padStart(2, '0')}:${String(t.dueAt.getMinutes()).padStart(2, '0')}` : ''
+          },
+          scheduledFor: null,
+          source: 'cron'
+        }).catch((e) => {
+          console.warn('[task.notifyDueToday] publish error:', e.message)
+        })
+      }
+      stats.notified++
+    } catch (e) {
+      stats.errors++
+      console.warn('[task.notifyDueToday] task error:', e.message)
+    }
+  }
+  return stats
+}
+
 // ─── 模板 ──────────────────────────────────────
 
 function computeNextRunAt(schedule, fromDate = new Date()) {
@@ -972,6 +1046,7 @@ module.exports = {
   stats,
   // cron
   expireOverdue,
+  notifyDueToday,
   // 模板
   templateCreate,
   templateList,

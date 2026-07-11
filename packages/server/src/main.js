@@ -43,6 +43,11 @@ async function bootstrap() {
   // - 与 taskCron/petCron 一致: setInterval(...).unref() 不阻塞进程退出
   require('@modules/common/archiveCron')
 
+  // 1.5.3 通知调度 cron (2026-07-11 v0.9 立项)
+  // - 每 5 分钟 tick 一次; 扫 scheduledFor ≤ now 且 channels 仍有 pending 的 Notification
+  // - 课程前 1h 提醒 / 任务到期等定时通知通过此 cron 派发
+  require('@modules/common/notificationCron')
+
   // 1.6 Pet catalog 种子 (2026-06-22 user SVG 决策)
   // 启动时硬清三表 + 灌入内联 SVG 种子（platform 级共享）
   // 遵循 [[dev-stage-no-backcompat]] 开发期硬迁移原则

@@ -24,6 +24,9 @@ const contentSeed = require('./seeds/content.seed')
 const taskSeed = require('./seeds/task.seed')
 // 机构法律协议 (2026-07-11): 7 个 key 默认模板 (2 必勾 + 5 仅展示占位), 复用 orgDefaultLegal
 const legalSeed = require('./seeds/legal.seed')
+// 通知模板 (2026-07-11 v0.9 立项): 2 个平台默认 inbox 模板 (lesson_remind_1h + task_due)
+//   org=null 平台级; 机构可在 /admin/notifications/templates 覆盖
+const notificationTemplateSeed = require('./seeds/notification-templates.seed')
 
 async function initSeeds() {
   // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
@@ -69,6 +72,10 @@ async function initSeeds() {
   //    - 关于本机构 / FAQ / 积分规则 / 分享规则 / 联系方式 (空白占位, isRequired=false, scope=none)
   //    幂等: seedDefaultLegalDocs 已用 isActive=true 唯一性防覆盖; 已存在的不会动
   await legalSeed.run()
+
+  // 10. 通知模板 (2026-07-11 v0.9): 平台默认 2 个 inbox 模板 (lesson_remind_1h / task_due)
+  //     org=null 平台级; 机构可在 admin 后台覆盖
+  await notificationTemplateSeed.run()
 }
 
 module.exports = { initSeeds }

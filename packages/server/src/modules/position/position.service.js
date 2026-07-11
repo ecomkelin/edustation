@@ -44,7 +44,9 @@ const DEFAULT_POSITIONS = [
       'finance.read', 'finance.write',
       // 内容模块下放 per-org (2026-07-03): 管理员发布本机构科普; 2026-07-04 游戏模块下线, 去掉 game.*
       'article.read', 'article.write',
-      'video.read', 'video.write'
+      'video.read', 'video.write',
+      // 通知模块 (2026-07-11 v0.9): 管理员可看/可管/可代发
+      'notification.read', 'notification.write', 'notification.send'
     ]
   },
   {
@@ -73,7 +75,9 @@ const DEFAULT_POSITIONS = [
       // 内容模块下放 per-org (2026-07-03): 教务只看本机构科普, 不可编辑; 2026-07-04 游戏模块下线, 去掉 game.read
       'article.read', 'video.read',
       // 任务模块 (2026-07-11): 拆权限 task.read + task.read.own, 教务看自己相关任务
-      'task.read.own'
+      'task.read.own',
+      // 通知模块 (2026-07-11): 教务可看流水 + 代发
+      'notification.read', 'notification.send'
     ]
   },
   {
@@ -90,7 +94,9 @@ const DEFAULT_POSITIONS = [
       'report.read',
       'accessControl.read',
       // 任务模块 (2026-07-11): 老师看自己相关任务 (执行教学任务)
-      'task.read.own'
+      'task.read.own',
+      // 通知模块 (2026-07-11): 老师可看流水 (作业提醒排错)
+      'notification.read'
     ]
   },
   {
@@ -116,7 +122,9 @@ const DEFAULT_POSITIONS = [
       // 财务模块 (2026-06-25): 财务岗本职
       'finance.read', 'finance.write',
       // 任务模块 (2026-07-11): 财务看自己相关任务 (工资/提成/对账任务)
-      'task.read.own'
+      'task.read.own',
+      // 通知模块 (2026-07-11): 财务可看流水 (订单退款通知)
+      'notification.read'
     ]
   }
 ]

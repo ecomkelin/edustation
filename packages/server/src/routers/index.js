@@ -106,5 +106,10 @@ router.use('/videos', videoRoutes)
 // 员工任务模块 (2026-07-08 立项): MM=39, 任务/模板/看板/统计; admin 端用, C 端不挂
 const taskRoutes = require('@modules/task/task.routes')
 router.use('/tasks', taskRoutes)
+// 通知模块 (2026-07-11 v0.9 立项): MM=36, 推送通知/模板/偏好/inbox; admin 端 + C 端共用
+//   MVP 仅站内 Inbox; 偏好 / inbox 走 /me/* 端点 (C 端家长自助管)
+//   publish / templates / logs 走 admin 端 (要求 notification.* 权限码)
+const notificationRoutes = require('@modules/notification/notification.routes')
+router.use('/notifications', notificationRoutes)
 
 module.exports = router

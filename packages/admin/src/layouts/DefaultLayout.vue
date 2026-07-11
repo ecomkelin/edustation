@@ -139,7 +139,9 @@ import {
   Document,
   // 员工任务 (2026-07-08) — 列表 + 齿轮图标
   List,
-  SetUp
+  SetUp,
+  // 通知管理 (2026-07-11 v0.9) — 铃铛图标
+  Bell
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -231,6 +233,17 @@ const menuGroups = [
           { path: '/org/promotion', label: '机构推广', icon: Promotion, perm: 'org-promotion.write' },
           // 机构协议 (2026-06-22): 从独立子组并入运营最下 (制度文档, 与推广同属机构运营)
           { path: '/legal/org-docs', label: '机构协议', icon: Notebook, perm: 'legal.read' }
+        ]
+      },
+      // 通知管理子组 (2026-07-11 v0.9 立项, MM=40):
+      //   模板编辑 (notification.write) + 发送流水 (notification.read)
+      //   机构 admin 可看可改本机构模板; 平台超管看全平台流水
+      {
+        label: '通知管理',
+        icon: Bell,
+        children: [
+          { path: '/notifications/templates', label: '通知模板', icon: Notebook, perm: 'notification.write' },
+          { path: '/notifications/logs', label: '发送流水', icon: Tickets, perm: 'notification.read' }
         ]
       },
       // 基础数据子组: 文件/字典/账本/教室/学科/学校档案 (财务字典合并到类别字典)

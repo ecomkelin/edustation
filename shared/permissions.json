@@ -380,6 +380,21 @@
       }
     },
     {
+      "key": "notification",
+      "label": "通知",
+      "description": "推送通知管理 (v0.9 立项)：通知模板编辑、发送流水查看、代发通知。C 端家长通过 /me/preferences 自助管自己的接收偏好 (无需此组权限码)。MVP 仅站内 Inbox，Phase 2+ 扩展微信/短信/公众号/WebSocket 等渠道。",
+      "permissions": [
+        "notification.read",
+        "notification.write",
+        "notification.send"
+      ],
+      "permissionLabels": {
+        "notification.read": { "label": "查看通知", "description": "查看本机构通知发送流水与模板列表" },
+        "notification.write": { "label": "管理通知", "description": "新增 / 编辑 / 启停用本机构通知模板（含平台默认模板覆盖）" },
+        "notification.send": { "label": "代发通知", "description": "手动向指定用户补发通知（应急 / 重试场景）" }
+      }
+    },
+    {
       "key": "task",
       "label": "员工任务",
       "description": "内部协作/工作流任务:发起人 / 执行人 / 监督人协作模式,含 checklist 条目、核查审批、评论、看板视图、周期任务模板。服务于校长/教务/财务/招生/老师等员工岗位的日常工作 (C 端家长不可见)。",
