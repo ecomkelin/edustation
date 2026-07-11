@@ -997,8 +997,6 @@
         "finance.write",
         "article.read",
         "article.write",
-        "game.read",
-        "game.write",
         "video.read",
         "video.write"
       ],
@@ -1040,7 +1038,6 @@
         "legal.write",
         "finance.read",
         "article.read",
-        "game.read",
         "video.read"
       ],
       "isSystem": false,
@@ -1165,8 +1162,6 @@
         "finance.write",
         "article.read",
         "article.write",
-        "game.read",
-        "game.write",
         "video.read",
         "video.write"
       ],

@@ -81,13 +81,15 @@
 ```json
 {
   "title": "课程购买协议",
-  "contentMarkdown": "# ...",
+  "contentMarkdown": "# ...",   // 可空; 2026-07-11 起支持「快速建空白模板」
   "isRequired": true,
   "requireScope": "order"
 }
 ```
 
-行为: 软停旧版 (isActive=false) + 创建新版 (version patch+1). 服务端用 `marked` 编译 `contentHtml`.
+行为: 软停旧版 (isActive=false) + 创建新版 (version patch+1). 服务端用 `marked` 编译 `contentHtml` (空 markdown 跳过编译, contentHtml 存空字符串).
+
+**2026-07-11 变更**: validator `contentMarkdown` 由 `min:1` 改为 `optional({values:'falsy'})`, service 兼容空字符串. 用于 admin 端"快速建空白模板"按钮 (见 LegalDocs.vue#availableKeys). 空模板后续可编辑填入正文, 自动 patch+1 升版.
 
 ## 模型结构
 
@@ -122,4 +124,5 @@
 
 - `auth.service.login` / `auth.service.me` 注入 `pendingConsents: await legalService.computePendingConsents(...)`
 - `order.service.create` 校验 `body.agreements`: 必须覆盖所有 `isRequired+requireScope='order'` 的 LegalDoc, 且 version 匹配
-- `org.service.create` 末尾调 `orgDefaultLegal.seedDefaultLegalDocs(orgId)` 默认 seed 购买协议+退费规则
+- `org.service.create` 末尾调 `orgDefaultLegal.seedDefaultLegalDocs(orgId)` 默认 seed 全部 7 个 key (2026-07-11 扩展: 购买+退费带默认 markdown; 关于本机构/FAQ/积分规则/分享规则/联系方式 空白占位, isRequired=false, scope=none)
+- `pnpm db:seeds` 通过 init-seeds.js → legal.seed → 复用 `seedDefaultLegalDocs` 给**已存在** org 补齐 5 个新增占位 (幂等)

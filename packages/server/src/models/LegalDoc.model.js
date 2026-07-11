@@ -54,7 +54,9 @@ const LegalDocSchema = new Schema(
     title: { type: String, required: true, trim: true, maxlength: 100 },
 
     // markdown 原文 + 预编译 HTML
-    contentMarkdown: { type: String, required: true },
+    // 2026-07-11: required 改 false, 支持「快速建空白模板」场景 (admin 先建占位, 后续编辑填入正文).
+    //               空 markdown 时 contentHtml 也存空字符串, 不做 marked 编译.
+    contentMarkdown: { type: String, required: false, default: '' },
     contentHtml: { type: String, default: '' },
 
     // 语义化版本号 (x.y.z); update 时 patch 段自动递增

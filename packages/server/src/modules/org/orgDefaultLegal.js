@@ -4,16 +4,19 @@ const { marked } = require('marked')
 const LegalDoc = require('@models/LegalDoc.model')
 
 /**
- * 机构创建时自动 seed 默认的机构级法律协议 (2026-06).
+ * 机构创建 / 全量 seed 时自动 seed 默认的机构级法律协议.
  *
- * 在 org.service.create 末尾调用. 给新机构填两份默认协议:
- *   - purchase-agreement: 课程购买协议 (下单必勾, requireScope='order', isRequired=true)
- *   - refund-policy: 退费规则 (下单必勾)
+ * 起始版本 (2026-06) 仅 seed 2 个 key:
+ *   - purchase-agreement (下单必勾, isRequired=true, scope=order)
+ *   - refund-policy      (下单必勾, isRequired=true, scope=order)
  *
- * 其他 key (org-about / org-faq / points-rule / share-rule / org-contact)
- * 不主动 seed, 由机构 admin 按需新建.
+ * 2026-07-11 扩展: 把全部 7 个 key 一次性 seed, 新增 5 个仅展示型默认空白
+ * 占位 (isRequired=false, scope=none), 方便机构 admin 列表里直接看到全部 key,
+ * 不必先点 + 按钮才能编辑. 机构 admin 后续编辑时:
+ *   - 购买协议 / 退费规则: 提供完整 markdown 默认文本, admin 可改
+ *   - 关于本机构 / FAQ / 积分规则 / 分享规则 / 联系方式: 空白占位, admin 编辑后填入
  *
- * 幂等: 已存在同 (org, key, isActive=true) 时跳过.
+ * 幂等: 已存在同 (org, key, isActive=true) 时跳过, 不会覆盖 admin 已有内容.
  */
 
 const DEFAULTS = [
@@ -134,6 +137,42 @@ const DEFAULTS = [
 ---
 
 **机构 admin 请编辑此处填入机构客服电话与营业时间**`
+  },
+  // 2026-07-11 新增: 仅展示型 5 个 key, 空白占位, admin 编辑填入
+  {
+    key: 'org-about',
+    title: '关于本机构',
+    isRequired: false,
+    requireScope: 'none',
+    contentMarkdown: ''
+  },
+  {
+    key: 'org-faq',
+    title: '常见问题 FAQ',
+    isRequired: false,
+    requireScope: 'none',
+    contentMarkdown: ''
+  },
+  {
+    key: 'points-rule',
+    title: '积分规则',
+    isRequired: false,
+    requireScope: 'none',
+    contentMarkdown: ''
+  },
+  {
+    key: 'share-rule',
+    title: '分享行为规范',
+    isRequired: false,
+    requireScope: 'none',
+    contentMarkdown: ''
+  },
+  {
+    key: 'org-contact',
+    title: '联系方式',
+    isRequired: false,
+    requireScope: 'none',
+    contentMarkdown: ''
   }
 ]
 
@@ -156,8 +195,9 @@ async function seedDefaultLegalDocs(orgId) {
     org: orgId,
     key: d.key,
     title: d.title,
-    contentMarkdown: d.contentMarkdown,
-    contentHtml: marked.parse(d.contentMarkdown),
+    contentMarkdown: d.contentMarkdown || '',
+    // 空 markdown 直接存空 html, 跳过 marked 编译 (marked.parse('') 返回 '' 也行, 但显式判断更稳)
+    contentHtml: d.contentMarkdown ? marked.parse(d.contentMarkdown) : '',
     version: '1.0.0',
     isActive: true,
     isRequired: d.isRequired,

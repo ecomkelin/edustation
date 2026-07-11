@@ -22,6 +22,8 @@ const financeSeed = require('./seeds/finance.seed')
 const contentSeed = require('./seeds/content.seed')
 // 员工任务模块 (2026-07-08 立项 MM=36): 系统岗位权限码 + 示例模板
 const taskSeed = require('./seeds/task.seed')
+// 机构法律协议 (2026-07-11): 7 个 key 默认模板 (2 必勾 + 5 仅展示占位), 复用 orgDefaultLegal
+const legalSeed = require('./seeds/legal.seed')
 
 async function initSeeds() {
   // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
@@ -61,6 +63,12 @@ async function initSeeds() {
   // 8. 员工任务 (2026-07-08): 给系统岗位 (admin/教务/老师/财务/招生) 批量加 task 权限码
   //    + 给每个 org 写一个示例模板 (默认 isActive=false 让用户自己启用)
   await taskSeed.run()
+
+  // 9. 机构法律协议 (2026-07-11): 给每个启用 org 写 7 个 key 默认 LegalDoc
+  //    - 购买协议 + 退费规则 (带默认 markdown 文本, isRequired=true, scope=order)
+  //    - 关于本机构 / FAQ / 积分规则 / 分享规则 / 联系方式 (空白占位, isRequired=false, scope=none)
+  //    幂等: seedDefaultLegalDocs 已用 isActive=true 唯一性防覆盖; 已存在的不会动
+  await legalSeed.run()
 }
 
 module.exports = { initSeeds }

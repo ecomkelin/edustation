@@ -113,10 +113,11 @@ async function orgHistory(orgId, key) {
  */
 async function orgUpsert({ orgId, key, payload, userId }) {
   if (!mongoose.isValidObjectId(orgId)) throw ApiError.badRequest('orgId 不合法')
-  if (!payload.contentMarkdown) throw ApiError.badRequest('contentMarkdown 必填')
+  // 允许空白模板: contentMarkdown 可空, 用于"快速建占位"场景; 空内容时跳过 marked 编译
+  const rawMarkdown = (payload.contentMarkdown || '').toString()
 
   const { marked } = require('marked')
-  const contentHtml = marked.parse(payload.contentMarkdown)
+  const contentHtml = rawMarkdown ? marked.parse(rawMarkdown) : ''
 
   const current = await LegalDoc.findOne({ org: orgId, key, isActive: true })
   const nextVersion = payload.version || (current ? semver.bumpPatch(current.version) : '1.0.0')
@@ -131,7 +132,7 @@ async function orgUpsert({ orgId, key, payload, userId }) {
     org: orgId,
     key,
     title: payload.title || (current && current.title) || KEY_TITLES_DEFAULT[key] || key,
-    contentMarkdown: payload.contentMarkdown,
+    contentMarkdown: rawMarkdown,
     contentHtml,
     version: nextVersion,
     isActive: true,

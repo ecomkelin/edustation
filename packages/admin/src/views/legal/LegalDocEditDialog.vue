@@ -55,7 +55,7 @@
         type="info"
         :closable="false"
         title="保存即升版"
-        description="提交后系统会自动把当前生效版本停用 (isActive=false),并创建新版本 (version patch+1)。历史用户的 UserConsent 记录不受影响,但客户端下次触发对应作用域时会要求重新同意。"
+        :description="'提交后系统会自动把当前生效版本停用 (isActive=false),并创建新版本 (version patch+1)。历史用户的 UserConsent 记录不受影响,但客户端下次触发对应作用域时会要求重新同意。\n\n正文可以留空 —— 用于「快速建空白模板」场景, 保存后会得到一个 1.0.0 占位, 后续再编辑补充正文。'"
       />
     </el-form>
 
@@ -93,7 +93,8 @@ const dialogTitle = computed(() => `${props.initialData?._id ? '编辑' : '新�
 
 const rules = {
   title: [{ required: true, message: '请填写标题', trigger: 'blur' }],
-  contentMarkdown: [{ required: true, message: '请填写协议正文', trigger: 'blur' }]
+  // contentMarkdown 可空: 用于「快速建空白模板」场景, admin 可后续编辑时再填正文
+  contentMarkdown: [{ required: false, message: '', trigger: 'blur' }]
 }
 
 watch(

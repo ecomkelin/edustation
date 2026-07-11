@@ -600,7 +600,7 @@ Auth 列简写:
 | R-3101 | GET | /legal/platform/:key | OPEN | — | 平台单份协议 | markdown+html |
 | R-3130 | GET | /legal/orgs/:orgId/legal-docs | PERM | legal.read | 机构协议列表 | |
 | R-3131 | GET | /legal/orgs/:orgId/legal-docs/:key | OPEN | — | 机构单份协议 | 家长 C 端 |
-| R-3132 | PUT | /legal/orgs/:orgId/legal-docs/:key | PERM | legal.write | 新版协议 | 软停旧+建新 |
+| R-3132 | PUT | /legal/orgs/:orgId/legal-docs/:key | PERM | legal.write | 新版协议 (允许空白) | 软停旧+建新; **2026-07-11 contentMarkdown 改 optional** 支持"快速建空白模板" |
 | R-3133 | GET | /legal/orgs/:orgId/legal-docs/:key/history | PERM | legal.read | 协议历史 | |
 | R-3134 | POST | /legal/orgs/:orgId/legal-docs/:key/disable | PERM | legal.write | 停用协议 | |
 | R-3172 | GET | /legal/me/pending | AUTH | — | 我的待签协议 | |
@@ -669,6 +669,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-07-11 | 机构协议 R-3132 PUT 允许 contentMarkdown 为空 (validator `optional({values:'falsy'})` + service 兼容空字符串); 新增 5 个空白占位 key seed (org-about/org-faq/points-rule/share-rule/org-contact), 接入 init-seeds.js 跑 legal.seed | R-3132 | modify |
 | 2026-06-22 | 路由编号方案落地 | 全部 | init |
 | 2026-06-25 | 订单/课包物理删除门控上线 (中风险范式) | R-1704 / R-1705 / R-1804 / R-1805 | add |
 | 2026-06-25 | 订单退款端点 R-1722 上线 (支持部分退款 + SP 软停用) | R-1722 | add |

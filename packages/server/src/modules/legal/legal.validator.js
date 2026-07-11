@@ -22,7 +22,8 @@ const orgKeyParam = [
 
 const upsertBody = [
   body('title').optional().isString().isLength({ max: 100 }),
-  body('contentMarkdown').isString().isLength({ min: 1, max: 200000 }).withMessage('contentMarkdown 必填且 ≤ 200000 字'),
+  // contentMarkdown 可空: 允许"快速建空白模板", service 层空字符串即存为占位
+  body('contentMarkdown').optional({ values: 'falsy' }).isString().isLength({ max: 200000 }).withMessage('contentMarkdown ≤ 200000 字'),
   body('version').optional().matches(/^\d+\.\d+\.\d+$/).withMessage('version 必须是 x.y.z'),
   body('isRequired').optional().isBoolean(),
   body('requireScope').optional().isIn(['order', 'login', 'none'])
