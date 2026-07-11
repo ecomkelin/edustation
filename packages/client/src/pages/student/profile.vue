@@ -113,7 +113,9 @@ export default {
     async load() {
       this.loading = true
       try {
-        const res = await studentApi.profile(this.studentId)
+        // R-0474 (2026-07-11): 家长走 /me/profile, 跳过 requirePermission
+        // 旧实现 R-0406 需要 student.read, 家长 Position 移权限后 403
+        const res = await studentApi.myProfile()
         this.data = res || {}
       } catch (e) {
         this.data = null

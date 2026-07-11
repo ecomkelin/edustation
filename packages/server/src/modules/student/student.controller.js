@@ -58,6 +58,20 @@ exports.myStats = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// R-0474 GET /students/me/profile
+// 2026-07-11: 家长查自己孩子的学习画像 (C 端首页 loadProfile 用)
+//   - 跳过 requirePermission, 仅依赖 activeStudent 中间件校验 "x-active-student-id 是否属于 req.user 监护人"
+//   - 解决: 家长 Position 移除 student.read 后, 调 /students/:id/profile 403
+//   - 行为: activeStudentId 由前端从 Pinia student store 取, 通过 x-active-student-id 头传入
+exports.myProfile = async (req, res) => {
+  const data = await service.getMyProfile({
+    userId: req.user.id,
+    studentId: req.activeStudentId,
+    orgId: req.orgId
+  })
+  res.json(ApiResponse.ok(data))
+}
+
 // === 学生学习画像 (2026-06 新增) ===
 exports.getProfile = async (req, res) => {
   const data = await profile.getProfile(req.params.id, req.orgId)

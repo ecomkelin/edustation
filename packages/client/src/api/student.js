@@ -1,6 +1,6 @@
 /**
  * Student API - 我的孩子 + 学习画像
- * R-0472 (me) / R-0401 (detail) / R-0406 (profile) / R-0473 (me/stats 跨 kid 聚合)
+ * R-0472 (me) / R-0401 (detail) / R-0406 (profile, admin) / R-0473 (me/stats 跨 kid 聚合) / R-0474 (me/profile, 家长 C 端)
  */
 import { http } from './request'
 
@@ -19,7 +19,15 @@ export const studentApi = {
     return http.get(`/students/${id}`)
   },
 
+  // admin 端: R-0406, 需要 student.read 权限码; 教务/老师/超管用
   profile(id) {
     return http.get(`/students/${id}/profile`)
+  },
+
+  // R-0474: 家长 C 端专享, 跳过 requirePermission (家长 Position 通常无 student.* 权限)
+  // 走 x-active-student-id + activeStudent 中间件校验 "我是该 kid 监护人"
+  // 2026-07-11: 家长 Position 移权限后, C 端首页 loadProfile 改走这里
+  myProfile() {
+    return http.get('/students/me/profile')
   }
 }

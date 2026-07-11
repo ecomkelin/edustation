@@ -17,6 +17,7 @@ const PetAccount = require('@models/PetAccount.model')
 const parentProfile = require('@modules/parent/parent.profile')
 const parentService = require('@modules/parent/parent.service')
 const { isValidStudentKey } = require('@shared/avatars')
+const profile = require('./student.profile')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
 const password = require('@utils/password')
@@ -420,6 +421,26 @@ async function listForGuardian({ orgId, userId }) {
 }
 
 /**
+ * 2026-07-11 新增: 家长查自己孩子的学习画像 (R-0474 /students/me/profile)
+ *
+ * 设计: 复用 student.profile.getProfile 的查询逻辑 (单 kids query),
+ *   绕过 requirePermission, 由调用前 activeStudent 中间件已确保:
+ *     - x-active-student-id 存在
+ *     - 该 kid.org = req.orgId
+ *     - req.user.id 在 kid.guardians 内 (或 isPlatformAdmin 兜底)
+ *   不重复校验, 直接查询 + 调包即可.
+ *
+ * @param {string} userId   - 当前 User._id
+ * @param {string} studentId - activeStudentId (已通过 activeStudent 中间件 + 监护人校验)
+ * @param {string} orgId     - 当前 org
+ * @returns {Promise<Object>} profile 6 字段 + lastUpdatedBy / lastUpdatedAt
+ */
+async function getMyProfile({ userId, studentId, orgId }) {
+  if (!studentId) throw ApiError.badRequest('请先在 C 端选择孩子')
+  return profile.getProfile(studentId, orgId)
+}
+
+/**
  * 2026-07-05 新增: 家长查自己多个孩子的 stat 聚合 (剩余课时 / 积分 / 近 7 天课程数)
  *
  * 设计: 原 me 端点一次只返 1 个 activeStudent 的 stat (走 activeStudent 强制绑定);
@@ -537,4 +558,4 @@ async function listMyKidsStats({ orgId, userId }) {
   return { items }
 }
 
-module.exports = { list, detail, create, update, remove, removableCheck, setGuardians, setBlocked, listForGuardian, listMyKidsStats }
+module.exports = { list, detail, create, update, remove, removableCheck, setGuardians, setBlocked, listForGuardian, listMyKidsStats, getMyProfile }

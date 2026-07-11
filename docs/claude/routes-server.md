@@ -161,6 +161,7 @@ Auth 列简写:
 | R-0414 | PUT | /students/:id/guardians | ADMIN | — | 重绑监护人 | 平台超管 |
 | R-0472 | GET | /students/me | AUTH | — | 当前活跃孩子 | 家长端; 2026-07-05 修: 跨 org 列所有孩子 (userId 全量), populate org.name + school.name; 用于 active-student-header 切换器跨机构展示 |
 | R-0473 | GET | /students/me/stats | AUTH | — | 多个孩子的 stat 聚合 (剩余课时 / 积分 / 近 7 天课程) | 2026-07-05; 专为 C 端 "我的" 页 kid-card 自带 stat; 跨 kid 1 次返; 2026-07-05 修: 跨 org 聚合 (家长在多机构各报班的孩子一齐显示), 不再被 req.orgId 截断 |
+| R-0474 | GET | /students/me/profile | AUTH + ACTIVE | — | 当前活跃孩子的学习画像 (6 字段 + lastUpdatedBy/At) | 2026-07-11; C 端首页「学习画像」+ 学生 profile 页; 跳过 requirePermission, 走 activeStudent 中间件校验 "x-active-student-id 是 req.user 监护人"; 解决家长 Position 无 student.read 权限时 R-0406 403 的问题 (沿用 [memory: c-end-me-endpoint-pattern] /me 范式) |
 
 ### MM=05 subject (URL: /subjects)
 

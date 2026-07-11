@@ -244,7 +244,7 @@
         </view>
       </view>
 
-      <!-- 学习画像 (2026-07-04: 从原 me.vue 移来; 数据源 studentApi.profile - 真实端点字段 personality/learningGoal/weakness 等) -->
+      <!-- 学习画像 (2026-07-04: 从原 me.vue 移来; 数据源 R-0474 /students/me/profile - 6 字段 personality/learningGoal/weakness/strengths/classFeedback/followUp) -->
       <!-- 2026-07-04: 删「查看完整 ›」CTA — 整张 profile 卡片已可点 (@tap="goProfile"), 文字入口重复 -->
       <view class="home__section">
         <view class="section-title">
@@ -869,7 +869,8 @@ export default {
       this.load()
     },
 
-    // 2026-07-04: 学习画像入口 (从原 me.vue 搬来; 数据源 R-0406 GET /students/:id/profile)
+    // R-0474 (2026-07-11): 学习画像 — 家长走 /students/me/profile (跳过 requirePermission)
+    // 旧实现: R-0406 GET /students/:id/profile 需要 student.read, 家长 Position 移权限后 403
     async loadProfile() {
       if (!this.activeStudentId) {
         this.profile = null
@@ -878,7 +879,9 @@ export default {
       }
       this.profileLoading = true
       try {
-        const res = await studentApi.profile(this.activeStudentId)
+        // 走 /me/profile, server 端 activeStudent 中间件从 x-active-student-id 取
+        // 并校验 "req.user 是该 kid 监护人", 无需在前端传 id
+        const res = await studentApi.myProfile()
         this.profile = res || null
       } catch (e) {
         // 404 = 学生没画像 (其他错误也兜底当 null)
