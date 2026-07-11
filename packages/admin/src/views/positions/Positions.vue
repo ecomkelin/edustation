@@ -221,11 +221,22 @@
           style="margin-bottom: 12px"
         />
 
+        <!-- 2026-07-11: 系统职位 + 非超管 编辑时, 权限区隐藏, 给个提示说明 -->
+        <el-alert
+          v-if="form._isSystem && !isPlatformAdmin"
+          type="info"
+          :closable="false"
+          show-icon
+          title="系统职位的权限仅平台超管可编辑"
+          description="您可在本弹窗修改本系统职位的名称与家长等级; 权限码集合由平台超管维护。如需调整请联系超管。"
+          style="margin-bottom: 12px"
+        />
+
         <el-form-item label="权限">
           <div class="perm-picker">
             <el-collapse v-model="expandedGroups">
               <el-collapse-item
-                v-for="g in catalog"
+                v-for="g in visibleCatalog"
                 :key="g.key"
                 :name="g.key"
               >
@@ -427,6 +438,17 @@ const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
 const list = ref([])
 const catalog = ref([]) // [{ key, label, description, permissionLabels, permissions: [String] }]
+
+// 2026-07-11: 编辑弹窗里「职位/权限」组 (key='position') 仅 (系统职位 + 当前用户是超管) 可见.
+//   - 自定义职位永远不显示 (服务端 assertNoPositionAdminPerms 兜底)
+//   - 系统职位 + 非超管不显示 (服务端 update/setPermissions 拒绝改 permissions, 防止员工自降权)
+//   - 系统职位 + 超管可见可改 (默认管理员的「是否能管机构权限」由超管决定)
+const visibleCatalog = computed(() => {
+  return catalog.value.filter((g) => {
+    if (g.key !== 'position') return true
+    return form._isSystem && isPlatformAdmin.value
+  })
+})
 const loading = ref(false)
 const dialog = ref(false)
 const saving = ref(false)

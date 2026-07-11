@@ -176,7 +176,26 @@ async function detail(id, orgId) {
   return pos
 }
 
+// 2026-07-11: 拦截自定义职位塞 position.* 权限码.
+// 只有系统职位 (默认管理员) 才允许持有 position.read / position.write,
+// 这样能保证「机构内只有系统默认管理员能管职位, 其他人无此能力」的设计:
+//   - 自定义职位塞了 position.* 即便绕过前端 UI 也会被服务端 422 拒
+//   - 用户原文: 其他的新增职位不能有职位/权限的 查看和编辑权限
+const POSITION_ADMIN_PERMS = ['position.read', 'position.write']
+
+function assertNoPositionAdminPerms(pos, incomingPerms) {
+  if (!pos || pos.isSystem) return // 系统职位不受限 (默认管理员默认就带)
+  const bad = (incomingPerms || []).filter((p) => POSITION_ADMIN_PERMS.includes(p))
+  if (bad.length) {
+    throw ApiError.unprocessable(
+      `自定义职位「${pos.name}」不允许持有 ${bad.join(', ')} (仅系统默认职位可管机构职位)`
+    )
+  }
+}
+
 async function create({ orgId, name, permissions = [], clientLevel = 0 }) {
+  // 2026-07-11: 新建的自定义职位不允许带 position.* (仅系统默认管理员能管职位)
+  assertNoPositionAdminPerms({ isSystem: false, name }, permissions)
   try {
     const pos = await Position.create({ org: orgId, name, permissions, clientLevel })
     return pos.toObject()
@@ -193,7 +212,7 @@ async function create({ orgId, name, permissions = [], clientLevel = 0 }) {
   }
 }
 
-async function update(id, orgId, payload) {
+async function update(id, orgId, payload, actor) {
   const pos = await Position.findOne({ _id: id, org: orgId })
   if (!pos) throw ApiError.notFound('职位不存在')
   if (pos.isSystem && payload.isSystem === false) {
@@ -202,6 +221,15 @@ async function update(id, orgId, payload) {
   // 系统职位不允许改成 clientLevel>0（避免管理员把自己提升为家长）
   if (pos.isSystem && payload.clientLevel !== undefined && Number(payload.clientLevel) > 0) {
     throw ApiError.badRequest('系统职位不可改为家长岗位')
+  }
+  // 2026-07-11: 非系统职位不允许塞 position.* (前端 UI 已隐藏, 服务端兜底)
+  if (Array.isArray(payload.permissions)) {
+    assertNoPositionAdminPerms(pos, payload.permissions)
+    // 系统职位的 permissions 仅平台超管可改; 普通员工 (即使持有 position.write)
+    // 编辑系统职位时只能改 name 等非权限字段, 防止管理员给自己减权后失控
+    if (pos.isSystem && !actor?.isPlatformAdmin) {
+      throw ApiError.forbidden('系统职位的权限仅平台超管可编辑')
+    }
   }
   try {
     Object.assign(pos, payload)
@@ -260,7 +288,7 @@ async function removableCheck({ id, orgId }) {
   ])
 }
 
-async function setPermissions(id, orgId, permissions) {
+async function setPermissions(id, orgId, permissions, actor) {
   // 权威过滤: hidden 权限码(platform.* / org.*)即便前端传过来也直接 drop,
   // 不允许任何机构职位持有。这是服务端最后一道防线, 防止:
   //   - 前端 stale 缓存把旧码塞回来
@@ -271,6 +299,14 @@ async function setPermissions(id, orgId, permissions) {
   if (dropped.length) {
     // 仅记日志, 不阻断 (前端不应该传, 真传了就静默 drop)
     console.warn(`[position.setPermissions] dropped hidden perms: ${dropped.join(', ')}`)
+  }
+  // 2026-07-11: 二次拦截 — 非系统职位不允许塞 position.* (前端 UI 已隐藏, 服务端兜底)
+  const target = await Position.findOne({ _id: id, org: orgId }).select('_id isSystem name').lean()
+  if (!target) throw ApiError.notFound('职位不存在')
+  assertNoPositionAdminPerms(target, cleaned)
+  // 系统职位的 permissions 仅平台超管可改 (与 update 接口语义一致)
+  if (target.isSystem && !actor?.isPlatformAdmin) {
+    throw ApiError.forbidden('系统职位的权限仅平台超管可编辑')
   }
   const pos = await Position.findOneAndUpdate(
     { _id: id, org: orgId },

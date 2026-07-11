@@ -23,7 +23,8 @@ exports.create = async (req, res) => {
 }
 
 exports.update = async (req, res) => {
-  const data = await service.update(req.params.id, req.orgId, req.body)
+  // 2026-07-11: 传 actor 给 service, 内部拦截「系统职位 + 非超管改 permissions」
+  const data = await service.update(req.params.id, req.orgId, req.body, req.user)
   res.json(ApiResponse.ok(data))
 }
 
@@ -38,7 +39,8 @@ exports.removableCheck = async (req, res) => {
 }
 
 exports.setPermissions = async (req, res) => {
-  const data = await service.setPermissions(req.params.id, req.orgId, req.body.permissions)
+  // 2026-07-11: 传 actor 给 service, 内部拦截「系统职位 + 非超管改 permissions」
+  const data = await service.setPermissions(req.params.id, req.orgId, req.body.permissions, req.user)
   res.json(ApiResponse.ok(data))
 }
 
