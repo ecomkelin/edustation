@@ -153,16 +153,26 @@ async function recomputeProgressOnly(task) {
  *   - task.read 持有者 → 全部可见
  *   - 否则: creator / assignees[].user / supervisors / comments.mentions 之一 → 可见
  *   - 平台超管 → 全部
+ *
+ * 注意: creator / assignees[].user / supervisors 字段在 detail() 里被 populate 成 { _id, realName, avatar }
+ *   直接 String(obj) 会得 '[object Object]', 永远跟 actor.userId 不等 — 必须取 _id 后再 String()
  */
+function refId(v) {
+  // populate 后是 { _id, ... }, 未 populate 时是 ObjectId / string; 都要拿到可比对的字符串
+  if (v == null) return ''
+  if (typeof v === 'object') return String(v._id || v.id || '')
+  return String(v)
+}
+
 async function canViewTask(actor, task) {
   if (!actor) return false
   if (actor.isPlatformAdmin) return true
   // actor.permissions 是后端 requirePermission 中间件解析后的数组
   const perms = actor.permissions || []
   if (perms.includes('task.read')) return true
-  if (String(task.creator) === String(actor.userId)) return true
-  if ((task.assignees || []).some((a) => String(a.user) === String(actor.userId))) return true
-  if ((task.supervisors || []).some((s) => String(s) === String(actor.userId))) return true
+  if (refId(task.creator) === String(actor.userId)) return true
+  if ((task.assignees || []).some((a) => refId(a.user) === String(actor.userId))) return true
+  if ((task.supervisors || []).some((s) => refId(s) === String(actor.userId))) return true
   return false
 }
 
@@ -307,7 +317,7 @@ async function update({ id, orgId, body, actor }) {
   assertNotArchived(task)
   // 权限: creator / 持有 task.write
   const perms = (actor && actor.permissions) || []
-  const isCreator = String(task.creator) === String(actor.userId)
+  const isCreator = refId(task.creator) === String(actor.userId)
   const canWrite = perms.includes('task.write')
   if (!isCreator && !canWrite) {
     throw ApiError.forbidden('仅任务发起人或持有 task.write 可编辑')
@@ -375,7 +385,7 @@ async function remove({ id, orgId, actor }) {
   //    这里再加 creator 校验, 防止 task.delete 持有者删别人的任务)
   if (!actor) throw ApiError.unauthorized()
   const isPlatformAdmin = !!actor.isPlatformAdmin
-  const isCreator = String(task.creator) === String(actor.userId)
+  const isCreator = refId(task.creator) === String(actor.userId)
   if (!isPlatformAdmin && !isCreator) {
     throw ApiError.forbidden('仅任务创建人或平台超管可物理删除该任务')
   }
@@ -466,7 +476,7 @@ async function submit({ id, orgId, actor }) {
   if (!['assigned', 'in_progress', 'partial_submitted', 'rejected'].includes(task.status)) {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可提交`)
   }
-  const me = task.assignees.find((a) => String(a.user) === String(actor.userId))
+  const me = task.assignees.find((a) => refId(a.user) === String(actor.userId))
   if (!me) {
     throw ApiError.forbidden('你不是该任务的执行人')
   }
@@ -538,7 +548,7 @@ async function cancel({ id, orgId, reason, actor }) {
   }
   // 权限: creator / 持有 task.write
   const perms = (actor && actor.permissions) || []
-  const isCreator = String(task.creator) === String(actor.userId)
+  const isCreator = refId(task.creator) === String(actor.userId)
   if (!isCreator && !perms.includes('task.write')) {
     throw ApiError.forbidden('仅任务发起人或持有 task.write 可取消')
   }
@@ -565,7 +575,7 @@ async function addItem({ id, orgId, item, actor }) {
   }
   // 校验 assignee ⊂ assignees
   // 校验 assignee ⊂ assignees
-  const ok = task.assignees.some((a) => String(a.user) === String(item.assignee))
+  const ok = task.assignees.some((a) => refId(a.user) === String(item.assignee))
   if (!ok) throw ApiError.badRequest('条目执行人必须在任务执行人列表中')
   const created = await TaskItem.create({
     org: orgId,
@@ -628,7 +638,7 @@ async function removeItem({ id, itemId, orgId, actor }) {
   const item = await TaskItem.findOne({ _id: itemId, org: orgId, task: id }).select('assignee')
   if (!item) throw ApiError.notFound('条目不存在')
   const isAssignee = String(item.assignee) === String(actor.userId)
-  const isCreator = String(task.creator) === String(actor.userId)
+  const isCreator = refId(task.creator) === String(actor.userId)
   const isPlatformAdmin = !!(actor && actor.isPlatformAdmin)
   if (!isAssignee && !isCreator && !isPlatformAdmin && !perms.includes('task.write') && !perms.includes('task.delete')) {
     throw ApiError.forbidden('只能删除分配给自己的条目,或持有 task.write/task.delete,或是任务创建人')
