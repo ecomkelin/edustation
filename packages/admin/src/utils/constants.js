@@ -149,8 +149,8 @@ export const PET_TIER_LABELS = { C: 'C 级', B: 'B 级', A: 'A 级', S: 'S 级' 
 export const PET_TIER_TAG_TYPE = { C: '', B: 'success', A: 'warning', S: 'danger' }
 export const PET_STATES = ['egg', 'alive', 'dead']
 export const PET_STATE_LABELS = { egg: '蛋', alive: '存活', dead: '死亡' }
-export const PET_VISUAL_TYPES = ['image', 'svg']
-export const PET_VISUAL_TYPE_LABELS = { image: '图片', svg: 'SVG' }
+export const PET_VISUAL_TYPES = ['image', 'svg', 'video']   // 2026-07-12 加 video
+export const PET_VISUAL_TYPE_LABELS = { image: '图片', svg: 'SVG', video: '视频' }
 export const PET_ITEM_SLOTS = ['hat', 'scarf', 'clothes', 'accessory', 'halo', 'background']
 export const PET_ITEM_SLOT_LABELS = { hat: '帽子', scarf: '围巾', clothes: '衣服', accessory: '饰品', halo: '光环', background: '背景' }
 // 2026-07-08: PET_ITEM_UNLOCK_TYPES / PET_ITEM_UNLOCK_TYPE_LABELS 已废弃

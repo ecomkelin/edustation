@@ -17,10 +17,11 @@ const { PET_TIERS, PET_VISUAL_TYPES } = require('@shared/enums')
  * visualType：
  *   - image: 上传图片，存 imageFile (File ref)
  *   - svg:   内联 SVG，存 svgContent (string)
+ *   - video: 上传视频，存 videoFile (File ref)（2026-07-12 加）
  * 不支持 html/css/js（XSS 风险，service 写入时 sanitize）
  *
  * 字段：
- *   - key / name / tier / visualType / imageFile / svgContent
+ *   - key / name / tier / visualType / imageFile / svgContent / videoFile
  *   - weight  (破壳加权随机权重)
  *   - isActive / description / meta
  *   - createdBy / updatedBy  (审计)
@@ -44,6 +45,9 @@ const PetSpeciesSchema = new Schema(
 
     // svg 时存内联字符串
     svgContent: { type: String, default: null, maxlength: 50000 },
+
+    // 2026-07-12: video 时存 File ref（mp4/webm 等，列表/详情预览）
+    videoFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
 
     // 破壳加权随机权重
     weight: { type: Number, default: 100, min: 0, max: 10000 },

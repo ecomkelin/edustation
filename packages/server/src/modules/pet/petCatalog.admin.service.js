@@ -89,7 +89,10 @@ async function listSpecies({ tier, isActive, keyword }) {
 
 async function getSpecies({ id }) {
   if (!id) throw ApiError.badRequest('缺少 id')
-  const doc = await PetSpecies.findOne({ _id: id }).populate('imageFile', 'url mime originalName').lean()
+  const doc = await PetSpecies.findOne({ _id: id })
+    .populate('imageFile', 'url mime originalName')
+    .populate('videoFile', 'url mime originalName')  // 2026-07-12
+    .lean()
   if (!doc) throw ApiError.notFound('物种不存在')
   return doc
 }
@@ -108,6 +111,7 @@ async function createSpecies({ payload, operatorId }) {
     visualType: payload.visualType,
     imageFile: payload.visualType === 'image' ? (payload.imageFile || null) : null,
     svgContent: payload.visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
+    videoFile: payload.visualType === 'video' ? (payload.videoFile || null) : null,   // 2026-07-12
     weight: Number(payload.weight) || 100,
     hungerDecayMinutes: Number(payload.hungerDecayMinutes) || 60,  // 2026-06-23
     isActive: payload.isActive !== false,
@@ -121,6 +125,12 @@ async function createSpecies({ payload, operatorId }) {
     await fileBind.diffSingleById({
       orgId: null, oldId: null, newId: doc.imageFile,
       entity: REF_ENTITY.PET_SPECIES, entityId: created._id, field: 'imageFile'
+    })
+  }
+  if (doc.videoFile) {  // 2026-07-12
+    await fileBind.diffSingleById({
+      orgId: null, oldId: null, newId: doc.videoFile,
+      entity: REF_ENTITY.PET_SPECIES, entityId: created._id, field: 'videoFile'
     })
   }
   return created.toObject()
@@ -145,9 +155,13 @@ async function updateSpecies({ id, payload, operatorId }) {
   if (payload.svgContent !== undefined && doc.visualType === 'svg') {
     updates.svgContent = sanitizeSvg(payload.svgContent)
   }
+  if (payload.videoFile !== undefined && doc.visualType === 'video') {  // 2026-07-12
+    updates.videoFile = payload.videoFile || null
+  }
   updates.updatedBy = operatorId
 
   const oldImageFile = doc.imageFile ? doc.imageFile.toString() : null
+  const oldVideoFile = doc.videoFile ? doc.videoFile.toString() : null   // 2026-07-12
   const updated = await PetSpecies.findByIdAndUpdate(doc._id, { $set: updates }, { new: true })
   invalidateCache('species')
 
@@ -155,6 +169,12 @@ async function updateSpecies({ id, payload, operatorId }) {
     await fileBind.diffSingleById({
       orgId: null, oldId: oldImageFile, newId: updated.imageFile ? updated.imageFile.toString() : null,
       entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'imageFile'
+    })
+  }
+  if (doc.visualType === 'video' && payload.videoFile !== undefined) {  // 2026-07-12
+    await fileBind.diffSingleById({
+      orgId: null, oldId: oldVideoFile, newId: updated.videoFile ? updated.videoFile.toString() : null,
+      entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'videoFile'
     })
   }
   return updated.toObject()
@@ -189,6 +209,12 @@ async function removeSpecies({ id }) {
     await fileBind.diffSingleById({
       orgId: null, oldId: doc.imageFile.toString(), newId: null,
       entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'imageFile'
+    })
+  }
+  if (doc.videoFile) {  // 2026-07-12
+    await fileBind.diffSingleById({
+      orgId: null, oldId: doc.videoFile.toString(), newId: null,
+      entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'videoFile'
     })
   }
   await doc.deleteOne()

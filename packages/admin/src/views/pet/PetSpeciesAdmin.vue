@@ -21,6 +21,11 @@
             <el-image :src="row.imageFile.url" :alt="row.name" fit="cover" style="width:48px;height:48px;border-radius:6px" />
           </div>
           <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
+          <div v-else-if="row.visualType === 'video' && row.videoFile" class="thumb video-thumb clickable" @click="openPreview(row)">
+            <!-- 2026-07-12: 列表缩略图 = 静态首帧 + ▶ 角标，hover 不自动播（避免 16 行同时解码） -->
+            <video :src="row.videoFile.url" muted preload="metadata" class="video-frame" />
+            <el-icon :size="20" class="video-play-icon"><VideoPlay /></el-icon>
+          </div>
           <el-icon v-else :size="32" color="#ccc"><Picture /></el-icon>
         </template>
       </el-table-column>
@@ -83,6 +88,7 @@
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
             <el-radio value="image">图片</el-radio>
             <el-radio value="svg">SVG</el-radio>
+            <el-radio value="video">视频</el-radio><!-- 2026-07-12 加 -->
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'image'" label="图片">
@@ -98,6 +104,18 @@
         <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
           <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
           <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
+        </el-form-item>
+        <!-- 2026-07-12: video visualType — 走 FilePicker (mime=video/*) + 上传新视频 -->
+        <el-form-item v-if="form.visualType === 'video'" label="视频文件">
+          <FilePicker v-model="videoPicker" scope="pet" mime-prefix="video/" title="选择物种视频" @select="onPickVideo" />
+          <div v-if="form.videoFile" class="preview">
+            <video :src="form.videoFile.url" controls preload="metadata" style="width:240px;max-height:160px;border-radius:6px" />
+            <el-button link type="danger" @click="form.videoFile = null">清除</el-button>
+          </div>
+          <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadVideo" accept="video/*">
+            <el-button :icon="Upload" size="small">上传新视频</el-button>
+          </el-upload>
+          <span class="hint">建议 mp4/webm，单文件 ≤ 20MB</span>
         </el-form-item>
         <el-form-item label="权重">
           <el-input-number v-model="form.weight" :min="0" :max="10000" />
@@ -126,6 +144,8 @@
       <div v-if="previewRow" class="preview-large-wrap">
         <el-image v-if="previewRow.visualType === 'image' && previewRow.imageFile" :src="previewRow.imageFile.url" :alt="previewRow.name" fit="contain" style="width:100%;max-height:60vh" />
         <div v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
+        <!-- 2026-07-12: video 大预览 = controls + autoplay muted loop (autoplay policy 要求 muted) -->
+        <video v-else-if="previewRow.visualType === 'video' && previewRow.videoFile" :src="previewRow.videoFile.url" controls autoplay muted loop style="width:100%;max-height:60vh;border-radius:6px" />
         <div v-else class="preview-large-empty">
           <el-icon :size="64" color="#ccc"><Picture /></el-icon>
           <span>暂无形象</span>
@@ -138,7 +158,7 @@
 <script>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Upload, Picture } from '@element-plus/icons-vue'
+import { Plus, Upload, Picture, VideoPlay } from '@element-plus/icons-vue'
 import { petCatalogApi } from '@/api/petCatalog'
 import { storageApi } from '@/api/storage'
 import FilePicker from '@/components/FilePicker.vue'
@@ -163,6 +183,7 @@ export default {
     const dialog = ref(false)
     const saving = ref(false)
     const imagePicker = ref(false)
+    const videoPicker = ref(false)  // 2026-07-12
     const formRef = ref(null)
     const previewOpen = ref(false)
     const previewRow = ref(null)
@@ -174,6 +195,7 @@ export default {
       visualType: 'image',
       imageFile: null,
       svgContent: '',
+      videoFile: null,  // 2026-07-12
       weight: 100,
       hungerDecayMinutes: 60,  // 2026-06-23
       isActive: true,
@@ -217,7 +239,8 @@ export default {
     function resetForm() {
       Object.assign(form, {
         _id: null, key: '', name: '', tier: 'C', visualType: 'image',
-        imageFile: null, svgContent: '', weight: 100, isActive: true, description: ''
+        imageFile: null, svgContent: '', videoFile: null,  // 2026-07-12
+        weight: 100, hungerDecayMinutes: 60, isActive: true, description: ''
       })
       formRef.value?.clearValidate()
     }
@@ -237,6 +260,7 @@ export default {
         visualType: row.visualType,
         imageFile: row.imageFile || null,
         svgContent: row.svgContent || '',
+        videoFile: row.videoFile || null,  // 2026-07-12
         weight: row.weight,
         hungerDecayMinutes: row.hungerDecayMinutes || 60,  // 2026-06-23
         isActive: row.isActive,
@@ -249,12 +273,25 @@ export default {
       form.imageFile = file
     }
 
+    function onPickVideo(file) {  // 2026-07-12
+      form.videoFile = file
+    }
+
     async function uploadImage(req) {
       try {
         const { data } = await storageApi.upload({ file: req.file, scope: 'pet' })
         form.imageFile = data
       } catch (e) {
         ElMessage.error('图片上传失败：' + (e?.message || 'unknown'))
+      }
+    }
+
+    async function uploadVideo(req) {  // 2026-07-12
+      try {
+        const { data } = await storageApi.upload({ file: req.file, scope: 'pet' })
+        form.videoFile = data
+      } catch (e) {
+        ElMessage.error('视频上传失败：' + (e?.message || 'unknown'))
       }
     }
 
@@ -270,6 +307,7 @@ export default {
           visualType: form.visualType,
           imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
+          videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,  // 2026-07-12
           weight: Number(form.weight) || 0,
           hungerDecayMinutes: Number(form.hungerDecayMinutes) || 60,  // 2026-06-23
           isActive: !!form.isActive,
@@ -317,12 +355,12 @@ export default {
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      imagePicker, previewOpen, previewRow,
+      imagePicker, videoPicker, previewOpen, previewRow,   // 2026-07-12 加 videoPicker
       PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
       tierSortKey,
-      Plus, Upload, Picture,
+      Plus, Upload, Picture, VideoPlay,  // 2026-07-12 加 VideoPlay
       petCatalogApi,
-      load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm,
+      load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm,  // 2026-07-12 加 onPickVideo/uploadVideo
       openPreview, tierTagType, formatDate
     }
   }
@@ -337,6 +375,10 @@ export default {
 .thumb { display: flex; align-items: center; justify-content: center; }
 .svg-thumb { width: 48px; height: 48px; }
 .svg-thumb svg { width: 100%; height: 100%; display: block; }
+/* 2026-07-12: video 缩略图 = 静态首帧 + ▶ 角标 */
+.video-thumb { position: relative; width: 48px; height: 48px; border-radius: 6px; overflow: hidden; background: #f0f0f0; }
+.video-thumb .video-frame { width: 100%; height: 100%; object-fit: cover; display: block; }
+.video-thumb .video-play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); pointer-events: none; }
 .clickable { cursor: zoom-in; transition: transform 0.15s ease; }
 .clickable:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.12); border-radius: 6px; }
 .preview-large-wrap { display: flex; align-items: center; justify-content: center; padding: 16px; }

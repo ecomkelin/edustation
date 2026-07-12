@@ -175,9 +175,10 @@
 | `key` | String, required, trim | 全局 key（如 `cat_orange`） |
 | `name` | String max 64, required | 中文名 |
 | `tier` | enum C/B/A/S, required, index | 破壳池分类 |
-| `visualType` | enum `image`/`svg`, required | **不支持 html/css/js**（XSS） |
+| `visualType` | enum `image`/`svg`/`video`, required | **不支持 html/css/js**（XSS）；`video` 2026-07-12 加 |
 | `imageFile` | ObjectId ref File, nullable | visualType=image 时用 |
 | `svgContent` | String max 50000, nullable | visualType=svg 时用（自动 sanitize） |
+| `videoFile` | ObjectId ref File, nullable | visualType=video 时用（mp4/webm，2026-07-12 加；列表静态首帧+▶/详情 controls） |
 | `weight` | Number 0-10000, default 100 | 破壳加权随机权重（0=不参与抽取） |
 | `isActive` | Boolean, default true, index | 软启用 |
 | `description` | String max 500, nullable | |
@@ -537,6 +538,7 @@ C 端家长通过 uni-app（微信小程序 / H5 / App）访问：
 **视觉渲染**：
 - `speciesRecord.visualType === 'image'` → `<img :src="imageFile.url">`
 - `speciesRecord.visualType === 'svg'` → `v-html="svgContent"`（已 sanitize）
+- `speciesRecord.visualType === 'video'`（2026-07-12 加）→ `<video :src="videoFile.url" controls autoplay muted loop>` （autoplay policy 要求 muted）
 - `speciesRecord` 不存在或 key 找不到 → emoji fallback（`PET_SPECIES_EMOJI` map）
 
 ---

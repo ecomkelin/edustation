@@ -43,6 +43,7 @@ async function _listGlobal({ Model, baseFilter = {}, keyword }) {
   }
   return Model.find(filter)
     .populate('imageFile', 'url mime originalName')
+    .populate('videoFile', 'url mime originalName')   // 2026-07-12: species 新加 videoFile ref
     .sort({ tier: 1, slot: 1, kind: 1, key: 1 })
     .lean()
 }
@@ -69,11 +70,14 @@ async function listSpecies({ tier, isActive, keyword } = {}) {
 
 async function getSpecies({ key }) {
   if (!key) return null
-  let doc = await PetSpecies.findOne({ key }).populate('imageFile', 'url mime').lean()
+  let doc = await PetSpecies.findOne({ key })
+    .populate('imageFile', 'url mime')
+    .populate('videoFile', 'url mime')   // 2026-07-12
+    .lean()
   if (doc) return doc
   const shared = sharedPetSpecies.getSpecies(key)
   if (shared) {
-    return { ...shared, imageFile: null, visualType: 'image', isActive: true, _fallback: true }
+    return { ...shared, imageFile: null, videoFile: null, visualType: 'image', isActive: true, _fallback: true }
   }
   return null
 }

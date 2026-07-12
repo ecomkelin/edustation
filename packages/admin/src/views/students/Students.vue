@@ -156,12 +156,17 @@
             <el-option label="其他" value="other" />
           </el-select>
         </el-form-item>
-        <!-- 2026-07-11: 生日三栏下拉 (年/月/日) + 红星 + 必填。日根据年月动态生成 (28/29/30/31) -->
-        <el-form-item label="生日" prop="birthday" required>
+        <!-- 2026-07-11: 生日三栏下拉 (年/月/日) + 红星 + 必填 (label 自定义红色星号, 无 prop 绕开 Element Plus 找不到 form.birthday 的 'is required' 错报) -->
+        <el-form-item>
+          <template #label>
+            <span style="color: #F56C6C">*</span>
+            <span> 生日</span>
+          </template>
           <el-select
             v-model="form.birthdayYear"
             placeholder="年"
-            style="width: 90px"
+            style="width: 110px"
+            filterable
             @change="form.birthdayDay = null"
           >
             <el-option v-for="y in yearOptions" :key="y" :label="y" :value="y" />
@@ -169,7 +174,8 @@
           <el-select
             v-model="form.birthdayMonth"
             placeholder="月"
-            style="width: 80px; margin-left: 8px"
+            style="width: 90px; margin-left: 8px"
+            filterable
             @change="form.birthdayDay = null"
           >
             <el-option v-for="m in 12" :key="m" :label="m" :value="m" />
@@ -177,7 +183,8 @@
           <el-select
             v-model="form.birthdayDay"
             placeholder="日"
-            style="width: 80px; margin-left: 8px"
+            style="width: 90px; margin-left: 8px"
+            filterable
             :disabled="!form.birthdayYear || !form.birthdayMonth"
           >
             <el-option v-for="d in dayOptions" :key="d" :label="d" :value="d" />
@@ -307,39 +314,19 @@ const form = reactive({
 const studentAvatarPicker = ref(false)
 
 // 表单校验规则(必填 + 手机号格式)
+// 2026-07-11: 生日三栏不带 prop/required, 在 save() 手动校验; 其他字段 (姓名/监护人手机) 用 Element Plus 内置规则
 const rules = {
   name: [{ required: true, message: '请填写姓名', trigger: 'blur' }],
   guardianMobile: [
     { required: true, message: '请填写监护人手机', trigger: 'blur' },
     { pattern: /^1[3-9]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }
-  ],
-  // 2026-07-11: 生日三栏任一空都报错 — 沿用 form.birthdayISO computed 做校验
-  birthday: [
-    {
-      validator(_rule, _value, cb) {
-        if (!form.birthdayYear || !form.birthdayMonth || !form.birthdayDay) {
-          return cb(new Error('请完整填写生日 (年/月/日)'))
-        }
-        cb()
-      },
-      trigger: 'change'
-    }
   ]
 }
 
 // 2026-07-11: 生日三栏选项 + 拼 ISO 字符串 (空 → '')
-// 年: 今年起回溯 30 年, 覆盖 0-30 岁学员
-//   排序: 默认年(今年-10) 放最上 → 点开不用下滑就能看到 → 然后是 newer (今年→默认年+1) → 然后是 older (默认年-1→30年前)
+// 年: 今天起到 30 年前, 简单降序 (今年在最上, 30 年前在底), 不跳不乱
 const thisYear = new Date().getFullYear()
-const defaultBirthdayYear = thisYear - 10
-const yearOptions = (() => {
-  const arr = [defaultBirthdayYear]
-  // newer: 默认年 < y <= 今年
-  for (let y = defaultBirthdayYear + 1; y <= thisYear; y++) arr.push(y)
-  // older: 今年-30 <= y < 默认年
-  for (let y = defaultBirthdayYear - 1; y >= thisYear - 30; y--) arr.push(y)
-  return arr
-})()
+const yearOptions = Array.from({ length: 31 }, (_, i) => thisYear - i)
 // 日: 根据所选年/月动态算 (平年 2 月 28, 闰年 29; 4/6/9/11 月 30; 其他 31)
 const daysInMonth = (y, m) => new Date(y, m, 0).getDate()
 const dayOptions = computed(() => {
@@ -435,8 +422,8 @@ function openCreate() {
     _id: '',
     name: '',
     gender: 'male',
-    // 2026-07-11: 年份默认 10 年前 (10 岁左右学员多); 月份仍保持 null (不默认, 让用户主动选)
-    birthdayYear: defaultBirthdayYear,
+    // 2026-07-11: 三栏全部保持 null, 强制用户主动填 (避免「误以为已填」)
+    birthdayYear: null,
     birthdayMonth: null,
     birthdayDay: null,
     guardianMobile: '',
@@ -511,6 +498,11 @@ async function submit() {
   try {
     await formRef.value.validate()
   } catch {
+    return
+  }
+  // 2026-07-11: 生日三栏手动校验 — Element Plus 内置校验不参与 (没 prop)
+  if (!form.birthdayYear || !form.birthdayMonth || !form.birthdayDay) {
+    ElMessage.error('请完整填写生日 (年/月/日)')
     return
   }
   saving.value = true
