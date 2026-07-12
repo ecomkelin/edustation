@@ -48,7 +48,7 @@
         <el-table-column label="文件" min-width="220">
           <template #default="{ row }">
             <div class="file-cell">
-              <div class="file-thumb">
+              <div class="file-thumb clickable" @click="openPreview(row)">
                 <el-image
                   v-if="isImage(row.mime)"
                   :src="row.url"
@@ -56,6 +56,11 @@
                   fit="cover"
                   preview-teleported
                 />
+                <!-- 2026-07-12: 视频缩略图 = 静态首帧 + ▶ 角标，点击进预览弹窗 -->
+                <template v-else-if="isVideo(row.mime)">
+                  <video :src="row.url" muted preload="metadata" class="thumb-video" />
+                  <el-icon :size="20" class="thumb-play-icon"><VideoPlay /></el-icon>
+                </template>
                 <el-icon v-else :size="24"><Document /></el-icon>
               </div>
               <div class="file-meta">
@@ -146,10 +151,17 @@
     </el-dialog>
 
     <!-- 预览弹窗（图片/视频/音频/PDF） -->
-    <el-dialog v-model="previewVisible" :title="previewTitle" width="80%" top="5vh" destroy-on-close>
+    <el-dialog v-model="previewVisible" :title="previewTitle" width="720px" top="5vh" destroy-on-close @closed="onPreviewClosed">
       <div v-if="previewTarget" class="preview-body">
         <el-image v-if="isImage(previewTarget.mime)" :src="previewTarget.url" fit="contain" style="width:100%" />
-        <video v-else-if="isVideo(previewTarget.mime)" :src="previewTarget.url" controls style="width:100%">
+        <!-- 2026-07-12: 视频强制 16:9 aspect-ratio + object-fit:contain (任意源视频都撑满容器不变形, 非 16:9 自动 letterbox) -->
+        <video
+          v-else-if="isVideo(previewTarget.mime)"
+          ref="previewVideoRef"
+          :src="previewTarget.url"
+          controls
+          style="width:100%;aspect-ratio:16/9;max-height:70vh;object-fit:contain;background:#000"
+        >
           您的浏览器不支持 video 标签。
         </video>
         <audio v-else-if="isAudio(previewTarget.mime)" :src="previewTarget.url" controls style="width:100%">
@@ -168,7 +180,7 @@
 <script setup>
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Search, Refresh, Upload } from '@element-plus/icons-vue'
+import { Document, Search, Refresh, Upload, VideoPlay } from '@element-plus/icons-vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { storageApi } from '@/api/storage'
 import { handleRemoveError } from '@/utils/removable'
@@ -202,15 +214,25 @@ function scopeLabel(s) {
 }
 
 function scopeTagType(s) {
+  // 2026-07-12: 修 el-tag type 空字符串警告（[[el-tag-type-empty-string-warning]]）
+  //   - pet 之前返 '' → 触发 Vue prop 校验
+  //   - 兜底 || '' 同样问题，改 || 'info'
+  //   - File.model.SCOPE 现 13 个 scope，未列入的（subject*/faceAccess*）也兜底到 'info'
   return {
     avatar: 'primary',
     work: 'success',
     lessonMaterial: 'warning',
     courseAttachment: 'info',
-    pet: '',
+    pet: 'success',
     org: 'danger',
-    general: 'info'
-  }[s] || ''
+    general: 'info',
+    subjectSyllabus: 'primary',
+    subjectLessonMaterial: 'warning',
+    courseInstanceLessonMaterial: 'warning',
+    faceAccessEnrollment: 'danger',
+    faceAccessSnapshot: 'danger',
+    faceAccessStrangerSnapshot: 'danger'
+  }[s] || 'info'
 }
 
 function isImage(mime) { return mime && mime.startsWith('image/') }
@@ -291,9 +313,16 @@ async function openRefs(row) {
 const previewVisible = ref(false)
 const previewTarget = ref(null)
 const previewTitle = computed(() => previewTarget.value?.originalName || '预览')
+const previewVideoRef = ref(null)  // 2026-07-12: 关闭弹窗时暂停 video, 避免后台继续播放
 function openPreview(row) {
   previewTarget.value = row
   previewVisible.value = true
+}
+function onPreviewClosed() {  // 2026-07-12: dialog @closed 钩子, 强制 pause + 复位进度
+  if (previewVideoRef.value) {
+    previewVideoRef.value.pause()
+    previewVideoRef.value.currentTime = 0
+  }
 }
 
 async function onRemoveConfirm(row, { password }) {
@@ -317,8 +346,11 @@ onMounted(load)
 .filter-card { padding-bottom: 0; }
 .filter-form { margin-bottom: 0; }
 .file-cell { display: flex; align-items: center; gap: 10px; }
-.file-thumb { width: 40px; height: 40px; border-radius: 4px; background: #f5f7fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; color: #909399; }
+.file-thumb { width: 40px; height: 40px; border-radius: 4px; background: #f5f7fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; color: #909399; position: relative; }
 .file-thumb :deep(.el-image) { width: 100%; height: 100%; }
+/* 2026-07-12: 视频缩略图 = 静态首帧 + ▶ 角标（参照 PetSpeciesAdmin 同模式） */
+.file-thumb .thumb-video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }  /* 让 video 不捕获 click, 透传到 .file-thumb 触发 openPreview */
+.file-thumb .thumb-play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; filter: drop-shadow(0 0 3px rgba(0,0,0,0.6)); pointer-events: none; }
 .file-meta { min-width: 0; }
 .file-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .pagination-row { display: flex; justify-content: flex-end; padding-top: 12px; }

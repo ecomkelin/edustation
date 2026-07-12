@@ -64,15 +64,19 @@ function sanitizeSvg(input) {
  *   - 第一段（bucket 名）= catalog 类型（species/items/consumables），供 invalidate 精准清
  *   - 平台级共享：所有 org 共一份图鉴，写后调 invalidate(type) 清掉该类型全部
  */
-async function listMerged({ Model, type, baseFilter = {}, keyword, extraFilter = {} }) {
+async function listMerged({ Model, type, baseFilter = {}, keyword, extraFilter = {}, populateFields = ['imageFile'] }) {
   const filterKey = JSON.stringify({ baseFilter, keyword, extraFilter })
   return withCache(`${type}:global:${filterKey}`, async () => {
     const filter = { ...baseFilter, ...extraFilter }
     if (keyword && String(keyword).trim()) {
       filter.name = { $regex: String(keyword).trim(), $options: 'i' }
     }
-    return Model.find(filter)
-      .populate('imageFile', 'url mime originalName')
+    let q = Model.find(filter)
+    // 2026-07-12: 每个 model 自报 populate 字段, 避免 PetItem/Consumable 调 listMerged 时抛 "Cannot populate path 'videoFile' because it is not in your schema"
+    for (const f of populateFields) {
+      q = q.populate(f, 'url mime originalName')
+    }
+    return q
       .sort({ tier: 1, slot: 1, kind: 1, key: 1 })
       .lean()
   }, 300_000) // 5min TTL
@@ -84,14 +88,14 @@ async function listSpecies({ tier, isActive, keyword }) {
   const baseFilter = {}
   if (tier) baseFilter.tier = tier
   if (isActive !== undefined) baseFilter.isActive = isActive
-  return listMerged({ Model: PetSpecies, type: 'species', baseFilter, keyword })
+  return listMerged({ Model: PetSpecies, type: 'species', baseFilter, keyword, populateFields: ['imageFile', 'videoFile'] })  // 2026-07-12: species 加 videoFile
 }
 
 async function getSpecies({ id }) {
   if (!id) throw ApiError.badRequest('缺少 id')
   const doc = await PetSpecies.findOne({ _id: id })
     .populate('imageFile', 'url mime originalName')
-    .populate('videoFile', 'url mime originalName')  // 2026-07-12
+    .populate('videoFile', 'url mime originalName')
     .lean()
   if (!doc) throw ApiError.notFound('物种不存在')
   return doc
@@ -228,7 +232,7 @@ async function listItems({ slot, isActive, keyword }) {
   const baseFilter = {}
   if (slot) baseFilter.slot = slot
   if (isActive !== undefined) baseFilter.isActive = isActive
-  return listMerged({ Model: PetItem, type: 'items', baseFilter, keyword })
+  return listMerged({ Model: PetItem, type: 'items', baseFilter, keyword, populateFields: ['imageFile'] })  // 2026-07-12: PetItem 没有 videoFile, 不传
 }
 
 async function getItem({ id }) {
@@ -368,7 +372,7 @@ async function listConsumables({ kind, isActive, keyword }) {
   const baseFilter = {}
   if (kind) baseFilter.kind = kind
   if (isActive !== undefined) baseFilter.isActive = isActive
-  return listMerged({ Model: PetConsumable, type: 'consumables', baseFilter, keyword })
+  return listMerged({ Model: PetConsumable, type: 'consumables', baseFilter, keyword, populateFields: ['imageFile'] })  // 2026-07-12: PetConsumable 没有 videoFile, 不传
 }
 
 async function getConsumable({ id }) {

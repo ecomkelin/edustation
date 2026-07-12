@@ -71,7 +71,7 @@
     </el-table>
 
     <!-- 创建/编辑 dialog -->
-    <el-dialog v-model="dialog" :title="form._id ? '编辑物种' : '新建物种'" width="640px" :close-on-click-modal="false" @close="resetForm">
+    <el-dialog v-model="dialog" :title="form._id ? '编辑物种' : '新建物种'" width="720px" :close-on-click-modal="false" @close="resetForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="Key" prop="key">
           <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 cat_orange" />
@@ -140,12 +140,48 @@
     </el-dialog>
 
     <!-- 形象大图预览（点击列表缩略图触发） -->
-    <el-dialog v-model="previewOpen" :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '形象预览'" width="480px" :show-close="true" align-center>
+    <el-dialog
+      v-model="previewOpen"
+      :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '形象预览'"
+      width="720px"
+      :show-close="true"
+      align-center
+      @closed="onPreviewClosed"
+    >
       <div v-if="previewRow" class="preview-large-wrap">
-        <el-image v-if="previewRow.visualType === 'image' && previewRow.imageFile" :src="previewRow.imageFile.url" :alt="previewRow.name" fit="contain" style="width:100%;max-height:60vh" />
-        <div v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
-        <!-- 2026-07-12: video 大预览 = controls + autoplay muted loop (autoplay policy 要求 muted) -->
-        <video v-else-if="previewRow.visualType === 'video' && previewRow.videoFile" :src="previewRow.videoFile.url" controls autoplay muted loop style="width:100%;max-height:60vh;border-radius:6px" />
+        <!-- 2026-07-12: per-visualType 分支, 各自优化 -->
+        <!-- 图片: el-image 自带 fit:contain + max-height, 点击进全屏预览 -->
+        <el-image
+          v-if="previewRow.visualType === 'image' && previewRow.imageFile"
+          :src="previewRow.imageFile.url"
+          :alt="previewRow.name"
+          :preview-src-list="[previewRow.imageFile.url]"
+          fit="contain"
+          style="width:100%;max-height:70vh"
+          preview-teleported
+        />
+        <!-- SVG: v-html 内联渲染, 限制最大宽高避免超大 SVG 撑爆弹窗 -->
+        <div
+          v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent"
+          class="preview-large-svg"
+          v-html="previewRow.svgContent"
+        />
+        <!-- 视频: 跟 Files.vue 文件管理预览对齐 — :key 强制重渲 + autoplay muted loop + 16:9 letterbox -->
+        <template v-else-if="previewRow.visualType === 'video' && previewRow.videoFile">
+          <video
+            ref="previewVideoRef"
+            :key="previewRow._id"
+            :src="previewRow.videoFile.url"
+            controls
+            autoplay
+            muted
+            loop
+            preload="auto"
+            style="width:100%;aspect-ratio:16/9;max-height:70vh;object-fit:contain;background:#000"
+          >
+            您的浏览器不支持 video 标签。
+          </video>
+        </template>
         <div v-else class="preview-large-empty">
           <el-icon :size="64" color="#ccc"><Picture /></el-icon>
           <span>暂无形象</span>
@@ -187,6 +223,14 @@ export default {
     const formRef = ref(null)
     const previewOpen = ref(false)
     const previewRow = ref(null)
+    const previewVideoRef = ref(null)  // 2026-07-12: 用于关闭弹窗时强制暂停 video
+
+    function onPreviewClosed() {  // 2026-07-12: dialog 关闭后 pause 视频 + 复位进度, 否则浏览器后台继续播
+      if (previewVideoRef.value) {
+        previewVideoRef.value.pause()
+        previewVideoRef.value.currentTime = 0
+      }
+    }
     const form = reactive({
       _id: null,
       key: '',
@@ -355,13 +399,13 @@ export default {
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      imagePicker, videoPicker, previewOpen, previewRow,   // 2026-07-12 加 videoPicker
+      imagePicker, videoPicker, previewOpen, previewRow, previewVideoRef,   // 2026-07-12 加 videoPicker / previewVideoRef
       PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
       tierSortKey,
       Plus, Upload, Picture, VideoPlay,  // 2026-07-12 加 VideoPlay
       petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm,  // 2026-07-12 加 onPickVideo/uploadVideo
-      openPreview, tierTagType, formatDate
+      openPreview, onPreviewClosed, tierTagType, formatDate
     }
   }
 }
@@ -377,12 +421,13 @@ export default {
 .svg-thumb svg { width: 100%; height: 100%; display: block; }
 /* 2026-07-12: video 缩略图 = 静态首帧 + ▶ 角标 */
 .video-thumb { position: relative; width: 48px; height: 48px; border-radius: 6px; overflow: hidden; background: #f0f0f0; }
-.video-thumb .video-frame { width: 100%; height: 100%; object-fit: cover; display: block; }
+.video-thumb .video-frame { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }  /* 2026-07-12: 关键! 让 video 不捕获 click, 透传到父 div 触发 openPreview */
 .video-thumb .video-play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); pointer-events: none; }
 .clickable { cursor: zoom-in; transition: transform 0.15s ease; }
 .clickable:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.12); border-radius: 6px; }
-.preview-large-wrap { display: flex; align-items: center; justify-content: center; padding: 16px; }
-.preview-large-svg { width: 100%; max-width: 400px; max-height: 60vh; display: flex; align-items: center; justify-content: center; }
-.preview-large-svg svg { width: 100%; height: auto; max-height: 60vh; display: block; }
+.preview-large-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; gap: 8px; }
+.preview-large-svg { width: 100%; max-width: 600px; max-height: 70vh; display: flex; align-items: center; justify-content: center; background: #fafafa; border-radius: 6px; padding: 8px; }
+.preview-large-svg svg { width: 100%; height: auto; max-height: 70vh; display: block; }
 .preview-large-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #999; padding: 32px; }
+.video-error-tip { display: none; }  /* 2026-07-12: 调试条清理后无引用, 隐藏 */
 </style>
