@@ -301,6 +301,7 @@ Auth 列简写:
 | R-1451 | GET | /lesson-schedules/conflicts | PERM | lessonSchedule.read | 冲突预检 | |
 | R-1492 | GET | /lesson-schedules/me/calendar | GUARD | — | 我的课表 | C 端家长; active student 上下文; 仅 enrolled 开班下的排课 |
 | R-1493 | GET | /lesson-schedules/me/by-instance/:courseInstanceId | GUARD | — | 开班内我的排课+考勤 | C 端家长; active student 上下文; instance-detail.vue 用; service 校验学生是该开班的 enrolled/archived 报名 |
+| R-1494 | GET | /lesson-schedules/me/:id | GUARD | — | 课程详情(单节排课) | C 端家长; schedule/detail.vue 用; 修复家长调业务端 /:id 403; service 校验学生在该开班有有效报名; 返回 shape 跟 detail() 对齐(含考勤 + resolvedContent) |
 
 ### MM=15 lessonAttendance (URL: /lesson-attendances)
 

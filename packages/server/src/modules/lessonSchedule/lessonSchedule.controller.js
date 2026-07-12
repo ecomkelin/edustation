@@ -33,6 +33,16 @@ exports.byInstanceForStudent = async (req, res) =>
     studentId: req.activeStudentId,
     courseInstanceId: req.params.courseInstanceId
   })))
+
+// C 端 R-1494 (2026-07-12): 当前 active child 的单节排课详情 (schedule/detail.vue)
+// 不走 requirePermission, 仅校验 activeStudent 在该 schedule 所属开班有有效报名
+// 修复: schedule/detail.vue 调业务端 /:id 403 → "课程信息不存在"
+exports.byScheduleIdForStudent = async (req, res) =>
+  res.json(ApiResponse.ok(await s.byScheduleIdForStudent({
+    orgId: req.orgId,
+    studentId: req.activeStudentId,
+    scheduleId: req.params.id
+  })))
 exports.preview = async (req, res) => res.json(ApiResponse.ok(await s.preview({ orgId: req.orgId, ...req.body })))
 exports.generate = async (req, res) => res.status(201).json(ApiResponse.created(await s.generate({ orgId: req.orgId, ...req.body })))
 exports.start = async (req, res) => res.json(ApiResponse.ok(await s.start({ id: req.params.id, orgId: req.orgId, ...req.body })))

@@ -209,6 +209,128 @@ function sortSchedulesForList(docs) {
   })
 }
 
+/**
+ * C 端 (R-1494 2026-07-12): 当前 active child 的某节排课详情
+ *
+ * 用例: schedule/detail.vue (首页课程卡片点击、消息推送) — 家长看自己孩子的课程详情
+ *
+ * 设计:
+ *  1) 越权防护 - 学生必须在此 schedule 所属开班下有有效报名 (enrolled / archived)
+ *  2) schedule 找不到返 404 (不是 403, 跟 detail() 保持一致语义)
+ *  3) populate courseInstance/teacher/room, shape 对齐 detail() — 让前端不用改模板
+ *  4) 同时拉本学生的 LessonAttendance 拼到 attendance 字段
+ *  5) 课时内容解析 (resolvedContent) 跟 detail() 走同一条路径, 保证 C 端与 B 端课程内容一致
+ *
+ * 修复: v0.8.x 之前 schedule/detail.vue 调业务端 /lesson-schedules/:id, 家长无 lessonSchedule.read 权限 → 403 → "课程信息不存在"
+ *       现在加 me 端点绕开权限闸门, 只校验 activeStudent 的考勤归属
+ *
+ * 关联 memory: C 端 /me/profile 范式 (2026-07-11) - 家长 Position 移权限后业务端 403, C 端端点不走 requirePermission
+ */
+async function byScheduleIdForStudent({ orgId, studentId, scheduleId }) {
+  if (!orgId) throw ApiError.badRequest('缺少 orgId')
+  if (!studentId) throw ApiError.badRequest('缺少 studentId')
+  if (!scheduleId) throw ApiError.badRequest('缺少 scheduleId')
+
+  const sched = await LessonSchedule.findOne({ _id: scheduleId, org: orgId })
+    .populate('courseInstance teacher room')
+    .lean()
+  if (!sched) throw ApiError.notFound('排课不存在')
+
+  // 1) 越权防护 - 学生必须在此 schedule 所属开班下有有效报名
+  const enrollment = await CourseEnrollment.findOne({
+    org: orgId,
+    student: studentId,
+    courseInstance: sched.courseInstance,
+    status: { $in: [CourseEnrollmentStatus.ENROLLED, CourseEnrollmentStatus.ARCHIVED] }
+  }).lean()
+  if (!enrollment) {
+    throw ApiError.forbidden('孩子未报名该开班')
+  }
+
+  // 2) 拉本学生的考勤
+  const attendance = await LessonAttendance.findOne({
+    org: orgId,
+    student: studentId,
+    lessonSchedule: sched._id
+  })
+    .populate('evaluation.evaluatedBy', 'realName mobile')
+    .lean()
+
+  // 3) 解析课时内容 (跟 detail() 同路径, C 端与 B 端展示一致)
+  try {
+    const { resolveLessonContent } = require('@shared/lessonContent')
+    const ci = sched.courseInstance && typeof sched.courseInstance === 'object' ? sched.courseInstance : null
+    const subjectId = ci && ci.subject
+    const Subject = require('@models/Subject.model')
+    const subject = subjectId
+      ? await Subject.findOne({ _id: subjectId, org: orgId })
+          .select('syllabus lessonMaterials')
+          .lean()
+      : null
+    const resolved = resolveLessonContent({
+      lessonNo: sched.lessonNo,
+      subject,
+      courseInstance: ci,
+      lessonSchedule: sched
+    })
+    if (resolved.materialFileIds && resolved.materialFileIds.length) {
+      const ids = resolved.materialFileIds.slice(0, 50)
+      const File = require('@models/File.model').File
+      const files = await File.find({ _id: { $in: ids }, org: orgId, deletedAt: null })
+        .select('_id url originalName mime size')
+        .lean()
+      const byId = new Map(files.map((f) => [String(f._id), f]))
+      resolved.materialFiles = resolved.materialFileIds.map((fid) => {
+        const f = byId.get(String(fid))
+        return f ? { id: String(f._id), url: f.url, originalName: f.originalName, mime: f.mime, size: f.size } : { id: String(fid), missing: true }
+      })
+    } else {
+      resolved.materialFiles = []
+    }
+    sched.resolvedContent = resolved
+  } catch (_) {
+    sched.resolvedContent = null
+  }
+
+  // 4) 拼装 shape — 跟 detail() 一致, 前端 detail.vue 不用改模板
+  return {
+    id: String(sched._id),
+    lessonNo: sched.lessonNo,
+    title: sched.title || '',
+    plannedStartTime: sched.plannedStartTime,
+    plannedEndTime: sched.plannedEndTime,
+    status: sched.status,
+    isTrialLesson: !!sched.isTrialLesson,
+    remark: sched.remark || '',
+    note: sched.note || '',
+    courseInstance: sched.courseInstance && {
+      id: String(sched.courseInstance._id),
+      name: sched.courseInstance.name
+    },
+    teacher: sched.teacher && {
+      id: String(sched.teacher._id),
+      realName: sched.teacher.realName,
+      mobile: sched.teacher.mobile
+    },
+    room: sched.room && {
+      id: String(sched.room._id),
+      name: sched.room.name,
+      location: sched.room.location
+    },
+    resolvedContent: sched.resolvedContent,
+    attendance: attendance
+      ? {
+          id: String(attendance._id),
+          status: attendance.status,
+          actualStartTime: attendance.actualStartTime,
+          actualEndTime: attendance.actualEndTime,
+          remark: attendance.remark || '',
+          evaluation: attendance.evaluation || null
+        }
+      : null
+  }
+}
+
 async function detail(id, orgId) {
   const s = await LessonSchedule.findOne({ _id: id, org: orgId })
     .populate('courseInstance teacher room')
@@ -1577,6 +1699,8 @@ module.exports = {
   calendarForStudent,
   // 2026-07-04: C 端开班详情 - 本孩子排课+考勤列表 (R-1493)
   byInstanceForStudent,
+  // 2026-07-12: C 端课程详情 - 单节排课详情 (R-1494)
+  byScheduleIdForStudent,
   preview, generate, prepare, start, finish, archive, checkConflicts,
   detectConflict,
   generateAttendancesForSchedule,

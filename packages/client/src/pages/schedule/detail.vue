@@ -1,5 +1,9 @@
 <!--
-  课程详情 - R-1401
+  课程详情 - R-1401 (业务端) / R-1494 (C 端 2026-07-12)
+  - 2026-07-12 修复: 之前调业务端 lessonScheduleApi.detail(id) 走 /lesson-schedules/:id,
+    家长无 lessonSchedule.read 权限 → 403 → 显示 "课程信息不存在"
+  - 改为 meDetail(id) 调 /lesson-schedules/me/:id, 绕开权限闸门, 仅校验 activeStudent 考勤归属
+  - 后端返回 shape 跟 detail() 对齐, 模板不变
 -->
 <template>
   <view class="lesson-detail">
@@ -204,22 +208,20 @@ export default {
     async load() {
       this.loading = true
       try {
-        const lesson = await lessonScheduleApi.detail(this.id)
+        // 2026-07-12: 改调 meDetail (R-1494) 绕开业务端 lessonSchedule.read 权限闸门
+        // 后端 meDetail 已自带考勤 + 课时内容, 一次拿全
+        const lesson = await lessonScheduleApi.meDetail(this.id)
         this.lesson = lesson
         this.isTrial = !!lesson.isTrialLesson
-        // 拉我的考勤 (active student 上下文)
-        try {
-          const attendances = await lessonAttendanceApi.list({ lessonSchedule: this.id })
-          const list = Array.isArray(attendances) ? attendances : attendances.items || attendances.data || []
-          if (list.length) {
-            this.attendance = list[0]
-            // 拉作品
-            try {
-              const w = await lessonAttendanceApi.works(list[0]._id || list[0].id)
-              this.works = Array.isArray(w) ? w : w.items || w.data || []
-            } catch (_) {}
-          }
-        } catch (_) {}
+        // meDetail 返回值里 attendance 字段已包含本学生考勤; 老路径 attendance={id,status,...}
+        if (lesson.attendance) {
+          this.attendance = lesson.attendance
+          // 拉作品 (考勤关联作品)
+          try {
+            const w = await lessonAttendanceApi.works(lesson.attendance.id || lesson.attendance._id)
+            this.works = Array.isArray(w) ? w : w.items || w.data || []
+          } catch (_) {}
+        }
       } catch (e) {
         this.lesson = null
       } finally {

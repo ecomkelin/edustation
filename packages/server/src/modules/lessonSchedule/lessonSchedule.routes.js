@@ -17,6 +17,10 @@ router.get('/me/calendar', asyncHandler(c.calendarForStudent))
 // 2026-07-04: instance-detail.vue "考勤记录" section
 // 顺序要求: 必须在 /me/calendar 之后, /:id 之前(否则会被误吞到 :id)
 router.get('/me/by-instance/:courseInstanceId', asyncHandler(c.byInstanceForStudent))
+// R-1494 GET /lesson-schedules/me/:id (C 端课程详情 - schedule/detail.vue 用)
+// 2026-07-12: 修复 schedule/detail.vue 调业务端 /:id 家长 403 → "课程信息不存在"
+// 顺序要求: 必须放在 /:id 之前(否则会被 /:id 路由拦截)
+router.get('/me/:id', asyncHandler(c.byScheduleIdForStudent))
 
 // R-1450 GET /lesson-schedules/calendar
 router.get('/calendar', mws.requirePermission('lessonSchedule.read'), asyncHandler(c.calendar))

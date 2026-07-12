@@ -32,5 +32,15 @@ export const lessonScheduleApi = {
    */
   byInstance(courseInstanceId) {
     return http.get(`/lesson-schedules/me/by-instance/${courseInstanceId}`)
+  },
+
+  /**
+   * C 端: 当前 active child 的单节排课详情 (schedule/detail.vue 用)
+   * 2026-07-12 加 (R-1494) — 修复家长调业务端 /:id 403 → "课程信息不存在"
+   * 不走 requirePermission, 仅校验 activeStudent 在该开班有有效报名
+   * 返回 shape 跟 detail() 对齐 (id/lessonNo/status/courseInstance/teacher/room/attendance)
+   */
+  meDetail(id) {
+    return http.get(`/lesson-schedules/me/${id}`)
   }
 }

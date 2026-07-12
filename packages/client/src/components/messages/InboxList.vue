@@ -2,9 +2,8 @@
   InboxList.vue - 消息 tab「系统消息」列表
   - 数据源 R-4002 /notifications/me
   - 单条点击 → R-4004 标已读 + 跳 payload.deeplink
-  - 顶部 tab: 全部 / 未读
-  - 软归档: archived tab (R-4002 ?archived=true)
-  - 空态: "暂无系统消息"
+  - 顶部 tab: 未读 / 全部 (2026-07-12 业务决策: 客户端"删除=归档", 归档后自己看不到, 不展示归档 tab)
+  - 空态: 未读 tab → "您没有未读消息"; 全部 tab → "暂无系统消息"
 -->
 <template>
   <view class="inbox">
@@ -85,11 +84,11 @@ export default {
       refreshing: false,
       items: [],
       unreadCount: 0,
-      subTab: 'all',
+      // 2026-07-12 业务决策: 进入消息页默认显示「未读」(红点驱动),「全部」tab 是兜底查历史用
+      subTab: 'unread',
       subTabs: [
-        { key: 'all', label: '全部' },
         { key: 'unread', label: '未读' },
-        { key: 'archived', label: '已归档' }
+        { key: 'all', label: '全部' }
       ]
     }
   },
@@ -98,12 +97,14 @@ export default {
       this.load()
     }
   },
-  onShow() {
-    this.load()
-  },
-  onPullDownRefresh() {
-    this.load().then(() => uni.stopPullDownRefresh())
-  },
+  // 2026-07-11: 用 mounted 替代 onShow (InboxList 是 component 而非 page, onShow 仅 page 生效, component 不会触发)
+// 2026-07-12: 保留 mounted; 同时改 subTabs 为 [未读, 全部] - 移除"已归档" tab (客户端"删除=归档", 归档后自己看不到)
+mounted() {
+  this.load()
+},
+onPullDownRefresh() {
+  this.load().then(() => uni.stopPullDownRefresh())
+},
   methods: {
     iconOf(type) {
       return TYPE_ICON[type] || '🔔'
@@ -153,7 +154,6 @@ export default {
       try {
         const params = { page: 1, pageSize: 50 }
         if (this.subTab === 'unread') params.status = 'unread'
-        if (this.subTab === 'archived') params.archived = 'true'
         const res = await notificationApi.listMe(params)
         const data = res && res.data ? res.data : res
         this.items = (data && data.items) || []
