@@ -32,8 +32,10 @@ const tplService = require('./notificationTemplate.service')
 const adapters = require('./adapters')
 
 const DEFAULT_CATEGORY_FOR_TYPE = {
-  lesson_remind_1h: 'lesson',
+  // 2026-07-12: lesson_remind_1h 已下线 (cron + service.publishLessonReminder1h 全链路移除),
+  // 改为事件驱动的 lesson_prepare_reminder; 老 type 保留只是兜底, 不再主动 publish
   lesson_remind_24h: 'lesson',
+  lesson_prepare_reminder: 'lesson',
   lesson_absent: 'lesson',
   task_due: 'task',
   task_assigned: 'task',

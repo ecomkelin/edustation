@@ -337,6 +337,54 @@
       :list="pendingList"
       @done="onConsentsDone"
     />
+
+    <!-- 2026-07-11 v0.9: 通知预览面板 (点铃铛展开; 类似微信)
+         - mask: 点击关闭
+         - 每条通知: 标题 + 摘要 + 时间 + 「查看」按钮 (markRead + uni.navigateTo deeplink)
+         - 底部: 「查看全部消息」按钮 switchTab 跳 messages tab -->
+    <view v-if="notifPanelOpen" class="notif-mask" @tap="closeNotifPanel">
+      <view class="notif-panel" @tap.stop>
+        <view class="notif-panel__header">
+          <text class="notif-panel__title">通知</text>
+          <text v-if="notifUnread > 0" class="notif-panel__count">{{ notifUnread }} 条未读</text>
+        </view>
+
+        <view v-if="notifPanelLoading" class="notif-panel__loading">
+          <text>加载中…</text>
+        </view>
+
+        <view v-else-if="!notifPanelList.length" class="notif-panel__empty">
+          <text class="notif-panel__empty-emoji">📭</text>
+          <text class="notif-panel__empty-text">暂无未读通知</text>
+        </view>
+
+        <view v-else class="notif-panel__items">
+          <view
+            v-for="n in notifPanelList"
+            :key="n._id"
+            class="notif-panel__item"
+          >
+            <view class="notif-panel__item-icon">
+              <text>{{ iconOf(n.type) }}</text>
+            </view>
+            <view class="notif-panel__item-body">
+              <text class="notif-panel__item-title">{{ n.title || n.type }}</text>
+              <text class="notif-panel__item-summary">{{ n.body }}</text>
+              <text class="notif-panel__item-time">{{ formatNotifTime(n.createdAt) }}</text>
+            </view>
+            <view class="notif-panel__item-go press" @tap="goNotif(n)">
+              <text>查看</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="notif-panel__footer">
+          <view class="notif-panel__footer-btn press" @tap="goMessages">
+            <text>查看全部消息 ›</text>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -362,6 +410,17 @@ import { toast } from '@/components/common/Toast'
 
 const TIER_EMOJI = { C: '🥚', B: '🐣', A: '🦊', S: '🐉' }
 const TIER_COLOR = { C: '#9CA3AF', B: '#7CD9B7', A: '#5B9EE6', S: '#F5C148' }
+// 2026-07-11 v0.9: 通知类型 emoji (跟 components/messages/InboxList.vue TYPE_ICON 同源)
+const NOTIF_ICON = {
+  lesson_remind_1h: '📚', lesson_remind_24h: '📅', lesson_absent: '⚠️',
+  task_due: '📝', task_assigned: '📋', task_comment: '💬',
+  order_paid: '💰', order_refunded: '↩️',
+  evaluation_published: '⭐',
+  point_grant: '🎁', point_deduct: '💸',
+  pet_critical: '🐾',
+  access_stranger: '🚨',
+  system_notice: '📢'
+}
 // 2026-07-03: 装备 slot 常量 (与 detail.vue / admin 对齐)
 const PET_ITEM_SLOTS = ['background', 'hat', 'scarf', 'clothes', 'accessory', 'halo']
 
@@ -394,7 +453,11 @@ export default {
       profile: null,
       profileLoading: false,
       // 2026-07-11 v0.9: 顶部铃铛未读数 (R-4003), >0 时显示红点
-      notifUnread: 0
+      notifUnread: 0,
+      // 2026-07-11 v0.9: 通知预览面板 (点铃铛展开)
+      notifPanelOpen: false,
+      notifPanelList: [],
+      notifPanelLoading: false
     }
   },
   computed: {
@@ -876,6 +939,25 @@ export default {
 
     formatTime: (d) => (d ? new Date(d).toTimeString().slice(0, 5) : ''),
     isFuture: (d) => d && new Date(d) > new Date(),
+    // 2026-07-11 v0.9: 通知面板用相对时间 ("X 分钟前" / "今天 HH:MM" / "M-D")
+    formatNotifTime(d) {
+      if (!d) return ''
+      const t = new Date(d)
+      const now = new Date()
+      const ms = now - t
+      const min = Math.floor(ms / 60000)
+      const hr = Math.floor(min / 60)
+      if (min < 1) return '刚刚'
+      if (min < 60) return `${min} 分钟前`
+      if (hr < 24) return `${hr} 小时前`
+      const m = String(t.getMonth() + 1).padStart(2, '0')
+      const dd = String(t.getDate()).padStart(2, '0')
+      return `${m}-${dd}`
+    },
+    // 通知类型 → emoji
+    iconOf(type) {
+      return NOTIF_ICON[type] || '🔔'
+    },
 
     // 简易 base64 编码 (用于 SVG data URI; 小程序无 btoa 时兜底)
     _b64encode(str) {
@@ -980,7 +1062,62 @@ export default {
     },
 
     onNotif() {
-      // 2026-07-11 v0.9: 跳到消息 tab (R-4002 inbox); 红点自动由 messages.vue 维护
+      // 2026-07-11 v0.9 (改): 不直接跳 tab, 弹通知预览面板 (类似微信)
+      //   面板内每条有"查看"按钮做实际跳转 (markRead + uni.navigateTo deeplink)
+      //   底部"查看全部"按钮才 switchTab 跳 messages
+      this.toggleNotifPanel()
+    },
+
+    toggleNotifPanel() {
+      this.notifPanelOpen = !this.notifPanelOpen
+      if (this.notifPanelOpen && !this.notifPanelList.length) {
+        this.loadNotifPanel()
+      }
+    },
+
+    closeNotifPanel() {
+      this.notifPanelOpen = false
+    },
+
+    async loadNotifPanel() {
+      this.notifPanelLoading = true
+      try {
+        // R-4002 GET /notifications/me?status=unread&pageSize=5
+        const res = await notificationApi.listMe({ status: 'unread', page: 1, pageSize: 5 })
+        const data = res && res.data ? res.data : res
+        this.notifPanelList = (data && data.items) || []
+      } catch (e) {
+        console.warn('[home.loadNotifPanel]', e)
+        this.notifPanelList = []
+      } finally {
+        this.notifPanelLoading = false
+      }
+    },
+
+    // "查看"按钮: 标已读 + 跳 deeplink (跟 InboxList.onTap 同款)
+    async goNotif(n) {
+      if (!n) return
+      try {
+        if (n.status === 'unread') {
+          await notificationApi.markRead(n._id).catch(() => {})
+          n.status = 'read'
+          n.readAt = new Date()
+          // 本地红点 -1
+          this.notifUnread = Math.max(0, this.notifUnread - 1)
+          // 同步服务端的真实未读数 (避免乐观更新漂移)
+          this.loadUnreadCount()
+        }
+      } catch (_) {}
+      this.closeNotifPanel()
+      const dl = n.payload && n.payload.deeplink
+      if (dl) {
+        uni.navigateTo({ url: dl })
+      }
+    },
+
+    // "查看全部"按钮: 跳 messages tab
+    goMessages() {
+      this.closeNotifPanel()
       uni.switchTab({ url: '/pages/tabbar/messages' })
     },
 
@@ -1846,6 +1983,139 @@ export default {
     color: $text-secondary;
     text-align: right;
     flex-shrink: 0;
+  }
+}
+
+// 2026-07-11 v0.9: 通知预览面板 (点铃铛展开)
+// 类似微信的"未读消息预览"样式: 半透明 mask + 顶部卡片浮层
+.notif-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  // 顶部安全区 + 让 panel 落在顶部 header 下方
+  padding-top: 220rpx;
+}
+
+.notif-panel {
+  background: $bg-card;
+  border-radius: 0 0 $radius-md $radius-md;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.12);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 0 $spacing-md;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $spacing-md $spacing-lg;
+    border-bottom: 1rpx solid $divider-light;
+  }
+  &__title {
+    font-size: $font-lg;
+    font-weight: $font-weight-semibold;
+    color: $text-primary;
+  }
+  &__count {
+    font-size: $font-sm;
+    color: $primary;
+  }
+
+  &__loading, &__empty {
+    padding: $spacing-xl $spacing-md;
+    text-align: center;
+    color: $text-tertiary;
+    font-size: $font-sm;
+  }
+  &__empty-emoji {
+    display: block;
+    font-size: 80rpx;
+    margin-bottom: $spacing-sm;
+  }
+  &__empty-text {
+    display: block;
+  }
+
+  &__items {
+    flex: 1;
+    overflow-y: auto;
+    padding: $spacing-xs 0;
+  }
+  &__item {
+    display: flex;
+    align-items: flex-start;
+    padding: $spacing-md $spacing-lg;
+    border-bottom: 1rpx solid $divider-light;
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+  &__item-icon {
+    width: 72rpx; height: 72rpx;
+    border-radius: 50%;
+    background: $primary-lighter;
+    @include flex-center;
+    font-size: 36rpx;
+    flex-shrink: 0;
+    margin-right: $spacing-sm;
+  }
+  &__item-body {
+    flex: 1;
+    min-width: 0;
+    margin-right: $spacing-sm;
+  }
+  &__item-title {
+    display: block;
+    font-size: $font-base;
+    font-weight: $font-weight-medium;
+    color: $text-primary;
+    margin-bottom: 4rpx;
+    @include multi-ellipsis(1);
+  }
+  &__item-summary {
+    display: block;
+    font-size: $font-sm;
+    color: $text-secondary;
+    margin-bottom: 4rpx;
+    @include multi-ellipsis(2);
+  }
+  &__item-time {
+    display: block;
+    font-size: $font-xs;
+    color: $text-tertiary;
+  }
+  &__item-go {
+    flex-shrink: 0;
+    align-self: center;
+    padding: 8rpx 20rpx;
+    border-radius: $radius-pill;
+    border: 1rpx solid $primary;
+    color: $primary;
+    font-size: $font-xs;
+    &:active {
+      background: $primary-lighter;
+    }
+  }
+
+  &__footer {
+    border-top: 1rpx solid $divider-light;
+    padding: $spacing-sm $spacing-md;
+    background: $bg-page;
+  }
+  &__footer-btn {
+    text-align: center;
+    padding: $spacing-sm 0;
+    color: $primary;
+    font-size: $font-sm;
+    &:active {
+      opacity: 0.7;
+    }
   }
 }
 </style>

@@ -29,6 +29,16 @@
               <text>试听</text>
             </view>
           </view>
+          <!--
+            2026-07-12: 课程状态提示
+              - 还未开始 → 「X 分钟后开始」(info 蓝)
+              - 已经开始未签到 → 「迟到 X 分钟」(warn 黄)
+              - 已签到 present → 「已经上课」(success 绿)
+              - 已结束未签到 → 「需要补课」(danger 红)
+          -->
+          <view v-if="attendanceHint" class="lesson-detail__hint" :class="`lesson-detail__hint--${attendanceHint.tone}`">
+            <text class="lesson-detail__hint-text">{{ attendanceHint.icon }} {{ attendanceHint.text }}</text>
+          </view>
         </view>
       </view>
 
@@ -179,6 +189,38 @@ export default {
       )
       return min + ' 分钟'
     },
+    // 2026-07-12: 课程状态提示
+    //   优先级: 已签到 (present) > 时间未到 (倒计时) > 已经开始未签到 (迟到) > 已结束未签到 (需要补课)
+    //   其他 attendance 状态 (leave / absent / makeup) 走 attendanceLabel
+    attendanceHint() {
+      if (!this.lesson) return null
+      const att = this.attendance
+      const start = this.lesson.plannedStartTime ? new Date(this.lesson.plannedStartTime).getTime() : null
+      const end = this.lesson.plannedEndTime ? new Date(this.lesson.plannedEndTime).getTime() : null
+      if (!start || !end) return null
+
+      // 1) 已签到 (present) — 已经上课
+      if (att && att.status === 'present') {
+        return { tone: 'success', icon: '✅', text: '已经上课' }
+      }
+
+      // 2) 其他终态 (leave / absent / makeup) 不抢主提示, 由 attendance section 展示
+      if (att && ['leave', 'absent', 'makeup', 'cancelled'].includes(att.status)) {
+        return null
+      }
+
+      const now = Date.now()
+      if (now < start) {
+        // 3) 还未开始 — 倒计时
+        return { tone: 'info', icon: '⏰', text: this.formatCountdown(start - now) + ' 后开始' }
+      } else if (now < end) {
+        // 4) 已经开始但还没签到 — 迟到
+        return { tone: 'warn', icon: '⏰', text: '迟到 ' + this.formatCountdown(now - start) }
+      } else {
+        // 5) 已结束还没签到 — 需要补课
+        return { tone: 'danger', icon: '🔁', text: '需要补课' }
+      }
+    },
     attendanceLabel() {
       return AttendanceStatusLabel[this.attendance?.status] || ''
     },
@@ -205,6 +247,16 @@ export default {
     this.load()
   },
   methods: {
+    // 2026-07-12: 倒计时格式化 (毫秒 → "X 天 X 小时 X 分")
+    formatCountdown(ms) {
+      const min = Math.floor(ms / 60000)
+      const hr = Math.floor(min / 60)
+      const day = Math.floor(hr / 24)
+      if (day >= 1) return `${day} 天 ${hr % 24} 小时`
+      if (hr >= 1) return `${hr} 小时 ${min % 60} 分钟`
+      if (min >= 1) return `${min} 分钟`
+      return '不到 1 分钟'
+    },
     async load() {
       this.loading = true
       try {
@@ -339,6 +391,38 @@ export default {
   &__tags {
     display: flex;
     gap: $spacing-xs;
+  }
+
+  // 2026-07-12: 课程状态提示条 (倒计时 / 迟到 / 已经上课 / 需要补课)
+  &__hint {
+    margin-top: $spacing-sm;
+    padding: 8rpx $spacing-md;
+    border-radius: $radius-md;
+    font-size: $font-sm;
+    font-weight: $font-weight-medium;
+    display: inline-flex;
+    align-items: center;
+
+    &--info {
+      background: rgba($primary, 0.12);
+      color: $primary;
+    }
+    &--success {
+      background: rgba(#67C23A, 0.16);
+      color: #67C23A;
+    }
+    &--warn {
+      background: rgba(#E6A23C, 0.16);
+      color: #E6A23C;
+    }
+    &--danger {
+      background: rgba(#F56C6C, 0.16);
+      color: #F56C6C;
+    }
+  }
+
+  &__hint-text {
+    color: inherit;
   }
 
   &__info {

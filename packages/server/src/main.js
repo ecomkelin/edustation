@@ -45,14 +45,9 @@ async function bootstrap() {
 
   // 1.5.3 通知调度 cron (2026-07-11 v0.9 立项)
   // - 每 5 分钟 tick 一次; 扫 scheduledFor ≤ now 且 channels 仍有 pending 的 Notification
-  // - 课程前 1h 提醒 / 任务到期等定时通知通过此 cron 派发
+  // - 任务到期等定时通知通过此 cron 派发
+  // - 2026-07-12 课程提醒改成业务事件驱动 (LessonSchedule prepare() 时触发 lesson_prepare_reminder), 不再由 lessonReminderCron 主动入队
   require('@modules/common/notificationCron')
-
-  // 1.5.4 课程 reminder 入队 cron (2026-07-11 立项)
-  // - 每 10 分钟 tick 一次; 扫未来 25h LessonSchedule, 给未入队的 LessonAttendance 入队 lesson_remind_1h
-  // - 兜底 update() 改时间不联动 reminder 的设计漏洞
-  // - 与其他 cron 风格一致: setInterval(...).unref() 不阻塞进程退出
-  require('@modules/common/lessonReminderCron')
 
   // 1.6 Pet catalog 种子 (2026-06-22 user SVG 决策)
   // 启动时硬清三表 + 灌入内联 SVG 种子（platform 级共享）

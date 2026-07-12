@@ -35,15 +35,22 @@ const { PET_TIERS } = require('@shared/enums')
 /**
  * 缓存 key 设计（参照 [[report-cache-key-bucket-bug]]）：
  *   - 第一段（bucket 名）= catalog 类型（species/items/consumables），供 invalidate 精准清
+ *
+ * 2026-07-12: 加 populateFields 参数 — PetSpecies 有 videoFile, PetItem/PetConsumable 没有
+ *   调用方按 model 自报 populate 字段, 避免 PetItem/Consumable 调 listMerged 时抛
+ *   "Cannot populate path 'videoFile' because it is not in your schema"
+ *   (跟 admin service listMerged 同款模式)
  */
-async function _listGlobal({ Model, baseFilter = {}, keyword }) {
+async function _listGlobal({ Model, baseFilter = {}, keyword, populateFields = ['imageFile'] }) {
   const filter = { ...baseFilter }
   if (keyword && String(keyword).trim()) {
     filter.name = { $regex: String(keyword).trim(), $options: 'i' }
   }
-  return Model.find(filter)
-    .populate('imageFile', 'url mime originalName')
-    .populate('videoFile', 'url mime originalName')   // 2026-07-12: species 新加 videoFile ref
+  let q = Model.find(filter)
+  for (const f of populateFields) {
+    q = q.populate(f, 'url mime originalName')
+  }
+  return q
     .sort({ tier: 1, slot: 1, kind: 1, key: 1 })
     .lean()
 }
@@ -56,7 +63,12 @@ async function listSpecies({ tier, isActive, keyword } = {}) {
     const base = {}
     if (tier) base.tier = tier
     if (isActive !== undefined) base.isActive = isActive
-    let items = await _listGlobal({ Model: PetSpecies, baseFilter: base, keyword })
+    let items = await _listGlobal({
+      Model: PetSpecies,
+      baseFilter: base,
+      keyword,
+      populateFields: ['imageFile', 'videoFile']   // 2026-07-12: species 自带 videoFile ref
+    })
     if (items.length === 0) {
       // eslint-disable-next-line no-console
       console.warn('[petCatalog.listSpecies] DB 空，fallback shared/petSpecies')
@@ -108,6 +120,7 @@ async function listItems({ slot, isActive, tier, level, keyword }) {
     if (slot) base.slot = slot
     if (isActive !== undefined) base.isActive = isActive
     if (tier) base.unlockTier = tier
+    // 2026-07-12: PetItem 没有 videoFile, 默认 populateFields=['imageFile'] 即可, 不传
     let items = await _listGlobal({ Model: PetItem, baseFilter: base, keyword })
     if (items.length === 0) {
       // eslint-disable-next-line no-console
@@ -189,6 +202,7 @@ async function listConsumables({ kind, isActive, applicableTier, keyword }) {
     if (kind) base.kind = kind
     if (isActive !== undefined) base.isActive = isActive
     if (applicableTier) base.applicableTier = { $in: [applicableTier, 'all'] }
+    // 2026-07-12: PetConsumable 没有 videoFile, 默认 populateFields=['imageFile'] 即可, 不传
     return _listGlobal({ Model: PetConsumable, baseFilter: base, keyword })
   }, 300_000)
 }

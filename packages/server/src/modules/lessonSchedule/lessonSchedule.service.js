@@ -444,91 +444,93 @@ async function generateAttendancesForSchedule({ orgId, courseInstance, lessonSch
       status: AttendanceStatus.SCHEDULED
     })
   }
-  if (!docs.length) return 0
+  if (!docs.length) return []
   // 预过滤之后 docs 已无重复，insertMany 不会触发 partial unique 冲突；
   // 保留 ordered:false 仅作为并发兜底（极小概率）。
-  await LessonAttendance.insertMany(docs, { ordered: false })
+  // 2026-07-12: 用 insertMany 的返回值 (带 _id) 给 publishLessonPrepareReminder 拼 deeplink
+  const insertedDocs = await LessonAttendance.insertMany(docs, { ordered: false })
 
-  // (2026-07-11 v0.9 通知) 给每个考勤发「上课前 1h」定时通知
-  //   - cron 每 5 分钟 tick 一次，扫 scheduledFor ≤ now 的 pending 通知
-  //   - 失败不阻塞考勤创建；catch + console.warn
-  try {
-    await publishLessonReminder1h(orgId, courseInstance, lessonScheduleId, docs)
-  } catch (e) {
-    console.warn('[lessonSchedule] publishLessonReminder1h failed:', e.message)
-  }
-
-  return docs.length
+  // 2026-07-12: 取消「上课前 1h 定时通知」(lesson_remind_1h), 改成事件驱动
+  //   - 教务点「准备上课」按钮 → publishLessonPrepareReminder (即时推送 lesson_prepare_reminder)
+  //   - 老的 publishLessonReminder1h/cron 全链路下线 (lessonReminderCron.js 已删, main.js require 已删)
+  //   - 改事件驱动的根因: cron 触发不可控 (改时间不联动, 服务重启入队不均, attendance 没 _id 时 deeplink=undefined)
+  return insertedDocs
 }
 
 /**
- * 给某节排课下刚生成的考勤，每个学生的家长发"上课前 1h"定时通知。
- * - 定时到 scheduledFor = plannedStartTime - 1h
- * - 模板渲染: {studentName} {courseName} {time} {room}
+ * 给某节排课下刚生成的考勤,每个学生的家长发"上课通知"(即时推送)
+ * - 模板: NotificationTemplate (org=null, type='lesson_prepare_reminder', channel='inbox')
+ * - 渲染变量: {studentName} {courseName} {time} {room}
+ * - deeplink: /pages/attendance/detail?attendanceId=<attendanceId>
+ *   跳考勤详情页 (R-4012) — 家长能看到本节课 + 后续作品/课评入口
  * - 学生无 guardians (孤儿学员) 跳过
- * - 已存在的同 type+recipient+entityId 通知幂等 (依赖 Notification entityId unique 仅在 memo
- *   里说明; 此处通过 Notification.findOne 主动幂等, 避免重复)
+ * - 单条 publish 失败不阻塞其他 (fire-and-forget)
  */
-async function publishLessonReminder1h(orgId, courseInstance, lessonScheduleId, attendanceDocs) {
+async function publishLessonPrepareReminder(orgId, courseInstance, lessonScheduleId, attendanceDocs) {
   if (!attendanceDocs || !attendanceDocs.length) return
   const [sched, inst] = await Promise.all([
     LessonSchedule.findOne({ _id: lessonScheduleId, org: orgId })
-      .select('plannedStartTime plannedEndTime room courseInstance').lean(),
-    CourseInstance.findById(courseInstance).select('name courseProduct').lean()
+      .select('plannedStartTime plannedEndTime room title').lean(),
+    CourseInstance.findById(courseInstance).select('name').lean()
   ])
   if (!sched || !sched.plannedStartTime) return
 
-  // 提前 1h；若已过去则改为即时发 (cron 立即 tick)
-  const remindAt = new Date(sched.plannedStartTime.getTime() - 60 * 60 * 1000)
-
   const courseName = (inst && inst.name) || ''
   const timeText = formatTimeText(sched.plannedStartTime, sched.plannedEndTime)
+  const roomText = sched.room ? String(sched.room) : ''
 
-  // 批量拉学生 → guardians
-  const studentIds = attendanceDocs.map((d) => d.student)
+  // 批量拉学生 → guardians (一次 $in,避免 N+1)
+  const studentIds = attendanceDocs.map((d) => d.student).filter(Boolean)
+  if (!studentIds.length) return
   const students = await Student.find({ _id: { $in: studentIds } })
     .select('_id name guardians').lean()
   const studentMap = new Map(students.map((s) => [String(s._id), s]))
 
-  // 幂等：先查已有的同 (type, recipient, entityId) 通知，避免 cron 多次 publish 重复
-  const existing = await require('@models/Notification.model').find({
-    org: orgId,
-    type: 'lesson_remind_1h',
-    'payload.entityId': { $in: attendanceDocs.map((d) => d._id) }
-  }).select('payload.entityId').lean()
-  const publishedSet = new Set(existing.map((n) => String(n.payload && n.payload.entityId)))
-
   for (const a of attendanceDocs) {
-    if (publishedSet.has(String(a._id))) continue
+    if (!a || !a._id) continue
     const s = studentMap.get(String(a.student))
     if (!s) continue
     const guardians = (s.guardians || []).map((g) => String(g))
     if (!guardians.length) continue
     for (const recipientId of guardians) {
-      notificationService.publish({
-        orgId,
-        recipientId,
-        type: 'lesson_remind_1h',
-        activeStudentId: String(s._id),
-        payload: {
-          entityType: 'lessonAttendance',
-          entityId: a._id,
-          deeplink: `/pages/lesson/detail?attendanceId=${a._id}`
-        },
-        vars: {
-          studentName: s.name,
-          courseName,
-          time: timeText,
-          room: sched.room ? String(sched.room) : ''
-        },
-        scheduledFor: remindAt,
-        source: 'event'
-      }).catch((e) => {
-        console.warn('[lessonSchedule.publishLessonReminder1h] publish error:', e.message)
-      })
+      notificationService
+        .publish({
+          orgId,
+          recipientId,
+          type: 'lesson_prepare_reminder',
+          activeStudentId: String(s._id),
+          payload: {
+            entityType: 'lessonAttendance',
+            entityId: a._id,
+            // C 端考勤详情页 (R-4012)
+            deeplink: `/pages/attendance/detail?attendanceId=${a._id}`
+          },
+          vars: {
+            studentName: s.name,
+            courseName,
+            time: timeText,
+            room: roomText
+          },
+          scheduledFor: null, // 即时发
+          source: 'event'
+        })
+        .catch((e) => {
+          // eslint-disable-next-line no-console
+          console.warn('[lessonSchedule.publishLessonPrepareReminder] publish error:', e.message)
+        })
     }
   }
 }
+
+/**
+ * (历史) publishLessonReminder1h — 2026-07-12 业务决策下线, 函数整体移除
+ * 删之前的根因复盘:
+ *   1) cron 入队时机与 create 时间耦合, 改 schedule 时间不联动老 reminder
+ *   2) LessonAttendance.insertMany 前 docs 没 _id, publishLessonReminder1h 用 attendanceDocs[i]._id 全是 undefined
+ *      → deeplink '/pages/lesson/detail?attendanceId=undefined' → navigateTo fail
+ *   3) 触发时机"提前 1h"对用户价值低 (家长反映"课程提醒不定时"), 业务上不可控
+ * 修复路径: 教务显式「准备上课」按钮触发 (LessonSchedule.prepare() → service 生成考勤 → publish prepare reminder)
+ */
 
 function formatTimeText(start, end) {
   if (!start) return ''
@@ -1097,16 +1099,30 @@ async function prepare({ id, orgId }) {
   //   - 幂等：如果已有考勤（兼容遗留数据 / 后续补报名补考勤）则跳过，
   //           这里 generateAttendancesForSchedule 内部已用 student 查重 + insertMany ordered:false 实现幂等。
   let createdAttendances = 0
+  let insertedDocs = []
   try {
-    createdAttendances = await generateAttendancesForSchedule({
+    insertedDocs = await generateAttendancesForSchedule({
       orgId,
       courseInstance: exist.courseInstance,
       lessonScheduleId: exist._id
     })
+    createdAttendances = insertedDocs.length
   } catch (e) {
     // 考勤生成失败不应阻断 prepare 状态切换（教务还能手动补名单）
     // eslint-disable-next-line no-console
     console.error('auto-generate attendance failed in prepare()', exist._id, e.message)
+  }
+
+  // 2026-07-12: 事件驱动推送「上课通知」(lesson_prepare_reminder)
+  //   - 仅在 attendance 真生成出来时发 (空数组跳过)
+  //   - 失败不阻塞 prepare 返回 (fire-and-forget 内已 try/catch)
+  if (insertedDocs.length) {
+    try {
+      await publishLessonPrepareReminder(orgId, exist.courseInstance, exist._id, insertedDocs)
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[lessonSchedule.prepare] publishLessonPrepareReminder failed:', e.message)
+    }
   }
 
   const result = await detail(exist._id, orgId)
@@ -1704,6 +1720,8 @@ module.exports = {
   preview, generate, prepare, start, finish, archive, checkConflicts,
   detectConflict,
   generateAttendancesForSchedule,
+  // 2026-07-12: 事件驱动 - 教务点「准备上课」后推送「上课通知」
+  publishLessonPrepareReminder,
   syncAttendances,
   previewSyncAttendances,
   sortSchedulesForList,

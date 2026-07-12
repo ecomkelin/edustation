@@ -16,10 +16,16 @@ import './styles/index.scss'
 //   useFormItem / ElTabs 内部 watch 触发 instance.proxy[key], key 可能是 'reload' 等
 //   内部组件方法, dev warn 误报成模板未定义。功能不受影响, 仅 dev mode console 噪音。
 //   仅当不是真正的 props/emit 警告时才沉默; 真错误仍走 console.error。
+// 2026-07-12: 补一类 — ElMenuCollapseTransition 在 ElSubMenu 折叠动画时, EP 内部在 transition
+//   钩子里调 slot(), Vue 3.4 dev mode 报警 "Slot 'default' invoked outside of the render function"。
+//   栈 <ElIcon> <ElSubMenu> <BaseTransition> <Transition> <ElMenuCollapseTransition> <ElMenu> ...
+//   不影响功能, 仅 dev mode console 噪音; 默认折叠或菜单 hover 时反复触发。
 const KNOWN_FALSE_POSITIVE_RENDER_PATTERNS = [
   /Property ["']?[a-zA-Z]+["']? was accessed during render but is not defined on instance/,
   // Vue 3.4 还在 ElFormItem 的 addInputId/removeInputId 触发另一种 warn
-  /Set operation on key ["']?\w+["']? failed: target is readonly/
+  /Set operation on key ["']?\w+["']? failed: target is readonly/,
+  // EP 2.7 ElMenuCollapseTransition: slot 'default' invoked outside of the render function
+  /Slot ["']default["'] invoked outside of the render function/
 ]
 
 const app = createApp(App)

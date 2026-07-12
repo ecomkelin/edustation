@@ -1,14 +1,14 @@
 'use strict'
 
 /**
- * 通知模板种子 (2026-07-11 v0.9 立项)
+ * 通知模板种子 (2026-07-11 v0.9 立项, 2026-07-12 精简)
  *
  * 内容 (org=null) 平台级, 跨机构对所有 C 端家长可见.
  * 机构可在 /admin/notifications/templates 覆盖平台默认 (按 type+channel upsert 机构自己的).
  *
- * MVP 仅 seed 2 个核心模板:
- *   - lesson_remind_1h (inbox): 上课前 1h 提醒
- *   - task_due (inbox):        今天到期的任务提醒 (员工侧)
+ * MVP seed 模板 (2026-07-12 砍掉 lesson_remind_1h, 改事件驱动):
+ *   - lesson_prepare_reminder (inbox): 教务点「准备上课」时即时推送「上课通知」 (事件驱动)
+ *   - task_due (inbox):                 今天到期的任务提醒 (员工侧)
  *
  * 占位符 (publish 时按白名单渲染, 不存在的 key 保留原文):
  *   {studentName} {courseName} {time} {endTime} {room} {teacherName}
@@ -22,11 +22,13 @@ const NotificationTemplate = require('@models/NotificationTemplate.model')
 
 const TEMPLATES = [
   {
-    type: 'lesson_remind_1h',
+    type: 'lesson_prepare_reminder',
     channel: 'inbox',
-    title: '{studentName} 的课还有 1 小时开始',
-    body: '课程「{courseName}」将于 {time} 在 {room} 开始, 请提前 10 分钟到校。',
-    meta: { hint: '上课前 1h 提醒; 模板渲染占位符 {studentName} {courseName} {time} {room}' }
+    // 2026-07-12: 标题改成「上课通知」(用户原话"叫上课通知"), 家长一眼能识别;
+    // 详情放在 body 里.
+    title: '上课通知',
+    body: '{studentName} 今天的「{courseName}」将于 {time} 在 {room} 开始, 请提前 10 分钟到校。',
+    meta: { hint: '教务点「准备上课」时即时推送 (2026-07-12 业务事件驱动, 取代老的 lesson_remind_1h cron); 占位符 {studentName} {courseName} {time} {room}' }
   },
   {
     type: 'task_due',
