@@ -156,8 +156,32 @@
             <el-option label="其他" value="other" />
           </el-select>
         </el-form-item>
-        <el-form-item label="生日">
-          <el-date-picker v-model="form.birthday" type="date" value-format="YYYY-MM-DD" />
+        <!-- 2026-07-11: 生日三栏下拉 (年/月/日) + 红星 + 必填。日根据年月动态生成 (28/29/30/31) -->
+        <el-form-item label="生日" prop="birthday" required>
+          <el-select
+            v-model="form.birthdayYear"
+            placeholder="年"
+            style="width: 90px"
+            @change="form.birthdayDay = null"
+          >
+            <el-option v-for="y in yearOptions" :key="y" :label="y" :value="y" />
+          </el-select>
+          <el-select
+            v-model="form.birthdayMonth"
+            placeholder="月"
+            style="width: 80px; margin-left: 8px"
+            @change="form.birthdayDay = null"
+          >
+            <el-option v-for="m in 12" :key="m" :label="m" :value="m" />
+          </el-select>
+          <el-select
+            v-model="form.birthdayDay"
+            placeholder="日"
+            style="width: 80px; margin-left: 8px"
+            :disabled="!form.birthdayYear || !form.birthdayMonth"
+          >
+            <el-option v-for="d in dayOptions" :key="d" :label="d" :value="d" />
+          </el-select>
         </el-form-item>
         <el-form-item label="监护人手机" v-if="!form._id" prop="guardianMobile" :required="!form._id">
           <el-input v-model="form.guardianMobile" placeholder="不存在的手机号将自动创建家长账号" />
@@ -234,7 +258,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { studentApi } from '@/api/student'
@@ -268,7 +292,10 @@ const form = reactive({
   _id: '',
   name: '',
   gender: 'male',
-  birthday: '',
+  // 2026-07-11: 三栏下拉 — 年/月/日. 提交时拼回 birthdayISO (YYYY-MM-DD)
+  birthdayYear: null,
+  birthdayMonth: null,
+  birthdayDay: null,
   guardianMobile: '',
   guardians: [],
   school: '',
@@ -285,8 +312,49 @@ const rules = {
   guardianMobile: [
     { required: true, message: '请填写监护人手机', trigger: 'blur' },
     { pattern: /^1[3-9]\d{9}$/, message: '手机号格式错误', trigger: 'blur' }
+  ],
+  // 2026-07-11: 生日三栏任一空都报错 — 沿用 form.birthdayISO computed 做校验
+  birthday: [
+    {
+      validator(_rule, _value, cb) {
+        if (!form.birthdayYear || !form.birthdayMonth || !form.birthdayDay) {
+          return cb(new Error('请完整填写生日 (年/月/日)'))
+        }
+        cb()
+      },
+      trigger: 'change'
+    }
   ]
 }
+
+// 2026-07-11: 生日三栏选项 + 拼 ISO 字符串 (空 → '')
+// 年: 今年起回溯 30 年, 覆盖 0-30 岁学员
+//   排序: 默认年(今年-10) 放最上 → 点开不用下滑就能看到 → 然后是 newer (今年→默认年+1) → 然后是 older (默认年-1→30年前)
+const thisYear = new Date().getFullYear()
+const defaultBirthdayYear = thisYear - 10
+const yearOptions = (() => {
+  const arr = [defaultBirthdayYear]
+  // newer: 默认年 < y <= 今年
+  for (let y = defaultBirthdayYear + 1; y <= thisYear; y++) arr.push(y)
+  // older: 今年-30 <= y < 默认年
+  for (let y = defaultBirthdayYear - 1; y >= thisYear - 30; y--) arr.push(y)
+  return arr
+})()
+// 日: 根据所选年/月动态算 (平年 2 月 28, 闰年 29; 4/6/9/11 月 30; 其他 31)
+const daysInMonth = (y, m) => new Date(y, m, 0).getDate()
+const dayOptions = computed(() => {
+  const y = form.birthdayYear
+  const m = form.birthdayMonth
+  if (!y || !m) return []
+  return Array.from({ length: daysInMonth(y, m) }, (_, i) => i + 1)
+})
+// 提交给后端用的字符串 (form.birthdayISO 也给 rules validator 用, 单一数据源)
+const birthdayISO = computed(() => {
+  if (!form.birthdayYear || !form.birthdayMonth || !form.birthdayDay) return ''
+  const m = String(form.birthdayMonth).padStart(2, '0')
+  const d = String(form.birthdayDay).padStart(2, '0')
+  return `${form.birthdayYear}-${m}-${d}`
+})
 
 async function load() {
   loading.value = true
@@ -367,7 +435,10 @@ function openCreate() {
     _id: '',
     name: '',
     gender: 'male',
-    birthday: '',
+    // 2026-07-11: 年份默认 10 年前 (10 岁左右学员多); 月份仍保持 null (不默认, 让用户主动选)
+    birthdayYear: defaultBirthdayYear,
+    birthdayMonth: null,
+    birthdayDay: null,
     guardianMobile: '',
     guardians: [],
     school: '',
@@ -378,11 +449,18 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  // 2026-07-11: 解析后端 row.birthday (Date/ISO 字符串) → 拆 三栏数字. 防 1970-01-01 时区漂移: 用本地年月日.
+  const parts = row.birthday ? new Date(row.birthday) : null
+  const y = parts && !isNaN(parts.getTime()) ? parts.getFullYear() : null
+  const m = parts && !isNaN(parts.getTime()) ? parts.getMonth() + 1 : null
+  const d = parts && !isNaN(parts.getTime()) ? parts.getDate() : null
   Object.assign(form, {
     _id: row._id,
     name: row.name,
     gender: row.gender,
-    birthday: row.birthday ? formatDate(row.birthday, 'YYYY-MM-DD') : '',
+    birthdayYear: y,
+    birthdayMonth: m,
+    birthdayDay: d,
     guardians: (row.guardians || []).map((g) => (g._id ? String(g._id) : String(g))),
     school: row.school ? (row.school._id || String(row.school)) : '',
     notes: row.notes,
@@ -441,7 +519,8 @@ async function submit() {
       await studentApi.update(form._id, {
         name: form.name,
         gender: form.gender,
-        birthday: form.birthday,
+        // 2026-07-11: birthdayISO computed 提交 (三栏下拉的合并值)
+        birthday: birthdayISO.value,
         school: form.school || null,
         notes: form.notes,
         // 2026-07-05: 学生头像
@@ -455,7 +534,7 @@ async function submit() {
       await studentApi.create({
         name: form.name,
         gender: form.gender,
-        birthday: form.birthday,
+        birthday: birthdayISO.value,
         guardianMobile: form.guardianMobile,
         school: form.school || null,
         notes: form.notes
