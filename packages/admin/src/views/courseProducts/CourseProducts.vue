@@ -3,7 +3,7 @@
     <el-card shadow="never" class="header-card">
       <div class="header-row">
         <div>
-          <h2 class="title">课程产品</h2>
+          <h2 class="title">课程产品<PageHelp title="什么是课程产品？" :max-width="440">课程产品是开班与课包的共同基础。包含教学大纲(总课时)与售卖规则(价格 / 有效期)。<br /><br /><strong>数学模型</strong>: 课程产品 = 教学大纲 + 售卖规格。一个产品被开班(<code>CourseInstance</code>)引用为蓝本,也被学生持有的产品实例(<code>StudentProduct</code>)购买。同名校重 product 不会被复制到本公司,可后续在「编辑」中调整。</PageHelp></h2>
           <div class="subtitle">课程产品是开班与课包的共同基础。包含教学大纲（总课时）与售卖规则（价格 / 有效期）。</div>
         </div>
         <div class="header-actions">
@@ -28,14 +28,6 @@
           </el-tooltip>
         </div>
       </div>
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        title="什么是课程产品？"
-        description="课程产品 = 教学大纲 + 售卖规格。一个产品被开班（CourseInstance）引用为蓝本，也被学生持有的产品实例（StudentProduct）购买。同名校重 product 不会被复制到本公司，可后续在「编辑」中调整。"
-        style="margin-top: 12px"
-      />
     </el-card>
 
     <el-table :data="list" v-loading="loading" border style="margin-top: 12px">
@@ -323,6 +315,7 @@ import { handleRemoveError } from '@/utils/removable'
 import { subjectApi } from '@/api/subject'
 import { useAuthStore } from '@/stores/auth'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import PageHelp from '@/components/PageHelp.vue'
 import FilePicker from '@/components/FilePicker.vue'
 
 const auth = useAuthStore()

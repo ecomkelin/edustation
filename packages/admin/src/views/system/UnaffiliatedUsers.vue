@@ -1,14 +1,6 @@
 <template>
   <div class="page">
-    <h2>游离用户</h2>
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
-      title="什么是游离用户？"
-      description="不属于任何机构的账号。常见来源: 用户被所有机构解绑、家长转化失败回滚、首登未激活的家长等。仅平台超管可见。"
-      style="margin-bottom: 12px"
-    />
+    <h2>游离用户<PageHelp title="什么是游离用户？">不属于任何机构的账号。常见来源: 用户被所有机构解绑、家长转化失败回滚、首登未激活的家长等。仅平台超管可见。</PageHelp></h2>
 
     <el-form class="filters" inline @submit.prevent>
       <el-form-item label="关键字">
@@ -177,6 +169,7 @@ import { ElMessage } from 'element-plus'
 import { userApi } from '@/api/user'
 import { regionApi } from '@/api/region'
 import { useAuthStore } from '@/stores/auth'
+import PageHelp from '@/components/PageHelp.vue'
 
 const auth = useAuthStore()
 

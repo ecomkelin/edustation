@@ -1,19 +1,6 @@
 <template>
   <div class="page">
-    <h2>平台法律协议</h2>
-    <p class="subtitle">
-      平台级协议由文件 <code>shared/legal/*.md</code> + frontmatter 版本号承载,改文件即等同发版。
-      本页只读,要修改请改仓库代码 → bump version → git push → 部署后用户被强制重新同意。
-    </p>
-
-    <el-alert
-      type="warning"
-      :closable="false"
-      title="本页只读"
-      description="平台协议是 SaaS 平台层面的法律文本,所有机构、所有用户共用一份。修改请联系运维团队走 PR 流程。"
-      show-icon
-      class="mb"
-    />
+    <h2>平台法律协议<PageHelp title="本页说明" :max-width="440"><strong>协议载体</strong>: 平台级协议由文件 <code>shared/legal/*.md</code> + frontmatter 版本号承载,改文件即等同发版。<br /><strong>修改流程</strong>: 本页只读,要修改请改仓库代码 → bump version → git push → 部署后用户被强制重新同意。<br /><strong>法律性质</strong>: 平台协议是 SaaS 平台层面的法律文本,所有机构、所有用户共用一份。修改请联系运维团队走 PR 流程。</PageHelp></h2>
 
     <el-card v-loading="loading">
       <el-collapse v-model="opened" accordion>
@@ -38,6 +25,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { legalApi } from '@/api/legal'
 import MarkdownView from '@/components/MarkdownView.vue'
+import PageHelp from '@/components/PageHelp.vue'
 
 const items = ref([])
 const loading = ref(false)

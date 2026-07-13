@@ -1,15 +1,6 @@
 <template>
   <div class="page">
-    <h2>操作留痕</h2>
-
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
-      title="什么是操作留痕？"
-      description="系统自动记录每一次写操作（POST/PUT/PATCH/DELETE）和敏感 GET 请求的访问痕迹。仅平台超管可见，保留 180 天。"
-      style="margin-bottom: 12px"
-    />
+    <h2>操作留痕<PageHelp title="什么是操作留痕？">系统自动记录每一次写操作(POST/PUT/PATCH/DELETE)和敏感 GET 请求的访问痕迹。仅平台超管可见,保留 180 天。</PageHelp></h2>
 
     <el-form class="filters" inline @submit.prevent>
       <el-form-item label="时间段">
@@ -226,6 +217,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import auditApi from '@/api/audit'
+import PageHelp from '@/components/PageHelp.vue'
 import { formatDate } from '@/utils/format'
 
 const auth = useAuthStore()

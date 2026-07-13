@@ -12,7 +12,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "clean:vite": "rm -rf packages/admin/node_modules/.vite packages/admin/.vite packages/client/node_modules/.vite && echo \"Vite caches cleared\"",
+    "fix:stale-enum": "pnpm clean:vite && pnpm dev:admin"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

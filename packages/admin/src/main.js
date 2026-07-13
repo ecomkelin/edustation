@@ -52,6 +52,29 @@ app.use(ElementPlus, { locale: zhCn })
 // 任一失败都不阻塞 mount, store 内部已 catch
 const auth = useAuthStore()
 const siteConfig = useSiteConfigStore()
+
+// 2026-07-13: dev mode 启动时校验 shared/enums.mjs 关键 export 是否被 Vite optimizeDeps
+// 正确打包 (旧版 stale cache 时 TASK_STATUSES 等会 undefined, 触发
+// "Cannot read properties of undefined (reading 'map')"). 这里用静态 import
+// 在 bundle 阶段就发现, 比运行时报错早一步定位。
+if (import.meta.env.DEV) {
+  import('@shared/enums.mjs').then((enums) => {
+    const REQUIRED = [
+      'TASK_STATUSES', 'TASK_TYPES', 'TASK_PRIORITIES',
+      'COURSE_INSTANCE_STATUSES', 'ORDER_STATUSES',
+      'CLIENT_LEVEL'
+    ]
+    const missing = REQUIRED.filter((k) => !enums[k])
+    if (missing.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[shared/enums] 缺少 export: ${missing.join(', ')}.\n` +
+        'Vite optimizeDeps cache stale — 跑 `pnpm --filter admin clean:vite && pnpm --filter admin dev` 重启.'
+      )
+    }
+  })
+}
+
 Promise.allSettled([auth.restore(), siteConfig.load()]).finally(() => {
   app.mount('#app')
 })

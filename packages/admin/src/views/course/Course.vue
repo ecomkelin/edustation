@@ -10,8 +10,7 @@
     旧链接：/course-instances → /course?tab=instances  /course-enrollments → /course?tab=enrollments
   -->
   <div class="page course-page">
-    <h2>课程</h2>
-    <p class="hint">开课是教学主体；课程报名是学生 ↔ 开课的报名关系。两者独立维护但常被一起查阅。</p>
+    <h2>课程<PageHelp title="页面说明" :max-width="440"><strong>开课</strong>: 教学主体。一门课在某个时间窗口面向某些学生开班,由 <code>CourseInstance</code> 承载。<br /><strong>课程报名</strong>: 学生 ↔ 开班的报名关系。由 <code>CourseEnrollment</code> 承载。<br /><strong>为什么合并一页</strong>: 两者独立维护但常被一起查阅 (查'这个班有哪些学生'或'这个学生报了哪些班')。</PageHelp></h2>
 
     <el-tabs v-model="activeTab" class="course-tabs">
       <el-tab-pane label="开课" name="instances">
@@ -29,6 +28,7 @@ import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CourseInstancesTab from './CourseInstancesTab.vue'
 import CourseEnrollmentsTab from './CourseEnrollmentsTab.vue'
+import PageHelp from '@/components/PageHelp.vue'
 
 const VALID_TABS = ['instances', 'enrollments']
 const DEFAULT_TAB = 'instances'
@@ -60,6 +60,6 @@ watch(() => route.query.tab, (v) => {
   flex-direction: column;
   gap: 12px;
 }
-/* 让 tab 内容与上方 hint 之间有点呼吸空间, 跟 AiAdmin 的风格一致 */
+/* 让 tab 内容与上方 h2 标题之间有点呼吸空间 */
 .course-tabs :deep(.el-tabs__content) { padding-top: 8px; }
 </style>

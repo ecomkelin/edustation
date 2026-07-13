@@ -4,16 +4,25 @@
     <p class="subtitle">
       整个 server 进程内所有 <code>setInterval</code> 定时任务的实时状态、累计运行情况、
       以及每条 cron 的业务用途与失败影响。排查「任务没提醒 / 通知没发 / 数据没归档」时先来这里看。
+      <el-tooltip
+        placement="top-start"
+        raw-content
+        :show-after="0"
+        effect="light"
+      >
+        <template #content>
+          <div style="max-width: 360px; line-height: 1.6;">
+            <b>页面说明</b><br />
+            · 本页读 / 触发后端 <code>/admin/cron/*</code> 三个接口, MM=41:<br />
+            &nbsp;&nbsp;R-4101 实时状态 · R-4102 手动 trigger · R-4103 历史流水<br />
+            · 全部走 <code>requirePlatformAdmin</code> 中间件, 仅平台超管可见<br />
+            · 手动 trigger 按钮仅 <code>development / test</code> 显示, 生产环境禁用<br />
+            · 手动 trigger 绕过 leader 锁, 调试用 — 上线运营请慎用
+          </div>
+        </template>
+        <el-icon class="page-info-icon"><InfoFilled /></el-icon>
+      </el-tooltip>
     </p>
-
-    <el-alert
-      type="info"
-      :closable="false"
-      title="仅平台超管可访问"
-      description="本页读 / 触发 后端 /admin/cron/* 接口 (R-4101 实时状态 / R-4102 手动 trigger / R-4103 历史流水, MM=41), 全部走 requirePlatformAdmin 中间件。手动 trigger 绕过 leader 锁, 调试用 — 上线运营请慎用。"
-      show-icon
-      class="mb"
-    />
 
     <el-tabs v-model="activeTab" class="mb">
       <!-- ====== Tab 1: 实时状态 ====== -->
@@ -136,8 +145,29 @@
           </template>
         </el-table-column>
         <el-table-column label="手动触发" width="140" fixed="right">
+          <template #header>
+            <span>手动触发</span>
+            <el-tooltip
+              v-if="!isDev"
+              placement="top"
+              effect="light"
+              raw-content
+              :show-after="0"
+            >
+              <template #content>
+                <div style="max-width: 280px; line-height: 1.6;">
+                  生产环境禁用。手动 trigger 绕过 leader 锁, 跨副本都会真跑
+                  (taskCron/notificationCron/petCron 会重复发通知 / 重复扣积分 /
+                  重复写 PetEvent)。调试请走 <code>development</code> 副本。
+                </div>
+              </template>
+              <el-icon class="header-info-icon"><InfoFilled /></el-icon>
+            </el-tooltip>
+          </template>
           <template #default="{ row }">
+            <!-- dev 环境: 正常按钮 -->
             <el-button
+              v-if="isDev"
               size="small"
               type="primary"
               :loading="ticking[row.name]"
@@ -150,6 +180,10 @@
               </span>
               <span v-else>立即跑一次</span>
             </el-button>
+            <!-- 生产环境: 灰色 chip 标识禁用, 不放按钮 -->
+            <el-tag v-else size="small" type="info" effect="plain" disable-transitions>
+              生产禁用
+            </el-tag>
           </template>
         </el-table-column>
       </el-table>
@@ -602,6 +636,15 @@ const selfLockCount = computed(() => {
   return data.value.cronLocks.filter((l) => l.isSelf).length
 })
 
+// 手动 trigger 是 dev-only — 生产环境 leader 锁绕过会跨副本重复跑
+// (taskCron/notificationCron/petCron 会双发, write-类副作用全开)
+// 仅看 nodeEnv !== 'development' / 'test' → 禁用按钮
+//   后端 NODE_ENV 约定: development | test | production
+const isDev = computed(() => {
+  const env = (data.value?.nodeEnv || '').toLowerCase()
+  return env === 'development' || env === 'test'
+})
+
 function failureLabel(level) {
   if (level === 'high') return '高 — 业务立刻感知'
   if (level === 'medium') return '中 — 业务流程滞后'
@@ -778,6 +821,24 @@ onUnmounted(() => {
 .page { padding: 8px; }
 .subtitle { color: #909399; margin: 0 0 16px; font-size: 13px; line-height: 1.6; }
 .subtitle code { padding: 1px 6px; background: #f5f7fa; border-radius: 3px; font-size: 12px; color: #c7254e; }
+.page-info-icon {
+  margin-left: 6px;
+  cursor: pointer;
+  color: #909399;
+  font-size: 16px;
+  vertical-align: middle;
+  transition: color 0.15s;
+}
+.page-info-icon:hover { color: #409eff; }
+.header-info-icon {
+  margin-left: 4px;
+  cursor: pointer;
+  color: #909399;
+  font-size: 13px;
+  vertical-align: middle;
+  transition: color 0.15s;
+}
+.header-info-icon:hover { color: #e6a23c; }
 .mb { margin-bottom: 16px; }
 .mt { margin-top: 16px; }
 .ml { margin-left: 8px; }

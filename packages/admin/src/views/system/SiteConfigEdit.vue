@@ -1,19 +1,6 @@
 <template>
   <div class="page">
-    <h2>站点配置</h2>
-    <p class="subtitle">
-      备案号、版权年份、运营主体、客服电话等平台级信息。这里改动后,管理后台与客户端的 Footer
-      (备案号、版权)以及客户端"我的"页底部会立刻同步(用户刷新页面后生效)。
-    </p>
-
-    <el-alert
-      type="warning"
-      :closable="false"
-      title="仅平台超管可改"
-      description="此页面属于平台层面配置,所有机构、所有用户共用一份。本页所有修改通过后端 requirePlatformAdmin 中间件硬卡。"
-      show-icon
-      class="mb"
-    />
+    <h2>站点配置<PageHelp title="页面说明" :max-width="440"><strong>内容范围</strong>: 备案号、版权年份、运营主体、客服电话等平台级信息。这里改动后,管理后台与客户端的 Footer (备案号、版权)以及客户端「我的」页底部会立刻同步 (用户刷新页面后生效)。<br /><strong>权限</strong>: 仅平台超管可改 — 此页面属于平台层面配置,所有机构、所有用户共用一份。本页所有修改通过后端 <code>requirePlatformAdmin</code> 中间件硬卡。</PageHelp></h2>
 
     <el-card v-loading="loading">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="140px" label-position="left">
@@ -80,6 +67,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { siteConfigApi } from '@/api/siteConfig'
 import { useSiteConfigStore } from '@/stores/siteConfig'
+import PageHelp from '@/components/PageHelp.vue'
 
 const siteConfig = useSiteConfigStore()
 const formRef = ref()

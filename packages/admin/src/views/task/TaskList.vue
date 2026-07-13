@@ -171,9 +171,19 @@ const route = useRoute()
 const auth = useAuthStore()
 
 // canonical pattern: 把 (TYPES, LABELS) 拍平为 [{value, label}] 数组
-const STATUS_OPTIONS = TASK_STATUSES.map((v) => ({ value: v, label: TASK_STATUS_LABELS[v] || v }))
-const TYPE_OPTIONS = TASK_TYPES.map((v) => ({ value: v, label: TASK_TYPE_LABELS[v] || v }))
-const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] || v }))
+// 2026-07-13: 防御性 fallback + dev 警告 — 避免 Vite stale optimizeDeps cache
+// (shared/enums.mjs 拿到旧版, TASK_STATUSES 等 undefined) 时整页 blank
+// 一键修复: pnpm --filter admin clean:vite && pnpm --filter admin dev
+const STATUS_OPTIONS = (TASK_STATUSES || []).map((v) => ({ value: v, label: TASK_STATUS_LABELS[v] || v }))
+const TYPE_OPTIONS = (TASK_TYPES || []).map((v) => ({ value: v, label: TASK_TYPE_LABELS[v] || v }))
+const PRIORITY_OPTIONS = (TASK_PRIORITIES || []).map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] || v }))
+
+if (import.meta.env.DEV && (!TASK_STATUSES || !TASK_TYPES || !TASK_PRIORITIES)) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[TaskList] 枚举未加载完整 (Vite stale cache). 跑 `pnpm --filter admin clean:vite && pnpm --filter admin dev` 重启.'
+  )
+}
 // 模板里仍要用 statusLabels[task.status] 渲染 chip, 保留 LABELS 对象引用
 const statusLabels = TASK_STATUS_LABELS
 const typeLabels = TASK_TYPE_LABELS
