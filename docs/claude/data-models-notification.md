@@ -191,14 +191,49 @@ const PLACEHOLDER_KEYS = new Set([
 
 **严禁渲染**：身份证号、银行卡号、密码哈希、家庭住址等敏感字段。
 
-### 3.5 触发点（2026-07-11 MVP）
+### 3.5 触发点
+
+#### MVP 上线（2026-07-11, 2 个）
 
 | type | category | 触发位置 | scheduledFor | 默认渠道 |
 |---|---|---|---|---|
-| `lesson_remind_1h` | lesson | `lessonSchedule.generateAttendancesForSchedule` | plannedStart-1h | inbox |
+| `lesson_prepare_reminder` | lesson | `lessonSchedule.prepare()` (教务点「准备上课」按钮) | null（即时） | inbox |
 | `task_due` | task | `taskCron.notifyDueToday` (每分钟 tick) | null（即时） | inbox |
 
-**未接入**（Phase 2+）：
+#### v0.9 扩展（2026-07-13, +5 员工侧触发点）
+
+**业务事件驱动，全部走 service 内 publish() + setImmediate fire-and-forget**。
+
+| type | category | 触发位置 | 接收人 / recipientRole | 默认渠道 |
+|---|---|---|---|---|
+| `lesson_preparing` | lesson | `lessonSchedule.prepare()` 内（与 `lesson_prepare_reminder` 并存） | `LessonSchedule.teacher` / `staff` | inbox |
+| `task_assigned` | task | `task.service.create()` 全体 / `update()` diff 新增 | 新增的 `assignees[].user` / `staff` | inbox |
+| `task_rejected` | task | `task.service.review()` rejected/requested_changes 分支 | 所有 `assignees[].user` / `staff` | inbox |
+| `task_approved` | task | `task.service.review()` approved 分支 | 所有 `assignees[].user` + `creator` / `staff` | inbox |
+| `task_cancelled` | task | `task.service.cancel()` | 所有 `assignees[].user` + `supervisors` + `creator` / `staff` | inbox |
+
+**幂等设计**：
+- `lesson_preparing` / `lesson_prepare_reminder`：状态机幂等 (`scheduled → preparing` 单次)，重复点会抛 400 不重复发
+- `task_rejected` / `task_approved`：状态机幂等 (`submitted → rejected/approved` 单次)
+- `task_cancelled`：状态机幂等（终态不可重复 cancel）
+- `task_assigned`：`update` 时 diff 旧 `assignees` 集合，只对新加入者发；`create` 时全体发
+
+**模板占位符（5 条新模板）**：
+- `taskTitle` 任务标题
+- `actorName` 操作人姓名 (creator / reviewer / canceller)
+- `comment` 审批意见 / 取消原因
+- `score` 审批打分（可选）
+- `dueAt` 截止时间 (友好文本)
+- `priority` 优先级 (友好中文：紧急/高/普通/低)
+- `studentNames` 多个学生拼接 ("张三、李四" 或 "张三... 等 8 人")
+
+**架构要点**：
+- 所有触发点共用 `notificationService.publish({ recipientRole: 'staff', ... })`，不发家长 `parent`
+- 失败不阻塞主流程：service 内 `setImmediate(() => publish().catch(console.warn))`
+- 模板缺失 fallback：title = type, body = type（管理员可后期补模板）
+
+#### 未接入（Phase 2+）
+
 - lesson_remind_24h / lesson_absent
 - order_paid / order_refunded
 - evaluation_published
@@ -222,17 +257,21 @@ const PLACEHOLDER_KEYS = new Set([
 ## 4. 路由（MM=40，详见 routes-server.md §40）
 
 - R-4001 POST /notifications/publish (notification.send)
-- R-4002 GET /notifications/me (activeStudent)
+- R-4002 GET /notifications/me (activeStudent, 家长)
 - R-4003 GET /notifications/me/unread-count
-- R-4004 POST /notifications/:id/read
+- R-4004 POST /notifications/:id/read (员工/家长共用)
 - R-4005 POST /notifications/me/read-all
-- R-4006 POST /notifications/:id/archive
+- R-4006 POST /notifications/:id/archive (员工/家长共用)
 - R-4007 POST /notifications/me/archive-all
 - R-4008 GET /notifications/me/preferences
 - R-4009 PUT /notifications/me/preferences
 - R-4010 GET /notifications/templates (notification.read)
 - R-4011 PUT /notifications/templates/:type/:channel (notification.write)
 - R-4012 GET /notifications/admin/logs (notification.read)
+- **R-4013** GET /notifications/me/staff (员工 inbox 列表, 不挂 activeStudent) [2026-07-13]
+- **R-4014** GET /notifications/me/staff/unread-count (员工红点)
+- **R-4015** POST /notifications/me/staff/read-all (员工一键已读)
+- **R-4016** POST /notifications/me/staff/archive-all (员工一键归档)
 
 ## 5. 权限码（3 个）
 

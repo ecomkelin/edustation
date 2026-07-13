@@ -309,6 +309,16 @@ async function create({ orgId, title, description, type, priority, creator, assi
       done: false
     })))
   }
+  // 2026-07-13: 触发 task_assigned — 创建任务 = 把全部 assignees 指派给全员
+  //   fire-and-forget; 单条失败不阻塞 create
+  setImmediate(() => {
+    publishTaskAssigned({
+      task,
+      recipientIds: assignees,
+      actor,
+      orgId
+    }).catch((e) => console.warn('[task.create] publishTaskAssigned error:', e.message))
+  })
   // 2026-07-08: post-create detail() 必须用真实请求者 (actor), 不能用新 creator
   //   场景: 超管创建时把 creator 改成"机构管理员", 但 detail 内部 canViewTask 用新 creator 校验,
   //   若新 creator 没 task.read 权限则抛 403 "无权查看该任务". 这里 actor 来自 controller 透传的 req.user.
@@ -345,7 +355,22 @@ async function update({ id, orgId, body, actor }) {
   }
   if (body.assignees != null) {
     await assertUsersInOrg(orgId, body.assignees)
+    // 2026-07-13: 触发 task_assigned (仅新加入的执行人) — diff 旧 assignees 避免重复打扰
+    const prevAssigneeIds = new Set(
+      (task.assignees || []).map((a) => String(a.user))
+    )
+    const newAssigneeIds = body.assignees.filter((u) => !prevAssigneeIds.has(String(u)))
     task.assignees = body.assignees.map((u) => ({ user: u, status: 'not_started', progress: 0 }))
+    if (newAssigneeIds.length) {
+      setImmediate(() => {
+        publishTaskAssigned({
+          task,
+          recipientIds: newAssigneeIds,
+          actor,
+          orgId
+        }).catch((e) => console.warn('[task.update] publishTaskAssigned error:', e.message))
+      })
+    }
   }
   if (body.status != null) {
     // 仅允许: cancelled(前端 cancel 端点会处理); approved 不允许通过 update 走
@@ -537,6 +562,16 @@ async function review({ id, orgId, result, comment, score, actor }) {
   // 更新任务状态
   if (result === 'approved') {
     task.status = 'approved'
+    // 2026-07-13: 触发 task_approved — 推给所有 assignees + creator (发起人也想知道通过)
+    setImmediate(() => {
+      publishTaskApproved({
+        task,
+        actor,
+        orgId,
+        reviewComment: comment || '',
+        reviewScore: score || null
+      }).catch((e) => console.warn('[task.review] publishTaskApproved error:', e.message))
+    })
   } else if (result === 'rejected' || result === 'requested_changes') {
     task.status = 'rejected'
     // 执行人状态退回 in_progress,允许重做
@@ -546,6 +581,16 @@ async function review({ id, orgId, result, comment, score, actor }) {
         a.submittedAt = null
       }
     }
+    // 2026-07-13: 触发 task_rejected — 推给所有 assignees (被打回, 需修改)
+    setImmediate(() => {
+      publishTaskRejected({
+        task,
+        actor,
+        orgId,
+        reviewComment: comment || '',
+        reviewScore: score || null
+      }).catch((e) => console.warn('[task.review] publishTaskRejected error:', e.message))
+    })
   }
   await task.save()
   await recomputeProgressOnly(task)
@@ -576,6 +621,15 @@ async function cancel({ id, orgId, reason, actor }) {
       mentions: []
     })
   }
+  // 2026-07-13: 触发 task_cancelled — 推给所有 assignees + supervisors (业务相关人都知道)
+  setImmediate(() => {
+    publishTaskCancelled({
+      task,
+      actor,
+      orgId,
+      reason: reason || ''
+    }).catch((e) => console.warn('[task.cancel] publishTaskCancelled error:', e.message))
+  })
   return await detail({ id, orgId, actor })
 }
 
@@ -788,7 +842,7 @@ async function notifyDueToday() {
       if (existing) { stats.skipped++; continue }
 
       const recipients = new Set()
-      for (const a of (t.assignees || [])) recipients.add(String(a))
+      for (const a of (t.assignees || [])) recipients.add(String(a.user))
       for (const s of (t.supervisors || [])) recipients.add(String(s))
       if (t.creator) recipients.add(String(t.creator))
       if (!recipients.size) { stats.skipped++; continue }
@@ -820,6 +874,187 @@ async function notifyDueToday() {
     }
   }
   return stats
+}
+
+// ─── 通知触发点 (2026-07-13) ───────────────────────
+//
+// 5 个新触发点: task_assigned / task_rejected / task_approved / task_cancelled
+//   - 全部走 notificationService.publish({ recipientRole: 'staff' }) — 接收人是员工
+//   - 单条失败不阻塞其他收件人 (for...of + .catch)
+//   - 单条失败不阻塞主流程 (调用方 setImmediate + .catch)
+//   - 模板占位符白名单: taskTitle / actorName / comment / score / dueAt / priority
+//
+// 共享变量计算:
+//   - actorName       : actor 姓名 (查一次, 失败 fallback '上级' / '监督人' / '系统')
+//   - dueAtText       : task.dueAt 友好文本 (沿用 notifyDueToday 写法)
+//   - taskTitle       : task.title
+//   - priority        : task.priority (友好中文)
+//   - comment         : review/cancel 时的意见/原因
+
+function formatDueText(d) {
+  if (!d) return '无'
+  const dt = d instanceof Date ? d : new Date(d)
+  if (Number.isNaN(dt.getTime())) return '无'
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+}
+
+const PRIORITY_LABELS = { urgent: '紧急', high: '高', normal: '普通', low: '低' }
+function priorityLabel(p) { return PRIORITY_LABELS[p] || p || '普通' }
+
+async function getActorName(actor) {
+  if (!actor || !actor.userId) return '系统'
+  const u = await User.findById(actor.userId).select('realName name').lean()
+  return (u && (u.realName || u.name)) || '系统'
+}
+
+/**
+ * task_assigned: 任务被分配
+ * - create 时: 全体 assignees 都收
+ * - update 时: 仅 diff 出的新 assignee 收 (caller 负责)
+ * - deeplink: /admin/tasks/:id
+ */
+async function publishTaskAssigned({ task, recipientIds, actor, orgId }) {
+  if (!Array.isArray(recipientIds) || !recipientIds.length) return
+  const notificationService = require('@modules/notification/notification.service')
+  const actorName = await getActorName(actor)
+  const taskTitle = task.title || ''
+  const dueAtText = formatDueText(task.dueAt)
+  const priority = priorityLabel(task.priority)
+  for (const recipientId of recipientIds) {
+    if (!recipientId) continue
+    notificationService
+      .publish({
+        orgId,
+        recipientId: String(recipientId),
+        recipientRole: 'staff',
+        type: 'task_assigned',
+        payload: {
+          entityType: 'task',
+          entityId: task._id,
+          deeplink: `/admin/tasks/${task._id}`
+        },
+        vars: {
+          taskTitle,
+          actorName,
+          dueAt: dueAtText,
+          priority
+        },
+        scheduledFor: null,
+        source: 'event'
+      })
+      .catch((e) => console.warn('[publishTaskAssigned] publish error:', e.message))
+  }
+}
+
+/**
+ * task_rejected: 监督人打回任务
+ * - 接收人: 所有 assignees (被打回, 需修改重做)
+ */
+async function publishTaskRejected({ task, actor, orgId, reviewComment, reviewScore }) {
+  const notificationService = require('@modules/notification/notification.service')
+  const actorName = await getActorName(actor)
+  const assignees = (task.assignees || []).map((a) => a.user).filter(Boolean)
+  if (!assignees.length) return
+  for (const recipientId of assignees) {
+    notificationService
+      .publish({
+        orgId,
+        recipientId: String(recipientId),
+        recipientRole: 'staff',
+        type: 'task_rejected',
+        payload: {
+          entityType: 'task',
+          entityId: task._id,
+          deeplink: `/admin/tasks/${task._id}`
+        },
+        vars: {
+          taskTitle: task.title || '',
+          actorName,
+          comment: reviewComment || '无',
+          score: reviewScore != null ? String(reviewScore) : ''
+        },
+        scheduledFor: null,
+        source: 'event'
+      })
+      .catch((e) => console.warn('[publishTaskRejected] publish error:', e.message))
+  }
+}
+
+/**
+ * task_approved: 监督人通过任务
+ * - 接收人: 所有 assignees + creator (发起人也想知道)
+ */
+async function publishTaskApproved({ task, actor, orgId, reviewComment, reviewScore }) {
+  const notificationService = require('@modules/notification/notification.service')
+  const actorName = await getActorName(actor)
+  const recipients = new Set()
+  for (const a of (task.assignees || [])) {
+    if (a && a.user) recipients.add(String(a.user))
+  }
+  if (task.creator) recipients.add(String(task.creator))
+  for (const recipientId of recipients) {
+    notificationService
+      .publish({
+        orgId,
+        recipientId,
+        recipientRole: 'staff',
+        type: 'task_approved',
+        payload: {
+          entityType: 'task',
+          entityId: task._id,
+          deeplink: `/admin/tasks/${task._id}`
+        },
+        vars: {
+          taskTitle: task.title || '',
+          actorName,
+          comment: reviewComment || '',
+          score: reviewScore != null ? String(reviewScore) : ''
+        },
+        scheduledFor: null,
+        source: 'event'
+      })
+      .catch((e) => console.warn('[publishTaskApproved] publish error:', e.message))
+  }
+}
+
+/**
+ * task_cancelled: 任务被取消
+ * - 接收人: 所有 assignees + supervisors + creator
+ */
+async function publishTaskCancelled({ task, actor, orgId, reason }) {
+  const notificationService = require('@modules/notification/notification.service')
+  const actorName = await getActorName(actor)
+  const recipients = new Set()
+  for (const a of (task.assignees || [])) {
+    if (a && a.user) recipients.add(String(a.user))
+  }
+  for (const s of (task.supervisors || [])) {
+    if (s) recipients.add(String(s))
+  }
+  if (task.creator) recipients.add(String(task.creator))
+  for (const recipientId of recipients) {
+    notificationService
+      .publish({
+        orgId,
+        recipientId,
+        recipientRole: 'staff',
+        type: 'task_cancelled',
+        payload: {
+          entityType: 'task',
+          entityId: task._id,
+          deeplink: `/admin/tasks/${task._id}`
+        },
+        vars: {
+          taskTitle: task.title || '',
+          actorName,
+          comment: reason || ''
+        },
+        scheduledFor: null,
+        source: 'event'
+      })
+      .catch((e) => console.warn('[publishTaskCancelled] publish error:', e.message))
+  }
 }
 
 // ─── 模板 ──────────────────────────────────────
@@ -1058,5 +1293,10 @@ module.exports = {
   // 内部
   generateFromTemplate,
   computeNextRunAt,
-  recomputeTaskState
+  recomputeTaskState,
+  // 通知触发 (2026-07-13)
+  publishTaskAssigned,
+  publishTaskRejected,
+  publishTaskApproved,
+  publishTaskCancelled
 }

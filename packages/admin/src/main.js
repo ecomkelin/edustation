@@ -35,6 +35,11 @@ app.config.warnHandler = (msg, instance, trace) => {
   if (typeof msg === 'string' && KNOWN_FALSE_POSITIVE_RENDER_PATTERNS.some((re) => re.test(msg))) {
     return  // 已知误报, 静默
   }
+  // 2026-07-13 dev-only: 捕获 [ElOnlyChild] 真实 trace 定位根因
+  if (typeof msg === 'string' && /\[ElOnlyChild\]/i.test(msg) && import.meta.env.DEV) {
+    console.warn(`[ElOnlyChild trace]:\n${trace || '(no trace)'}`)
+    return
+  }
   // 其余 warn / trace 走原生通道
   console.warn(`[Vue warn]: ${msg}${trace ? `\n${trace}` : ''}`)
 }
@@ -57,24 +62,28 @@ const siteConfig = useSiteConfigStore()
 // 正确打包 (旧版 stale cache 时 TASK_STATUSES 等会 undefined, 触发
 // "Cannot read properties of undefined (reading 'map')"). 这里用静态 import
 // 在 bundle 阶段就发现, 比运行时报错早一步定位。
-if (import.meta.env.DEV) {
-  import('@shared/enums.mjs').then((enums) => {
-    const REQUIRED = [
-      'TASK_STATUSES', 'TASK_TYPES', 'TASK_PRIORITIES',
-      'COURSE_INSTANCE_STATUSES', 'ORDER_STATUSES',
-      'CLIENT_LEVEL'
-    ]
-    const missing = REQUIRED.filter((k) => !enums[k])
-    if (missing.length > 0) {
-      // eslint-disable-next-line no-console
-      console.error(
-        `[shared/enums] 缺少 export: ${missing.join(', ')}.\n` +
-        'Vite optimizeDeps cache stale — 跑 `pnpm --filter admin clean:vite && pnpm --filter admin dev` 重启.'
-      )
-    }
-  })
-}
-
+// 2026-07-13 修 race: 必须 app.mount 之后再 import 校验 — mount 时 optimizeDeps 已经
+// 完成, 此时拿到的 enums 才是稳定的; mount 前 import 会撞 prebundle 中间态.
 Promise.allSettled([auth.restore(), siteConfig.load()]).finally(() => {
   app.mount('#app')
+  if (import.meta.env.DEV) {
+    // 用 setTimeout 把校验推到下一个 microtask, 让浏览器有时间 fetch & eval optimizeDeps chunk
+    setTimeout(() => {
+      import('@shared/enums.mjs').then((enums) => {
+        const REQUIRED = [
+          'TASK_STATUSES', 'TASK_TYPES', 'TASK_PRIORITIES',
+          'COURSE_INSTANCE_STATUSES', 'ORDER_STATUSES',
+          'CLIENT_LEVEL'
+        ]
+        const missing = REQUIRED.filter((k) => !enums[k])
+        if (missing.length > 0) {
+          // eslint-disable-next-line no-console
+          console.error(
+            `[shared/enums] 缺少 export: ${missing.join(', ')}.\n` +
+            'Vite optimizeDeps cache stale — 跑 `pnpm --filter admin clean:vite && pnpm --filter admin dev` 重启.'
+          )
+        }
+      })
+    }, 0)
+  }
 })

@@ -21,7 +21,11 @@
 const NotificationTemplate = require('@models/NotificationTemplate.model')
 
 // 占位符白名单（按 CLAUDE.md §"v0.9 推送通知" plan §11.1 隐私红线）
+// 2026-07-13: 加 5 个任务触发点占位符 (task_assigned / rejected / approved / cancelled)
+//   + 1 个 lesson_preparing 复用 courseName/time/room
+//   严禁渲染敏感字段 (idCard / cardNumber / passwordHash), 不在这里加
 const PLACEHOLDER_KEYS = new Set([
+  // 已有 (lesson_prepare_reminder / task_due)
   'studentName',
   'courseName',
   'time',
@@ -33,7 +37,14 @@ const PLACEHOLDER_KEYS = new Set([
   'amount',
   'points',
   'days',
-  'reason'
+  'reason',
+  // 2026-07-13 新增 — 任务触发点
+  'taskTitle',       // 任务标题 (替 task_due 的 {reason}, 但保留 {reason} 兼容)
+  'actorName',       // 操作人姓名 (指派 / 审批 / 取消 的人, 通用)
+  'comment',         // 审批意见 / 取消原因 (task_rejected / task_cancelled)
+  'score',           // 审批打分 (task_rejected / task_approved 可选)
+  'dueAt',           // 截止时间 (task_assigned 友好文本, 替 task_due 的 {time})
+  'priority'         // 优先级 (task_assigned 可选)
 ])
 
 /**

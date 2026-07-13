@@ -21,6 +21,8 @@
       </div>
       <div class="header-right">
         <OrgSwitcher />
+        <!-- 2026-07-13: 顶部通知铃铛 + 红点 (员工 inbox), 不影响家长 C 端 -->
+        <NotificationBell />
         <el-dropdown @command="onCommand">
           <span class="user-trigger">
             <SvgAvatar :svg-key="auth.user?.avatarSvgKey" :size="28" audience="user" />
@@ -101,6 +103,7 @@ import { useAuthStore } from '@/stores/auth'
 import OrgSwitcher from '@/components/OrgSwitcher.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
+import NotificationBell from '@/components/NotificationBell.vue'
 import {
   ArrowDown,
   Odometer,

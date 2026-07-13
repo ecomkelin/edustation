@@ -542,6 +542,57 @@ function formatTimeText(start, end) {
   return fmt(start)
 }
 
+/**
+ * 2026-07-13: lesson_preparing — 排课进入 preparing 时通知任课老师 (员工, recipientRole='staff')
+ *   - 与 publishLessonPrepareReminder (发家长) 共存, 两者互不替代
+ *   - studentNames: ≤5 全显, >5 截断 "张三、李四... 等 N 人"
+ *   - deeplink: /admin/schedule?highlight=:id (前端日历高亮; schedule/:id 路由不存在, 见决策 D2-A)
+ *   - 失败不阻塞 prepare 返回 (caller try/catch)
+ */
+async function publishLessonPreparingToTeacher(orgId, lessonSchedule, attendanceDocs) {
+  if (!lessonSchedule || !lessonSchedule.teacher) return
+  const notificationService = require('@modules/notification/notification.service')
+  const Room = require('@models/Room.model')
+
+  const [inst, room] = await Promise.all([
+    CourseInstance.findById(lessonSchedule.courseInstance).select('name').lean(),
+    lessonSchedule.room
+      ? Room.findById(lessonSchedule.room).select('name').lean()
+      : Promise.resolve(null)
+  ])
+  const studentIds = (attendanceDocs || []).map((a) => a && a.student).filter(Boolean)
+  const students = studentIds.length
+    ? await Student.find({ _id: { $in: studentIds } }).select('name').lean()
+    : []
+  const names = students.map((s) => (s && s.name) || '').filter(Boolean)
+  const studentNames = names.length === 0
+    ? ''
+    : names.length <= 5
+      ? names.join('、')
+      : `${names.slice(0, 5).join('、')}... 等 ${names.length} 人`
+
+  await notificationService.publish({
+    orgId,
+    recipientId: String(lessonSchedule.teacher),
+    recipientRole: 'staff',
+    type: 'lesson_preparing',
+    payload: {
+      entityType: 'lessonSchedule',
+      entityId: lessonSchedule._id,
+      // 2026-07-13 D2-A 决策: /admin/schedule/:id 不存在, 用 ?highlight=:id 让日历高亮
+      deeplink: `/admin/schedule?highlight=${lessonSchedule._id}`
+    },
+    vars: {
+      courseName: (inst && inst.name) || '',
+      time: formatTimeText(lessonSchedule.plannedStartTime, lessonSchedule.plannedEndTime),
+      room: room ? room.name : '',
+      studentNames
+    },
+    scheduledFor: null,
+    source: 'event'
+  })
+}
+
 // ─── 日期生成（按 schedulePlan.mode 走分支） ─────────────
 
 /**
@@ -1123,6 +1174,16 @@ async function prepare({ id, orgId }) {
       // eslint-disable-next-line no-console
       console.warn('[lessonSchedule.prepare] publishLessonPrepareReminder failed:', e.message)
     }
+  }
+
+  // 2026-07-13: 新增 lesson_preparing — 推给任课老师 (员工), 与上方的家长提醒并存
+  //   - 接收人: LessonSchedule.teacher (1 人)
+  //   - 状态机已幂等 (scheduled → preparing 单次转换), 无需额外去重
+  try {
+    await publishLessonPreparingToTeacher(orgId, exist, insertedDocs)
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[lessonSchedule.prepare] publishLessonPreparingToTeacher failed:', e.message)
   }
 
   const result = await detail(exist._id, orgId)

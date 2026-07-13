@@ -103,7 +103,9 @@ const routes = [
       { path: 'tasks/:id', component: () => import('@/views/task/TaskDetail.vue') },
       // 通知管理 (2026-07-11 v0.9 立项, MM=40): 模板编辑 + 发送流水
       { path: 'notifications/templates', component: () => import('@/views/notifications/Templates.vue') },
-      { path: 'notifications/logs', component: () => import('@/views/notifications/Logs.vue') }
+      { path: 'notifications/logs', component: () => import('@/views/notifications/Logs.vue') },
+      // 员工 inbox (2026-07-13): 顶部铃铛点开后跳这里 (或抽屉, 路由也保留独立页)
+      { path: 'notifications/inbox', component: () => import('@/views/notifications/StaffInbox.vue') }
     ]
   },
   // 课堂展示 (2026-06-21 pet-system-v2-ext): 独立 layout (ClassroomLayout), 全屏深色背景

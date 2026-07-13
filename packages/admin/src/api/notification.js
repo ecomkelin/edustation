@@ -4,6 +4,14 @@
  * R-4011 PUT /notifications/templates/:type/:channel
  * R-4012 GET /notifications/admin/logs
  * R-4001 POST /notifications/publish (内部发布)
+ *
+ * 员工 inbox (2026-07-13 新增, MM=40 续):
+ *   R-4013 GET    /notifications/me/staff
+ *   R-4014 GET    /notifications/me/staff/unread-count
+ *   R-4015 POST   /notifications/me/staff/read-all
+ *   R-4016 POST   /notifications/me/staff/archive-all
+ *   R-3604 POST   /notifications/:id/read      (员工/家长共用, 走 :id 校验属主)
+ *   R-3606 POST   /notifications/:id/archive  (同上)
  */
 import http from './http'
 
@@ -23,5 +31,31 @@ export const notificationApi = {
   // R-4001 内部发布 (代发补送场景)
   publish(payload = {}) {
     return http.post('/notifications/publish', payload)
+  },
+
+  // ─── 员工 inbox (2026-07-13 新增) ───
+  // R-4013 员工 inbox 列表
+  staffList(params = {}) {
+    return http.get('/notifications/me/staff', { params })
+  },
+  // R-4014 员工红点未读数
+  staffUnreadCount() {
+    return http.get('/notifications/me/staff/unread-count')
+  },
+  // R-4015 员工一键已读
+  staffMarkAllRead() {
+    return http.post('/notifications/me/staff/read-all')
+  },
+  // R-4016 员工一键归档
+  staffArchiveAll() {
+    return http.post('/notifications/me/staff/archive-all')
+  },
+  // R-3604 单条已读 (员工/家长共用)
+  markRead(id) {
+    return http.post(`/notifications/${id}/read`)
+  },
+  // R-3606 单条归档
+  archive(id) {
+    return http.post(`/notifications/${id}/archive`)
   }
 }

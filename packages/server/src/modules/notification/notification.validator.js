@@ -15,6 +15,8 @@ const { body, param, query } = require('express-validator')
 exports.publish = [
   body('type').isString().isLength({ min: 3, max: 64 }),
   body('recipientId').isMongoId(),
+  // 2026-07-13: recipientRole 白名单 — 员工侧触发点传 'staff', 平台超管可传 'platform'
+  body('recipientRole').optional({ values: 'falsy' }).isIn(['parent', 'staff', 'platform']),
   body('activeStudentId').optional({ values: 'falsy' }).isMongoId(),
   body('payload').optional({ values: 'falsy' }).isObject(),
   body('payload.entityType').optional({ values: 'falsy' }).isString().isLength({ max: 64 }),

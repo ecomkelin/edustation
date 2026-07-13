@@ -10,6 +10,8 @@ exports.publish = async (req, res) => {
   const data = await service.publish({
     orgId: req.orgId,
     recipientId: req.body.recipientId,
+    // 2026-07-13: 透传 recipientRole 给 service, 默认 'parent'; 员工侧触发点传 'staff'
+    recipientRole: req.body.recipientRole,
     type: req.body.type,
     activeStudentId: req.body.activeStudentId,
     payload: req.body.payload,

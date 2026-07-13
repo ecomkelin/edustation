@@ -36,9 +36,13 @@ const DEFAULT_CATEGORY_FOR_TYPE = {
   // 改为事件驱动的 lesson_prepare_reminder; 老 type 保留只是兜底, 不再主动 publish
   lesson_remind_24h: 'lesson',
   lesson_prepare_reminder: 'lesson',
+  lesson_preparing: 'lesson',           // 2026-07-13: 排课进入 preparing, 通知任课老师
   lesson_absent: 'lesson',
   task_due: 'task',
-  task_assigned: 'task',
+  task_assigned: 'task',                // 2026-07-13: 任务分配
+  task_rejected: 'task',                // 2026-07-13: 任务被打回
+  task_approved: 'task',                // 2026-07-13: 任务审批通过
+  task_cancelled: 'task',               // 2026-07-13: 任务被取消
   task_comment: 'task',
   order_paid: 'order',
   order_refunded: 'order',
@@ -99,6 +103,9 @@ async function dispatchChannel(notification, channel, recipient, template, vars)
  * @param {String} input.recipientId
  * @param {String} input.type           — lesson_remind_1h / task_due / ...
  * @param {String} [input.category]     — 默认按 type 派生
+ * @param {String} [input.recipientRole] — 'parent' | 'staff' | 'platform', 默认 'parent'
+ *   2026-07-13: 新增 staff 入参 — 任务/排课触发点接收人是员工, 不能再硬编码 'parent'.
+ *     否则按 recipientRole 过滤 / Admin Logs 展示 / 未来员工 inbox 都会错位
  * @param {Object} input.vars           — 模板占位符变量
  * @param {Object} [input.payload]      — { entityType, entityId, deeplink }
  * @param {String} [input.activeStudentId]
@@ -113,6 +120,7 @@ async function publish(input) {
   const recipientId = input.recipientId
   const type = input.type
   const category = input.category || categoryOf(type)
+  const recipientRole = input.recipientRole || 'parent'
 
   // 拉取 recipient + 偏好
   const [recipient, prefs] = await Promise.all([
@@ -161,7 +169,7 @@ async function publish(input) {
   const doc = await Notification.create({
     org: orgId,
     recipient: recipientId,
-    recipientRole: 'parent', // MVP 暂仅家长；员工 inbox 待 Phase 4 扩展
+    recipientRole,
     activeStudent: input.activeStudentId || null,
     type,
     category,

@@ -663,22 +663,27 @@ Auth 列简写:
 
 > 推送通知模块 (2026-07-11 v0.9 立项). 三层架构: Channel Adapter → NotificationService → Notification 模型.
 > MVP 仅站内 Inbox; C 端 /me/* 跳过 requirePermission 仅 activeStudent 校验 (沿用 c-end-me-endpoint-pattern);
-> 管理后台 publish/templates/logs 走 notification.* 权限码. 详见 [data-models-notification.md](data-models-notification.md).
+> 管理后台 publish/templates/logs 走 notification.* 权限码.
+> **2026-07-13 拆 /me 与 /me/staff 子路由**: /me 挂 activeStudent 给家长; /me/staff 不挂给员工, 解决"员工调 /me 依赖不传 header 的隐含契约". 详见 [data-models-notification.md](data-models-notification.md).
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-4001 | POST | /notifications/publish | PERM | notification.send | 内部发布通知 | body 必填 type/recipientId; payload/vars/scheduledFor 可选; 业务触发 (lessonSchedule/taskCron) 与代发都走这里 |
-| R-4002 | GET | /notifications/me | AUTH | — | 我的 inbox | query: page/pageSize/status/archived/activeStudentId; 默认隐藏已归档 |
-| R-4003 | GET | /notifications/me/unread-count | AUTH | — | 红点未读数 | query: activeStudentId; 仅 count, 聚合不拉详情 |
-| R-4004 | POST | /notifications/:id/read | AUTH | — | 标记已读 | 资源属主校验 (recipient == req.user.id); 幂等 (已读再调不动) |
-| R-4005 | POST | /notifications/me/read-all | AUTH | — | 一键已读 | query: activeStudentId |
-| R-4006 | POST | /notifications/:id/archive | AUTH | — | 归档 | 资源属主校验; 归档同时若 unread 自动标 read |
-| R-4007 | POST | /notifications/me/archive-all | AUTH | — | 一键归档 | query: activeStudentId |
-| R-4008 | GET | /notifications/me/preferences | AUTH | — | 我的偏好 | 懒创建: 首次调用按默认策略建 |
+| R-4001 | POST | /notifications/publish | PERM | notification.send | 内部发布通知 | body 必填 type/recipientId; **可选 recipientRole (parent/staff/platform, 默认 parent)** — 员工触发点 (task_assigned/rejected/approved/cancelled + lesson_preparing) 传 'staff', 否则 Notification 落库 role 错位; payload/vars/scheduledFor 可选; 业务触发 (lessonSchedule/taskCron) 与代发都走这里 |
+| R-4002 | GET | /notifications/me | AUTH | — | 我的 inbox (家长) | query: page/pageSize/status/archived/activeStudentId; 默认隐藏已归档; 路由组挂 activeStudent 中间件 |
+| R-4003 | GET | /notifications/me/unread-count | AUTH | — | 红点未读数 (家长) | query: activeStudentId; 仅 count, 聚合不拉详情 |
+| R-4004 | POST | /notifications/:id/read | AUTH | — | 标记已读 | 资源属主校验 (recipient == req.user.id); 幂等 (已读再调不动); 员工/家长共用 |
+| R-4005 | POST | /notifications/me/read-all | AUTH | — | 一键已读 (家长) | query: activeStudentId |
+| R-4006 | POST | /notifications/:id/archive | AUTH | — | 归档 | 资源属主校验; 归档同时若 unread 自动标 read; 员工/家长共用 |
+| R-4007 | POST | /notifications/me/archive-all | AUTH | — | 一键归档 (家长) | query: activeStudentId |
+| R-4008 | GET | /notifications/me/preferences | AUTH | — | 我的偏好 (家长) | 懒创建: 首次调用按默认策略建 |
 | R-4009 | PUT | /notifications/me/preferences | AUTH | — | 改我的偏好 (白名单) | body 白名单: globalEnabled / categories.* / channels.*.enabled / quietHours |
 | R-4010 | GET | /notifications/templates | PERM | notification.read | 模板列表 (机构 + 平台默认合并) | 机构优先, 平台默认兜底; 用于管理后台 |
 | R-4011 | PUT | /notifications/templates/:type/:channel | PERM | notification.write | 新增 / 编辑模板 | 机构维度覆盖平台默认; 唯一索引 (org, type, channel) |
 | R-4012 | GET | /notifications/admin/logs | PERM | notification.read | 发送流水 (30 天) | query: channel/status/page/pageSize; NotificationLog TTL 30d |
+| R-4013 | GET | /notifications/me/staff | AUTH | — | 员工 inbox 列表 | **2026-07-13 新增**: 不挂 activeStudent, 给员工 (老师/教务/财务/超管) 拉自己的 task_assigned/rejected/approved/cancelled + lesson_preparing 等通知; query: page/pageSize/status/archived |
+| R-4014 | GET | /notifications/me/staff/unread-count | AUTH | — | 员工红点 | 同上, 仅 count; admin 顶栏 NotificationBell.vue 30s 轮询 |
+| R-4015 | POST | /notifications/me/staff/read-all | AUTH | — | 员工一键已读 | |
+| R-4016 | POST | /notifications/me/staff/archive-all | AUTH | — | 员工一键归档 | |
 
 ### MM=41 system ops (URL: /admin/cron)
 
@@ -741,6 +746,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-07-13 | 通知模块 MM=40 v0.9 扩展: 加 5 个员工侧触发点 (task_assigned/rejected/approved/cancelled + lesson_preparing), 拆 /me/staff 子路由 (员工不挂 activeStudent), 加 admin NotificationBell 铃铛红点 + StaffInbox 全量页; publish 入参 `recipientRole` (parent/staff/platform, 默认 parent) 解决 staff role 标错位; seed 加 5 模板 (占位符 taskTitle/actorName/comment/score/dueAt/priority); task.service notifyDueToday 修 B1 (assignee 取 a.user); 修复 routes-server.md | R-4001~R-4016 | add/modify |
 | 2026-07-13 | 系统运维 MM=41 升级 v2 (cron 多副本 + 优雅停机 + 手动 trigger + 副本心跳 + 互斥): R-4102 进程内手动 tick 互斥 (并发返 409 + conflict 详情); cronRegistry 加 `manualTickLocks` Map + `manualTickInFlight` 字段; dieAndRebirth 返 'ok'\|'cas_failed'\|'no_tier_config' (sweepOne 据此 stats 计数, 不再静默谎报 'died'); PetEvent 加 eventKey 字段 + sparse unique 索引做幂等 (mongosh 触发 _id Cast 静默丢数据改用独立字段); sweepOne 返回 'die_error' → stats.errors (pet.tier 数据异常); | R-4101/R-4102 | modify |
 | 2026-07-11 | 通知模块 MM=40 v0.9 立项: 4 model + 3 service + inbox adapter + cron + 12 端点 R-4001~R-4012; MVP 仅站内 Inbox (C 端 /me/* + 管理后台 publish/templates/logs); 触发点 lesson_remind_1h (lessonSchedule) + task_due (taskCron); 默认偏好 lesson/task/order/access 开 + point/pet 关; seed 2 平台默认模板 | R-4001 ~ R-4012 | add |
 | 2026-07-11 | 机构协议 R-3132 PUT 允许 contentMarkdown 为空 (validator `optional({values:'falsy'})` + service 兼容空字符串); 新增 5 个空白占位 key seed (org-about/org-faq/points-rule/share-rule/org-contact), 接入 init-seeds.js 跑 legal.seed | R-3132 | modify |
