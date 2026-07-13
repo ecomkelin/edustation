@@ -197,6 +197,8 @@ const menuGroups = [
         label: '平台配置',
         icon: Setting,
         children: [
+          // 定时任务监控 (2026-07-13 MM=41): 所有 setInterval 实时状态 + 详细说明 + 手动 trigger
+          { path: '/system/cron-monitor', label: '定时任务监控', icon: Bell, requirePlatform: true },
           // 站点配置: 备案号/运营主体 (2026-06)
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读

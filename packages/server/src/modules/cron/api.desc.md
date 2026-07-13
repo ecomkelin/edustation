@@ -11,6 +11,7 @@ URL 前缀: `/admin/cron` (与 `/admin/pet` `/admin/points` 等管理端点保�
 |---|---|---|---|---|
 | R-4101 | GET | `/admin/cron/status` | 平台超管 | 所有 cron 实时状态 + 全局视图 (replicas + cronLocks) |
 | R-4102 | POST | `/admin/cron/:name/tick` | 平台超管 | 手动 trigger 单个 cron (绕过 leader 锁, 用于调试) |
+| R-4103 | GET | `/admin/cron/ticks` | 平台超管 | 查 cron_tick_logs 历史流水 (TTL 30d) |
 
 ### R-4101 GET /admin/cron/status
 
@@ -92,6 +93,7 @@ URL 前缀: `/admin/cron` (与 `/admin/pet` `/admin/points` 等管理端点保�
 - **进程内互斥** (2026-07-13): 同一进程内同时只允许 1 个手动 tick 跑该 cron, 并发请求返 409
 - 不写 audit (ops 动作, 不是业务操作)
 - 计数加在 `totalManualTicks`, 耗时记在 `lastDurationMs`
+- **写流水** (2026-07-13 续): 写一条 `source='manual'` 流水到 cron_tick_logs
 
 **响应 (成功)**:
 ```json
@@ -135,6 +137,66 @@ curl -X POST .../admin/cron/taskCron/tick \
   -H "Authorization: Bearer $TOKEN" \
   -H "x-org-id: $ORG_ID"
 ```
+
+### R-4103 GET /admin/cron/ticks
+
+**用途**: 查 `cron_tick_logs` 流水。排障"昨天 14:00 任务提醒为什么没发" / "上周 archiveCron 是否漏跑" / "多副本谁在跑" 这类问题必备。
+
+**Query (全部 optional)**:
+- `name` — cron 名 (e.g. `taskCron`)
+- `source` — `auto` | `manual` | `skip` (auto=自动, manual=R-4102, skip=没抢到锁)
+- `ok` — `true` | `false` (成功/失败)
+- `pid` — 进程 PID (多副本场景, 看哪台跑了)
+- `from` — ISO 时间字符串, `startedAt >= from`
+- `to` — ISO 时间字符串, `startedAt <= to`
+- `page` — 1-based, 默认 1
+- `pageSize` — 默认 20, max 100
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "6a2fb342aa8152333e4de520",
+        "name": "taskCron",
+        "source": "auto",
+        "startedAt": "2026-07-13T06:29:56.674Z",
+        "finishedAt": "2026-07-13T06:29:56.680Z",
+        "durationMs": 6,
+        "ok": true,
+        "error": null,
+        "stats": { "expired": 0, "generated": 0, "notified": 3, "errors": 0 },
+        "triggeredBy": null,
+        "pid": 94509
+      }
+    ],
+    "total": 245,
+    "page": 1,
+    "pageSize": 20,
+    "filter": { "name": "taskCron", "ok": "false" }
+  }
+}
+```
+
+**排障用例**:
+```bash
+# 任务提醒没发, 查 taskCron 失败流水
+curl ".../admin/cron/ticks?name=taskCron&ok=false&from=2026-07-12T13:00:00Z&to=2026-07-12T15:00:00Z" -H "Authorization: Bearer $TOKEN"
+
+# 看谁手动 trigger 过
+curl ".../admin/cron/ticks?source=manual&pageSize=50" -H "Authorization: Bearer $TOKEN"
+
+# 多副本时, 看 pid 94509 跑了多少次
+curl ".../admin/cron/ticks?pid=94509&name=taskCron" -H "Authorization: Bearer $TOKEN"
+```
+
+**设计取舍**:
+- **TTL 30d**: 1min 周期 × 6 cron × 30d ≈ 26 万条, mongo 体积可接受; 1 个月前的查不到也能从 audit_logs 推断
+- **每条 tick 1 行**: 不拆子项 (避免 10x 写入); 失败时 stats 置 null 避免误导
+- **fire-and-forget 写库**: 写表失败不影响 cron 主流程 (service 内 try/catch 兜底)
+- **唯一索引**: 没有; 同名同 pid 同时 2 个 tick 算正常 (race condition 下短暂双写可接受)
 
 ## 日志格式 (配套)
 

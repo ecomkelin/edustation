@@ -92,7 +92,7 @@ const tickTimer = setInterval(async () => {
     if (stats.expired > 0 || stats.generated > 0 || stats.notified > 0 || stats.errors > 0) {
       cronLogger.tick('taskCron', stats)
     }
-    helper.finish(null, start)
+    helper.finish(null, start, stats)
   } catch (e) {
     helper.finish(e, start)
     cronLogger.fail('taskCron', e, { where: 'tickAll' })

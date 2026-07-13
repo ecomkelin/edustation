@@ -169,7 +169,7 @@ const sweepTimer = setInterval(() => {
     if (cleared > 0) {
       cronLogger.tick('loginRateLimitSweep', { cleared })
     }
-    helper.finish(null, start)
+    helper.finish(null, start, { cleared })
   } catch (e) {
     helper.finish(e, start)
     cronLogger.fail('loginRateLimitSweep', e)

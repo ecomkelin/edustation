@@ -242,7 +242,7 @@ const sweepTimer = setInterval(() => {
     if (cleared > 0) {
       cronLogger.tick('captchaSweep', { cleared })
     }
-    helper.finish(null, start)
+    helper.finish(null, start, { cleared })
   } catch (e) {
     helper.finish(e, start)
     cronLogger.fail('captchaSweep', e)

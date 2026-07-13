@@ -163,7 +163,7 @@ const tickTimer = setInterval(async () => {
     if (stats.task || stats.studentWork || stats.attendance || stats.errors) {
       cronLogger.tick('archiveCron', stats)
     }
-    helper.finish(null, start)
+    helper.finish(null, start, stats)
   } catch (e) {
     helper.finish(e, start)
     cronLogger.fail('archiveCron', e, { where: 'tickAll' })

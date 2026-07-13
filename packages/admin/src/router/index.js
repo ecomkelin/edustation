@@ -72,6 +72,8 @@ const routes = [
       { path: 'system/site-config', component: () => import('@/views/system/SiteConfigEdit.vue'), meta: { platform: true } },
       // AI 管理 (2026-06-18): 平台超管, 当前含会话管理 tab
       { path: 'system/ai', component: () => import('@/views/system/AiAdmin.vue'), meta: { platform: true } },
+      // 定时任务监控 (2026-07-13 MM=41): server 进程所有 setInterval 实时状态 + 详细说明 + 手动 trigger
+      { path: 'system/cron-monitor', component: () => import('@/views/system/CronMonitor.vue'), meta: { platform: true } },
       // 游离用户 (2026-06-19): 不属于任何机构的孤儿账号管理, 仅平台超管
       { path: 'system/unaffiliated-users', component: () => import('@/views/system/UnaffiliatedUsers.vue'), meta: { platform: true } },
       // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管

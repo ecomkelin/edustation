@@ -274,7 +274,7 @@ const sweepTimer = setInterval(async () => {
     const stats = await sweepAll()
     // 始终打日志: pet cron 每个 tick 都跑, 用 errors 字段区分健康状态
     cronLogger.tick('petCron', stats)
-    helper.finish(null, start)
+    helper.finish(null, start, stats)
   } catch (e) {
     helper.finish(e, start)
     cronLogger.fail('petCron', e, { where: 'sweepAll' })

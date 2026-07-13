@@ -6,13 +6,15 @@
  * 用途:
  *   - 集中记录所有 setInterval-based 定时任务的状态, 供 /admin/cron/status 端点查
  *   - 统一启动时间 (BOOT_TIME), 让所有 cron 的 uptime 日志可比
+ *   - 2026-07-13 续: 在 start/finish/skip 三个钩子里 fire-and-forget 调 cronTickLog
+ *     service 写 cron_tick_logs 表, 用于 R-4103 流水查询
  *
  * 设计:
  *   - 启动时 BOOT_TIME 一次捕获, 后续用 uptimeSec() 取进程启动后秒数
  *   - 每个 cron 调用 register(name, intervalMs) 声明; 返回 helper 提供 start()/finish()
  *     两个钩子, 在 cron tick 前后调一次即可自动累计 stats
  *   - 跨进程数据不持久化 (进程重启清零), 仅作运维可观测性
- *   - 不阻塞 cron 执行: helper 只更新内存 map, 不写 DB
+ *   - 不阻塞 cron 执行: helper 只更新内存 map; 写表也走 fire-and-forget
  *
  * 暴露:
  *   - register(name, intervalMs)        — 注册并返回 cron helper
@@ -21,7 +23,9 @@
  *
  * 配合:
  *   - cronLogger 用 uptimeSec() 拼统一格式: `pid=12345 uptime=+1234s [archiveCron] tick: ...`
+ *   - cronTickLog service 写 cron_tick_logs (流水表, TTL 30d)
  *   - /admin/cron/status 端点调 listAll() 给管理后台展示
+ *   - /admin/cron/ticks (R-4103) 端点查流水
  */
 
 const BOOT_TIME = Date.now()
@@ -31,12 +35,24 @@ const BOOT_TIME = Date.now()
 //          options: { leaderElect, lockTtlMs },
 //          timer: NodeJS.Timeout | null,
 //          tickFn: () => Promise<any> | null,
-//          manualTickInFlight: { startedAt: Date, by: string } | null  }
+//          manualTickInFlight: { startedAt: Date, by: string } | null,
+//          currentLogId: ObjectId | null  // 当前正在跑的 tick 在 cron_tick_logs 的 _id (给 finish 用) }
 const crons = new Map()
 
 // 手动 trigger 互斥: 同一进程内同时只允许 1 个手动 tick 在跑 (R-4102 防并发)
 // key = name, value = {startedAt, by}
 const manualTickLocks = new Map()
+
+// 写流水表 service (2026-07-13 续, MM=41 R-4103)
+// 用 require 懒加载避免 cronRegistry 加载时机早于 model 注册 (test 单测友好)
+let tickLog = null
+function getTickLog() {
+  if (!tickLog) {
+    // eslint-disable-next-line global-require
+    tickLog = require('./cronTickLog.service')
+  }
+  return tickLog
+}
 
 /**
  * 注册一个 cron
@@ -86,17 +102,27 @@ function register(name, intervalMs, options = {}) {
   return {
     /**
      * 在 cron tick 入口调一次, 返回 startMs (毫秒), 给 finish 用
+     *
+     * 副作用 (2026-07-13 续):
+     *   - fire-and-forget 调 tickLog.recordStart, 把 logId 存到 entry.currentLogId
+     *   - 失败 (写表异常) 不影响主流程
      */
-    start() {
+    start(source = 'auto') {
       entry.lastRunAt = new Date()
-      return Date.now()
+      const startMs = Date.now()
+      // 写流水表 (fire-and-forget, 失败已在 service 内 try/catch 兜底)
+      getTickLog().recordStart(name, source).then((logId) => {
+        if (logId) entry.currentLogId = logId
+      }).catch(() => {})
+      return startMs
     },
     /**
      * 在 cron tick 出口调一次
      * @param {Error|null} err
      * @param {number} startMs  start() 返回的 startMs
+     * @param {object} [stats]  业务 stats (e.g. {expired:3, generated:1}); err 非空时会被忽略
      */
-    finish(err, startMs) {
+    finish(err, startMs, stats = null) {
       const dur = typeof startMs === 'number' ? Date.now() - startMs : null
       entry.lastDurationMs = dur
       entry.totalTicks++
@@ -106,14 +132,27 @@ function register(name, intervalMs, options = {}) {
       } else {
         entry.lastError = null
       }
+      // 写流水表 finish (fire-and-forget)
+      const logId = entry.currentLogId
+      getTickLog().recordFinish(logId, {
+        name,
+        pid: process.pid,
+        ok: !err,
+        stats,
+        error: err,
+        startedAt: startMs
+      }).catch(() => {})
+      entry.currentLogId = null
     },
     /**
      * 标记本 tick 跳过 (leaderElect=true 但没抢到锁)
-     * 不增 totalTicks, 只增 totalSkipped
+     * 不增 totalTicks, 只增 totalSkipped; 写一条 source='skip' 流水
      */
     skip() {
       entry.totalSkipped++
       entry.lastRunAt = new Date() // 仍记, 方便排查
+      // 写一条 skip 流水 (fire-and-forget)
+      getTickLog().recordSkip(name).catch(() => {})
     },
     /**
      * 注册时把 setInterval 的 timer 存到这里, 给 shutdownAll 用
@@ -202,15 +241,41 @@ async function runManualTick(name, triggeredBy = 'unknown') {
   entry.manualTickInFlight = inFlight
   const start = Date.now()
   entry.totalManualTicks++
+  // 写 manual 流水 (2026-07-13 续)
+  getTickLog().recordStart(name, 'manual', triggeredBy).then((logId) => {
+    if (logId) entry.currentLogId = logId
+  }).catch(() => {})
   try {
     const result = await entry.tickFn()
     entry.lastDurationMs = Date.now() - start
     entry.lastRunAt = new Date()
+    // 写 manual 流水 finish
+    const logId = entry.currentLogId
+    getTickLog().recordFinish(logId, {
+      name,
+      pid: process.pid,
+      ok: true,
+      stats: result && typeof result === 'object' ? result : null,
+      error: null,
+      startedAt: start
+    }).catch(() => {})
+    entry.currentLogId = null
     return { ok: true, result, durationMs: entry.lastDurationMs }
   } catch (e) {
     entry.lastDurationMs = Date.now() - start
     entry.lastError = e && e.message ? String(e.message) : String(e)
     entry.totalErrors++
+    // 写 manual 流水 finish (失败)
+    const logId = entry.currentLogId
+    getTickLog().recordFinish(logId, {
+      name,
+      pid: process.pid,
+      ok: false,
+      stats: null,
+      error: e,
+      startedAt: start
+    }).catch(() => {})
+    entry.currentLogId = null
     return { ok: false, error: entry.lastError, durationMs: entry.lastDurationMs }
   } finally {
     manualTickLocks.delete(name)

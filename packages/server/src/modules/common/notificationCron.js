@@ -39,7 +39,7 @@ const tickTimer = setInterval(async () => {
     if (r.dispatched > 0) {
       cronLogger.tick('notificationCron', r)
     }
-    helper.finish(null, start)
+    helper.finish(null, start, r)
   } catch (e) {
     helper.finish(e, start)
     cronLogger.fail('notificationCron', e, { where: 'dispatchScheduled' })
