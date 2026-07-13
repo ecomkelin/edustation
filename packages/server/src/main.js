@@ -49,6 +49,21 @@ async function bootstrap() {
   // - 2026-07-12 课程提醒改成业务事件驱动 (LessonSchedule prepare() 时触发 lesson_prepare_reminder), 不再由 lessonReminderCron 主动入队
   require('@modules/common/notificationCron')
 
+  // 1.5.4 (2026-07-13) 显式启动两个之前"按需 require 即触发"的清理型 cron
+  // - loginRateLimit: 5min 清空桶 (防止内存涨)
+  // - captchaSweep:   1min 清过期 challenge + pass
+  // 之前是路由层第一次 require 时才启动, 时机不可控;
+  // 挪到 main.js 与其他 cron 并列, 启动时机 / 状态都在 /admin/cron/status 可见
+  require('@middlewares/loginRateLimit')
+  require('@modules/captcha/captcha.service')
+
+  // 1.5.5 (2026-07-13) 副本心跳 (跨进程可见的"哪些 server 还活着")
+  // - 启动时 upsert 一行 replica_status, 每 30s touch lastHeartbeatAt
+  // - mongo TTL 2min 自动清掉僵尸副本 (崩了/网络断)
+  // - /admin/cron/status 端点返全局视图: 进程自己 + 所有其他副本 + cron_locks 当前持有者
+  const replicaHeartbeat = require('@modules/common/replicaHeartbeat')
+  replicaHeartbeat.start()
+
   // 1.6 Pet catalog 种子 (2026-06-22 user SVG 决策)
   // 启动时硬清三表 + 灌入内联 SVG 种子（platform 级共享）
   // 遵循 [[dev-stage-no-backcompat]] 开发期硬迁移原则
@@ -67,6 +82,18 @@ async function bootstrap() {
     const shutdown = async (sig) => {
       // eslint-disable-next-line no-console
       console.log(`[server] received ${sig}, shutting down...`)
+      // 2026-07-13: 优雅停机 — 先清掉所有 setInterval (cron + loginRateLimit + captcha + 心跳),
+      //   避免正在 tick 的 cron 拿到半截 db 连接
+      const cronRegistry = require('@modules/common/cronRegistry')
+      const replicaHeartbeat = require('@modules/common/replicaHeartbeat')
+      cronRegistry.shutdownAll()
+      replicaHeartbeat.stop()
+      // 主动删自己的副本行, 不用等 mongo TTL 2 分钟
+      try {
+        await require('@models/ReplicaStatus.model').deleteOne({ _id: process.pid })
+      } catch (_) {
+        /* ignore */
+      }
       server.close()
       try {
         await require('@config/db').disconnect()

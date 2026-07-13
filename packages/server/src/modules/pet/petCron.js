@@ -31,7 +31,11 @@ const PetAccount = require('@models/PetAccount.model')
 const PetSpecies = require('@models/PetSpecies.model')
 const petEvent = require('./petEvent.service')
 const petConfig = require('@shared/petConfig')
-const siteConfigService = require('@modules/siteConfig/siteConfig.service')
+// 2026-07-13: siteConfigService 已不再用 (getHungerDecayMinutes 在 2026-06-23 删),
+//   PetSpecies.hungerDecayMinutes 是单一来源
+const cronRegistry = require('@modules/common/cronRegistry')
+const cronLogger = require('@modules/common/cronLogger')
+const cronLock = require('@modules/common/cronLock')
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000 // 1h
 const MINUTE_MS = 60 * 1000
@@ -58,8 +62,10 @@ async function sweepAll() {
   const now = new Date()
   const stats = { scanned: 0, decayed: 0, died: 0, errors: 0 }
 
-  // 取平台级衰减间隔（分钟/点）
-  const hungerDecayMinutes = await siteConfigService.getHungerDecayMinutes()
+  // 2026-07-13 修: siteConfigService.getHungerDecayMinutes 在 2026-06-23 已删
+  // (PetSpecies.hungerDecayMinutes 物种级统一控制, 平台级 fallback 用 species 默认值 60)
+  // 之前是隐式抛错, 新 cronLogger 上线后每 1h tick 都会打 fail, 现在改硬编码 60
+  const hungerDecayMinutes = 60
   const decayMs = hungerDecayMinutes * MINUTE_MS
 
   // 用 cursor 流式处理（万级 collection 不爆内存）
@@ -76,10 +82,11 @@ async function sweepAll() {
       const result = await sweepOne(pet, now, petDecayMinutes * MINUTE_MS)
       if (result === 'decayed') stats.decayed++
       else if (result === 'died') stats.died++
+      else if (result === 'die_error') stats.errors++  // dieAndRebirth 自身报错 (数据异常)
+      // 'cas_failed' / null: 静默跳过, 不计数 (并发改了 state)
     } catch (e) {
       stats.errors++
-      // eslint-disable-next-line no-console
-      console.warn(`[petCron] sweep failed: pet=${pet._id} err=${e.message}`)
+      cronLogger.fail('petCron', e, { pet: pet._id })
     }
   }
 
@@ -142,8 +149,17 @@ async function sweepOne(pet, now, decayMs) {
   if (newHunger === 0 && pet.lastFedAt) {
     const daysAtZero = (now.getTime() - new Date(pet.lastFedAt).getTime()) / DAY_MS
     if (daysAtZero >= pet.deathThresholdDays) {
-      await dieAndRebirth(pet, now)
-      return 'died'
+      const result = await dieAndRebirth(pet, now)
+      if (result === 'ok') {
+        return 'died'
+      }
+      if (result === 'no_tier_config') {
+        // 数据异常 (pet.tier 不在 PET_TIER_CONFIG), sweepOne 走 errors 路径
+        // 这里抛回 'die_error', sweepAll catch 后 +stats.errors
+        return 'die_error'
+      }
+      // 'cas_failed': 并发改了 state, 静默跳过, 不算 died 也不算 error
+      return null
     }
   }
   return 'decayed'
@@ -151,31 +167,40 @@ async function sweepOne(pet, now, decayMs) {
 
 /**
  * 死亡 → 同阶回蛋（同一 tick 内完成，状态可观察点 = egg）
+ *
+ * 2026-07-13 原子化:
+ *   旧实现: 写 death event → atomic state update → 写 rebirth event (3 步, 任意一步崩了都不一致)
+ *   新实现:
+ *     1. atomic state update (CAS: state='alive' AND currentHunger=0)
+ *     2. 写 death + rebirth 2 个 event, 用确定性 eventKey (eventKey 唯一索引幂等)
+ *        同分钟内重试触发 duplicate key → recordEvent 返回 null, 视为幂等成功
+ *     3. event 写失败仅 log, 不影响状态 (state 是 source of truth)
+ *
+ * 2026-07-13 v2:
+ *   返回结果给调用方 (sweepOne) 据此决定 stats 计数, 不再静默失败
+ *   返回 'ok' | 'cas_failed' | 'no_tier_config'
+ *   - 'ok': CAS 成功, 事件已尝试写入 (幂等 dedup 算成功)
+ *   - 'cas_failed': CAS 失败 (并发改了 state/hunger) → sweepOne 跳过, 不算 died
+ *   - 'no_tier_config': pet.tier 不在 PET_TIER_CONFIG 里 (数据异常) → sweepOne 跳过 + 累计 errors
+ *
+ * 收益:
+ *   - state 永远是 source of truth; event 缺失仅丢审计, 不影响业务
+ *   - 重试 (cron 崩了重启 / leader 切到另一副本) 在同分钟内不会写重复 event
+ *   - 不依赖 mongo replica set 事务 (单机 dev 也能跑)
+ *   - sweepOne stats 不再谎报 ('died' 只在真成功时 +1)
+ *
+ * @returns {Promise<'ok'|'cas_failed'|'no_tier_config'>}
  */
 async function dieAndRebirth(pet, now) {
   const cfg = petConfig.PET_TIER_CONFIG[pet.tier]
-  if (!cfg) return
+  if (!cfg) {
+    // 数据异常: pet.tier 异常 (被外部瞎改 / seed 漏字段) → bail, 让 sweepOne 记 error
+    return 'no_tier_config'
+  }
 
-  // 写 death 事件
-  await petEvent.recordEvent({
-    orgId: pet.org,
-    studentId: pet.student,
-    petAccountId: pet._id,
-    type: 'death',
-    payload: {
-      tier: pet.tier,
-      hunger: pet.currentHunger,
-      daysAtZero: pet.lastFedAt
-        ? (now.getTime() - new Date(pet.lastFedAt).getTime()) / DAY_MS
-        : null,
-      reason: 'hunger'
-    }
-  })
-
-  // 原子更新：state=egg, level=1, exp=0, hunger=maxHunger, lastFedAt=null
-  // species 保留（D2: 死亡是同阶回蛋，species 保留作为"它仍是同一只"的情感延续）
+  // 1. 原子状态更新 (CAS): 仅当 state 仍是 'alive' + hunger 仍是 0 才更新
   const updated = await PetAccount.findOneAndUpdate(
-    { _id: pet._id, state: 'alive' },
+    { _id: pet._id, state: 'alive', currentHunger: 0 },
     {
       $set: {
         state: 'egg',
@@ -194,35 +219,71 @@ async function dieAndRebirth(pet, now) {
   ).lean()
 
   if (!updated) {
-    // eslint-disable-next-line no-console
-    console.warn(`[petCron] dieAndRebirth failed: pet=${pet._id}`)
-    return
+    // CAS 失败: 状态已经被其他进程/操作改过, 跳过 (不算 died)
+    return 'cas_failed'
   }
 
-  // 写 rebirth 事件
+  // 2. 写 2 条事件 (幂等 — 用确定性 eventKey, 同分钟重试触发 duplicate key 被 recordEvent 吞掉)
+  const minuteBucket = Math.floor(now.getTime() / 60_000)
+  const deathEventKey = `pet_death_${pet._id}_${minuteBucket}`
+  const rebirthEventKey = `pet_rebirth_${pet._id}_${minuteBucket}`
+  const daysAtZero = pet.lastFedAt
+    ? (now.getTime() - new Date(pet.lastFedAt).getTime()) / DAY_MS
+    : null
+
   await petEvent.recordEvent({
+    eventKey: deathEventKey,
+    orgId: pet.org,
+    studentId: pet.student,
+    petAccountId: pet._id,
+    type: 'death',
+    payload: {
+      tier: pet.tier,
+      hunger: pet.currentHunger,
+      daysAtZero,
+      reason: 'hunger'
+    }
+  })
+
+  await petEvent.recordEvent({
+    eventKey: rebirthEventKey,
     orgId: pet.org,
     studentId: pet.student,
     petAccountId: pet._id,
     type: 'rebirth',
     payload: { tier: pet.tier, fromDeath: true }
   })
+
+  return 'ok'
 }
 
 /**
  * 注册定时任务（require() 时自动启动）。
+ * 2026-07-13: leaderElect=true — petCron 写 PetEvent (death/rebirth), 多副本会重复事件
  */
+const helper = cronRegistry.register('petCron', SWEEP_INTERVAL_MS, { leaderElect: true })
+
 const sweepTimer = setInterval(async () => {
+  // 多副本场景: 抢不到锁就跳过
+  if (!(await cronLock.acquire('petCron'))) {
+    helper.skip()
+    return
+  }
+  const start = helper.start()
   try {
     const stats = await sweepAll()
-    // eslint-disable-next-line no-console
-    console.log(`[petCron] sweep: scanned=${stats.scanned} decayed=${stats.decayed} died=${stats.died} errors=${stats.errors}`)
+    // 始终打日志: pet cron 每个 tick 都跑, 用 errors 字段区分健康状态
+    cronLogger.tick('petCron', stats)
+    helper.finish(null, start)
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[petCron] sweepAll failed: ${e.message}`)
+    helper.finish(e, start)
+    cronLogger.fail('petCron', e, { where: 'sweepAll' })
+  } finally {
+    await cronLock.release('petCron')
   }
 }, SWEEP_INTERVAL_MS)
 sweepTimer.unref()
+helper.attachTimer(sweepTimer)
 
 module.exports = {
   sweepAll,
@@ -231,3 +292,6 @@ module.exports = {
   // 调试/测试用
   _sweepTimer: sweepTimer
 }
+
+// 2026-07-13 R-4102: 手动 trigger 端点用
+cronRegistry.setTickFn('petCron', () => sweepAll())

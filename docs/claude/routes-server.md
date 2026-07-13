@@ -680,6 +680,35 @@ Auth 列简写:
 | R-4011 | PUT | /notifications/templates/:type/:channel | PERM | notification.write | 新增 / 编辑模板 | 机构维度覆盖平台默认; 唯一索引 (org, type, channel) |
 | R-4012 | GET | /notifications/admin/logs | PERM | notification.read | 发送流水 (30 天) | query: channel/status/page/pageSize; NotificationLog TTL 30d |
 
+### MM=41 system ops (URL: /admin/cron)
+
+> 该模块无业务逻辑, 只暴露 `setInterval` 定时任务的运行时状态。  
+> 用途: 排查 cron 是否在跑 / 是否报错 / 多副本场景识别哪台没启动 cron。  
+> 配套日志格式: `pid=<pid> uptime=+<sec>s [<name>] tick: <key>=<val> ...`
+
+| 编号 | Method | Path | Auth | 权限码 | 用途 | 备注 |
+|---|---|---|---|---|---|---|
+| R-4101 | GET | /admin/cron/status | PLATFORM_ADMIN | — | 所有 cron 实时状态 + 全局视图 | 进程级 uptime + 每 cron stats + replicas[] (跨副本心跳) + cronLocks[] (当前 leader 持有者); 不写 audit |
+| R-4102 | POST | /admin/cron/:name/tick | PLATFORM_ADMIN | — | 手动 trigger 单个 cron | 绕过 leader 锁, 用于调试; 计数 totalManualTicks; 404 当 name 不存在 |
+
+**§41.1 涵盖的 cron**（2026-07-13 共 6 个）:
+
+- `taskCron` (60s, **leader**) — 过期扫描 + 周期模板生成 + 到期任务通知
+- `archiveCron` (12h) — Task/StudentWork/LessonAttendance 自动归档 (幂等 updateMany, 不需要锁)
+- `notificationCron` (5min, **leader**) — 调度时间到期的通知派发 (dispatch 会发微信/短信)
+- `petCron` (1h, **leader**) — 宠物饥饿衰减 + 死亡重生 (写 PetEvent)
+- `loginRateLimitSweep` (5min) — 清空已解锁的限流桶 (进程内存)
+- `captchaSweep` (1min) — 清过期 captcha challenge + pass (进程内存)
+
+> **leader**: 该 cron 启用了分布式锁 (mongo `cron_locks` collection), 多副本部署时只让一个进程跑, 其他副本 `helper.skip()` 跳过 (累加 `totalSkipped`)。详见 `cronLock.js`。
+
+**§41.2 排查套路**:
+
+- `secondsSinceLastRun > intervalMs * 3` → cron 停了 (没崩但卡死)
+- `totalErrors / totalTicks > 0.05` → 高错误率, 看 `lastError`
+- `totalSkipped` 持续增长 → 当前副本没抢到锁, 看 mongosh `db.cron_locks.find()` 确认 owner 是谁
+- 多副本部署时, 端点返回各副本自己的状态; 要全局视图另起聚合服务
+
 **§40.1 默认偏好策略**（2026-07-11）:
 
 - 总开关: `globalEnabled=true` (默认)
@@ -712,6 +741,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-07-13 | 系统运维 MM=41 升级 v2 (cron 多副本 + 优雅停机 + 手动 trigger + 副本心跳 + 互斥): R-4102 进程内手动 tick 互斥 (并发返 409 + conflict 详情); cronRegistry 加 `manualTickLocks` Map + `manualTickInFlight` 字段; dieAndRebirth 返 'ok'\|'cas_failed'\|'no_tier_config' (sweepOne 据此 stats 计数, 不再静默谎报 'died'); PetEvent 加 eventKey 字段 + sparse unique 索引做幂等 (mongosh 触发 _id Cast 静默丢数据改用独立字段); sweepOne 返回 'die_error' → stats.errors (pet.tier 数据异常); | R-4101/R-4102 | modify |
 | 2026-07-11 | 通知模块 MM=40 v0.9 立项: 4 model + 3 service + inbox adapter + cron + 12 端点 R-4001~R-4012; MVP 仅站内 Inbox (C 端 /me/* + 管理后台 publish/templates/logs); 触发点 lesson_remind_1h (lessonSchedule) + task_due (taskCron); 默认偏好 lesson/task/order/access 开 + point/pet 关; seed 2 平台默认模板 | R-4001 ~ R-4012 | add |
 | 2026-07-11 | 机构协议 R-3132 PUT 允许 contentMarkdown 为空 (validator `optional({values:'falsy'})` + service 兼容空字符串); 新增 5 个空白占位 key seed (org-about/org-faq/points-rule/share-rule/org-contact), 接入 init-seeds.js 跑 legal.seed | R-3132 | modify |
 | 2026-06-22 | 路由编号方案落地 | 全部 | init |

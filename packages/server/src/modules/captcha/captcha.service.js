@@ -3,6 +3,8 @@
 const crypto = require('crypto')
 const config = require('@config/index')
 const ApiError = require('@utils/ApiError')
+const cronRegistry = require('@modules/common/cronRegistry')
+const cronLogger = require('@modules/common/cronLogger')
 
 /**
  * 滑块验证码 (2026-06)
@@ -219,16 +221,54 @@ function renderPieceSvg(correctX, correctY) {
 // ===== 定期清理过期项 =====
 
 const SWEEP_INTERVAL_MS = 60 * 1000 // 1 min
+const helper = cronRegistry.register('captchaSweep', SWEEP_INTERVAL_MS)
 const sweepTimer = setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of challenges) {
-    if (v.expiresAt < now) challenges.delete(k)
-  }
-  for (const [k, v] of passes) {
-    if (v.expiresAt < now) passes.delete(k)
+  const start = helper.start()
+  try {
+    const now = Date.now()
+    let cleared = 0
+    for (const [k, v] of challenges) {
+      if (v.expiresAt < now) {
+        challenges.delete(k)
+        cleared++
+      }
+    }
+    for (const [k, v] of passes) {
+      if (v.expiresAt < now) {
+        passes.delete(k)
+        cleared++
+      }
+    }
+    if (cleared > 0) {
+      cronLogger.tick('captchaSweep', { cleared })
+    }
+    helper.finish(null, start)
+  } catch (e) {
+    helper.finish(e, start)
+    cronLogger.fail('captchaSweep', e)
   }
 }, SWEEP_INTERVAL_MS)
 sweepTimer.unref()
+helper.attachTimer(sweepTimer)
+
+// 2026-07-13 R-4102: 手动 trigger 端点用
+cronRegistry.setTickFn('captchaSweep', async () => {
+  const now = Date.now()
+  let cleared = 0
+  for (const [k, v] of challenges) {
+    if (v.expiresAt < now) {
+      challenges.delete(k)
+      cleared++
+    }
+  }
+  for (const [k, v] of passes) {
+    if (v.expiresAt < now) {
+      passes.delete(k)
+      cleared++
+    }
+  }
+  return { cleared }
+})
 
 module.exports = {
   issue,

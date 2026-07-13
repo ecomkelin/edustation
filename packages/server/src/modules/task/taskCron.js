@@ -20,6 +20,9 @@
 
 const TaskTemplate = require('@models/TaskTemplate.model')
 const taskService = require('./task.service')
+const cronRegistry = require('@modules/common/cronRegistry')
+const cronLogger = require('@modules/common/cronLogger')
+const cronLock = require('@modules/common/cronLock')
 
 const TICK_INTERVAL_MS = 60 * 1000 // 1 分钟
 
@@ -36,8 +39,7 @@ async function tickAll() {
     stats.expired = r.modified
   } catch (e) {
     stats.errors++
-    // eslint-disable-next-line no-console
-    console.warn(`[taskCron] expireOverdue failed: ${e.message}`)
+    cronLogger.fail('taskCron', e, { where: 'expireOverdue' })
   }
   // 1.5 (2026-07-11 v0.9 通知): 今天到期的任务给 assignee+supervisor+creator 发 task_due 通知
   try {
@@ -46,8 +48,7 @@ async function tickAll() {
     stats.errors += r.errors
   } catch (e) {
     stats.errors++
-    // eslint-disable-next-line no-console
-    console.warn(`[taskCron] notifyDueToday failed: ${e.message}`)
+    cronLogger.fail('taskCron', e, { where: 'notifyDueToday' })
   }
   // 2. 周期任务生成
   const now = new Date()
@@ -58,8 +59,7 @@ async function tickAll() {
       nextRunAt: { $lte: now }
     }).limit(100).lean()
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[taskCron] query templates failed: ${e.message}`)
+    cronLogger.fail('taskCron', e, { where: 'queryTemplates' })
     return stats
   }
   for (const tpl of templates) {
@@ -70,29 +70,43 @@ async function tickAll() {
       stats.generated++
     } catch (e) {
       stats.errors++
-      // eslint-disable-next-line no-console
-      console.warn(`[taskCron] generateFromTemplate failed: tpl=${tpl._id} err=${e.message}`)
+      cronLogger.fail('taskCron', e, { where: `generate:${tpl._id}` })
     }
   }
   return stats
 }
 
 // 注册定时任务(require 即启动)
+// 2026-07-13: leaderElect=true — taskCron 发 task_due 通知 + 生成 Task, 多副本会重复副作用
+const helper = cronRegistry.register('taskCron', TICK_INTERVAL_MS, { leaderElect: true })
+
 const tickTimer = setInterval(async () => {
+  // 多副本场景: 抢不到锁就跳过 (其他副本在跑)
+  if (!(await cronLock.acquire('taskCron'))) {
+    helper.skip()
+    return
+  }
+  const start = helper.start()
   try {
     const stats = await tickAll()
     if (stats.expired > 0 || stats.generated > 0 || stats.notified > 0 || stats.errors > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[taskCron] tick: expired=${stats.expired} generated=${stats.generated} notified=${stats.notified} errors=${stats.errors}`)
+      cronLogger.tick('taskCron', stats)
     }
+    helper.finish(null, start)
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[taskCron] tickAll failed: ${e.message}`)
+    helper.finish(e, start)
+    cronLogger.fail('taskCron', e, { where: 'tickAll' })
+  } finally {
+    await cronLock.release('taskCron')
   }
 }, TICK_INTERVAL_MS)
 tickTimer.unref()
+helper.attachTimer(tickTimer)
 
 module.exports = {
   tickAll,
   _tickTimer: tickTimer
 }
+
+// 2026-07-13 R-4102: 手动 trigger 端点用
+cronRegistry.setTickFn('taskCron', () => tickAll())

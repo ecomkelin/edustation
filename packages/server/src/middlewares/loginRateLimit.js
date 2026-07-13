@@ -2,6 +2,8 @@
 
 const config = require('@config/index')
 const ApiError = require('@utils/ApiError')
+const cronRegistry = require('@modules/common/cronRegistry')
+const cronLogger = require('@modules/common/cronLogger')
 
 /**
  * 登录防刷中间件 (2026-06)
@@ -149,15 +151,48 @@ function checkAndRecord(kind, key, max, windowMs, lockMs) {
 
 // 定期清理: 把 windowStart 已过 + 锁定期也过 + 计数为 0 的空桶清掉, 防内存涨
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000 // 5 min
+const helper = cronRegistry.register('loginRateLimitSweep', SWEEP_INTERVAL_MS)
 const sweepTimer = setInterval(() => {
-  const now = Date.now()
-  for (const m of [buckets.mobile, buckets.ip]) {
-    for (const [key, b] of m) {
-      if (b.blockedUntil <= now && b.count === 0 && (b.failureCount || 0) === 0) m.delete(key)
+  const start = helper.start()
+  try {
+    const now = Date.now()
+    let cleared = 0
+    for (const m of [buckets.mobile, buckets.ip]) {
+      for (const [key, b] of m) {
+        if (b.blockedUntil <= now && b.count === 0 && (b.failureCount || 0) === 0) {
+          m.delete(key)
+          cleared++
+        }
+      }
     }
+    // 仅在真清掉东西时打日志, 避免空转刷屏
+    if (cleared > 0) {
+      cronLogger.tick('loginRateLimitSweep', { cleared })
+    }
+    helper.finish(null, start)
+  } catch (e) {
+    helper.finish(e, start)
+    cronLogger.fail('loginRateLimitSweep', e)
   }
 }, SWEEP_INTERVAL_MS)
 sweepTimer.unref() // 不阻塞进程退出
+helper.attachTimer(sweepTimer)
+
+// 2026-07-13 R-4102: 手动 trigger 端点用 — 暴露 sweep 逻辑
+const { setTickFn } = require('@modules/common/cronRegistry')
+setTickFn('loginRateLimitSweep', async () => {
+  const now = Date.now()
+  let cleared = 0
+  for (const m of [buckets.mobile, buckets.ip]) {
+    for (const [key, b] of m) {
+      if (b.blockedUntil <= now && b.count === 0 && (b.failureCount || 0) === 0) {
+        m.delete(key)
+        cleared++
+      }
+    }
+  }
+  return { cleared }
+})
 
 // 测试 / 运维用: 重置所有桶
 module.exports._reset = function () {

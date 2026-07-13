@@ -37,7 +37,11 @@ const PetEventSchema = new Schema(
     // 事件类型
     type: { type: String, enum: PET_EVENT_TYPES, required: true, index: true },
     // 结构化 payload（按 type 走固定 shape）
-    payload: { type: Schema.Types.Mixed, default: {} }
+    payload: { type: Schema.Types.Mixed, default: {} },
+    // 2026-07-13: 幂等键 (e.g. pet_death_<petId>_<minuteBucket>)
+    //   dieAndRebirth 等"可重试"流程用 eventKey 做 idempotent 写入:
+    //   unique 索引保证同 key 重复调用只成功一次
+    eventKey: { type: String, default: null }
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
@@ -51,5 +55,7 @@ PetEventSchema.index({ org: 1, student: 1, createdAt: -1 })
 PetEventSchema.index({ org: 1, type: 1, createdAt: -1 })
 // 按宠物 ID 查（admin 端 per-pet 详情）
 PetEventSchema.index({ petAccount: 1, createdAt: -1 })
+// 幂等键唯一索引 (sparse: 只索引有 eventKey 的文档, 不影响老事件)
+PetEventSchema.index({ eventKey: 1 }, { unique: true, sparse: true, background: true })
 
 module.exports = model('PetEvent', PetEventSchema)

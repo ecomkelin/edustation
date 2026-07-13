@@ -12,6 +12,7 @@
  *   - 不依赖任何外部调度器 (node-cron / agenda 等), 与现有 3 个 cron 风格统一
  *   - 单条失败不阻塞其余: 每条 dispatch 包在 try/catch
  *   - limit=100/tick 防止一次扫到太多 (例如 server 重启后积压)
+ *   - 2026-07-13: leaderElect=true — dispatch 会发微信/短信, 多副本必须只让一个跑
  *
  * 暴露:
  *   - tickAll() — 测试 / 手动调用
@@ -19,24 +20,40 @@
  */
 
 const notificationService = require('@modules/notification/notification.service')
+const cronRegistry = require('@modules/common/cronRegistry')
+const cronLogger = require('@modules/common/cronLogger')
+const cronLock = require('@modules/common/cronLock')
 
 const TICK_INTERVAL_MS = 5 * 60 * 1000 // 5 分钟
 
+const helper = cronRegistry.register('notificationCron', TICK_INTERVAL_MS, { leaderElect: true })
+
 const tickTimer = setInterval(async () => {
+  if (!(await cronLock.acquire('notificationCron'))) {
+    helper.skip()
+    return
+  }
+  const start = helper.start()
   try {
     const r = await notificationService.dispatchScheduled()
     if (r.dispatched > 0) {
-      // eslint-disable-next-line no-console
-      console.log(`[notificationCron] tick: dispatched=${r.dispatched}`)
+      cronLogger.tick('notificationCron', r)
     }
+    helper.finish(null, start)
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[notificationCron] tickAll failed: ${e.message}`)
+    helper.finish(e, start)
+    cronLogger.fail('notificationCron', e, { where: 'dispatchScheduled' })
+  } finally {
+    await cronLock.release('notificationCron')
   }
 }, TICK_INTERVAL_MS)
 tickTimer.unref()
+helper.attachTimer(tickTimer)
 
 module.exports = {
   tickAll: () => notificationService.dispatchScheduled(),
   _tickTimer: tickTimer
 }
+
+// 2026-07-13 R-4102: 手动 trigger 端点用
+cronRegistry.setTickFn('notificationCron', () => notificationService.dispatchScheduled())

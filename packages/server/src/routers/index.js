@@ -111,5 +111,9 @@ router.use('/tasks', taskRoutes)
 //   publish / templates / logs 走 admin 端 (要求 notification.* 权限码)
 const notificationRoutes = require('@modules/notification/notification.routes')
 router.use('/notifications', notificationRoutes)
+// 系统运维 (2026-07-13 立项): MM=41, cron 运行时状态 (平台超管可看)
+//   GET /admin/cron/status — 所有 setInterval-based 任务的实时 stats
+const cronRoutes = require('@modules/cron/cron.routes')
+router.use('/admin/cron', cronRoutes)
 
 module.exports = router

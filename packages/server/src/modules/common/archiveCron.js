@@ -28,6 +28,8 @@ const Task = require('@models/Task.model')
 const LessonAttendance = require('@models/LessonAttendance.model')
 const StudentWork = require('@models/StudentWork.model')
 const LessonSchedule = require('@models/LessonSchedule.model')
+const cronRegistry = require('./cronRegistry')
+const cronLogger = require('./cronLogger')
 
 // 阈值: 与 CLAUDE.md §8.2 阶段 4 一致
 const TASK_ARCHIVE_DAYS = 90
@@ -141,8 +143,7 @@ async function tickAll() {
       stats[name] = await fn()
     } catch (e) {
       stats.errors++
-      // eslint-disable-next-line no-console
-      console.warn(`[archiveCron] ${name} auto-archive failed: ${e.message}`)
+      cronLogger.fail('archiveCron', e, { where: name })
     }
   }
   return stats
@@ -151,20 +152,25 @@ async function tickAll() {
 // 每 12h tick 一次 (00:00 / 12:00 附近; 错过后下次自然补, 不会丢)
 const TICK_INTERVAL_MS = 12 * 60 * 60 * 1000
 
+// 注册到 cronRegistry (供 /admin/cron/status 端点查)
+const helper = cronRegistry.register('archiveCron', TICK_INTERVAL_MS)
+
 const tickTimer = setInterval(async () => {
+  const start = helper.start()
   try {
     const stats = await tickAll()
-    // eslint-disable-next-line no-console
+    // 仅当有数据变动或失败时才打日志 (避免空转日志)
     if (stats.task || stats.studentWork || stats.attendance || stats.errors) {
-      // eslint-disable-next-line no-console
-      console.log(`[archiveCron] tick: task=${stats.task} studentWork=${stats.studentWork} attendance=${stats.attendance} errors=${stats.errors}`)
+      cronLogger.tick('archiveCron', stats)
     }
+    helper.finish(null, start)
   } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn(`[archiveCron] tickAll failed: ${e.message}`)
+    helper.finish(e, start)
+    cronLogger.fail('archiveCron', e, { where: 'tickAll' })
   }
 }, TICK_INTERVAL_MS)
 tickTimer.unref()
+helper.attachTimer(tickTimer)
 
 module.exports = {
   tickAll,
@@ -179,3 +185,6 @@ module.exports = {
     ATTENDANCE_ARCHIVE_DAYS
   }
 }
+
+// 2026-07-13 R-4102: 手动 trigger 端点用
+cronRegistry.setTickFn('archiveCron', () => tickAll())

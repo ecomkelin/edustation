@@ -20,24 +20,32 @@ const PetEvent = require('@models/PetEvent.model')
  * 写一条 PetEvent（不抛错，失败仅 log）。
  *
  * @param {Object} opts
+ * @param {String} [opts.eventKey] 可选, 幂等键 (e.g. "pet_death_<petId>_<minute>")
+ *   同一 eventKey 重复调用只成功一次 (unique index 在 model 上)
+ *   重试时命中 11000 → 视为幂等成功, 返回 null
  * @param {String} opts.orgId
  * @param {String} opts.studentId
  * @param {String} opts.petAccountId
  * @param {String} opts.type - PET_EVENT_TYPES 之一
  * @param {Object} opts.payload - 结构化 payload（按 type 校验）
- * @returns {Promise<Object|null>} 写成功的文档；失败返回 null
+ * @returns {Promise<Object|null>} 写成功的文档；失败/duplicate 返回 null
  */
-async function recordEvent({ orgId, studentId, petAccountId, type, payload = {} }) {
+async function recordEvent({ eventKey, orgId, studentId, petAccountId, type, payload = {} }) {
   try {
     const doc = await PetEvent.create({
       org: orgId,
       student: studentId,
       petAccount: petAccountId,
       type,
-      payload: payload || {}
+      payload: payload || {},
+      eventKey: eventKey || undefined  // undefined 让 sparse index 跳过
     })
     return doc.toObject()
   } catch (e) {
+    // 11000 duplicate key (eventKey 重复) → 视为幂等成功
+    if (e.code === 11000 && eventKey) {
+      return null
+    }
     // 业务事件写失败不阻塞主流程；只 log 供事后排查
     // eslint-disable-next-line no-console
     console.warn(`[petEvent] write failed: type=${type} org=${orgId} student=${studentId} pet=${petAccountId} err=${e.message}`)
