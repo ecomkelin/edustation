@@ -1,14 +1,17 @@
 'use strict'
 
 /**
- * 平台科普视频 (Video) 路由
+ * 平台科普视频 (Video) 路由 — 2026-07-14 内容回退 platform-only
  *
  * 路径: /api/v1/videos
  *
- * 设计 (2026-07-03 立项):
- *   - 平台超管统一发布, 跨机构对所有 C 端家长可见 (org=null 平台级, 同 Article/Game 一致评级)
- *   - C 端 /videos /videos/featured /videos/:id 公开; /videos/:id/play 启动计数
- *   - admin 端 CRUD 走 requirePlatformAdmin (org=null 平台级内容)
+ * 设计:
+ *   - 平台级 (org=null): 跨机构对所有家长可见
+ *   - 公开端点无需任何中间件 (C 端探索 tab 直接调)
+ *   - admin CRUD 端点要求 isPlatformAdmin (requirePlatformAdmin)
+ *   - 物理删除 (R-3810) 走 requirePlatformPassword 中间件 + assertUnused 互锁
+ *   - /videos/:id/play 仍走 mws.authenticate (要拿 activeStudentId 记 engagement),
+ *     不再 requireOrg (内容 platform-only)
  */
 const router = require('express').Router()
 const c = require('./video.controller')
@@ -25,47 +28,43 @@ router.get('/', v.list, mws.validateRequest, asyncHandler(c.list))
 // R-3802 GET /videos/:id — C 端公开详情 (+1 viewCount)
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
 
-// R-3803 POST /videos/:id/play — C 端播放/启动计数 (+1, 需鉴权)
-// 视频下放到 per-org 后, 计数也要按 org 隔离, 强制 x-org-id
+// R-3803 POST /videos/:id/play — C 端播放/启动计数 (+1, 需鉴权拿 activeStudentId)
+// 2026-07-14 改造: 内容 platform-only, 不再 requireOrg (service 不校验 orgId)
 router.post(
   '/:id/play',
   mws.authenticate,
-  mws.requireOrg,
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.play)
 )
 
-// admin 端 CRUD (平台超管专属)
+// admin 端 CRUD (requirePlatformAdmin 中间件 — 仅平台超管可管科普内容)
 
 // R-3804 admin GET /videos/admin/list — 后台列表
 router.get(
   '/admin/list',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.read'),
+  mws.requirePlatformAdmin,
   v.adminList,
   mws.validateRequest,
   asyncHandler(c.adminList)
 )
 
-// R-3805 admin POST /videos/admin — 后台创建 (per-org, 2026-07-03 下放)
+// R-3805 admin POST /videos/admin — 后台创建
 router.post(
   '/admin',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.write'),
+  mws.requirePlatformAdmin,
   v.create,
   mws.validateRequest,
   asyncHandler(c.create)
 )
 
-// R-3806 admin PUT /videos/admin/:id — 后台更新 (per-org, 2026-07-03 下放)
+// R-3806 admin PUT /videos/admin/:id — 后台更新
 router.put(
   '/admin/:id',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.write'),
+  mws.requirePlatformAdmin,
   v.idParam,
   v.update,
   mws.validateRequest,
@@ -76,8 +75,7 @@ router.put(
 router.delete(
   '/admin/:id',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.write'),
+  mws.requirePlatformAdmin,
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)
@@ -85,11 +83,11 @@ router.delete(
 
 // ────── 运营分析 (2026-07-04) ──────
 // R-3808 GET /videos/admin/stats — 顶部 KPI 4 张卡
+// 2026-07-14 改造: requirePlatformAdmin (内容 platform-only, 不再 per-org 校验)
 router.get(
   '/admin/stats',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.read'),
+  mws.requirePlatformAdmin,
   mws.validateRequest,
   asyncHandler(c.adminStats)
 )
@@ -98,8 +96,7 @@ router.get(
 router.get(
   '/admin/row-stats',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.read'),
+  mws.requirePlatformAdmin,
   mws.validateRequest,
   asyncHandler(c.adminRowStats)
 )
@@ -110,19 +107,18 @@ router.get(
 router.post(
   '/admin/:id/purge',
   mws.authenticate,
-  mws.requireOrg,
   mws.requirePlatformPassword,
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.purge)
 )
 
-// R-3811 GET /videos/admin/:id/removable-check — 预检 (普通业务岗 video.read 即可)
+// R-3811 GET /videos/admin/:id/removable-check — 预检
+//   2026-07-14 改造: requirePlatformAdmin (video.read 权限码已从普通 Position 撤销)
 router.get(
   '/admin/:id/removable-check',
   mws.authenticate,
-  mws.requireOrg,
-  mws.requirePermission('video.read'),
+  mws.requirePlatformAdmin,
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.removableCheck)

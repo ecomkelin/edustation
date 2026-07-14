@@ -747,6 +747,7 @@ Auth 列简写:
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
 | 2026-07-13 | 通知模块 MM=40 v0.9 扩展: 加 5 个员工侧触发点 (task_assigned/rejected/approved/cancelled + lesson_preparing), 拆 /me/staff 子路由 (员工不挂 activeStudent), 加 admin NotificationBell 铃铛红点 + StaffInbox 全量页; publish 入参 `recipientRole` (parent/staff/platform, 默认 parent) 解决 staff role 标错位; seed 加 5 模板 (占位符 taskTitle/actorName/comment/score/dueAt/priority); task.service notifyDueToday 修 B1 (assignee 取 a.user); 修复 routes-server.md | R-4001~R-4016 | add/modify |
+| 2026-07-14 | 内容模块 Article + Video 回退 platform-only (用户决策): service 删除 orgId 必传校验 + filter 移除 `org: orgId`; admin CRUD (R-3602~3607/R-3804~3809) `requirePermission('xx.read/write')` → `requirePlatformAdmin`; C 端公开端点 (R-3600/3601/R-3800~3802) 移除 x-org-id 依赖; `/videos/:id/play` (R-3803) 移除 requireOrg; `contentEngagement.service.record` 入参去掉 orgId, 内部从 activeStudentId 反查 `Student.org` 作为事件分桶 key (engagement 流仍 per-org); `articleUsageChecks`/`videoUsageChecks` 不带 org; permissionLabels article/video group 标注 platform-only; DEFAULT_POSITIONS 「管理员/教务」撤销 4+2 码 article/video.read/write; initial.data.json 梓潼 3 Position + 绵阳 1 Position 同步清理 (9 行); admin DefaultLayout 「科普内容」子组从「机构管理」挪到「系统管理 → 平台配置」并 requirePlatform; admin router `/content/articles` + `/content/videos` 加 `meta.platform=true`; content.seed.js `upsertArticles/upsertVideos` 不接 orgId, run() 自带 drop articles+videos collections + `contentengagements.deleteMany({contentType:'game'})`; C 端 explore.vue / api / pages.json 0 改动 (x-org-id 自动透传但被 service 忽略); 同日 Game 模块整条下线 (R-3700~R-3710 全部 DEPRECATED, doc 仅留 R 号段追溯) | R-3602~3609/R-3804~3811 全部 Auth 改 platform-admin; R-3612 requirePermission → requirePlatformAdmin; 删 Game 章节 | modify |
 | 2026-07-13 | 系统运维 MM=41 升级 v2 (cron 多副本 + 优雅停机 + 手动 trigger + 副本心跳 + 互斥): R-4102 进程内手动 tick 互斥 (并发返 409 + conflict 详情); cronRegistry 加 `manualTickLocks` Map + `manualTickInFlight` 字段; dieAndRebirth 返 'ok'\|'cas_failed'\|'no_tier_config' (sweepOne 据此 stats 计数, 不再静默谎报 'died'); PetEvent 加 eventKey 字段 + sparse unique 索引做幂等 (mongosh 触发 _id Cast 静默丢数据改用独立字段); sweepOne 返回 'die_error' → stats.errors (pet.tier 数据异常); | R-4101/R-4102 | modify |
 | 2026-07-11 | 通知模块 MM=40 v0.9 立项: 4 model + 3 service + inbox adapter + cron + 12 端点 R-4001~R-4012; MVP 仅站内 Inbox (C 端 /me/* + 管理后台 publish/templates/logs); 触发点 lesson_remind_1h (lessonSchedule) + task_due (taskCron); 默认偏好 lesson/task/order/access 开 + point/pet 关; seed 2 平台默认模板 | R-4001 ~ R-4012 | add |
 | 2026-07-11 | 机构协议 R-3132 PUT 允许 contentMarkdown 为空 (validator `optional({values:'falsy'})` + service 兼容空字符串); 新增 5 个空白占位 key seed (org-about/org-faq/points-rule/share-rule/org-contact), 接入 init-seeds.js 跑 legal.seed | R-3132 | modify |
@@ -769,55 +770,65 @@ Auth 列简写:
 
 ### MM=36 article (URL: /articles)
 
-| ID | Method | Path | Auth | Permission | Function | 备注 |
-|---|---|---|---|---|---|---|
-| R-3600 | GET | /articles | — | — | C 端公开列表 (已发布 + 分页) | query: category/page/pageSize; 不返 contentHtml |
-| R-3601 | GET | /articles/:id | — | — | C 端公开详情 (+1 viewCount 原子更新) | 只返 isPublished=true; 404 if 草稿/已下架 |
-| R-3602 | GET | /articles/admin/list | ADMIN | article.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; 强制 org=req.orgId |
-| R-3603 | POST | /articles/admin | ADMIN | article.write | 后台创建 | body 必填 title/contentMarkdown; 服务端 marked 编译 contentHtml; org 注入 req.orgId |
-| R-3604 | PUT | /articles/admin/:id | ADMIN | article.write | 后台更新 | contentMarkdown 改 → 重编译 contentHtml; filter 含 org 防跨越权 |
-| R-3605 | DELETE | /articles/admin/:id | ADMIN | article.write | 软下架 (isPublished=false) | filter 含 org 防跨越权; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮, editDialog.isPublished switch 替代** |
-| R-3606 | GET | /articles/admin/stats | ADMIN | article.read | 顶部 KPI 卡 (累计浏览 / 独立观众) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
-| R-3607 | GET | /articles/admin/row-stats | ADMIN | article.read | per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}> | 2026-07-04 运营分析; admin list 注入 _stats |
-| R-3608 | POST | /articles/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId; 走后端 `service.remove` 物理 `deleteOne` |
-| R-3609 | GET | /articles/admin/:id/removable-check | PERM | article.read | **删除预检** | 普通业务岗可调, DestructiveConfirm precheck 用; 返 `{canRemove, blockers}` |
-| R-3612 | GET | /articles/admin/:id | PERM | article.read | **admin 单条详情** (含 contentMarkdown + contentHtml) | 2026-07-04 新增; adminList 为省带宽显式剔除大字段, edit dialog 需要原文回填; 不过滤 isPublished (草稿也能看) |
-
-### MM=37 game (URL: /games)
+> 平台级科普文章 (2026-07-03 立项, 2026-07-14 回退 platform-only). org=null 平台级, 跨机构对所有家长可见; 仅平台超管可发布/编辑 (requirePlatformAdmin).
+> 2026-07-14 内容回退: service 不再校验 orgId, 公开端点无需 x-org-id; engagement.record 内部从 activeStudentId 反查 kid.org 分桶.
+> C 端探索 tab 「趣味科普」section 显示最新 4 篇（实际拉 12 客户端截前 4, 单端点不分页 — seed 超过 12 时再开 R-3606 `/articles/recent?limit=4`）.
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-3700 | GET | /games | — | — | C 端公开列表 (已发布 + 分页) | query: tag/difficulty/page/pageSize |
-| R-3701 | GET | /games/:id | — | — | C 端公开详情 | |
-| R-3702 | POST | /games/:id/play | AUTH | — | C 端启动计数 (+1, 原子) + 2026-07-04 engagement event | body: {durationMs}; header: x-active-student-id; 强制 org=req.orgId; 失败不影响前端 |
-| R-3703 | GET | /games/admin/list | ADMIN | game.read | 后台列表 (含草稿) | query: isPublished/keyword/page/pageSize; 强制 org=req.orgId |
-| R-3704 | POST | /games/admin | ADMIN | game.write | 后台创建 | launchUrl 必填且 https://; org 注入 req.orgId |
-| R-3705 | PUT | /games/admin/:id | ADMIN | game.write | 后台更新 | filter 含 org 防跨越权 |
-| R-3706 | DELETE | /games/admin/:id | ADMIN | game.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮** |
-| R-3707 | GET | /games/admin/stats | ADMIN | game.read | 顶部 KPI 卡 (累计启动 / 独立玩家 / 累计游玩时长) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
-| R-3708 | GET | /games/admin/row-stats | ADMIN | game.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |
-| R-3709 | POST | /games/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId |
-| R-3710 | GET | /games/admin/:id/removable-check | PERM | game.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |
+| R-3600 | GET | /articles | — | — | C 端公开列表 (已发布 + 分页) | query: category/page/pageSize; 不返 contentHtml; platform-only 不过滤 org |
+| R-3601 | GET | /articles/:id | — | — | C 端公开详情 (+1 viewCount 原子更新) | 只返 isPublished=true; 404 if 草稿/已下架; 不过滤 org; bumpViewCount 顺手记 1 条 engagement (sessionMs=0, kid.org 反查) |
+| R-3602 | GET | /articles/admin/list | ADMIN | (platform-admin) | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; **2026-07-14 改造**: requirePlatformAdmin 中间件 (article.read perm 留作 catalog 占位, 从普通 Position 撤销持有) |
+| R-3603 | POST | /articles/admin | ADMIN | (platform-admin) | 后台创建 | body 必填 title/contentMarkdown; 服务端 marked 编译 contentHtml; **2026-07-14 改造**: requirePlatformAdmin; 写 org=null |
+| R-3604 | PUT | /articles/admin/:id | ADMIN | (platform-admin) | 后台更新 | contentMarkdown 改 → 重编译 contentHtml; **2026-07-14 改造**: requirePlatformAdmin; filter 不带 org |
+| R-3605 | DELETE | /articles/admin/:id | ADMIN | (platform-admin) | 软下架 (isPublished=false) | **2026-07-14 改造**: requirePlatformAdmin; filter 不带 org; 不物理删除; **2026-07-04 admin UI 已删除「下架」按钮, editDialog.isPublished switch 替代** |
+| R-3606 | GET | /articles/admin/stats | ADMIN | (platform-admin) | 顶部 KPI 卡 (累计浏览 / 独立观众) | **2026-07-14 改造**: requirePlatformAdmin; engagement 按 req.orgId 过滤 (per-org 事件流); query: range=today|week|month; 60s 进程内缓存 |
+| R-3607 | GET | /articles/admin/row-stats | ADMIN | (platform-admin) | per-row Map<contentId, {totalEvents, uniqueStudents, totalMs}> | **2026-07-14 改造**: requirePlatformAdmin; engagement 按 req.orgId 过滤; admin list 注入 _stats |
+| R-3608 | POST | /articles/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; **2026-07-14 改造**: usageChecks filter 不带 org (内容 platform-only) |
+| R-3609 | GET | /articles/admin/:id/removable-check | ADMIN | (platform-admin) | **删除预检** | **2026-07-14 改造**: requirePlatformAdmin (article.read perm 已从普通 Position 撤销); 返 `{canRemove, blockers}` |
+| R-3612 | GET | /articles/admin/:id | ADMIN | (platform-admin) | **admin 单条详情** (含 contentMarkdown + contentHtml) | 2026-07-04 新增; adminList 为省带宽显式剔除大字段, edit dialog 需要原文回填; 不过滤 isPublished (草稿也能看); **2026-07-14 改造**: requirePlatformAdmin |
+
+### MM=37 game (URL: /games) — **DEPRECATED 2026-07-14**
+
+> **2026-07-14 彻底下线**（用户决策）: 模块整条删除（model / service / controller / routes / seed / menu / permission 全部清空）。  
+> 端点代码已不存在，仅保留 R 号段供历史归档。 ContentEngagement 中 contentType='game' 历史事件由 contentSeed.run() 自动 `deleteMany` 清空。
+>
+> 历史表（仅供追溯，禁止新增端点借用此段 PP）:
+
+| ID | Method | Path | Auth | Permission | Function | 备注 |
+|---|---|---|---|---|---|---|
+| R-3700 | GET | /games | — | — | _(下线)_ | 历史 C 端列表 |
+| R-3701 | GET | /games/:id | — | — | _(下线)_ | 历史 C 端详情 |
+| R-3702 | POST | /games/:id/play | AUTH | — | _(下线)_ | 历史 C 端启动计数 |
+| R-3703 | GET | /games/admin/list | ADMIN | ~~game.read~~ | _(下线)_ | 历史后台列表 |
+| R-3704 | POST | /games/admin | ADMIN | ~~game.write~~ | _(下线)_ | 历史后台创建 |
+| R-3705 | PUT | /games/admin/:id | ADMIN | ~~game.write~~ | _(下线)_ | 历史后台更新 |
+| R-3706 | DELETE | /games/admin/:id | ADMIN | ~~game.write~~ | _(下线)_ | 历史软下架 |
+| R-3707 | GET | /games/admin/stats | ADMIN | ~~game.read~~ | _(下线)_ | 历史 KPI |
+| R-3708 | GET | /games/admin/row-stats | ADMIN | ~~game.read~~ | _(下线)_ | 历史 per-row |
+| R-3709 | POST | /games/admin/:id/purge | ADMIN_PWD | — | _(下线)_ | 历史超管物理删除 |
+| R-3710 | GET | /games/admin/:id/removable-check | PERM | ~~game.read~~ | _(下线)_ | 历史删除预检 |
 
 ### MM=38 video (URL: /videos)
 
-> 平台级科普视频 (2026-07-03 立项). 与 Article/Game 同级: org=null 平台级, 跨机构对所有家长可见; platform-admin 发布; C 端公开 + web-view 播放.
+> 平台级科普视频 (2026-07-03 立项, 2026-07-14 回退 platform-only). org=null 平台级, 跨机构对所有家长可见; 仅平台超管可发布/编辑 (requirePlatformAdmin); C 端公开 + web-view 播放.
+> 2026-07-14 内容回退: service 不再校验 orgId, 公开端点无需 x-org-id; engagement.record 内部从 activeStudentId 反查 kid.org 分桶.
 > C 端展示策略 (2026-07-03 用户决策): 探索 tab 「趣味科普视频」section 默认显示最新 1 个 (R-3800 featured); 「查看所有」CTA 跳 `/pages/content/video-list` 走 R-3801 加载更多式分页.
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-3800 | GET | /videos/featured | — | — | C 端默认展示 (最新 1 个英雄位) | sort by publishedAt desc limit 1 |
-| R-3801 | GET | /videos | — | — | C 端公开全量列表 (已发布 + 分页) | query: category/page/pageSize (max 50) |
-| R-3802 | GET | /videos/:id | — | — | C 端公开详情 | bumpViewCount 原子 +1 |
-| R-3803 | POST | /videos/:id/play | AUTH | — | C 端播放计数 (+1, 原子) | 失败不影响前端; bumpViewCount 复用 |
-| R-3804 | GET | /videos/admin/list | ADMIN | video.read | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; 强制 org=req.orgId |
-| R-3805 | POST | /videos/admin | ADMIN | video.write | 后台创建 | videoUrl 必填且 https://; org 注入 req.orgId |
-| R-3806 | PUT | /videos/admin/:id | ADMIN | video.write | 后台更新 | filter 含 org 防跨越权 |
-| R-3807 | DELETE | /videos/admin/:id | ADMIN | video.write | 软下架 (isPublished=false) | filter 含 org; 不物理删除; **2026-07-04 admin UI 删除「下架」按钮** |
-| R-3808 | GET | /videos/admin/stats | ADMIN | video.read | 顶部 KPI 卡 (累计播放 / 独立观众 / 累计观看时长) | 2026-07-04 运营分析; query: range=today|week|month; 60s 进程内缓存 |
-| R-3809 | GET | /videos/admin/row-stats | ADMIN | video.read | per-row Map<contentId, stats> | 2026-07-04 运营分析; admin list 注入 _stats |
-| R-3810 | POST | /videos/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; 互锁 ContentEngagement.contentId |
-| R-3811 | GET | /videos/admin/:id/removable-check | PERM | video.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |
+| R-3800 | GET | /videos/featured | — | — | C 端默认展示 (最新 1 个英雄位) | sort by publishedAt desc limit 1; platform-only (org=null); 不需要 x-org-id |
+| R-3801 | GET | /videos | — | — | C 端公开全量列表 (已发布 + 分页) | query: category/page/pageSize (max 50); platform-only; 不过滤 org |
+| R-3802 | GET | /videos/:id | — | — | C 端公开详情 | bumpViewCount 原子 +1; 不过滤 org |
+| R-3803 | POST | /videos/:id/play | AUTH | — | C 端播放计数 (+1, 原子) | **2026-07-14 改造**: 不再 requireOrg (内容 platform-only); engagement.record 内部反查 kid.org; 失败不影响前端 |
+| R-3804 | GET | /videos/admin/list | ADMIN | (platform-admin) | 后台列表 (含草稿) | query: isPublished/category/keyword/page/pageSize; **2026-07-14 改造**: requirePlatformAdmin 中间件 (video.read perm 留作 catalog 占位, 从普通 Position 撤销持有) |
+| R-3805 | POST | /videos/admin | ADMIN | (platform-admin) | 后台创建 | videoUrl 必填且 https://; **2026-07-14 改造**: requirePlatformAdmin; 写 org=null |
+| R-3806 | PUT | /videos/admin/:id | ADMIN | (platform-admin) | 后台更新 | **2026-07-14 改造**: requirePlatformAdmin; filter 不带 org |
+| R-3807 | DELETE | /videos/admin/:id | ADMIN | (platform-admin) | 软下架 (isPublished=false) | **2026-07-14 改造**: requirePlatformAdmin; filter 不带 org; **2026-07-04 admin UI 已删除「下架」按钮** |
+| R-3808 | GET | /videos/admin/stats | ADMIN | (platform-admin) | 顶部 KPI 卡 (累计播放 / 独立观众 / 累计观看时长) | **2026-07-14 改造**: requirePlatformAdmin; engagement 按 req.orgId 过滤 (per-org 事件流); query: range=today|week|month; 60s 进程内缓存 |
+| R-3809 | GET | /videos/admin/row-stats | ADMIN | (platform-admin) | per-row Map<contentId, stats> | **2026-07-14 改造**: requirePlatformAdmin; engagement 按 req.orgId 过滤; admin list 注入 _stats |
+| R-3810 | POST | /videos/admin/:id/purge | ADMIN_PWD | — | **超管物理删除** (2026-07-04) | CLAUDE.md §8.1 三重防护; **2026-07-14 改造**: usageChecks filter 不带 org (内容 platform-only) |
+| R-3811 | GET | /videos/admin/:id/removable-check | ADMIN | (platform-admin) | **删除预检** | **2026-07-14 改造**: requirePlatformAdmin (video.read perm 已从普通 Position 撤销); 返 `{canRemove, blockers}` |
 
 ### MM=39 task (URL: /tasks)
 

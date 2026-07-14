@@ -1,23 +1,22 @@
 'use strict'
 
 const s = require('./article.service')
-const engagement = require('@modules/contentEngagement/contentEngagement.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 /**
- * 2026-07-03 下放 per-org: 公开 GET 读 x-org-id header (无需登录, 走 Service 强制校验)
- * admin CRUD / play (鉴权) 走 mws.requireOrg 中间件, 挂 req.orgId
+ * 平台科普文章 (Article) Controller — 2026-07-14 内容回退 platform-only
+ *
+ * 关键点:
+ *   - 平台级 (org=null): 跨机构对所有 C 端家长可见
+ *   - 公开端点不需要任何 org 上下文 (x-org-id 透传 header 也被忽略)
+ *   - admin CRUD 端点要求 req.user.isPlatformAdmin (routes 中间件 requirePlatformAdmin 把门)
  */
-function orgIdFromReq(req) {
-  return req.orgId || req.headers['x-org-id'] || null
-}
 
 /**
  * C 端公开端点
  */
 exports.list = async (req, res) => {
   const r = await s.publicList({
-    orgId: orgIdFromReq(req),
     category: req.query.category,
     page: req.query.page,
     pageSize: req.query.pageSize
@@ -26,27 +25,22 @@ exports.list = async (req, res) => {
 }
 
 exports.detail = async (req, res) => {
-  const orgId = orgIdFromReq(req)
   const r = await s.publicDetail({
-    id: req.params.id,
-    orgId
+    id: req.params.id
   })
   // +1 viewCount + 记一条 engagement (失败不影响详情返回)
-  // 文章按 activeStudentId 拍板记 event, 不带 activeStudent 时只 +1 viewCount
   s.bumpViewCount({
     id: req.params.id,
-    orgId,
     activeStudentId: req.headers['x-active-student-id'] || null
   }).catch(() => {})
   res.json(ApiResponse.ok(r))
 }
 
 /**
- * admin 端 CRUD
+ * admin 端 CRUD (requirePlatformAdmin 中间件把关)
  */
 exports.adminList = async (req, res) => {
   const r = await s.adminList({
-    orgId: req.orgId,
     isPublished: req.query.isPublished,
     category: req.query.category,
     keyword: req.query.keyword,
@@ -56,16 +50,13 @@ exports.adminList = async (req, res) => {
   res.json(ApiResponse.ok(r))
 }
 
-// 2026-07-04: admin 详情 (含 contentMarkdown + contentHtml, 草稿也能看)
-//   adminList 显式 projection 剔除大字段省带宽, edit dialog 需要原文回填
 exports.adminDetail = async (req, res) => {
-  const r = await s.adminDetail(req.params.id, req.orgId)
+  const r = await s.adminDetail(req.params.id)
   res.json(ApiResponse.ok(r))
 }
 
 exports.create = async (req, res) => {
   const r = await s.create({
-    orgId: req.orgId,
     payload: req.body,
     userId: req.user.id
   })
@@ -75,7 +66,6 @@ exports.create = async (req, res) => {
 exports.update = async (req, res) => {
   const r = await s.update({
     id: req.params.id,
-    orgId: req.orgId,
     payload: req.body,
     userId: req.user.id
   })
@@ -85,25 +75,28 @@ exports.update = async (req, res) => {
 exports.remove = async (req, res) => {
   const r = await s.softRemove({
     id: req.params.id,
-    orgId: req.orgId,
     userId: req.user.id
   })
   res.json(ApiResponse.ok(r))
 }
 
-// 2026-07-04: 超管专属物理删除 (走 requirePlatformPassword 中间件 + assertUnused 互锁)
+// 平台超管专属物理删除 (走 requirePlatformPassword 中间件 + assertUnused 互锁)
 exports.purge = async (req, res) => {
-  const r = await s.remove(req.params.id, req.orgId)
+  const r = await s.remove(req.params.id)
   res.json(ApiResponse.ok(r))
 }
 
-// 2026-07-04: 删除预检 (普通业务岗 article.read 即可调, 用于 DestructiveConfirm precheck prop)
+// 删除预检 (DestructiveConfirm precheck 用)
 exports.removableCheck = async (req, res) => {
-  const r = await s.removableCheck(req.params.id, req.orgId)
+  const r = await s.removableCheck(req.params.id)
   res.json(ApiResponse.ok(r))
 }
 
 // ─── 2026-07-04 运营分析 (R-3606/3607) ─────────────────────
+// 2026-07-14 改造: adminStats / adminRowStats 仍按 req.orgId (admin 当前机构) 过滤 —
+//  内容是平台级, 但 engagement 事件流 per-org; admin 看的就是当前机构孩子的行为统计
+
+const engagement = require('@modules/contentEngagement/contentEngagement.service')
 
 exports.adminStats = async (req, res) => {
   const r = await engagement.adminKpi({

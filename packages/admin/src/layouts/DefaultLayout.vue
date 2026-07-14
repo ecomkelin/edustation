@@ -206,7 +206,10 @@ const menuGroups = [
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读
           { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
-          // 2026-07-03 内容模块下放 per-org: 科普文章/小游戏/科普视频 3 项已移走 (见机构管理 → 科普内容 子组)
+          // 2026-07-14 内容回退 platform-only: 科普文章 + 科普视频仅平台超管可管; 归到平台配置下
+          //   (2026-07-03 期间曾下放 per-org 在「机构管理 → 科普内容」, 7-14 回退后归位)
+          { path: '/content/articles', label: '科普文章', icon: Reading, requirePlatform: true },
+          { path: '/content/videos', label: '科普视频', icon: Picture, requirePlatform: true },
           // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
           { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看
@@ -267,18 +270,9 @@ const menuGroups = [
           { path: '/schools', label: '学校档案', icon: School, perm: 'school.read' }
         ]
       },
-      // 2026-07-03 内容模块下放 per-org: 新增科普内容子组 (取代原系统管理→平台配置里的 3 项)
-      //   管理员持 article/video 全 4 个码, 教务持 2 个 read
-      //   老师/财务/家长 不挂 (后续单独开权限组)
-      // 2026-07-04: 游戏模块整条下线 (用户决策), menu 去掉「小游戏」项
-      {
-        label: '科普内容',
-        icon: Reading,
-        children: [
-          { path: '/content/articles', label: '科普文章', icon: Reading, perm: 'article.read' },
-          { path: '/content/videos',   label: '科普视频', icon: Picture,   perm: 'video.read' }
-        ]
-      }
+      // 2026-07-14 内容回退 platform-only: 科普内容整体从「机构管理」挪到「系统管理 → 平台配置」
+      //   仅平台超管可访问 (路由 meta.platform + menu requirePlatform); 普通机构员工不再看到
+      //   7-03 期间下放 per-org 时曾在这里加子组, 7-14 撤销
     ]
   },
   {

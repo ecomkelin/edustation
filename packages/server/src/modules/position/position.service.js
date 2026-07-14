@@ -42,9 +42,9 @@ const DEFAULT_POSITIONS = [
       'accessControl.read', 'accessControl.write', 'accessControl.pickup',
       // 财务模块 (2026-06-25 立项): 管理员可看可写
       'finance.read', 'finance.write',
-      // 内容模块下放 per-org (2026-07-03): 管理员发布本机构科普; 2026-07-04 游戏模块下线, 去掉 game.*
-      'article.read', 'article.write',
-      'video.read', 'video.write',
+      // 2026-07-14 内容回退 platform-only: 科普文章/视频仅平台超管管理 (requirePlatformAdmin 中间件)
+      //   普通 Position 不再持有 article.* / video.*; 权限码定义保留作为 catalog 占位
+      //   (后续如需让某些职位发布文章, 走"自定义权限组 + requirePlatformAdmin 替代"路线)
       // 通知模块 (2026-07-11 v0.9): 管理员可看/可管/可代发
       'notification.read', 'notification.write', 'notification.send'
     ]
@@ -72,8 +72,7 @@ const DEFAULT_POSITIONS = [
       'accessControl.read', 'accessControl.write', 'accessControl.pickup',
       // 财务模块 (2026-06-25): 教务可看账, 不可记账
       'finance.read',
-      // 内容模块下放 per-org (2026-07-03): 教务只看本机构科普, 不可编辑; 2026-07-04 游戏模块下线, 去掉 game.read
-      'article.read', 'video.read',
+      // 2026-07-14 内容回退 platform-only: 教务无科普内容相关权限 (跟管理员同步撤销)
       // 任务模块 (2026-07-11): 拆权限 task.read + task.read.own, 教务看自己相关任务
       'task.read.own',
       // 通知模块 (2026-07-11): 教务可看流水 + 代发

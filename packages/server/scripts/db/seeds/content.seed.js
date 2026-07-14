@@ -2,10 +2,13 @@
 
 /**
  * 平台科普文章 + 科普视频 种子 (2026-07-03 立项 + 2026-07-03 扩视频)
+ * 2026-07-14 内容回退 platform-only:
+ *   - 不再 Org.find 循环每个 org 各塞一份
+ *   - Article / Video 都是平台级 (org=null), 全机构共享一套数据
+ *   - 幂等: Article 按 title upsert (filter 不含 org); Video 按 title upsert (filter 不含 org)
+ *   - 已有的 per-org 数据保留历史, 由本次 "drop articles/videos + 重灌" 处理
  *
  * 内容 (org=null) 平台级, 跨机构对所有 C 端家长可见.
- * 幂等: Article 按 title upsert; Video 按 title upsert.
- * 单跑也可, 不依赖 initial.seed 的 dropDatabase 流程.
  *
  * 数据:
  *   - 文章: 8 篇 (编程 / 艺术 / 安全 + 数学之美 5 篇: e/π/0/i/φ)
@@ -14,12 +17,11 @@
  *
  * 注意事项:
  *   - Video.videoUrl 真实环境应是平台自有 mp4;
- *     这里先放示例 URL (Google 公开演示视频), 替换为生产 URL 时改 rawUrl 字段即可
+ *     这里先放示例 URL (公开演示视频), 替换为生产 URL 时改 videoUrl 字段即可
  */
 
 const Article = require('@models/Article.model')
 const Video = require('@models/Video.model')
-const Org = require('@models/Org.model')
 const { compileMarkdownSafe } = require('@utils/markdown')
 
 const ARTICLES = [
@@ -432,14 +434,13 @@ const VIDEOS = [
   }
 ]
 
-async function upsertArticles(orgId) {
+async function upsertArticles() {
+  // 2026-07-14 平台级: filter / $set 都不带 org; (title) 唯一 (开发阶段允许重名, 但 seed 按 title upsert 走单条路径)
   const ops = ARTICLES.map((a) => ({
     updateOne: {
-      // 2026-07-03 下放 per-org: filter & $set 的 org 改用传入 orgId; (org+title) 天然唯一
-      filter: { org: orgId, title: a.title },
+      filter: { title: a.title },
       update: {
         $set: {
-          org: orgId,
           title: a.title,
           summary: a.summary,
           contentMarkdown: a.markdown,
@@ -459,13 +460,13 @@ async function upsertArticles(orgId) {
   return { upserted: r.upsertedCount, modified: r.modifiedCount, matched: r.matchedCount }
 }
 
-async function upsertVideos(orgId) {
+async function upsertVideos() {
+  // 2026-07-14 平台级: filter / $set 都不带 org; 按 title 单条路径
   const ops = VIDEOS.map((v) => ({
     updateOne: {
-      filter: { org: orgId, title: v.title },
+      filter: { title: v.title },
       update: {
         $set: {
-          org: orgId,
           title: v.title,
           intro: v.intro,
           videoUrl: v.videoUrl,
@@ -487,24 +488,41 @@ async function upsertVideos(orgId) {
 }
 
 /**
- * 2026-07-03 per-org 化: 给每个启用 Org 各塞一份 8 articles + 6 videos
- * 同一份内容分发到所有 org, 机构 admin 拿到后可在后台编辑/上下架
- * Org.find({ isActive: true }) 跟 [school.seed.js](school.seed.js) 范式一致
- * 2026-07-04: 游戏模块整条下线, 删 GAMES
+ * 2026-07-14 平台级: 单次 upsert, 跨机构对所有 C 端家长可见.
+ * 不再按 org 循环.
+ *
+ * 自带 data cleanup (开发阶段允许, CLAUDE.md §0):
+ *   - 2026-07-03 per-org 化期间 collection 内有 "per-org 各一份" 历史数据 (梓潼 8 篇 + 绵阳 8 篇 / 2 段视频),
+ *     本次回退 platform-only 后这些数据全部失效 (org 不再有意义, title 也按全平台唯一)
+ *   - drop articles + videos collections + 同步 drop content_engagements 历史 video/article 事件
+ *     (engagement 历史事件归孩子所属机构, 保留语义有价值, 但 contentType='game' 已下线, 一起清掉)
+ *   - Org.find 已删, 此步骤不依赖任何 org 数据.
  */
 async function run() {
-  const orgs = await Org.find({ isActive: true }).select('_id name').lean()
   // eslint-disable-next-line no-console
-  console.log(`[seed][content] per-org loop start, target=${orgs.length} orgs`)
-  const summary = []
-  for (const o of orgs) {
-    const aR = await upsertArticles(o._id)
-    const vR = await upsertVideos(o._id)
-    // eslint-disable-next-line no-console
-    console.log(`[seed][content] org=${o.name}: articles=${aR.upserted + aR.modified} videos=${vR.upserted + vR.modified}`)
-    summary.push({ org: o.name, articles: aR, videos: vR })
-  }
-  return summary
+  console.log('[seed][content] platform-level reset start (drop collections + upsert)')
+  // eslint-disable-next-line no-console
+  console.log('[seed][content] drop collections: articles, videos')
+  await Promise.all([
+    Article.collection.drop().catch((e) => {
+      // 第一次跑 collection 不存在 ignore
+      if (e && e.codeName !== 'NamespaceNotFound') throw e
+    }),
+    Video.collection.drop().catch((e) => {
+      if (e && e.codeName !== 'NamespaceNotFound') throw e
+    })
+  ])
+  // contentengagement 是事件流, 旧 per-org 数据仍有意义 (org=孩子所属机构), 保留
+  // 但 Game 已下线, contentType='game' 的历史事件清掉
+  const ContentEngagement = require('@models/ContentEngagement.model')
+  const eng = await ContentEngagement.deleteMany({ contentType: 'game' })
+  // eslint-disable-next-line no-console
+  console.log(`[seed][content] purged content_engagements(contentType=game): ${eng.deletedCount || 0}`)
+  const aR = await upsertArticles()
+  const vR = await upsertVideos()
+  // eslint-disable-next-line no-console
+  console.log(`[seed][content] articles=${aR.upserted + aR.modified} (upserted=${aR.upserted} modified=${aR.modified}) videos=${vR.upserted + vR.modified} (upserted=${vR.upserted} modified=${vR.modified})`)
+  return { articles: aR, videos: vR }
 }
 
 module.exports = { run, ARTICLES, VIDEOS }

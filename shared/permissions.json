@@ -358,25 +358,27 @@
     {
       "key": "article",
       "label": "科普文章",
+      "description": "平台级科普文章 (2026-07-14 内容回退 platform-only): 跨机构对所有 C 端家长可见; 仅平台超管可发布/编辑 (requirePlatformAdmin 中间件), 普通职位不再持有此组权限码.",
       "permissions": [
         "article.read",
         "article.write"
       ],
       "permissionLabels": {
-        "article.read": { "label": "查看科普文章", "description": "浏览本机构发布的科普文章 (含草稿)" },
-        "article.write": { "label": "编辑科普文章", "description": "新建/编辑/上下架本机构的科普文章 (C 端仅本机构家长可见)" }
+        "article.read": { "label": "查看科普文章", "description": "浏览全平台科普文章 (含草稿). 仅平台超管有效 (普通职位不再持有此码)" },
+        "article.write": { "label": "编辑科普文章", "description": "新建/编辑/上下架全平台科普文章. 仅平台超管有效" }
       }
     },
     {
       "key": "video",
       "label": "科普视频",
+      "description": "平台级科普视频 (2026-07-14 内容回退 platform-only): 跨机构对所有 C 端家长可见; 仅平台超管可发布/编辑 (requirePlatformAdmin 中间件), 普通职位不再持有此组权限码.",
       "permissions": [
         "video.read",
         "video.write"
       ],
       "permissionLabels": {
-        "video.read": { "label": "查看科普视频", "description": "浏览本机构发布的科普视频 (含草稿)" },
-        "video.write": { "label": "编辑科普视频", "description": "新建/编辑/上下架本机构的科普视频 (C 端仅本机构家长可见)" }
+        "video.read": { "label": "查看科普视频", "description": "浏览全平台科普视频 (含草稿). 仅平台超管有效 (普通职位不再持有此码)" },
+        "video.write": { "label": "编辑科普视频", "description": "新建/编辑/上下架全平台科普视频. 仅平台超管有效" }
       }
     },
     {
