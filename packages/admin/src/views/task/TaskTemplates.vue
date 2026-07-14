@@ -7,7 +7,7 @@
     <el-table :data="rows" v-loading="loading" stripe @row-click="onRowClick">
       <el-table-column label="标题" min-width="200">
         <template #default="{ row }">
-          <a class="link" @click="$router.push(`/tasks/templates/${row._id}`)">{{ row?.title || '—' }}</a>
+          <a class="link" @click.stop="$router.push(`/tasks/templates/${row._id}`)">{{ row?.title || '—' }}</a>
         </template>
       </el-table-column>
       <el-table-column label="类型" width="90">
@@ -32,11 +32,11 @@
       </el-table-column>
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row?._id" size="small" link @click="$router.push(`/tasks/templates/${row._id}`)">编辑</el-button>
-          <el-button v-if="row?.isActive && canWrite" size="small" link @click="onPause(row)">暂停</el-button>
-          <el-button v-else-if="canWrite && row?._id" size="small" link type="success" @click="onResume(row)">恢复</el-button>
-          <el-button v-if="canWrite && row?._id" size="small" link type="warning" @click="onRunNow(row)">立即跑</el-button>
-          <el-button v-if="canDelete && row?._id" size="small" link type="danger" @click="onDelete(row)">删除</el-button>
+          <el-button v-if="row?._id" size="small" link @click.stop="$router.push(`/tasks/templates/${row._id}`)">编辑</el-button>
+          <el-button v-if="row?.isActive && canWrite" size="small" link @click.stop="onPause(row)">暂停</el-button>
+          <el-button v-else-if="canWrite && row?._id" size="small" link type="success" @click.stop="onResume(row)">恢复</el-button>
+          <el-button v-if="canWrite && row?._id" size="small" link type="warning" @click.stop="onRunNow(row)">立即跑</el-button>
+          <el-button v-if="canDelete && row?._id" size="small" link type="danger" @click.stop="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

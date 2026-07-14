@@ -1314,6 +1314,18 @@ async function generateFromTemplate(tpl, actor, isManualRun = false) {
       status: 'success',
       scheduledFor: tpl.nextRunAt
     })
+    // 2026-07-14: 模板"立即跑"生成的任务 = 同样需要给 assignees 发 task_assigned 通知
+    //   跟 service.create 保持一致 (setImmediate fire-and-forget, 单条失败不阻塞)
+    if (assignees.length > 0) {
+      setImmediate(() => {
+        publishTaskAssigned({
+          task,
+          recipientIds: assignees,
+          actor,
+          orgId: tpl.org
+        }).catch((e) => console.warn('[generateFromTemplate] publishTaskAssigned error:', e.message))
+      })
+    }
     return { task: task.toObject(), template: tpl.toObject() }
   } catch (e) {
     await TaskGenerationLog.create({

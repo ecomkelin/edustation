@@ -1,6 +1,28 @@
 <template>
   <div class="page ai-assistant-page">
     <PermissionGuard perm="agent.read">
+    <!-- (2026-07-14) 顶部 header: 连通状态 + 重连按钮 (从右栏「AI 助手说明」卡片挪过来, 整张说明卡已删除) -->
+    <div class="page-header">
+      <div class="status-left">
+        <el-tag :type="pingState.ok === null ? 'info' : pingState.ok ? 'success' : 'danger'" size="default">
+          <el-icon style="vertical-align: middle">
+            <component :is="pingState.ok === null ? QuestionFilled : pingState.ok ? CircleCheck : CircleClose" />
+          </el-icon>
+          <span style="margin-left: 4px">{{ pingState.label }}</span>
+        </el-tag>
+        <span v-if="pingState.detail" class="status-detail">{{ pingState.detail }}</span>
+        <span v-if="lastMeta.usage" class="status-detail">
+          tokens: {{ lastMeta.usage.total_tokens || ((lastMeta.usage.prompt_tokens || 0) + (lastMeta.usage.completion_tokens || 0)) }}
+        </span>
+      </div>
+      <div class="status-right">
+        <el-button size="small" :loading="pingLoading" @click="runPing">
+          <el-icon><Connection /></el-icon>
+          <span>连通</span>
+        </el-button>
+      </div>
+    </div>
+
     <div class="ai-grid">
       <!-- 左侧: 聊天区 + 输入框固定底部 -->
       <div class="left-col">
@@ -11,7 +33,6 @@
             <div v-if="messages.length === 0" class="empty-tip">
               <el-icon size="40" color="#c0c4cc"><ChatLineRound /></el-icon>
               <p>{{ activeConversationId ? '本会话暂无消息' : '暂无对话，发条消息开始吧 👋' }}</p>
-              <p class="muted">或拖入 Excel / 图片 / PDF 让 AI 帮你解析并办理</p>
             </div>
 
             <AiMessageBubble
@@ -33,9 +54,10 @@
             />
           </div>
 
-          <!-- 输入区 (固定在聊天卡底部) -->
+          <!-- 输入区 (固定在聊天卡底部)
+               (2026-07-14) 移除附件上传条: 用户不再需要拖入 Excel/图片/PDF;
+                 纯文本对话, 简洁直接 -->
           <div class="chat-input">
-            <AiFileUploader v-model="pendingFiles" />
             <el-input
               v-model="input"
               type="textarea"
@@ -46,10 +68,7 @@
               @keydown="onKeydown"
             />
             <div class="chat-input-bar">
-              <span class="muted">
-                <span v-if="pendingFiles.length > 0">已选 {{ pendingFiles.length }} 个附件 · </span>
-                Enter 发送 · Shift+Enter 换行
-              </span>
+              <span class="muted">Enter 发送 · Shift+Enter 换行</span>
               <!-- (2026-06-18) 发送按钮: 流式期间变 [停止] 按钮, 红色 danger, 点击中断 AbortController -->
               <el-button
                 v-if="isStreaming"
@@ -73,43 +92,13 @@
         </div>
       </div>
 
-      <!-- 右侧: AI 助手说明 → 会话记录 → 试试这样问 (2026-07-14 移除「调用参数」整块, 改由平台超管在 /system/ai → 参数设置 统一管理) -->
+      <!-- 右侧: 会话记录 → 试试这样问
+           (2026-07-14) 移除「AI 助手说明」整张卡片 (连同说明文案 + 连通状态 + 重连按钮)
+           - 说明文案: 客服提醒文案, 在空状态已隐含, 删
+           - 连通状态 + 重连: 挪到页面顶部 header
+           - 「调用参数」面板: 2026-07-14 早就移除, 改由平台超管在 /system/ai → 参数设置 统一管理 -->
       <div class="right-col">
-        <!-- 1) 助手说明 + 连通状态 (提到最上) -->
-        <el-card shadow="never" class="status-card">
-          <div class="status-header">
-            <div class="status-title">
-              <el-icon style="vertical-align: middle"><MagicStick /></el-icon>
-              <span>AI 助手说明</span>
-            </div>
-            <p class="hint">
-              用自然语言驱动日常业务，或拖入 Excel / 图片 / PDF 让 AI 解析并办理。
-              <b style="color: #e6a23c">高风险操作需点确认才执行</b>。
-            </p>
-          </div>
-          <div class="status-row">
-            <div class="status-left">
-              <el-tag :type="pingState.ok === null ? 'info' : pingState.ok ? 'success' : 'danger'" size="default">
-                <el-icon style="vertical-align: middle">
-                  <component :is="pingState.ok === null ? QuestionFilled : pingState.ok ? CircleCheck : CircleClose" />
-                </el-icon>
-                <span style="margin-left: 4px">{{ pingState.label }}</span>
-              </el-tag>
-              <span v-if="pingState.detail" class="status-detail">{{ pingState.detail }}</span>
-              <span v-if="lastMeta.usage" class="status-detail">
-                tokens: {{ lastMeta.usage.total_tokens || ((lastMeta.usage.prompt_tokens || 0) + (lastMeta.usage.completion_tokens || 0)) }}
-              </span>
-            </div>
-            <div class="status-right">
-              <el-button size="small" :loading="pingLoading" @click="runPing">
-                <el-icon><Connection /></el-icon>
-                <span>连通</span>
-              </el-button>
-            </div>
-          </div>
-        </el-card>
-
-        <!-- 2) 会话记录 (2026-06-18 调整: 移到 AI 助手说明下方) -->
+        <!-- 会话记录 -->
         <AiConversationList
           ref="convListRef"
           :active-id="activeConversationId"
@@ -134,7 +123,6 @@ import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import {
-  MagicStick,
   ChatLineRound,
   CircleCheck,
   CircleClose,
@@ -150,7 +138,6 @@ import PermissionGuard from '@/components/PermissionGuard.vue'
 import AiMessageBubble from './components/AiMessageBubble.vue'
 import AiToolCallCard from './components/AiToolCallCard.vue'
 import AiPresetPanel from './components/AiPresetPanel.vue'
-import AiFileUploader from './components/AiFileUploader.vue'
 import AiConversationList from './components/AiConversationList.vue'
 
 // ─── 状态 ──────────────────────────────────────────────
@@ -549,12 +536,28 @@ onMounted(() => {
 <style scoped>
 /* (2026-06-18) 整体改用弹性布局, 取消 calc(100vh - 160px) 的硬编码
    - 整体占满 main 高度, el-row 用 flex:1 占满剩余
-   - 顶部不再有 "AI 助手" 标题 (2026-06-18 用户反馈: 占空间), 聊天区直接顶到 main 顶部 */
+   - 顶部不再有 "AI 助手" 标题 (2026-06-18 用户反馈: 占空间), 聊天区直接顶到 main 顶部
+   - (2026-07-14) 顶部新增 .page-header 状态条 (连通状态 + 重连), 不再占右侧卡片位 */
 .ai-assistant-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+/* (2026-07-14) 页面顶部状态条: 连通状态 + 重连按钮
+   - 跟原 .status-card 视觉一致, 但更紧凑 (一横排)
+   - flex-shrink:0 防止被 .ai-grid 挤压 */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 /* (2026-06-18) 改用 CSS Grid 两列布局, 替换 el-row/el-col 嵌套
    - 高度传递清晰: grid 容器 100% → 两列 100% → 内部 flex 100%
@@ -586,11 +589,7 @@ onMounted(() => {
 }
 .right-col > * { margin-bottom: 0 !important; flex-shrink: 0; }
 
-/* 状态卡 (含说明 + 连通状态 + 操作按钮) */
-.status-card { display: flex; flex-direction: column; gap: 8px; }
-.status-header { display: flex; flex-direction: column; gap: 2px; }
-.status-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; color: #303133; }
-.status-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* 顶部状态条内的连通状态 + 按钮 (2026-07-14 从 .status-card 卡片挪到 .page-header) */
 .status-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .status-detail { color: #909399; font-size: 11px; }
 .status-right { display: flex; gap: 4px; }
