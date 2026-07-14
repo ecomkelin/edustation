@@ -116,9 +116,16 @@ const COLLECTION_TO_MODEL = {
 // 主流程
 // ─────────────────────────────────────────────────────────────
 
-async function run() {
+async function run({ force = false } = {}) {
+  // 2026-07-14: 拆 safe/nuke. 仅 force=true 才 dropDatabase (init-seeds.js 默认不传 force)
+  if (!force) {
+    throw new Error(
+      'initial.seed.run() was called without force=true — refusing to dropDatabase. ' +
+      'If you really want a full reset, run `pnpm db:seed:nuke` (auto-passes --force).'
+    )
+  }
   // eslint-disable-next-line no-console
-  console.log('[initial.seed] dropDatabase() ...')
+  console.log('[initial.seed] dropDatabase() [force=true] ...')
   await mongoose.connection.dropDatabase()
 
   const data = loadDump()

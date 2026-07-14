@@ -297,6 +297,7 @@ type 是"业务代码 ↔ 模板"约定的字符串，**必须三处同步**：
 - **R-4015** POST /notifications/me/staff/read-all (员工一键已读)
 - **R-4016** POST /notifications/me/staff/archive-all (员工一键归档)
 - **R-4017** DELETE /notifications/templates/:type/:channel (机构覆盖 → 重置为平台默认, 幂等) [2026-07-14] — Templates UI「重置」按钮调用
+- **R-4018** POST /notifications/templates/reset-all (批量重置本机构全部覆盖, 幂等 deleteMany) [2026-07-14] — Templates UI「全部重置」按钮调用; 不可逆, 前端二级 confirm
 
 ## 5. 权限码（3 个）
 

@@ -33,6 +33,12 @@
         @clear="recomputeView"
         @keyup.enter="recomputeView"
       />
+      <el-button
+        type="danger"
+        plain
+        :loading="resettingAll"
+        @click="onResetAll"
+      >全部重置</el-button>
     </div>
 
     <el-table :data="filteredTemplates" v-loading="loading" border stripe style="width: 100%">
@@ -165,6 +171,7 @@ export default {
     return {
       loading: false,
       saving: false,
+      resettingAll: false,
       filter: { keyword: '' },
       templates: [],
       dialogVisible: false,
@@ -312,6 +319,34 @@ export default {
         await this.load()
       } catch (e) {
         ElMessage.error(e.message || '重置失败')
+      }
+    },
+    async onResetAll() {
+      // 2026-07-14 批量重置: 一次性清空本机构所有 org 自定义模板 → 回退 7 条平台默认
+      // 不可逆操作, 必须二级 confirm
+      try {
+        await ElMessageBox.confirm(
+          '确定把本机构所有 7 条自定义模板都重置为平台默认吗？\n\n所有本机构已修改的标题 / 正文 / 启停用状态都将被丢弃，操作不可撤销。',
+          '全部重置模板',
+          {
+            confirmButtonText: '全部重置',
+            cancelButtonText: '取消',
+            type: 'warning',
+            confirmButtonClass: 'el-button--danger'
+          }
+        )
+      } catch (e) {
+        return // 用户取消
+      }
+      this.resettingAll = true
+      try {
+        const r = await notificationApi.resetAllTemplates()
+        ElMessage.success(`已重置 ${r.deleted || 0} 条模板为平台默认`)
+        await this.load()
+      } catch (e) {
+        ElMessage.error(e.message || '批量重置失败')
+      } finally {
+        this.resettingAll = false
       }
     },
     onSave() {

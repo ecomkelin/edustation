@@ -685,6 +685,7 @@ Auth 列简写:
 | R-4015 | POST | /notifications/me/staff/read-all | AUTH | — | 员工一键已读 | |
 | R-4016 | POST | /notifications/me/staff/archive-all | AUTH | — | 员工一键归档 | |
 | R-4017 | DELETE | /notifications/templates/:type/:channel | PERM | notification.write | 重置机构覆盖回平台默认 | **2026-07-14 新增**: admin Templates UI「重置」按钮调用; 幂等, 不存在不报错 (deleted=0 OK); 注意类型锁定 7 条 (见 constants/notificationTriggers.js), ui 不暴露 channel 维度 |
+| R-4018 | POST | /notifications/templates/reset-all | PERM | notification.write | 批量重置 — 一次性清空本机构全部 org 自定义 | **2026-07-14 新增**: admin Templates UI「全部重置」按钮调用; 幂等 deleteMany({org}); 不可逆, 前端二级 confirm |
 
 ### MM=41 system ops (URL: /admin/cron)
 
@@ -747,6 +748,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-07-14 | Templates UI v0.9.2 + R-4018 + seed 拆 safe/nuke: 加「全部重置」按钮 (批量清空本机构覆盖, R-4018 一次性 deleteMany); 拆 `db:seeds` → `db:seed:safe` (idempotent 9 条, 默认) + `db:seed:nuke` (`--force` 强制, dropDatabase 不可逆); `initial.seed.run({force:true})` 守卫无 force 抛错, 防误跑 | R-4018 | add |
 | 2026-07-14 | Templates UI v0.9.1 重做 + R-4017 新增: 移除"新建模板"按钮 (防止孤儿模板), 隐藏渠道列 (MVP 仅 inbox), "覆盖"→"重置" (语义修正 + 二级 confirm), "触发时机"+"接收人 chip" 双维自然语言展示 (constants/notificationTriggers.js 字表), type 字符串改成只读灰字 (供客服/开发定位); R-4017 DELETE /templates/:type/:channel 幂等删本机构覆盖 → 回退平台默认; data-models-notification.md §3.5 加"新增 type 三处同步"硬约束 | R-4017 | add |
 | 2026-07-13 | 通知模块 MM=40 v0.9 扩展: 加 5 个员工侧触发点 (task_assigned/rejected/approved/cancelled + lesson_preparing), 拆 /me/staff 子路由 (员工不挂 activeStudent), 加 admin NotificationBell 铃铛红点 + StaffInbox 全量页; publish 入参 `recipientRole` (parent/staff/platform, 默认 parent) 解决 staff role 标错位; seed 加 5 模板 (占位符 taskTitle/actorName/comment/score/dueAt/priority); task.service notifyDueToday 修 B1 (assignee 取 a.user); 修复 routes-server.md | R-4001~R-4016 | add/modify |
 | 2026-07-14 | 内容模块 Article + Video 回退 platform-only (用户决策): service 删除 orgId 必传校验 + filter 移除 `org: orgId`; admin CRUD (R-3602~3607/R-3804~3809) `requirePermission('xx.read/write')` → `requirePlatformAdmin`; C 端公开端点 (R-3600/3601/R-3800~3802) 移除 x-org-id 依赖; `/videos/:id/play` (R-3803) 移除 requireOrg; `contentEngagement.service.record` 入参去掉 orgId, 内部从 activeStudentId 反查 `Student.org` 作为事件分桶 key (engagement 流仍 per-org); `articleUsageChecks`/`videoUsageChecks` 不带 org; permissionLabels article/video group 标注 platform-only; DEFAULT_POSITIONS 「管理员/教务」撤销 4+2 码 article/video.read/write; initial.data.json 梓潼 3 Position + 绵阳 1 Position 同步清理 (9 行); admin DefaultLayout 「科普内容」子组从「机构管理」挪到「系统管理 → 平台配置」并 requirePlatform; admin router `/content/articles` + `/content/videos` 加 `meta.platform=true`; content.seed.js `upsertArticles/upsertVideos` 不接 orgId, run() 自带 drop articles+videos collections + `contentengagements.deleteMany({contentType:'game'})`; C 端 explore.vue / api / pages.json 0 改动 (x-org-id 自动透传但被 service 忽略); 同日 Game 模块整条下线 (R-3700~R-3710 全部 DEPRECATED, doc 仅留 R 号段追溯) | R-3602~3609/R-3804~3811 全部 Auth 改 platform-admin; R-3612 requirePermission → requirePlatformAdmin; 删 Game 章节 | modify |

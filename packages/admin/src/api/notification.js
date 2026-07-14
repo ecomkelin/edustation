@@ -29,6 +29,10 @@ export const notificationApi = {
   removeTemplate(type, channel) {
     return http.delete(`/notifications/templates/${type}/${channel}`)
   },
+  // R-4018 批量重置: 一次性清空本机构所有 org 自定义模板 (2026-07-14 新增, 幂等)
+  resetAllTemplates() {
+    return http.post('/notifications/templates/reset-all')
+  },
   // R-4012 发送流水
   listLogs(params = {}) {
     return http.get('/notifications/admin/logs', { params })

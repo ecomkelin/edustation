@@ -28,13 +28,18 @@ const legalSeed = require('./seeds/legal.seed')
 //   org=null 平台级; 机构可在 /admin/notifications/templates 覆盖
 const notificationTemplateSeed = require('./seeds/notification-templates.seed')
 
-async function initSeeds() {
-  // 1. 主体种子: dropDatabase + 写入 22+ 个集合（机构 / 用户 / 岗位 / 学员 / 课包 / 排课 / 考勤 / 作品 / 积分 / 宠物 / 招生链路 / 推广 / 文件 等）
+async function initSeeds({ force = false } = {}) {
+  // 1. 主体种子 (2026-07-14 拆 safe/nuke):
+  //    - force=true: dropDatabase + 22+ collection 重灌 (不可逆)
+  //    - force=false (默认): SKIP, 因为会清掉所有 admin 已编辑数据
   // eslint-disable-next-line no-console
-  console.log('[seed] initialising via seeds/initial.seed.js ...')
-  const summary = await initialSeed.run()
-  // eslint-disable-next-line no-console
-  console.log('[seed] summary:', summary)
+  if (force) {
+    console.log('[seed] FORCE mode: dropDatabase via initial.seed.js ...')
+    const summary = await initialSeed.run({ force: true })
+    console.log('[seed] summary:', summary)
+  } else {
+    console.log('[seed] SAFE mode: skip initial.seed.js (dropDatabase), 仅跑 idempotent seeds')
+  }
 
   // 2. 招生家长标签 (2026-06): 独立幂等 seed, 不依赖 initial 的 dropDatabase 流程
   //    单独跑也不会破坏已有数据, 已存在则跳过并修正 sort/isActive

@@ -94,7 +94,7 @@ exports.upsertTemplate = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
-// R-3617 DELETE /notifications/templates/:type/:channel
+// R-4017 DELETE /notifications/templates/:type/:channel
 // 2026-07-14: 机构自定义重置为平台默认 (幂等, 不存在不报错)
 exports.removeTemplate = async (req, res) => {
   const data = await tplService.removeOrgOverride(
@@ -102,6 +102,14 @@ exports.removeTemplate = async (req, res) => {
     req.params.type,
     req.params.channel
   )
+  res.json(ApiResponse.ok(data))
+}
+
+// R-4018 POST /notifications/templates/reset-all
+// 2026-07-14: 批量重置 — 一次性清空本机构所有 org 自定义模板
+// 幂等, 即便全无也返 deleted=0 OK
+exports.resetOrgTemplates = async (req, res) => {
+  const data = await tplService.removeAllOrgOverrides(req.orgId)
   res.json(ApiResponse.ok(data))
 }
 

@@ -14,6 +14,9 @@ rm -rf packages/admin/node_modules/.vite
 ---
 
 ## 当前版本
+**v0.8.36 ** （2026-07-14）
+- 通知 显示优化 seed:safe
+
 **v0.8.35 ** （2026-07-14）
 - 通知 显示优化
 

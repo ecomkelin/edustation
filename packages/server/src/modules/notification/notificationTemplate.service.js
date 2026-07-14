@@ -155,6 +155,18 @@ async function removeOrgOverride(orgId, type, channel) {
 }
 
 /**
+ * 批量重置: 一次性清空机构所有 org 自定义模板 (2026-07-14 新增)
+ *
+ * 用途: admin Templates UI "全部重置" 按钮, 一次回到所有平台默认。
+ * 幂等: 即便一条都没自定义过, 也返 deleted=0 不报错。
+ * 重要: 这是不可逆操作 (destroy 所有本机构覆盖), 必须前端二次 confirm。
+ */
+async function removeAllOrgOverrides(orgId) {
+  const r = await NotificationTemplate.deleteMany({ org: orgId })
+  return { deleted: r.deletedCount || 0 }
+}
+
+/**
  * 列出所有启用模板的 type（管理后台枚举，供管理员"添加模板"下拉用）
  */
 async function listActiveTypes() {
@@ -176,6 +188,7 @@ module.exports = {
   list,
   upsert,
   removeOrgOverride,
+  removeAllOrgOverrides,
   listActiveTypes,
   PLACEHOLDER_KEYS
 }

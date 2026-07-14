@@ -82,6 +82,14 @@ router.delete(
   v.removeTemplate,
   asyncHandler(c.removeTemplate)
 )
+// R-4018 POST /api/v1/notifications/templates/reset-all
+// 2026-07-14 新增: 批量重置 — 一次性清空本机构所有 org 自定义模板
+//   注意: 路由放 /templates/reset-all 而不是 /templates (避免与 templates listTemplates 路径冲突)
+router.post(
+  '/templates/reset-all',
+  mws.requirePermission('notification.write'),
+  asyncHandler(c.resetOrgTemplates)
+)
 // R-3612 GET /api/v1/notifications/admin/logs
 router.get(
   '/admin/logs',
