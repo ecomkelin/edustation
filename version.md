@@ -14,6 +14,9 @@ rm -rf packages/admin/node_modules/.vite
 ---
 
 ## 当前版本
+**v0.8.37 ** （2026-07-14）
+- 调整 AI助手的参数设置 平台设置
+
 **v0.8.36 ** （2026-07-14）
 - 通知 显示优化 seed:safe
 

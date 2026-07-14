@@ -27,6 +27,9 @@ const legalSeed = require('./seeds/legal.seed')
 // 通知模板 (2026-07-11 v0.9 立项): 2 个平台默认 inbox 模板 (lesson_remind_1h + task_due)
 //   org=null 平台级; 机构可在 /admin/notifications/templates 覆盖
 const notificationTemplateSeed = require('./seeds/notification-templates.seed')
+// AI 助手默认系统提示 (2026-07-14 立项): upsert 到 agent_configs scope='global' 单例行
+//   平台超管可在 /system/ai → 参数设置 改写; seed 只覆盖 systemPrompt, 不动 temperature/maxTokens
+const agentPromptSeed = require('./seeds/agent-prompt.seed')
 
 async function initSeeds({ force = false } = {}) {
   // 1. 主体种子 (2026-07-14 拆 safe/nuke):
@@ -81,6 +84,10 @@ async function initSeeds({ force = false } = {}) {
   // 10. 通知模板 (2026-07-11 v0.9): 平台默认 2 个 inbox 模板 (lesson_remind_1h / task_due)
   //     org=null 平台级; 机构可在 admin 后台覆盖
   await notificationTemplateSeed.run()
+
+  // 11. AI 助手默认系统提示 (2026-07-14): upsert 到 agent_configs scope='global' 单例
+  //     幂等; 不依赖 initial.dropDatabase, safe 模式也跑 (保证新部署首次启动就有 prompt)
+  await agentPromptSeed.run()
 }
 
 module.exports = { initSeeds }

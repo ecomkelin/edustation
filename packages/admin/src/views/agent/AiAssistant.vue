@@ -73,7 +73,7 @@
         </div>
       </div>
 
-      <!-- 右侧: AI 助手说明 → 会话记录 → 试试这样问 → 调用参数 (2026-06-18 调整顺序) -->
+      <!-- 右侧: AI 助手说明 → 会话记录 → 试试这样问 (2026-07-14 移除「调用参数」整块, 改由平台超管在 /system/ai → 参数设置 统一管理) -->
       <div class="right-col">
         <!-- 1) 助手说明 + 连通状态 (提到最上) -->
         <el-card shadow="never" class="status-card">
@@ -123,25 +123,6 @@
 
         <!-- 3) 试试这样问 -->
         <AiPresetPanel class="preset-card" @pick="usePreset" />
-
-        <!-- 4) 调用参数 (保持最下, 不常用) -->
-        <el-card shadow="never" class="settings-card">
-          <template #header><span>调用参数</span></template>
-          <el-form label-position="top" size="default">
-            <el-form-item label="系统提示（system prompt）">
-              <el-input v-model="systemPrompt" type="textarea" :rows="3" placeholder="可选：覆盖后端默认 system prompt" />
-            </el-form-item>
-            <el-form-item label="Temperature">
-              <el-slider v-model="temperature" :min="0" :max="1.5" :step="0.1" show-input />
-            </el-form-item>
-            <el-form-item label="Max tokens">
-              <el-input-number v-model="maxTokens" :min="256" :max="8000" :step="128" />
-            </el-form-item>
-            <el-form-item>
-              <el-button size="small" plain @click="resetParams">恢复默认参数</el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
       </div>
     </div>
     </PermissionGuard>
@@ -182,9 +163,8 @@ const pendingFiles = ref([])
 const scrollRef = ref(null)
 const convListRef = ref(null)
 
-const systemPrompt = ref('')
-const temperature = ref(0.3)
-const maxTokens = ref(2048)
+// (2026-07-14) 客户端不再维护 systemPrompt/temperature/maxTokens 三参, 全部走平台级 AgentConfig (R-2840/R-2841)
+//   用户不可见不可改; chat pipeline 在每次请求时实时从 DB 读取
 
 const lastMeta = reactive({ model: '', latencyMs: null, usage: null })
 const pingLoading = ref(false)
@@ -226,12 +206,6 @@ function usePreset(q) {
   input.value = q
   const el = document.querySelector('.chat-input .el-textarea__inner')
   if (el) el.focus()
-}
-
-function resetParams() {
-  systemPrompt.value = ''
-  temperature.value = 0.3
-  maxTokens.value = 2048
 }
 
 function onKeydown(e) {
@@ -407,13 +381,11 @@ async function send() {
   scrollToBottom()
 
   // 4) 调 SSE
+  // (2026-07-14) 不再传 systemPrompt/temperature/maxTokens — 平台超管在 /system/ai → 参数设置 统一管理
   try {
     await startStream({
       messages: llmMessages,
       attachments,
-      systemPrompt: systemPrompt.value,
-      temperature: temperature.value,
-      maxTokens: maxTokens.value,
       conversationId: activeConversationId.value,
       onEvent: handleStreamEvent
     })
@@ -673,6 +645,5 @@ onMounted(() => {
 }
 .chat-input-bar { display: flex; justify-content: space-between; align-items: center; }
 
-.settings-card { /* 跟其他右侧卡同等间距 */ }
 .preset-card { /* 间距由 .right-col gap 控制 */ }
 </style>

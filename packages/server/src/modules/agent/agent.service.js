@@ -22,6 +22,9 @@ const config = require('@config/index')
 const ApiError = require('@utils/ApiError')
 const parser = require('./agent.parser')
 const executor = require('./agent.executor')
+// (2026-07-14) 平台级 AI 配置 (systemPrompt/temperature/maxTokens) 由平台超管统一设置
+//   - 客户端 AiAssistant 不再传这 3 字段, 全部走 AgentConfig (DB-first, env-fallback)
+const agentConfigService = require('./agentConfig.service')
 
 const DEFAULT_TIMEOUT_MS = 60_000
 
@@ -189,13 +192,15 @@ async function chat({
     throw ApiError.internal('AI 客服未启用, 请先在 .env 中配置 AI_API_KEY 并设置 AI_ENABLED=true')
   }
   const finalMessages = buildMessages({ messages, systemPrompt, knowledgeContext })
+  // (2026-07-14) 平台级配置优先; 仅当 request 显式传入 number 时覆盖 (兼容旧 chat 调用方)
+  const effective = await agentConfigService.resolveEffective()
   const result = await callMiniMax({
     apiKey: ai.apiKey,
     baseUrl: ai.baseUrl,
     model: ai.model,
     messages: finalMessages,
-    temperature: typeof temperature === 'number' ? temperature : ai.temperature,
-    maxTokens: typeof maxTokens === 'number' ? maxTokens : ai.maxTokens
+    temperature: typeof temperature === 'number' ? temperature : effective.temperature,
+    maxTokens: typeof maxTokens === 'number' ? maxTokens : effective.maxTokens
   })
   return {
     provider: 'MiniMax',
@@ -272,9 +277,12 @@ async function* chatStream({
   }
 
   // 2. 拼 messages (system + 历轮 + 本轮)
+  // (2026-07-14) 平台级 system prompt 由 AgentConfig 提供; 客户端不再传 systemPrompt
+  //   仍保留 request body 的 systemPrompt 拼接到尾部, 给 R-2830 support 端点的 buildSupportSystemPrompt() 留口子
+  const effective = await agentConfigService.resolveEffective()
   const baseMessages = []
   const sysParts = []
-  if (ai.systemPrompt) sysParts.push(ai.systemPrompt)
+  if (effective.systemPrompt) sysParts.push(effective.systemPrompt)
   if (systemPrompt) sysParts.push(systemPrompt)
   if (sysParts.length) baseMessages.push({ role: 'system', content: sysParts.join('\n\n') })
 
@@ -317,8 +325,8 @@ async function* chatStream({
       baseUrl: ai.baseUrl,
       model: ai.model,
       messages: baseMessages,
-      temperature: typeof temperature === 'number' ? temperature : ai.temperature,
-      maxTokens: typeof maxTokens === 'number' ? maxTokens : ai.maxTokens,
+      temperature: typeof temperature === 'number' ? temperature : effective.temperature,
+      maxTokens: typeof maxTokens === 'number' ? maxTokens : effective.maxTokens,
       stream: true,
       tools: tools && tools.length > 0 ? tools : null,
       timeoutMs: ai.timeoutMs || DEFAULT_TIMEOUT_MS

@@ -541,6 +541,8 @@ Auth 列简写:
 | R-2830 | POST | /agent/chat/support | AUTH | — | 平台客服 SSE | C 端 4 tab 永久会话 (meta.supportUser=true) |
 | R-2831 | POST | /agent/chat/support/reset | AUTH | — | 清空客服会话 | 保留 conv 行, 清消息 |
 | R-2832 | GET  | /agent/chat/support/history | AUTH | — | 客服会话历史 | 含 messages; 无会话时返 conversation=null |
+| R-2840 | GET    | /agent/config            | AUTH  | — | 平台 AI 默认参数  | 公开给登录用户; 未来 debug 用; 客户端 AiAssistant 不消费 |
+| R-2841 | PUT    | /agent/config            | ADMIN | — | 更新 3 字段       | requirePlatformAdmin; systemPrompt/temperature/maxTokens |
 
 ### MM=29 accessControl (URL: /access-control)
 

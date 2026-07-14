@@ -3,6 +3,8 @@
 const router = require('express').Router()
 const c = require('./agent.controller')
 const v = require('./agent.validator')
+const agentConfigController = require('./agentConfig.controller')
+const agentConfigValidator = require('./agentConfig.validator')
 const mws = require('@middlewares')
 const asyncHandler = require('@utils/asyncHandler')
 
@@ -14,10 +16,15 @@ const asyncHandler = require('@utils/asyncHandler')
  *  - 除 /ping 与 /chat 外, 其他端点 requireOrg (前端 AiAssistant.vue 在切到具体机构后才用)
  *  - 权限码: agent.read (访问) / agent.write (写操作)
  *    工具级别权限 (recruit.write / order.pay 等) 在 executor 内部按 user.positions 聚合校验
+ *  - /agent/config (R-2840/2841, 2026-07-14 立项) 是平台级配置, GET 不需要 org, PUT 走 requirePlatformAdmin
  *  - 限流/审计 在阶段 4 加, 当前 MVP 不做
  */
 
 router.use(mws.authenticate)
+
+// R-2840 GET /agent/config — 平台级 AI 配置, 公开给登录用户 (不需 org context, 不走 requireOrg)
+//   平台超管切机构前可能没 active org, 必须挂在 requireOrg 之前
+router.get('/config', asyncHandler(agentConfigController.get))
 
 // ping 与 chat 兼容旧 AiChatTest.vue (不强 requireOrg, 便于开发期排查)
 // R-2800 GET /agent/ping
@@ -80,5 +87,13 @@ router.post('/chat/support', v.chatStreamWithConv, mws.validateRequest, asyncHan
 router.post('/chat/support/reset', asyncHandler(c.supportReset))
 // R-2832 GET /agent/chat/support/history — 拉取会话历史
 router.get('/chat/support/history', asyncHandler(c.supportHistory))
+
+/* ─── 平台级 AI 配置 (2026-07-14 立项) ─── */
+// R-2841 PUT /agent/config — 仅平台超管 (requireOrg 对超管直通, controller 二次校验)
+router.put('/config',
+  mws.requirePlatformAdmin,
+  agentConfigValidator.update,
+  mws.validateRequest,
+  asyncHandler(agentConfigController.update))
 
 module.exports = router

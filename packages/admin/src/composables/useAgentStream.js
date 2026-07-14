@@ -14,8 +14,12 @@ import { useAuthStore } from '@/stores/auth'
  *   await start({
  *     messages: [...],
  *     attachments: [{fileId, fileName, mime}],
+ *     conversationId: '...',
  *     onEvent: (event, data) => { ... }
  *   })
+ *
+ * (2026-07-14) 不再传 systemPrompt/temperature/maxTokens, 平台超管在 /system/ai → 参数设置 统一管理
+ *   后端 chat pipeline 在每次请求时从 AgentConfig 单例实时读取 (R-2840/R-2841)
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
@@ -26,7 +30,7 @@ export function useAgentStream() {
   const isStreaming = ref(false)
   const error = ref(null)
 
-  async function start({ messages, attachments = [], systemPrompt, temperature, maxTokens, conversationId, onEvent }) {
+  async function start({ messages, attachments = [], conversationId, onEvent }) {
     if (!auth.accessToken) throw new Error('未登录')
     // 终止上一次流
     acRef.current?.abort()
@@ -43,12 +47,11 @@ export function useAgentStream() {
           Authorization: `Bearer ${auth.accessToken}`,
           'x-org-id': auth.currentOrgId || ''
         },
+        // (2026-07-14) 不再传 systemPrompt/temperature/maxTokens — 由平台超管在 /system/ai → 参数设置 统一管理
+        //   后端 chat pipeline 在每次请求时从 AgentConfig 单例实时读取 (DB-first, env-fallback)
         body: JSON.stringify({
           messages,
           attachments,
-          systemPrompt,
-          temperature,
-          maxTokens,
           conversationId
         }),
         signal: ac.signal

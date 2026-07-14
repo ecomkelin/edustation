@@ -21,6 +21,10 @@ async function bootstrap() {
   // 1.3 站点配置单例 (备案号 / 运营主体 / 版权年份). 已存在则 no-op
   await require('@modules/siteConfig/siteConfig.service').ensureSingleton()
 
+  // 1.3.1 (2026-07-14) AI 助手平台级配置单例 (systemPrompt/temperature/maxTokens).
+  //   DB 无行时, chat pipeline 走 config.ai.* env 兜底; 此处仅 upsert 一行保证 DB 查询非空.
+  await require('@modules/agent/agentConfig.service').ensureSingleton()
+
   // 1.4 名师团队总开关 + 行级 showAsTeacher 回填 (2026-06)
   // 老数据默认无值会导致机构主页"什么都没显示", 这里把已有 Org 总开关设为 true,
   // 已有 staff UserOrgRel 自动勾上 (纯家长保持不勾). 新数据走 admin 显式管理.
