@@ -65,6 +65,13 @@ exports.upsertTemplate = [
   body('isActive').optional().isBoolean()
 ]
 
+// R-3617 /notifications/templates/:type/:channel DELETE
+// 2026-07-14 新增: 机构自定义重置为平台默认 (幂等)
+exports.removeTemplate = [
+  param('type').isString().isLength({ min: 3, max: 64 }),
+  param('channel').isIn(['inbox', 'wechatMini', 'wechatPublic', 'sms', 'push'])
+]
+
 // R-3612 /notifications/admin/logs
 exports.listLogs = [
   query('page').optional().isInt({ min: 1 }),

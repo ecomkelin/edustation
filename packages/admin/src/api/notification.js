@@ -1,9 +1,10 @@
 /**
  * Notification API (admin 端) - v0.9 立项
- * R-4010 GET /notifications/templates
- * R-4011 PUT /notifications/templates/:type/:channel
- * R-4012 GET /notifications/admin/logs
- * R-4001 POST /notifications/publish (内部发布)
+ * R-4010 GET   /notifications/templates
+ * R-4011 PUT   /notifications/templates/:type/:channel
+ * R-4017 DELETE /notifications/templates/:type/:channel  (2026-07-14 新增, 重置)
+ * R-4012 GET   /notifications/admin/logs
+ * R-4001 POST  /notifications/publish (内部发布)
  *
  * 员工 inbox (2026-07-13 新增, MM=40 续):
  *   R-4013 GET    /notifications/me/staff
@@ -23,6 +24,10 @@ export const notificationApi = {
   // R-4011 新增/编辑模板 (按 type+channel upsert)
   upsertTemplate(type, channel, payload = {}) {
     return http.put(`/notifications/templates/${type}/${channel}`, payload)
+  },
+  // R-4017 重置: 机构自定义 → 回退平台默认 (2026-07-14 新增, 幂等)
+  removeTemplate(type, channel) {
+    return http.delete(`/notifications/templates/${type}/${channel}`)
   },
   // R-4012 发送流水
   listLogs(params = {}) {

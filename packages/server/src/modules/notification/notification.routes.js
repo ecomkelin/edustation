@@ -36,7 +36,7 @@ router.use('/me', parentMeRouter)
 // controller listMe/unreadCount/markAllRead/archiveAll 内部按 recipient=userId 直接查,
 // 天然不依赖 activeStudentId, 直接复用即可.
 const staffMeRouter = require('express').Router()
-// R-3613 GET /api/v1/notifications/me/staff — 员工 inbox 列表
+// R-4013 GET /api/v1/notifications/me/staff — 员工 inbox 列表
 staffMeRouter.get('/', v.listMe, asyncHandler(c.listMe))
 // R-3614 GET /api/v1/notifications/me/staff/unread-count — 员工红点
 staffMeRouter.get('/unread-count', v.unreadCount, asyncHandler(c.unreadCount))
@@ -73,6 +73,14 @@ router.put(
   mws.requirePermission('notification.write'),
   v.upsertTemplate,
   asyncHandler(c.upsertTemplate)
+)
+// R-4017 DELETE /api/v1/notifications/templates/:type/:channel
+// 2026-07-14 新增: 机构自定义 → 重置为平台默认 (幂等, 不存在不报错)
+router.delete(
+  '/templates/:type/:channel',
+  mws.requirePermission('notification.write'),
+  v.removeTemplate,
+  asyncHandler(c.removeTemplate)
 )
 // R-3612 GET /api/v1/notifications/admin/logs
 router.get(

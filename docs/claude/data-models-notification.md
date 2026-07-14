@@ -232,6 +232,30 @@ const PLACEHOLDER_KEYS = new Set([
 - 失败不阻塞主流程：service 内 `setImmediate(() => publish().catch(console.warn))`
 - 模板缺失 fallback：title = type, body = type（管理员可后期补模板）
 
+**新增 type 流程（2026-07-14 新增约定）**：
+
+type 是"业务代码 ↔ 模板"约定的字符串，**必须三处同步**：
+
+1. **数据库** — `packages/server/scripts/db/seeds/notification-templates.seed.js` `TEMPLATES` 数组加一条
+2. **Admin UI** — `packages/admin/src/constants/notificationTriggers.js` `NOTIFICATION_TRIGGERS` 加一条
+3. **业务代码** — 在对应 service 内 `setImmediate(() => publish({ type: 'xxx', ... }))`
+
+漏一处：
+- 漏 seed → 上线后 admin 看得到 type 但模板没文案，走 fallback 丑陋
+- 漏 constants → admin UI 表格行变成 "?" 兜底 + 灰感叹号，用户懵
+- 漏 publish → 写的模板永远没机会发，孤儿
+
+**新增 type 检查清单**：
+
+- [ ] seed 文件加 (TEMPLATES.push)
+- [ ] constants 加 (NOTIFICATION_TRIGGERS.push)
+- [ ] 业务代码 publish 调用点确定 (task / lessonSchedule / 未来 pointsCron 等)
+- [ ] 占位符白名单 PLACEHOLDER_KEYS 确认足够 (notificationTemplate.service.js)
+- [ ] 占位符 chip 标签补 (Templates.vue PLACEHOLDERS 数组)
+- [ ] docs/claude/data-models-notification.md §3.5 触发点表加一行
+- [ ] docs/claude/routes-server.md 看是否需要新 R 号 (新 publish / 新端点)
+- [ ] MEMORY 不写, 这是 code/data 同步规则不是一次性教训
+
 #### 未接入（Phase 2+）
 
 - lesson_remind_24h / lesson_absent
@@ -272,6 +296,7 @@ const PLACEHOLDER_KEYS = new Set([
 - **R-4014** GET /notifications/me/staff/unread-count (员工红点)
 - **R-4015** POST /notifications/me/staff/read-all (员工一键已读)
 - **R-4016** POST /notifications/me/staff/archive-all (员工一键归档)
+- **R-4017** DELETE /notifications/templates/:type/:channel (机构覆盖 → 重置为平台默认, 幂等) [2026-07-14] — Templates UI「重置」按钮调用
 
 ## 5. 权限码（3 个）
 

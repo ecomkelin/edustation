@@ -140,6 +140,21 @@ async function upsert(orgId, type, channel, payload) {
 }
 
 /**
+ * 重置机构自定义 → 回退平台默认 (2026-07-14 新增)
+ *
+ * 删除当前 org 在 (type, channel) 上的覆盖行; publish 查找时会自然降级到平台默认行。
+ * 幂等: 没有任何 org 自定义时返回 deleted=0, 不报错。
+ */
+async function removeOrgOverride(orgId, type, channel) {
+  const r = await NotificationTemplate.deleteOne({
+    org: orgId,
+    type,
+    channel
+  })
+  return { deleted: r.deletedCount || 0 }
+}
+
+/**
  * 列出所有启用模板的 type（管理后台枚举，供管理员"添加模板"下拉用）
  */
 async function listActiveTypes() {
@@ -160,6 +175,7 @@ module.exports = {
   render,
   list,
   upsert,
+  removeOrgOverride,
   listActiveTypes,
   PLACEHOLDER_KEYS
 }

@@ -94,6 +94,17 @@ exports.upsertTemplate = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// R-3617 DELETE /notifications/templates/:type/:channel
+// 2026-07-14: 机构自定义重置为平台默认 (幂等, 不存在不报错)
+exports.removeTemplate = async (req, res) => {
+  const data = await tplService.removeOrgOverride(
+    req.orgId,
+    req.params.type,
+    req.params.channel
+  )
+  res.json(ApiResponse.ok(data))
+}
+
 // R-3612 GET /notifications/admin/logs —— 管理后台发送流水
 exports.listLogs = async (req, res) => {
   const data = await service.listLogs(req.orgId, {

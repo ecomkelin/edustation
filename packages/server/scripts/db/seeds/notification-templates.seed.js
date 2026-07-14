@@ -6,7 +6,7 @@
  * 内容 (org=null) 平台级, 跨机构对所有 C 端家长可见.
  * 机构可在 /admin/notifications/templates 覆盖平台默认 (按 type+channel upsert 机构自己的).
  *
- * 模板清单:
+ * 模板清单 (7 条固定 type, 与 admin/constants/notificationTriggers.js 保持一字对应):
  *   - lesson_prepare_reminder (inbox): 教务点「准备上课」时即时推送「上课通知」 (家长)
  *   - task_due (inbox):                 今天到期的任务提醒 (员工)
  *   - lesson_preparing (inbox):         排课进入 preparing, 通知任课老师 (员工, 2026-07-13 新增)
@@ -19,6 +19,14 @@
  *   {studentName} {courseName} {time} {endTime} {room} {teacherName}
  *   {orgName} {orderNo} {amount} {points} {days} {reason}
  *   {taskTitle} {actorName} {comment} {score} {dueAt} {priority} (2026-07-13 新增)
+ *   {studentNames} (lesson_preparing 多人学生拼接)
+ *
+ * 同步约束 (2026-07-14 加):
+ *   新增 / 重命名 / 删除任何 type 必须三处同步, 否则孤儿模板或下拉选项错位:
+ *     1. 本文件 (TEMPLATES 数组, 落库文案)
+ *     2. packages/admin/src/constants/notificationTriggers.js (UI 展示)
+ *     3. 业务 publish() 调用 (task.service / lessonSchedule.service 等)
+ *   详见 data-models-notification.md §3.5 "新增 type 流程"。
  *
  * 幂等: NotificationTemplate 按 (org=null, type, channel) upsert
  * 单跑也可, 不依赖 initial.seed 的 dropDatabase 流程.
