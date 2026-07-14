@@ -34,6 +34,14 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: proxyTarget,
           changeOrigin: true
+        },
+        // 2026-07-14: 补 /uploads 代理 — video / image / file 资源相对路径直接访问会落到 SPA index.html,
+        //   触发 <video> @error SRC_NOT_SUPPORTED (uni-app H5 video 组件硬编码 detail={}, 排查难度高)
+        //   proxy 到 server (3000) 即可在 dev 端正常加载 file.url="/uploads/..."
+        //   生产部署走 nginx 等同 location /uploads proxy_pass http://server:3000;
+        '/uploads': {
+          target: proxyTarget,
+          changeOrigin: true
         }
       }
     },

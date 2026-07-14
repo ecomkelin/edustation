@@ -109,11 +109,32 @@
               <view class="home__svg-wrap" v-html="petEquipLayer.background.svgContent" />
             </view>
 
-            <!-- species 主图: svg-wrap + v-html 走 :deep(svg) -->
+            <!-- species 主图: 三分支 svg / video / image (2026-07-14 跟 detail.vue PetEquipmentOverlay 范式对齐) -->
             <view v-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
+            <video
+              v-else-if="petSpecies && petSpecies.visualType === 'video' && petSpecies.videoFile && petSpecies.videoFile.url"
+              ref="petPortraitVideo"
+              :src="petSpecies.videoFile.url"
+              :key="petSpecies._id"
+              autoplay loop muted playsinline
+              :controls="false"
+              :show-fullscreen-btn="false"
+              :show-center-play-btn="false"
+              :enable-progress-gesture="false"
+              object-fit="contain"
+              class="home__pet-portrait-video"
+              @canplay="tryAutoplayPortrait"
+              @loadedmetadata="tryAutoplayPortrait"
+            />
+            <image
+              v-else-if="petSpecies && petSpecies.imageFile && petSpecies.imageFile.url"
+              :src="petSpecies.imageFile.url"
+              class="home__pet-portrait-img"
+              mode="aspectFit"
+            />
             <text v-else class="home__pet-portrait-emoji">{{ petEmoji }}</text>
 
-            <!-- 装备叠加层 (hat/scarf/clothes/accessory/halo) -->
+            <!-- 装备叠加层 (hat/scarf/clothes/accessory/halo) — 三分支 (2026-07-14 补 video/image) -->
             <view class="home__pet-equips">
               <view
                 v-for="slot in ['hat','scarf','clothes','accessory','halo']"
@@ -122,6 +143,27 @@
                 :class="`home__pet-equip-layer--${slot}`"
               >
                 <view v-if="petEquipLayer[slot] && petEquipLayer[slot].svgContent" class="home__svg-wrap" v-html="petEquipLayer[slot].svgContent" />
+                <video
+                  v-else-if="petEquipLayer[slot] && petEquipLayer[slot].visualType === 'video' && petEquipLayer[slot].videoUrl"
+                  :ref="(el) => setHomeEquipVideoRef(slot, el)"
+                  :src="petEquipLayer[slot].videoUrl"
+                  :key="slot"
+                  autoplay loop muted playsinline
+                  :controls="false"
+                  :show-fullscreen-btn="false"
+                  :show-center-play-btn="false"
+                  :enable-progress-gesture="false"
+                  object-fit="contain"
+                  class="home__pet-equip-video"
+                  @canplay="tryAutoplayHomeEquip(slot)"
+                  @loadedmetadata="tryAutoplayHomeEquip(slot)"
+                />
+                <image
+                  v-else-if="petEquipLayer[slot] && petEquipLayer[slot].imageFile && petEquipLayer[slot].imageFile.url"
+                  :src="petEquipLayer[slot].imageFile.url"
+                  class="home__pet-equip-img"
+                  mode="aspectFit"
+                />
               </view>
             </view>
 
@@ -596,8 +638,9 @@ export default {
     },
     petEmoji() {
       if (!this.pet) return '🐾'
+      // 2026-07-14: visualType==='video'/'image' 物种靠真实素材渲染, emoji 仅兜底 (物种无素材)
       // 已破壳用 speciesRecord (admin 维护的 svg 优先), 否则按 species key 查 emoji
-      if (this.pet.state !== 'egg' && this.petSpecies && this.petSpecies.visualType !== 'svg' && this.petSpecies.icon) {
+      if (this.pet.state !== 'egg' && this.petSpecies && this.petSpecies.visualType !== 'svg' && this.petSpecies.visualType !== 'video' && this.petSpecies.visualType !== 'image' && this.petSpecies.icon) {
         return this.petSpecies.icon
       }
       const key = this.pet.species
@@ -642,8 +685,13 @@ export default {
         if (!meta) continue
         out[slot] = {
           key,
+          // 2026-07-14: 透传 visualType + videoFile + videoUrl (跟 detail.vue equipmentLayers 字段对齐)
+          visualType: meta.visualType || 'image',
           svgContent: meta.svgContent || '',
-          url: (meta.imageFile && meta.imageFile.url) || ''
+          url: (meta.imageFile && meta.imageFile.url) || '',
+          imageFile: meta.imageFile || null,
+          videoFile: meta.videoFile || null,
+          videoUrl: meta.videoFile && meta.videoFile.url ? meta.videoFile.url : ''
         }
       }
       return out
@@ -921,8 +969,11 @@ export default {
             map[it.key] = {
               name: it.name,
               slot: it.slot || slotKey,
+              // 2026-07-14: 同步存 visualType + videoFile (跟 detail.vue equipmentLayers 字段对齐)
+              visualType: it.visualType || 'image',
               svgContent: it.svgContent || '',
-              imageFile: it.imageFile || null
+              imageFile: it.imageFile || null,
+              videoFile: it.videoFile || null
             }
           }
         }
@@ -935,6 +986,35 @@ export default {
     selectDay(day) {
       haptic.tap()
       this.selectedDate = day.date
+    },
+
+    // ─── 2026-07-14: video 自动播放兑底 (跟 detail.vue 同款范式) ─────
+    getNativeVideoEl(refEl) {
+      if (!refEl) return null
+      if (refEl.$el && typeof refEl.$el.play === 'function') return refEl.$el
+      if (typeof refEl.play === 'function') return refEl
+      return null
+    },
+    tryAutoplayPortrait() {
+      const el = this.getNativeVideoEl(this.$refs.petPortraitVideo)
+      if (!el) return
+      try { el.muted = true } catch (_) {}
+      const p = el.play && el.play()
+      if (p && typeof p.catch === 'function') p.catch((e) => console.warn('[homePetVideo] autoplay rejected', e && e.message))
+    },
+    setHomeEquipVideoRef(slot, el) {
+      if (!slot) return
+      if (!this._homeEquipVideoRefs) this._homeEquipVideoRefs = {}
+      if (el) this._homeEquipVideoRefs[slot] = el
+      else delete this._homeEquipVideoRefs[slot]
+    },
+    tryAutoplayHomeEquip(slot) {
+      const refEl = this._homeEquipVideoRefs && this._homeEquipVideoRefs[slot]
+      const el = this.getNativeVideoEl(refEl)
+      if (!el) return
+      try { el.muted = true } catch (_) {}
+      const p = el.play && el.play()
+      if (p && typeof p.catch === 'function') p.catch(() => {})
     },
 
     formatTime: (d) => (d ? new Date(d).toTimeString().slice(0, 5) : ''),
@@ -1865,9 +1945,27 @@ export default {
     position: relative;
     z-index: 1;
   }
+  // 2026-07-14: video / image 物种 — 跟 svg 同尺寸规则, object-fit: contain 保留比例
+  &__pet-portrait-video,
+  &__pet-portrait-img {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
   // 2026-07-04 重做: svg-wrap 容器 + :deep(svg) (跟 admin PetEquipmentOverlay .svg-wrap 同款)
   &__svg-wrap { width: 100%; height: 100%; display: block; }
   &__svg-wrap :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; }
+  // 2026-07-14: 装备叠加层 video / image (跟 svg 同尺寸规则)
+  &__pet-equip-video,
+  &__pet-equip-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
   // 2026-07-04: 装备背景层 (跟 admin PetClassroomDisplay.pet-display-bg 同款:
   // 绝对定位铺满 portrait, 显示蓝天草地这类背景, 不挡交互)
   &__pet-bg {

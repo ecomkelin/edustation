@@ -573,9 +573,8 @@ onMounted(() => {
 }
 .left-col { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 
-.hint { color: #606266; font-size: 12px; margin: 4px 0 8px; line-height: 1.6; }
-
-/* 右侧列: 助手说明 / 预设 / 会话记录 / 参数 堆叠
+/* 右侧列: 会话记录 / 试试这样问 堆叠
+   (2026-07-14 删 AI 助手说明 / 调用参数 卡后)
    - 高度 100% 跟随 ai-row, 不再 calc 100vh
    - 内容超出时独立滚, 不会把 chat-card 顶高 */
 .right-col {

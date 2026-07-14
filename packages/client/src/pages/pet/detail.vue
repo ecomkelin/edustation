@@ -65,12 +65,26 @@
              之前用 base64 data URI + <image> 走不通 (image 在 SVG defs/linearGradient 渲染丢失) -->
 
         <!-- 背景层: 独立铺满 stage,与宠物图同框 -->
+        <!-- 2026-07-14: 三分支 (svg / video / image), 跟 admin PetEquipmentOverlay 范式对齐 -->
         <view
-          v-if="backgroundItem && backgroundItem.svgContent"
+          v-if="backgroundItem"
           class="pet-detail__stage-bg"
           :class="`bg-${backgroundItem.key}`"
         >
-          <view class="pet-detail__svg-wrap" v-html="backgroundItem.svgContent" />
+          <view v-if="backgroundItem.svgContent" class="pet-detail__svg-wrap" v-html="backgroundItem.svgContent" />
+          <video
+            v-else-if="backgroundItem.visualType === 'video' && backgroundItem.videoUrl"
+            :src="backgroundItem.videoUrl"
+            :key="backgroundItem.key"
+            autoplay loop muted playsinline
+            class="pet-detail__bg-video"
+          />
+          <image
+            v-else-if="backgroundItem.imageUrl"
+            :src="backgroundItem.imageUrl"
+            mode="aspectFill"
+            class="pet-detail__bg-img"
+          />
         </view>
 
         <!-- 蛋态 (含破壳特效, 参考 admin PetClassroomDisplay 的 5 阶段) -->
@@ -102,8 +116,25 @@
 
         <!-- 已破壳 + 装饰 -->
         <view v-else class="pet-detail__pet press" @tap="goEquip">
-          <!-- 主图: species.svgContent 走 svg-wrap + v-html (跟 admin PetEquipmentOverlay 同款) -->
+          <!-- 主图: 三分支 svg / video / image (2026-07-14 加 video, 跟 admin PetEquipmentOverlay 范式) -->
           <view v-if="species && species.visualType === 'svg' && species.svgContent" class="pet-detail__svg-wrap" v-html="species.svgContent" />
+          <video
+            v-else-if="species && species.visualType === 'video' && species.videoFile && species.videoFile.url"
+            ref="petVideoEl"
+            :src="species.videoFile.url"
+            :key="species._id"
+            autoplay loop muted playsinline
+            :controls="false"
+            :show-fullscreen-btn="false"
+            :show-center-play-btn="false"
+            :enable-progress-gesture="false"
+            object-fit="contain"
+            class="pet-detail__pet-video"
+            @canplay="tryAutoplay"
+            @loadedmetadata="tryAutoplay"
+            @play="onVideoPlay"
+            @error="onVideoError"
+          />
           <image v-else-if="species && species.imageFile && species.imageFile.url" :src="species.imageFile.url" class="pet-detail__pet-svg" mode="aspectFit" />
           <text v-else class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
 
@@ -115,8 +146,24 @@
               class="pet-detail__equip-layer"
               :class="`pet-detail__equip-layer--${layer.slot}`"
             >
-              <!-- 跟 admin PetEquipmentOverlay .svg-wrap 一致走 v-html -->
+              <!-- 三分支 svg / video / image (跟 admin PetEquipmentOverlay 同款) -->
               <view v-if="layer.svgContent" class="pet-detail__svg-wrap" v-html="layer.svgContent" />
+              <video
+                v-else-if="layer.visualType === 'video' && layer.videoUrl"
+                :ref="(el) => setEquipVideoRef(layer.key, el)"
+                :src="layer.videoUrl"
+                :key="layer.key"
+                autoplay loop muted playsinline
+                :controls="false"
+                :show-fullscreen-btn="false"
+                :show-center-play-btn="false"
+                :enable-progress-gesture="false"
+                object-fit="contain"
+                class="pet-detail__equip-video"
+                @canplay="tryAutoplayEquip(layer.key)"
+                @loadedmetadata="tryAutoplayEquip(layer.key)"
+              />
+              <image v-else-if="layer.url" :src="layer.url" class="pet-detail__equip-img" mode="aspectFit" />
             </view>
           </view>
         </view>
@@ -175,6 +222,21 @@
               <view v-if="c.svgContent" class="pet-detail__food-thumb">
                 <view class="pet-detail__svg-wrap" v-html="c.svgContent" />
               </view>
+              <!-- 2026-07-14: 加 video/image 兜底 (跟 admin chip 三分支对齐) -->
+              <video
+                v-else-if="c.visualType === 'video' && c.videoUrl"
+                :src="c.videoUrl"
+                :key="c.key"
+                muted
+                preload="metadata"
+                class="pet-detail__food-video"
+              />
+              <image
+                v-else-if="c.url"
+                :src="c.url"
+                mode="aspectFit"
+                class="pet-detail__food-img"
+              />
               <text v-else class="pet-detail__food-emoji">🍖</text>
               <view class="pet-detail__food-name">{{ c.name }}</view>
               <view class="pet-detail__food-meta">
@@ -205,6 +267,21 @@
               >
                 <!-- 2026-07-04 重做: 走 v-html (跟 admin chip-svg 同款),之前 data URI + image 不稳定 -->
                 <view v-if="entry.svgContent" class="pet-detail__svg-wrap" v-html="entry.svgContent" />
+                <!-- 2026-07-14: 加 video/image 兜底 (跟 admin chip 三分支对齐) -->
+                <video
+                  v-else-if="entry.visualType === 'video' && entry.videoUrl"
+                  :src="entry.videoUrl"
+                  :key="entry.key"
+                  muted
+                  preload="metadata"
+                  class="pet-detail__chip-video"
+                />
+                <image
+                  v-else-if="entry.url"
+                  :src="entry.url"
+                  mode="aspectFit"
+                  class="pet-detail__chip-img"
+                />
                 <text v-else class="pet-detail__chip-emoji">▢</text>
               </view>
               <text v-if="!unlockedEntriesBySlot[slot] || unlockedEntriesBySlot[slot].length === 0" class="pet-detail__slot-empty">未解锁</text>
@@ -266,7 +343,10 @@ export default {
       // 阶段: idle → hammer → cracks → shake → gold → reveal (后端 alive 切换)
       hatchPhase: 'idle',
       hatchActive: false,
-      hatchTimers: []
+      hatchTimers: [],
+      // 2026-07-14: video 自动播放状态标记 + 装备 video ref map
+      petVideoPlaying: false,
+      _equipVideoRefs: {}
     }
   },
   computed: {
@@ -335,7 +415,10 @@ export default {
           return {
             key,
             name: meta.name || key,
+            // 2026-07-14: 三视觉字段透传 (跟 admin PetEquipmentOverlay 范式)
+            visualType: meta.visualType || '',
             url: (meta.imageFile && meta.imageFile.url) || '',
+            videoUrl: (meta.videoFile && meta.videoFile.url) || '',
             // 2026-07-04: 统一走 svgContent + <view class="pet-detail__svg-wrap" v-html>,
             //   跟 admin PetEquipmentOverlay 同源 (admin 已验证 work)
             svgContent: meta.svgContent || ''
@@ -357,7 +440,10 @@ export default {
           return {
             slot,
             key,
+            // 2026-07-14: 三视觉字段透传 (跟 admin PetEquipmentOverlay 范式)
+            visualType: meta.visualType || '',
             url: (meta.imageFile && meta.imageFile.url) || '',
+            videoUrl: (meta.videoFile && meta.videoFile.url) || '',
             // 2026-07-04: 走 v-html 渲染 svg (跟 admin PetEquipmentOverlay 同款),
             //   之前试 base64 data URI + <image> 在 SVG defs/linearGradient 渲染丢失,
             //   改回 v-html + :deep(svg) CSS 缩放, admin 已验证 work
@@ -383,9 +469,12 @@ export default {
         out.push({
           key,
           name: c.name,
+          // 2026-07-14: 三视觉字段透传 (跟 admin PetEquipmentOverlay 范式)
+          visualType: c.visualType || '',
           // 2026-07-04 重做: 直接 svgContent + v-html (跟 admin chip-svg 同款)
           svgContent: c.svgContent || '',
           url: c.imageFile?.url || '',
+          videoUrl: c.videoFile?.url || '',
           priceForTier,
           hungerRestore,
           expGain
@@ -407,12 +496,19 @@ export default {
   onShow() {
     this.load()
   },
+  // 2026-07-14: video 自动播放兜底 — onReady 时 DOM 已渲染, ref 已就位
+  // 配合模板上的 @canplay/@loadedmetadata 共 3 层兜底
+  onReady() {
+    // 延迟 100ms 等首帧绘制
+    setTimeout(() => this.tryAutoplay(), 100)
+  },
   onUnload() {
     clearInterval(this._pollTimer)
     this.clearHatchTimers()
   },
   methods: {
     // 2026-07-04: backgroundItem 重新计算 (data + watch 模式)
+    // 2026-07-14: 扩展支持 svg / video / image 三种 visualType (跟 admin PetEquipmentOverlay 范式)
     _recomputeBackground() {
       const equipped = (this.pet && this.pet.equipped) || {}
       const key = equipped.background
@@ -421,11 +517,19 @@ export default {
         return
       }
       const meta = this.itemMap[key] || {}
-      if (!meta.svgContent) {
-        this.backgroundItem = null
+      if (meta.svgContent) {
+        this.backgroundItem = { key, visualType: 'svg', svgContent: meta.svgContent }
         return
       }
-      this.backgroundItem = { key, svgContent: meta.svgContent }
+      if (meta.visualType === 'video' && meta.videoFile && meta.videoFile.url) {
+        this.backgroundItem = { key, visualType: 'video', videoUrl: meta.videoFile.url }
+        return
+      }
+      if (meta.visualType === 'image' && meta.imageFile && meta.imageFile.url) {
+        this.backgroundItem = { key, visualType: 'image', imageUrl: meta.imageFile.url }
+        return
+      }
+      this.backgroundItem = null
     },
 
     formatTimeLeft(minutes) {
@@ -508,8 +612,11 @@ export default {
             map[it.key] = {
               name: it.name,
               slot: it.slot || slotKey,
+              // 2026-07-14: 加 visualType + videoFile 透传 (跟 admin PetEquipmentOverlay 范式)
+              visualType: it.visualType || '',
               svgContent: it.svgContent || '',
-              imageFile: it.imageFile || null
+              imageFile: it.imageFile || null,
+              videoFile: it.videoFile || null
             }
           }
         }
@@ -531,8 +638,11 @@ export default {
             applicableTier: c.applicableTier,
             perTier: c.perTier || {},
             isActive: c.isActive,
+            // 2026-07-14: 加 visualType + videoFile 透传 (跟 admin PetEquipmentOverlay 范式)
+            visualType: c.visualType || '',
             svgContent: c.svgContent || '',
-            imageFile: c.imageFile || null
+            imageFile: c.imageFile || null,
+            videoFile: c.videoFile || null
           }
         }
         this.consumableMap = map
@@ -659,7 +769,75 @@ export default {
     goEnroll() { uni.switchTab({ url: '/pages/tabbar/explore' }) },
     goAdopt() { uni.navigateTo({ url: '/pages/pet/adopt' }) },
     goEquip() { uni.navigateTo({ url: '/pages/pet/equip' }) },
-    goShop() { uni.navigateTo({ url: '/pages/pet/shop' }) }
+    goShop() { uni.navigateTo({ url: '/pages/pet/shop' }) },
+
+    // ─── 2026-07-14: video 自动播放兜底 ────────────────────────
+    // uni-app H5 <video> 的 autoplay 属性在 Chrome strict 策略 / 移动端经常失效,
+    // 退化成"黑色 + 中央播放按钮" 的原生 UI. 修法: 拿原生 DOM ref, 在 canplay /
+    // loadedmetadata / mounted 三层调 .play(), 处理 Autoplay 政策拒绝时的 catch.
+    //
+    // 注意: ref="petVideoEl" 在 uni-app 编译到 H5 时是个组件 instance, 但其底层
+    // 仍是 <video> DOM 元素 — .play() / .pause() 在 instance 上也能调到原生方法
+    // (uni-app 包装); 兼容写法优先取 .$el (H5 DOM), 否则直接拿 ref 本身.
+    getNativeVideoEl(refEl) {
+      if (!refEl) return null
+      // H5: ref instance.$el 即 <video> DOM; 小程序/APP: instance 本身就是组件有 .play()
+      if (refEl.$el && typeof refEl.$el.play === 'function') return refEl.$el
+      if (typeof refEl.play === 'function') return refEl
+      return null
+    },
+    tryAutoplay() {
+      const el = this.getNativeVideoEl(this.$refs.petVideoEl)
+      if (!el) return
+      // muted 状态有时机问题;这里强制同步静音
+      try { el.muted = true } catch (_) {}
+      const p = el.play && el.play()
+      if (p && typeof p.catch === 'function') {
+        p.catch((e) => {
+          // Autoplay 被浏览器拒绝 — 用户首次点击页面后再尝试
+          console.warn('[petVideo] autoplay rejected, will retry on first tap', e && e.message)
+        })
+      }
+    },
+    onVideoPlay() {
+      // 标记已开始播放 — 用于排查 (跟 admin autoplay 行为对齐)
+      this.petVideoPlaying = true
+    },
+    onVideoError(e) {
+      // 2026-07-14: uni-app H5 @error 事件 e.detail 通常是空对象, 真正错误在原生 <video>.error (MediaError)
+      const el = this.getNativeVideoEl(this.$refs.petVideoEl)
+      const mediaErr = el && el.error
+      // MediaError.code: 1=ABORTED 2=NETWORK 3=DECODE 4=SRC_NOT_SUPPORTED
+      const MEDIA_ERR = { 1: 'ABORTED', 2: 'NETWORK', 3: 'DECODE', 4: 'SRC_NOT_SUPPORTED' }
+      console.warn('[petVideo] error', {
+        eventDetail: e && (e.detail || e.message),
+        mediaErrorCode: mediaErr && mediaErr.code,
+        mediaErrorMsg: mediaErr && MEDIA_ERR[mediaErr.code],
+        mediaErrorMessage: mediaErr && mediaErr.message,
+        networkState: el && el.networkState,
+        readyState: el && el.readyState,
+        currentSrc: el && el.currentSrc,
+        src: el && el.getAttribute && el.getAttribute('src')
+      })
+      this.petVideoPlaying = false
+    },
+    // 装备叠加层 video ref 收集 (按 key 存, 装备切换时清理)
+    setEquipVideoRef(key, el) {
+      if (!key) return
+      if (!this._equipVideoRefs) this._equipVideoRefs = {}
+      if (el) this._equipVideoRefs[key] = el
+      else delete this._equipVideoRefs[key]
+    },
+    tryAutoplayEquip(key) {
+      const refEl = this._equipVideoRefs && this._equipVideoRefs[key]
+      const el = this.getNativeVideoEl(refEl)
+      if (!el) return
+      try { el.muted = true } catch (_) {}
+      const p = el.play && el.play()
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {})
+      }
+    }
   }
 }
 </script>
@@ -913,6 +1091,12 @@ export default {
     height: 90%;
     object-fit: contain;
   }
+  // 2026-07-14: 视频形式的物种主图 (跟 admin PetEquipmentOverlay .video-render 同款)
+  &__pet-video {
+    width: 90%;
+    height: 90%;
+    object-fit: contain;
+  }
   &__pet-emoji {
     font-size: 240rpx;
   }
@@ -930,6 +1114,14 @@ export default {
   &__equip-layer--clothes   { top: 50%;  left: 50%; transform: translateX(-50%); width: 70%; height: 36%; z-index: 2; }
   &__equip-layer--accessory { top: 36%;  left: 50%; transform: translateX(-50%); width: 45%; height: 18%; z-index: 4; }
   &__equip-layer--halo      { top: -4%;  left: 50%; transform: translateX(-50%); width: 75%; height: 30%; opacity: 0.85; z-index: 2; }
+  // 2026-07-14: 装备叠加层 video / image (跟 svg-wrap 同尺寸规则)
+  &__equip-video,
+  &__equip-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  }
   // 2026-07-04 重做: SVG-wrap 容器 + :deep(svg) (uni-app H5 走 v-html)
   &__svg-wrap { width: 100%; height: 100%; display: block; }
   &__svg-wrap :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; filter: drop-shadow(0 2rpx 4rpx rgba(0,0,0,0.25)); }
@@ -944,6 +1136,14 @@ export default {
   }
   &__stage-bg .pet-detail__svg-wrap,
   &__stage-bg :deep(svg) { width: 100%; height: 100%; display: block; object-fit: cover; }
+  // 2026-07-14: 视频/图片背景 (跟 svg-wrap 同 fill 行为)
+  &__bg-video,
+  &__bg-img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
 
   &__stats {
     margin: 0 $spacing-lg $spacing-lg;
@@ -1093,6 +1293,9 @@ export default {
   // 2026-07-04: chip 用 svg-wrap + :deep(svg) 缩放 (替代 __chip-img)
   &__chip .pet-detail__svg-wrap,
   &__chip :deep(svg) { width: 56rpx; height: 56rpx; object-fit: contain; }
+  // 2026-07-14: chip 视频/图片缩放
+  &__chip-video,
+  &__chip-img { width: 56rpx; height: 56rpx; object-fit: contain; }
   &__chip-emoji { font-size: 32rpx; }
   &__slot-empty { font-size: $font-xs; color: $text-tertiary; padding-left: $spacing-xs; }
 
@@ -1131,6 +1334,9 @@ export default {
   // 2026-07-04: 食物 thumb 内嵌 svg-wrap 缩放 (跟 admin chip-svg 同款)
   &__food-thumb .pet-detail__svg-wrap,
   &__food-thumb :deep(svg) { width: 64rpx; height: 64rpx; object-fit: contain; }
+  // 2026-07-14: 食物 video / image 缩放
+  &__food-video,
+  &__food-img { width: 80rpx; height: 80rpx; object-fit: contain; border-radius: $radius-sm; }
   &__food-emoji { font-size: 48rpx; }
   &__food-name { font-size: $font-sm; font-weight: $font-weight-semibold; color: $text-primary; }
   &__food-meta { font-size: $font-xs; color: $text-tertiary; text-align: center; }

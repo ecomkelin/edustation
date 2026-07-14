@@ -31,7 +31,8 @@
           :class="`bg-${pet.equipped.background}`"
         >
           <span v-if="itemMap[pet.equipped.background].visualType === 'svg'" v-html="itemMap[pet.equipped.background].svgContent" />
-          <img v-else-if="itemMap[pet.equipped.background].imageFile?.url" :src="itemMap[pet.equipped.background].imageFile.url" />
+          <img v-else-if="itemMap[pet.equipped.background].visualType === 'image' && itemMap[pet.equipped.background].imageFile?.url" :src="itemMap[pet.equipped.background].imageFile.url" />
+          <video v-else-if="itemMap[pet.equipped.background].visualType === 'video' && itemMap[pet.equipped.background].videoFile?.url" :src="itemMap[pet.equipped.background].videoFile.url" autoplay loop muted playsinline />
         </div>
 
         <!-- 2026-06-23: 蛋态 + 破壳特效 — 4 阶段精简版（用户反馈）：
@@ -144,6 +145,7 @@
               <span class="food-thumb">
                 <img v-if="c.visualType === 'image' && c.imageFile?.url" :src="c.imageFile.url" :alt="c.name" />
                 <span v-else-if="c.visualType === 'svg' && c.svgContent" class="chip-svg" v-html="c.svgContent" />
+                <video v-else-if="c.visualType === 'video' && c.videoFile?.url" :src="c.videoFile.url" autoplay loop muted playsinline />
                 <span v-else class="chip-emoji">🍖</span>
               </span>
               <div class="food-name">{{ c.name }}</div>
@@ -175,6 +177,7 @@
                 >
                   <img v-if="entry.visualType === 'image' && entry.imageFile?.url" :src="entry.imageFile.url" :alt="entry.name" />
                   <span v-else-if="entry.visualType === 'svg' && entry.svgContent" class="chip-svg" v-html="entry.svgContent" />
+                  <video v-else-if="entry.visualType === 'video' && entry.videoFile?.url" :src="entry.videoFile.url" autoplay loop muted playsinline />
                   <span v-else class="chip-emoji">🎁</span>
                 </div>
                 <span v-if="!unlockedEntriesBySlot[slot] || unlockedEntriesBySlot[slot].length === 0" class="slot-empty">未解锁</span>
@@ -299,7 +302,8 @@ export default {
           name: (itemMap.value[key] && itemMap.value[key].name) || key,
           visualType: itemMap.value[key]?.visualType,
           svgContent: itemMap.value[key]?.svgContent,
-          imageFile: itemMap.value[key]?.imageFile
+          imageFile: itemMap.value[key]?.imageFile,
+          videoFile: itemMap.value[key]?.videoFile
         }))
       }
       return out
@@ -319,9 +323,11 @@ export default {
             name: it.name,
             slot: it.slot,
             // 2026-06-22: 视觉字段补齐 — 让叠加层 (equipment-overlay) 真的能渲染
+            // 2026-07-14: 补 videoFile 字段, 即使 PetItem enum 暂不含 video, 未来扩 enum 不需要再改前端
             visualType: it.visualType || 'image',
             svgContent: it.svgContent || null,
-            imageFile: it.imageFile || null
+            imageFile: it.imageFile || null,
+            videoFile: it.videoFile || null
           }
         }
         itemMap.value = map
@@ -375,6 +381,7 @@ export default {
           visualType: c.visualType || 'image',
           svgContent: c.svgContent || null,
           imageFile: c.imageFile || null,
+          videoFile: c.videoFile || null,
           priceForTier,
           hungerRestore,
           expGain
@@ -398,7 +405,9 @@ export default {
             isActive: c.isActive,
             visualType: c.visualType || 'image',
             svgContent: c.svgContent || null,
-            imageFile: c.imageFile || null
+            imageFile: c.imageFile || null,
+            // 2026-07-14: 同 itemMap — 同步存 videoFile, 未来 PetConsumable enum 扩 video 不再改前端
+            videoFile: c.videoFile || null
           }
         }
         consumableMap.value = map
@@ -692,7 +701,8 @@ export default {
   border-radius: 16px;
 }
 .pet-display-bg span,
-.pet-display-bg img {
+.pet-display-bg img,
+.pet-display-bg video {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -958,6 +968,7 @@ export default {
   box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.3);
 }
 .equip-chip img,
+.equip-chip video,
 .equip-chip .chip-svg {
   display: block;
   max-width: 44px;
@@ -1005,6 +1016,7 @@ export default {
   overflow: hidden;
 }
 .food-chip .food-thumb img,
+.food-chip .food-thumb video,
 .food-chip .food-thumb .chip-svg {
   display: block;
   max-width: 52px;

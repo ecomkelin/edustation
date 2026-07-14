@@ -7,6 +7,10 @@
       <img v-if="speciesRecord?.visualType === 'image' && speciesRecord.imageFile"
            :src="speciesRecord.imageFile.url" :alt="speciesRecord.name" />
       <div v-else-if="speciesRecord?.visualType === 'svg'" class="svg-wrap" v-html="speciesRecord.svgContent" />
+      <video v-else-if="speciesRecord?.visualType === 'video' && speciesRecord.videoFile?.url"
+             :src="speciesRecord.videoFile.url"
+             autoplay loop muted playsinline
+             class="video-render" />
       <div v-else class="emoji-fallback">{{ fallbackEmoji }}</div>
 
       <!-- 叠加层：相对 .pet-frame（=图片实际渲染区域） -->
@@ -21,6 +25,9 @@
           <img v-if="ov.visualType === 'image' && ov.imageFile?.url"
                :src="ov.imageFile.url" :alt="ov.name" />
           <div v-else-if="ov.visualType === 'svg' && ov.svgContent" class="svg-wrap" v-html="ov.svgContent" />
+          <video v-else-if="ov.visualType === 'video' && ov.videoFile?.url"
+                 :src="ov.videoFile.url"
+                 autoplay loop muted playsinline />
         </div>
       </div>
     </div>
@@ -110,6 +117,7 @@ export default {
 
 .pet-frame > img,
 .pet-frame > .svg-wrap,
+.pet-frame > .video-render,
 .pet-frame > .emoji-fallback {
   width: 100%;
   max-height: 60vh;
@@ -140,6 +148,7 @@ export default {
   justify-content: center;
 }
 .overlay-slot img,
+.overlay-slot video,
 .overlay-slot .svg-wrap :deep(svg) {
   width: 100%;
   height: 100%;
