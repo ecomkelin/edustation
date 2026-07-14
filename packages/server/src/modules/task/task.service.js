@@ -273,6 +273,10 @@ async function create({ orgId, title, description, type, priority, creator, assi
   if (!Array.isArray(supervisors) || supervisors.length === 0) {
     throw ApiError.badRequest('至少 1 个监督人')
   }
+  // 2026-07-09: 监督人 ≠ 执行人 — 同一人不能在同一个任务里既是监督人又是执行人
+  //   (失去"双人"机制的意义, 单人任务等于没监督)
+  //   校验顺序: 在同机构校验之前先做, 错误信息更具体
+  assertNoSupervisorAssigneeOverlap(assignees, supervisors)
   // 同机构校验
   await assertUsersInOrg(orgId, [...assignees, ...supervisors, creator])
   // 条目 assignee ⊂ assignees
@@ -342,6 +346,8 @@ async function update({ id, orgId, body, actor }) {
   if (['approved', 'cancelled', 'expired'].includes(task.status)) {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可编辑`)
   }
+  // 2026-07-09: 执行中也不能编辑 — 见 assertNotInExecution
+  assertNotInExecution(task, '编辑')
   if (body.title != null) task.title = body.title
   if (body.description != null) task.description = body.description
   if (body.type != null) task.type = body.type
@@ -371,6 +377,15 @@ async function update({ id, orgId, body, actor }) {
         }).catch((e) => console.warn('[task.update] publishTaskAssigned error:', e.message))
       })
     }
+  }
+  // 2026-07-09: 监督人 ≠ 执行人 — 只在两个列表都变了或其中一个变了时校验
+  //   (单改 supervisors 时拿当前 assignees 比, 单改 assignees 时拿当前 supervisors 比)
+  if (body.supervisors != null || body.assignees != null) {
+    const finalAssignees = (body.assignees || task.assignees.map((a) => a.user)).map((u) =>
+      typeof u === 'object' && u.user ? u.user : u
+    )
+    const finalSupervisors = body.supervisors || task.supervisors
+    assertNoSupervisorAssigneeOverlap(finalAssignees, finalSupervisors)
   }
   if (body.status != null) {
     // 仅允许: cancelled(前端 cancel 端点会处理); approved 不允许通过 update 走
@@ -504,6 +519,39 @@ async function unarchive({ id, orgId, actor }) {
 function assertNotArchived(task) {
   if (task && task.archived) {
     throw ApiError.unprocessable('任务已归档,不可操作;请先取消归档')
+  }
+}
+
+/**
+ * 2026-07-09: 锁执行中状态 — "任务执行期间不能修改任务"。
+ * "执行中" 窗口: assigned/in_progress/partial_submitted/submitted/rejected (除终态 + draft 之外的所有状态)。
+ *   - draft / assigned: 还在前置期, 允许 creator 修字段
+ *   - in_progress / partial_submitted / submitted / rejected: 已进入执行, 主体字段不可改
+ *   - approved / expired / cancelled: 终态, 本来就锁
+ * 不豁免 creator (业务规则: "执行期间不能修改" 无例外)。
+ * 唯一例外: addItemRemark (子任务备注) 走另一条不受此锁约束的端点 — 那才是规则 3b 的豁免。
+ */
+const EXECUTION_STATUSES = Object.freeze(['in_progress', 'partial_submitted', 'submitted', 'rejected'])
+function assertNotInExecution(task, opName = '修改') {
+  if (task && EXECUTION_STATUSES.includes(task.status)) {
+    throw ApiError.unprocessable(`任务执行中(${task.status}),不可${opName};如需调整请先 cancel 或走子任务备注`)
+  }
+}
+
+/**
+ * 2026-07-09: 监督人 ≠ 执行人 — 同一人不能在同一个任务里既是监督人又是执行人。
+ * assignees 可以是 userId 字符串数组, 也可以是 { user, ... } 对象数组 (来自 update body 的展平);
+ * supervisors 一定是 userId 字符串数组。
+ * 错误信息列具体哪个 userId 冲突, 方便用户定位修正。
+ */
+function assertNoSupervisorAssigneeOverlap(assignees, supervisors) {
+  if (!Array.isArray(assignees) || !Array.isArray(supervisors)) return
+  const supSet = new Set(supervisors.map((u) => String(u)))
+  const overlap = assignees
+    .map((u) => (u && typeof u === 'object' && u.user ? String(u.user) : String(u)))
+    .filter((u) => supSet.has(u))
+  if (overlap.length) {
+    throw ApiError.badRequest(`监督人与执行人不能为同一人: ${[...new Set(overlap)].join(', ')}`)
   }
 }
 
@@ -642,7 +690,10 @@ async function addItem({ id, orgId, item, actor }) {
   if (task.status === 'approved' || task.status === 'cancelled' || task.status === 'expired') {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可加条目`)
   }
-  // 校验 assignee ⊂ assignees
+  // 2026-07-09: 执行中不能加条目 (跟 update 同语义: 执行期间不能改任务结构)
+  if (EXECUTION_STATUSES.includes(task.status)) {
+    throw ApiError.unprocessable(`任务执行中(${task.status}),不可加条目`)
+  }
   // 校验 assignee ⊂ assignees
   const ok = task.assignees.some((a) => refId(a.user) === String(item.assignee))
   if (!ok) throw ApiError.badRequest('条目执行人必须在任务执行人列表中')
@@ -699,6 +750,11 @@ async function removeItem({ id, itemId, orgId, actor }) {
   if (task.status === 'approved' || task.status === 'cancelled' || task.status === 'expired') {
     throw ApiError.unprocessable(`任务当前状态 ${task.status} 不可删条目`)
   }
+  // 2026-07-09: 执行中不能删条目 — 但 §8.1 配套路径(物理删除任务前的清理)不受此约束
+  //   物理删除任务路径走的是 archived + 终态检查, 不会走到这里
+  if (EXECUTION_STATUSES.includes(task.status)) {
+    throw ApiError.unprocessable(`任务执行中(${task.status}),不可删条目`)
+  }
   // 2026-07-08 扩: 权限模型从「assignee/task.write」扩到「assignee/task.write/task.delete/任务 creator」
   //   死锁场景: 任务创建者想删整个任务, 但他不是 item.assignee, 又没 task.write → 永远清不掉 checklist
   //   → 任务本身也永远删不掉. 加 task.delete 持有者 (任务模块超管) + 任务 creator 两条, 解死锁.
@@ -715,6 +771,40 @@ async function removeItem({ id, itemId, orgId, actor }) {
   await TaskItem.deleteOne({ _id: itemId, org: orgId, task: id })
   await recomputeTaskState(id)
   return { success: true, id: itemId }
+}
+
+// ─── 子任务备注 (2026-07-09 新增) ────────────────────
+//   业务规则: 仅该 item.assignee 本人 / task.write 持有者可写
+//   不受 "执行期间不可改" 锁约束 — 这是规则 3b 的豁免口子, 执行人必须能留备注
+//   仍受 archived 约束 — 归档后一律不可操作
+async function addItemRemark({ id, itemId, orgId, content, mentions, actor }) {
+  const task = await Task.findOne({ _id: id, org: orgId }).select('_id archived').lean()
+  if (!task) throw ApiError.notFound('任务不存在')
+  if (task.archived) throw ApiError.unprocessable('任务已归档,不可加备注')
+  const item = await TaskItem.findOne({ _id: itemId, org: orgId, task: id }).select('assignee')
+  if (!item) throw ApiError.notFound('条目不存在')
+  // 权限: item.assignee 本人 / task.write 持有者 (跟 toggleItem 一致)
+  // (requirePermission 已为 isPlatformAdmin 注入 ['*'] 通配符)
+  const perms = (actor && actor.permissions) || []
+  const isAssignee = String(item.assignee) === String(actor.userId)
+  if (!isAssignee && !perms.includes('task.write')) {
+    throw ApiError.forbidden('仅本条目执行人或 task.write 可加备注')
+  }
+  item.remarks.push({
+    author: actor.userId,
+    content,
+    mentions: mentions || []
+  })
+  await item.save()
+  // 返回带 populate 的最新备注, 跟 addComment 风格一致
+  const lastRemark = item.remarks[item.remarks.length - 1]
+  return {
+    _id: lastRemark._id,
+    author: actor.userId,
+    content: lastRemark.content,
+    mentions: lastRemark.mentions,
+    createdAt: lastRemark.createdAt
+  }
 }
 
 // ─── 评论 ──────────────────────────────────────
@@ -1274,6 +1364,8 @@ module.exports = {
   addItem,
   toggleItem,
   removeItem,
+  // 子任务备注 (2026-07-09, 规则 3b 豁免)
+  addItemRemark,
   // 评论
   addComment,
   // 看板/统计

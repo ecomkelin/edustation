@@ -103,6 +103,15 @@ exports.removeItem = async (req, res) => res.json(ApiResponse.ok(await s.removeI
   actor: req.user
 })))
 
+// 2026-07-09: 子任务备注 — 规则 3b 豁免, 不受执行中锁约束, 仅 item.assignee / task.write 可写
+exports.addItemRemark = async (req, res) => res.status(201).json(ApiResponse.created(await s.addItemRemark({
+  id: req.params.id,
+  itemId: req.params.itemId,
+  orgId: req.orgId,
+  ...req.body,
+  actor: req.user
+})))
+
 // ─── 评论 ────────────────────────────────────
 
 exports.addComment = async (req, res) => res.status(201).json(ApiResponse.created(await s.addComment({

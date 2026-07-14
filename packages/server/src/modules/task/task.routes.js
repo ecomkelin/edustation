@@ -87,6 +87,11 @@ router.patch('/:id/items/:itemId', mws.requirePermission('task.read', 'task.read
 // R-3922 DELETE /tasks/:id/items/:itemId (2026-07-08: 配合 task 物理删除挡板, 让用户清空 checklist 后能删任务)
 router.delete('/:id/items/:itemId', mws.requirePermission('task.write'), asyncHandler(c.removeItem))
 
+// R-3923 POST /tasks/:id/items/:itemId/remarks (2026-07-09: 规则 3b — 子任务备注, 豁免执行中锁)
+//   跟 toggleItem 同权限: task.read OR task.read.own (执行人本身就有 task.read.own)
+//   service 内额外校验 item.assignee 本人或 task.write
+router.post('/:id/items/:itemId/remarks', mws.requirePermission('task.read', 'task.read.own'), v.addItemRemark, mws.validateRequest, asyncHandler(c.addItemRemark))
+
 // ─── 评论 ────────────────────────────────────
 
 // R-3910 POST /tasks/:id/comments

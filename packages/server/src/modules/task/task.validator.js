@@ -111,6 +111,13 @@ const addComment = [
   body('mentions.*').optional().isMongoId()
 ]
 
+// ─── 加子任务备注 (2026-07-09) ──────────────────────────
+const addItemRemark = [
+  body('content').isString().trim().notEmpty().isLength({ max: 2000 }),
+  body('mentions').optional().isArray(),
+  body('mentions.*').optional().isMongoId()
+]
+
 // ─── 看板 ──────────────────────────────────────────────
 const kanban = [
   query('assignee').optional().isMongoId(),
@@ -179,6 +186,7 @@ module.exports = {
   cancel,
   toggleItem,
   addItem,
+  addItemRemark,
   addComment,
   kanban,
   templateCreate,

@@ -29,12 +29,19 @@
       </el-form-item>
       <el-form-item label="执行人" prop="assignees">
         <el-select v-model="form.assignees" multiple filterable style="width: 100%" placeholder="至少 1 个">
-          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+          <!-- 2026-07-09: 监督人 ≠ 执行人 — 已在 supervisors 里的用户在前端就 disable, 避免选完提交才被后端 400 -->
+          <el-option v-for="u in userOptions" :key="u.id"
+            :label="u.realName || u.name"
+            :value="u.id"
+            :disabled="form.supervisors.includes(u.id)" />
         </el-select>
       </el-form-item>
       <el-form-item label="监督人" prop="supervisors">
         <el-select v-model="form.supervisors" multiple filterable style="width: 100%" placeholder="默认 1 个,可多选">
-          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+          <el-option v-for="u in userOptions" :key="u.id"
+            :label="u.realName || u.name"
+            :value="u.id"
+            :disabled="form.assignees.includes(u.id)" />
         </el-select>
       </el-form-item>
       <el-form-item label="开始时间" prop="startAt">

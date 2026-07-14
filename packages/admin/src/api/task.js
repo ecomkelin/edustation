@@ -32,6 +32,8 @@ export const taskApi = {
   toggleItem: (id, itemId, data) => http.patch(`/tasks/${id}/items/${itemId}`, data),
   // 2026-07-08: 配合物理删除挡板, 让用户清空 checklist 后能删任务
   removeItem: (id, itemId) => http.delete(`/tasks/${id}/items/${itemId}`),
+  // 2026-07-09: 子任务备注 — 规则 3b 豁免, 不受执行中锁约束
+  addItemRemark: (id, itemId, data) => http.post(`/tasks/${id}/items/${itemId}/remarks`, data),
 
   // ─── 评论 ──────────────────────────────
   addComment: (id, data) => http.post(`/tasks/${id}/comments`, data),

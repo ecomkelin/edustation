@@ -14,7 +14,20 @@ const { Schema, model } = require('mongoose')
  * 多人协作场景下: Task.assignees[i] 各自勾选自己负责的子集条目.
  *
  * `doneBy` 与 `doneAt` 记录"是谁/何时勾的",便于审计与监督人复核.
+ *
+ * `remarks` (2026-07-09): 子任务备注 — 与 TaskComment 平级, 但挂在 item 上,
+ *   业务规则: 仅该 item.assignee 本人或 task.write 持有者可写, 不受执行中锁约束
+ *   (是"任务执行期间不能修改任务"的豁免口子).
  */
+const TaskItemRemarkSchema = new Schema(
+  {
+    author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    content: { type: String, required: true, trim: true, maxlength: 2000 },
+    mentions: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] }
+  },
+  { _id: true, timestamps: { createdAt: true, updatedAt: false } }
+)
+
 const TaskItemSchema = new Schema(
   {
     // 所属任务
@@ -32,7 +45,9 @@ const TaskItemSchema = new Schema(
     // 勾选时间
     doneAt: { type: Date, default: null },
     // 排序（同一 task 内由小到大展示;创建时按传入顺序写入）
-    order: { type: Number, default: 0, min: 0 }
+    order: { type: Number, default: 0, min: 0 },
+    // 子任务备注数组（2026-07-09 新增,见上）
+    remarks: { type: [TaskItemRemarkSchema], default: [] }
   },
   { timestamps: true, collection: 'task_items' }
 )

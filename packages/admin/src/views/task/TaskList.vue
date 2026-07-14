@@ -105,9 +105,9 @@
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button size="small" link @click.stop="goDetail(row, showArchived)">详情</el-button>
-          <el-button v-if="canDelete && !row.archived" size="small" link type="warning" @click.stop="onArchive(row)">归档</el-button>
-          <el-button v-if="canDelete && row.archived" size="small" link @click.stop="onUnarchive(row)">取消归档</el-button>
-          <el-button v-if="canDelete" size="small" link type="danger" @click.stop="onDelete(row)">删除</el-button>
+          <el-button v-if="canArchiveRow(row) && !row.archived" size="small" link type="warning" @click.stop="onArchive(row)">归档</el-button>
+          <el-button v-if="canArchiveRow(row) && row.archived" size="small" link @click.stop="onUnarchive(row)">取消归档</el-button>
+          <el-button v-if="canArchiveRow(row)" size="small" link type="danger" @click.stop="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -208,7 +208,15 @@ const stats = ref({ mineTotal: 0, mineDue: 0, mineOverdue: 0, mineSubmitted: 0, 
 const buckets = ref({ todo: [], inProgress: [], pendingReview: [], done: [] })
 
 const canCreate = computed(() => hasPermInOrg(auth, 'task.write'))
-const canDelete = computed(() => hasPermInOrg(auth, 'task.delete'))
+// 2026-07-09: 列表页归档/取消归档/删除按钮也按 isCreator 收口, 跟 TaskDetail / 后端 service 对齐
+//   旧版只看 task.delete 权限码 → 任何持有 task.delete 的人都能点, 点完后端 403, UX 割裂
+//   现在改为: isCreator 或平台超管 → 显示按钮; 其他持有 task.delete 的人不能点 (业务上不是发起人就无权归档别人的任务)
+const myId = computed(() => auth.user?.id)
+const isPlatformAdmin = computed(() => !!auth.user?.isPlatformAdmin)
+function canArchiveRow(row) {
+  if (!row) return false
+  return isPlatformAdmin.value || String(row.creator?._id || row.creator) === myId.value
+}
 
 const columns = [
   { key: 'todo', label: '待办' },

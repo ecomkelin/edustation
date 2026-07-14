@@ -55,26 +55,57 @@
             </div>
           </template>
           <div class="items">
-            <div v-for="it in items" :key="it._id" class="items__row">
-              <el-checkbox
-                :model-value="it.done"
-                :disabled="!canToggleItem(it)"
-                @change="(v) => onToggleItem(it, v)" />
-              <span :class="{ done: it.done }">{{ it.title }}</span>
-              <el-tag size="small" effect="plain">
-                {{ userName(it.assignee) }}
-              </el-tag>
-              <span v-if="it.done && it.doneBy" class="items__meta">
-                ✓ {{ userName(it.doneBy) }} · {{ formatDate(it.doneAt) }}
-              </span>
-              <el-button
-                v-if="canRemoveItem(it)"
-                size="small"
-                type="danger"
-                link
-                :icon="Delete"
-                :loading="itemRemovingId === it._id"
-                @click="onRemoveItem(it)" />
+            <div v-for="it in items" :key="it._id" class="items__block">
+              <div class="items__row">
+                <el-checkbox
+                  :model-value="it.done"
+                  :disabled="!canToggleItem(it)"
+                  @change="(v) => onToggleItem(it, v)" />
+                <span :class="{ done: it.done }">{{ it.title }}</span>
+                <el-tag size="small" effect="plain">
+                  {{ userName(it.assignee) }}
+                </el-tag>
+                <span v-if="it.done && it.doneBy" class="items__meta">
+                  ✓ {{ userName(it.doneBy) }} · {{ formatDate(it.doneAt) }}
+                </span>
+                <el-button
+                  v-if="canRemoveItem(it)"
+                  size="small"
+                  type="danger"
+                  link
+                  :icon="Delete"
+                  :loading="itemRemovingId === it._id"
+                  @click="onRemoveItem(it)" />
+              </div>
+              <!--
+                2026-07-09: 子任务备注 (规则 3b) — 执行人对自己负责的条目在执行中仍可加备注
+                  仅展示给本条目执行人 + task.write 持有者; 输入框紧跟条目下方,
+                  既不抢占主表横向空间, 也不打断 checklist 的勾选节奏
+              -->
+              <div class="items__remarks">
+                <div v-for="r in (it.remarks || [])" :key="r._id" class="items__remark">
+                  <b>{{ userName(r.author) }}</b>
+                  <span class="items__remark-time">{{ formatDate(r.createdAt) }}</span>
+                  <div class="items__remark-body">{{ r.content }}</div>
+                </div>
+                <div v-if="canAddItemRemark(it)" class="items__remark-input">
+                  <el-input
+                    v-model="remarkDrafts[it._id]"
+                    type="textarea"
+                    :rows="1"
+                    maxlength="2000"
+                    show-word-limit
+                    placeholder="加备注 (例: 进度 50%, 还差 2 个文件)"
+                    @keydown.enter.exact.prevent="onAddItemRemark(it)" />
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :loading="remarkSavingId === it._id"
+                    :disabled="!(remarkDrafts[it._id] && remarkDrafts[it._id].trim())"
+                    @click="onAddItemRemark(it)"
+                  >保存备注</el-button>
+                </div>
+              </div>
             </div>
             <div v-if="items.length === 0" class="items__empty">暂无条目</div>
           </div>
@@ -321,6 +352,42 @@ async function onRemoveItem(it) {
   }
 }
 
+// ─── 子任务备注 (2026-07-09, 规则 3b) ─────────────────────
+//   与 service.addItemRemark 权限对齐: 本条目 assignee 本人 OR task.write 持有者
+//   不受"任务执行中"锁约束 — 这是规则 3b 的豁免口子
+const remarkDrafts = reactive({})      // { [itemId]: string }
+const remarkSavingId = ref(null)
+function canAddItemRemark(it) {
+  if (task.value.archived) return false
+  if (isFinal.value) return false
+  // 跟 canToggleItem 同语义 — 本条目 assignee 本人 / task.write
+  return String(it.assignee?._id || it.assignee) === myId.value || hasPermInOrg(auth, 'task.write')
+}
+async function onAddItemRemark(it) {
+  const content = (remarkDrafts[it._id] || '').trim()
+  if (!content) return
+  if (remarkSavingId.value) return
+  remarkSavingId.value = it._id
+  try {
+    const r = await taskApi.addItemRemark(route.params.id, it._id, { content, mentions: [] })
+    // 后端只回 _id + content + author + mentions + createdAt (无 populated author), 直接 push 进 item.remarks
+    // items 是 ref([]) 深度响应式, 直接 push 触发响应式
+    const saved = r.data || {}
+    it.remarks = (it.remarks || []).concat([{
+      _id: saved._id,
+      author: auth.user?.id, // 即时显示, 详情重新 loadDetail 后会被 populate 替换
+      content: saved.content,
+      mentions: saved.mentions || [],
+      createdAt: saved.createdAt
+    }])
+    remarkDrafts[it._id] = ''
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '备注失败')
+  } finally {
+    remarkSavingId.value = null
+  }
+}
+
 async function loadDetail(opts = {}) {
   loading.value = true
   try {
@@ -457,12 +524,21 @@ onMounted(loadDetail)
 .block { margin-bottom: 12px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; }
 .desc { white-space: pre-wrap; color: #303133; }
-.items { display: flex; flex-direction: column; gap: 8px; }
+.items { display: flex; flex-direction: column; gap: 12px; }
+.items__block { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-radius: 4px; }
+.items__block:hover { background: #fafbfc; }
 .items__row { display: flex; gap: 8px; align-items: center; }
 .items__row span.done { text-decoration: line-through; color: #909399; }
 .items__meta { font-size: 12px; color: #909399; }
 .items__empty { color: #c0c4cc; padding: 8px; }
 .items__progress { margin-top: 12px; }
+/* 2026-07-09: 子任务备注 UI (规则 3b) */
+.items__remarks { margin-left: 28px; display: flex; flex-direction: column; gap: 4px; }
+.items__remark { font-size: 12px; color: #606266; padding: 2px 0; }
+.items__remark-time { color: #909399; margin-left: 8px; }
+.items__remark-body { white-space: pre-wrap; margin-top: 2px; }
+.items__remark-input { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; }
+.items__remark-input :deep(.el-textarea__inner) { min-height: 28px !important; padding: 4px 8px !important; font-size: 12px; }
 .empty { color: #c0c4cc; padding: 8px; }
 .overdue { color: #f56c6c; font-weight: 500; }
 .info__row { margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px; }

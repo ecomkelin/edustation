@@ -757,6 +757,7 @@ Auth 列简写:
 | 2026-06-25 | 财务模块 MM=34 上线 (账本 + 流水 + 字典; account-ledger pattern) | R-3400 ~ R-3424 | add |
 | 2026-06-27 | 审计日志 MM=35 上线 (操作留痕中间件 + 5 端点; 仅平台超管可见; controller 零侵入) | R-3500 ~ R-3504 | add |
 | 2026-07-08 | 员工任务模块 MM=39 上线 (三角色协作 + checklist + 监督人审批 + 看板 + 周期任务模板 + cron; 6 model + 22 端点 + 5 admin 视图; §8.1 物理删除防护) | R-3900 ~ R-3919, R-3920/21 归档, R-3922 item 删除 | add |
+| 2026-07-09 | 任务模块 4 条业务规则审计 + 修复 (监督人≠执行人 / 执行中不可改 / 子任务备注 / 列表页归档按 isCreator) | R-3923 子任务备注; R-3900/03/08/22 加执行中锁; R-3900/03 加监督人≠执行人 | modify |
 | 2026-07-10 | C 端单课包消费明细 R-2080 上线 (复用 admin R-1806 getUsage 业务; service.getUsageMe 强校验 student == activeStudentId 防越权; 客户端「我的课包」点课包弹层展示, 移除 toast 占位) | R-2080 | add |
 | 2026-07-03 | R-1214 /course-enrollments/me spread req.query 支持 page/pageSize/status 过滤 (C 端全量列表页用) | R-1214 | modify |
 | 2026-07-03 | R-0932 /orgs/:id/public 扩展学科/老师/课包 3 段 (并发 Category+UserOrgRel+CourseProduct) | R-0932 | modify |
@@ -863,6 +864,7 @@ Auth 列简写:
 | R-3920 | POST | /tasks/:id/archive | PERM | task.delete | 归档 (软隐藏) | 2026-07-08 立项; list/kanban/stats 默认隐藏, 写操作全部 422; 不需密码 |
 | R-3921 | POST | /tasks/:id/unarchive | PERM | task.delete | 取消归档 | 同上; 反归档可逆, 幂等 |
 | R-3922 | DELETE | /tasks/:id/items/:itemId | PERM | task.write | 删除 checklist 条目 | 2026-07-08 立项 (堵 R-3904 挡板无入口的洞); **2026-07-08 改**: 权限扩到「条目 assignee / 任务 creator / 平台超管 / task.write / task.delete」(解死锁: creator 想删任务必先能清空 checklist); 终态/归档态 422; 触发 recomputeTaskState |
+| R-3923 | POST | /tasks/:id/items/:itemId/remarks | PERM | task.read OR task.read.own | 子任务备注 | 2026-07-09 立项 (规则 3b 豁免口子): 仅本条目 assignee / task.write 可写, 不受 "执行中" 锁约束; 归档态 422; TaskItem.remarks 子文档 (新字段) |
 
 **§39.1 归档 query 参数**（2026-07-08）:
 
