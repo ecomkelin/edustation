@@ -111,20 +111,16 @@
 
             <!-- species 主图: 三分支 svg / video / image (2026-07-14 跟 detail.vue PetEquipmentOverlay 范式对齐) -->
             <view v-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
+            <!-- 2026-07-14: 跟 admin PetEquipmentOverlay 严格对齐 — 极简单行 video (无 uni-app props / 无 event handlers)
+                 之前加了一堆 uni-app 特定 props + Vue @canplay/@loadedmetadata → uni-app x 3.0-alpha H5
+                 触发内部 [petVideo] error 假信号, ref 未就位时 handler 跑不到, autoplay 链断 -->
             <video
               v-else-if="petSpecies && petSpecies.visualType === 'video' && petSpecies.videoFile && petSpecies.videoFile.url"
-              ref="petPortraitVideo"
               :src="petSpecies.videoFile.url"
               :key="petSpecies._id"
               autoplay loop muted playsinline
-              :controls="false"
-              :show-fullscreen-btn="false"
-              :show-center-play-btn="false"
-              :enable-progress-gesture="false"
-              object-fit="contain"
+              style="object-fit: contain"
               class="home__pet-portrait-video"
-              @canplay="tryAutoplayPortrait"
-              @loadedmetadata="tryAutoplayPortrait"
             />
             <image
               v-else-if="petSpecies && petSpecies.imageFile && petSpecies.imageFile.url"
@@ -145,18 +141,11 @@
                 <view v-if="petEquipLayer[slot] && petEquipLayer[slot].svgContent" class="home__svg-wrap" v-html="petEquipLayer[slot].svgContent" />
                 <video
                   v-else-if="petEquipLayer[slot] && petEquipLayer[slot].visualType === 'video' && petEquipLayer[slot].videoUrl"
-                  :ref="(el) => setHomeEquipVideoRef(slot, el)"
                   :src="petEquipLayer[slot].videoUrl"
                   :key="slot"
                   autoplay loop muted playsinline
-                  :controls="false"
-                  :show-fullscreen-btn="false"
-                  :show-center-play-btn="false"
-                  :enable-progress-gesture="false"
-                  object-fit="contain"
+                  style="object-fit: contain"
                   class="home__pet-equip-video"
-                  @canplay="tryAutoplayHomeEquip(slot)"
-                  @loadedmetadata="tryAutoplayHomeEquip(slot)"
                 />
                 <image
                   v-else-if="petEquipLayer[slot] && petEquipLayer[slot].imageFile && petEquipLayer[slot].imageFile.url"
@@ -986,35 +975,6 @@ export default {
     selectDay(day) {
       haptic.tap()
       this.selectedDate = day.date
-    },
-
-    // ─── 2026-07-14: video 自动播放兑底 (跟 detail.vue 同款范式) ─────
-    getNativeVideoEl(refEl) {
-      if (!refEl) return null
-      if (refEl.$el && typeof refEl.$el.play === 'function') return refEl.$el
-      if (typeof refEl.play === 'function') return refEl
-      return null
-    },
-    tryAutoplayPortrait() {
-      const el = this.getNativeVideoEl(this.$refs.petPortraitVideo)
-      if (!el) return
-      try { el.muted = true } catch (_) {}
-      const p = el.play && el.play()
-      if (p && typeof p.catch === 'function') p.catch((e) => console.warn('[homePetVideo] autoplay rejected', e && e.message))
-    },
-    setHomeEquipVideoRef(slot, el) {
-      if (!slot) return
-      if (!this._homeEquipVideoRefs) this._homeEquipVideoRefs = {}
-      if (el) this._homeEquipVideoRefs[slot] = el
-      else delete this._homeEquipVideoRefs[slot]
-    },
-    tryAutoplayHomeEquip(slot) {
-      const refEl = this._homeEquipVideoRefs && this._homeEquipVideoRefs[slot]
-      const el = this.getNativeVideoEl(refEl)
-      if (!el) return
-      try { el.muted = true } catch (_) {}
-      const p = el.play && el.play()
-      if (p && typeof p.catch === 'function') p.catch(() => {})
     },
 
     formatTime: (d) => (d ? new Date(d).toTimeString().slice(0, 5) : ''),

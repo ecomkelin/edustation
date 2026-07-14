@@ -118,22 +118,19 @@
         <view v-else class="pet-detail__pet press" @tap="goEquip">
           <!-- 主图: 三分支 svg / video / image (2026-07-14 加 video, 跟 admin PetEquipmentOverlay 范式) -->
           <view v-if="species && species.visualType === 'svg' && species.svgContent" class="pet-detail__svg-wrap" v-html="species.svgContent" />
+          <!-- 2026-07-14: 跟 admin PetEquipmentOverlay 严格对齐 — 极简单行 video (无 uni-app props / 无 event handlers)
+               之前加了一堆 uni-app 特定 props (controls/show-*/object-fit attr) + Vue 事件 @canplay/@error
+               → uni-app x 3.0-alpha 在 H5 编译产物里这些 props 触发内部 [petVideo] error 假信号,
+                 @error handler 跑时 el.error/networkState 都是 null, ref 未就位, 后续 autoplay play() 链断
+               现在跟 admin 一致: 纯 HTML5 attr, autoplay/loop/muted/playsinline 全交给浏览器,
+               视觉尺寸走 CSS object-fit: contain (style attr 而非 HTML attr) -->
           <video
             v-else-if="species && species.visualType === 'video' && species.videoFile && species.videoFile.url"
-            ref="petVideoEl"
             :src="species.videoFile.url"
             :key="species._id"
             autoplay loop muted playsinline
-            :controls="false"
-            :show-fullscreen-btn="false"
-            :show-center-play-btn="false"
-            :enable-progress-gesture="false"
-            object-fit="contain"
+            style="object-fit: contain"
             class="pet-detail__pet-video"
-            @canplay="tryAutoplay"
-            @loadedmetadata="tryAutoplay"
-            @play="onVideoPlay"
-            @error="onVideoError"
           />
           <image v-else-if="species && species.imageFile && species.imageFile.url" :src="species.imageFile.url" class="pet-detail__pet-svg" mode="aspectFit" />
           <text v-else class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
@@ -150,18 +147,11 @@
               <view v-if="layer.svgContent" class="pet-detail__svg-wrap" v-html="layer.svgContent" />
               <video
                 v-else-if="layer.visualType === 'video' && layer.videoUrl"
-                :ref="(el) => setEquipVideoRef(layer.key, el)"
                 :src="layer.videoUrl"
                 :key="layer.key"
                 autoplay loop muted playsinline
-                :controls="false"
-                :show-fullscreen-btn="false"
-                :show-center-play-btn="false"
-                :enable-progress-gesture="false"
-                object-fit="contain"
+                style="object-fit: contain"
                 class="pet-detail__equip-video"
-                @canplay="tryAutoplayEquip(layer.key)"
-                @loadedmetadata="tryAutoplayEquip(layer.key)"
               />
               <image v-else-if="layer.url" :src="layer.url" class="pet-detail__equip-img" mode="aspectFit" />
             </view>
@@ -343,10 +333,7 @@ export default {
       // 阶段: idle → hammer → cracks → shake → gold → reveal (后端 alive 切换)
       hatchPhase: 'idle',
       hatchActive: false,
-      hatchTimers: [],
-      // 2026-07-14: video 自动播放状态标记 + 装备 video ref map
-      petVideoPlaying: false,
-      _equipVideoRefs: {}
+      hatchTimers: []
     }
   },
   computed: {
@@ -495,12 +482,6 @@ export default {
   },
   onShow() {
     this.load()
-  },
-  // 2026-07-14: video 自动播放兜底 — onReady 时 DOM 已渲染, ref 已就位
-  // 配合模板上的 @canplay/@loadedmetadata 共 3 层兜底
-  onReady() {
-    // 延迟 100ms 等首帧绘制
-    setTimeout(() => this.tryAutoplay(), 100)
   },
   onUnload() {
     clearInterval(this._pollTimer)
@@ -769,75 +750,7 @@ export default {
     goEnroll() { uni.switchTab({ url: '/pages/tabbar/explore' }) },
     goAdopt() { uni.navigateTo({ url: '/pages/pet/adopt' }) },
     goEquip() { uni.navigateTo({ url: '/pages/pet/equip' }) },
-    goShop() { uni.navigateTo({ url: '/pages/pet/shop' }) },
-
-    // ─── 2026-07-14: video 自动播放兜底 ────────────────────────
-    // uni-app H5 <video> 的 autoplay 属性在 Chrome strict 策略 / 移动端经常失效,
-    // 退化成"黑色 + 中央播放按钮" 的原生 UI. 修法: 拿原生 DOM ref, 在 canplay /
-    // loadedmetadata / mounted 三层调 .play(), 处理 Autoplay 政策拒绝时的 catch.
-    //
-    // 注意: ref="petVideoEl" 在 uni-app 编译到 H5 时是个组件 instance, 但其底层
-    // 仍是 <video> DOM 元素 — .play() / .pause() 在 instance 上也能调到原生方法
-    // (uni-app 包装); 兼容写法优先取 .$el (H5 DOM), 否则直接拿 ref 本身.
-    getNativeVideoEl(refEl) {
-      if (!refEl) return null
-      // H5: ref instance.$el 即 <video> DOM; 小程序/APP: instance 本身就是组件有 .play()
-      if (refEl.$el && typeof refEl.$el.play === 'function') return refEl.$el
-      if (typeof refEl.play === 'function') return refEl
-      return null
-    },
-    tryAutoplay() {
-      const el = this.getNativeVideoEl(this.$refs.petVideoEl)
-      if (!el) return
-      // muted 状态有时机问题;这里强制同步静音
-      try { el.muted = true } catch (_) {}
-      const p = el.play && el.play()
-      if (p && typeof p.catch === 'function') {
-        p.catch((e) => {
-          // Autoplay 被浏览器拒绝 — 用户首次点击页面后再尝试
-          console.warn('[petVideo] autoplay rejected, will retry on first tap', e && e.message)
-        })
-      }
-    },
-    onVideoPlay() {
-      // 标记已开始播放 — 用于排查 (跟 admin autoplay 行为对齐)
-      this.petVideoPlaying = true
-    },
-    onVideoError(e) {
-      // 2026-07-14: uni-app H5 @error 事件 e.detail 通常是空对象, 真正错误在原生 <video>.error (MediaError)
-      const el = this.getNativeVideoEl(this.$refs.petVideoEl)
-      const mediaErr = el && el.error
-      // MediaError.code: 1=ABORTED 2=NETWORK 3=DECODE 4=SRC_NOT_SUPPORTED
-      const MEDIA_ERR = { 1: 'ABORTED', 2: 'NETWORK', 3: 'DECODE', 4: 'SRC_NOT_SUPPORTED' }
-      console.warn('[petVideo] error', {
-        eventDetail: e && (e.detail || e.message),
-        mediaErrorCode: mediaErr && mediaErr.code,
-        mediaErrorMsg: mediaErr && MEDIA_ERR[mediaErr.code],
-        mediaErrorMessage: mediaErr && mediaErr.message,
-        networkState: el && el.networkState,
-        readyState: el && el.readyState,
-        currentSrc: el && el.currentSrc,
-        src: el && el.getAttribute && el.getAttribute('src')
-      })
-      this.petVideoPlaying = false
-    },
-    // 装备叠加层 video ref 收集 (按 key 存, 装备切换时清理)
-    setEquipVideoRef(key, el) {
-      if (!key) return
-      if (!this._equipVideoRefs) this._equipVideoRefs = {}
-      if (el) this._equipVideoRefs[key] = el
-      else delete this._equipVideoRefs[key]
-    },
-    tryAutoplayEquip(key) {
-      const refEl = this._equipVideoRefs && this._equipVideoRefs[key]
-      const el = this.getNativeVideoEl(refEl)
-      if (!el) return
-      try { el.muted = true } catch (_) {}
-      const p = el.play && el.play()
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {})
-      }
-    }
+    goShop() { uni.navigateTo({ url: '/pages/pet/shop' }) }
   }
 }
 </script>
