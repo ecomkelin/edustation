@@ -230,14 +230,16 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 ## 五、前端
 
 ### Admin（packages/admin）
-- `views/pet/PetSpeciesAdmin.vue`（去 tier，visualType 默认 video）
-- `views/pet/PetConsumableAdmin.vue`（扁平数值）
 - `views/pet/PetAdmin.vue`（去 tier，加 默认列 + 设为默认）
-- `views/pet/PetLevelConfigAdmin.vue`（**新增**，等级曲线预览）
+- `views/pet/PetCatalogAdmin.vue`（**2026-07-15 合并**：3 个 catalog 页 → 单页 3 标签，菜单入口「系统管理→宠物管理」，icon `Notebook`）
+  - `tabs/PetSpeciesTab.vue`（从原 PetSpeciesAdmin 平移，visualType 默认 video）
+  - `tabs/PetConsumableTab.vue`（从原 PetConsumableAdmin 平移，扁平数值）
+  - `tabs/PetLevelConfigTab.vue`（从原 PetLevelConfigAdmin 平移，去掉 h2 与容器页重复）
+  - 旧路由 `/pet/species` `/pet/consumables` `/pet/level-config` 改为 `redirect: '/pet/catalog?tab=...'`，兼容历史书签
 - `views/classroom/PetClassroomDisplay.vue`（其他宠物网格）
 - `components/Pet/PetEquipmentOverlay.vue`（退化为 species 渲染）、`GrantOnBehalfDialog.vue`（仅消耗品）
-- **删**：`PetItemAdmin.vue` / `EquipOnBehalfDialog.vue` / `FeedOnBehalfDialog.vue`
-- 菜单：删「装饰图鉴」，加「宠物等级配置」（学员组，per-org）
+- **删**：`PetItemAdmin.vue` / `EquipOnBehalfDialog.vue` / `FeedOnBehalfDialog.vue` / `PetSpeciesAdmin.vue` / `PetConsumableAdmin.vue` / `PetLevelConfigAdmin.vue`（2026-07-15 合并到 PetCatalogAdmin）
+- 菜单：拍平「系统管理→宠物管理」为单 leaf（icon `Notebook`）；学员组下「宠物等级配置」已删除（合并到 catalog 的 level-config tab）
 
 ### Client（packages/client, uni-app）
 - `api/pet.js`：`me` / `list` / `adopt` / `:petId/hatch` / `:petId/feed` / `:petId/set-default` / `species` / `consumables`（删 items/equip/swapEgg/tierDown）

@@ -90,7 +90,7 @@ import {
 const router = useRouter()
 const auth = useAuthStore()
 
-// canonical pattern (跟 Orgs.vue / PetConsumableAdmin.vue 一致):
+// canonical pattern (跟 Orgs.vue / PetConsumableTab.vue 一致):
 // 把 (TYPES, LABELS) 拍平为 [{ value, label }] 数组, 避开 v-for over Object.freeze 的潜在坑
 const TYPE_OPTIONS = TASK_TYPES.map((v) => ({ value: v, label: TASK_TYPE_LABELS[v] || v }))
 const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] || v }))

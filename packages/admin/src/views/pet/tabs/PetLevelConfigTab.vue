@@ -1,10 +1,14 @@
+<!--
+  PetLevelConfigTab (2026-07-15)
+  从原 PetLevelConfigAdmin.vue 整体迁移, body 不变; 只去掉原 page-header h2 (容器页已有 h2, 避免重复).
+-->
 <template>
   <div class="pet-level-config">
-    <div class="page-header">
-      <h2>宠物等级配置</h2>
+    <div class="tab-tip">
       <el-tooltip content="控制本机构宠物的最大等级与每级所需经验。经验公式：expToNext(L) = 基础经验 + 每级增量 × (L - 1)" placement="bottom">
         <el-icon class="help-icon"><QuestionFilled /></el-icon>
       </el-tooltip>
+      <span class="tab-tip-text">本机构宠物等级/经验曲线（per-org 可配，默认 12 级 / 100 + 50×(L-1)）</span>
     </div>
 
     <el-card v-loading="loading" class="config-card">

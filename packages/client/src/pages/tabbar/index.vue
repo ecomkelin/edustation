@@ -577,6 +577,27 @@ export default {
     petName() {
       return this.pet?.nickname || this.petSpecies?.name || '我的宠物'
     }
+  },
+  watch: {
+    activeStudentId() {
+      this.load()
+    },
+    pendingConsents: {
+      handler(list) {
+        if (Array.isArray(list) && list.length) {
+          this.pendingList = list
+          this.showConsents = true
+        }
+      },
+      immediate: true
+    }
+  },
+  onShow() {
+    if (!this.selectedDate) this.selectedDate = date.fmtDate(new Date())
+    this.load()
+    this.loadUnreadCount()
+  },
+  methods: {
     // 2026-07-04 学习画像 (mini 预览): 取第一个非空字段做高亮 label + 60 字预览
     // 端点实际返 personality/learningGoal/weakness/classFeedback/strengths/followUp (老师手填画像)
     profileHighlight() {
@@ -600,28 +621,7 @@ export default {
         }
       }
       return null
-    }
-  },
-  watch: {
-    activeStudentId() {
-      this.load()
     },
-    pendingConsents: {
-      handler(list) {
-        if (Array.isArray(list) && list.length) {
-          this.pendingList = list
-          this.showConsents = true
-        }
-      },
-      immediate: true
-    }
-  },
-  onShow() {
-    if (!this.selectedDate) this.selectedDate = date.fmtDate(new Date())
-    this.load()
-    this.loadUnreadCount()
-  },
-  methods: {
     async load() {
       this.loading = true
       try {

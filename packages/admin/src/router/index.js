@@ -46,11 +46,12 @@ const routes = [
       { path: 'points', component: () => import('@/views/points/Points.vue') },
       // 宠物管理 (2026-06-21 pet-system-v2)
       { path: 'pet', component: () => import('@/views/pet/PetAdmin.vue') },
-      // 宠物图鉴 CRUD (2026-06-21 pet-system-v2-ext; 2026-07-15 删 items，加 level-config): species/consumables
-      { path: 'pet/species', component: () => import('@/views/pet/PetSpeciesAdmin.vue') },
-      { path: 'pet/consumables', component: () => import('@/views/pet/PetConsumableAdmin.vue') },
-      // 等级配置 (2026-07-15 per-org 宠物等级曲线)
-      { path: 'pet/level-config', component: () => import('@/views/pet/PetLevelConfigAdmin.vue') },
+      // 宠物 catalog (2026-07-15 合并): 单页 3 标签 (图鉴 / 食物玩具 / 等级配置), 默认 species tab
+      { path: 'pet/catalog', component: () => import('@/views/pet/PetCatalogAdmin.vue') },
+      // 旧链接兼容: 重定向到带 tab query 的新路由, 历史书签/链接不失效
+      { path: 'pet/species', redirect: '/pet/catalog?tab=species' },
+      { path: 'pet/consumables', redirect: '/pet/catalog?tab=consumables' },
+      { path: 'pet/level-config', redirect: '/pet/catalog?tab=level-config' },
       // 商城流水 (2026-06-22 pet-shop): 学生买/老师代发 流水
       { path: 'pet/shop-orders', component: () => import('@/views/pet/PetShopOrders.vue') },
       // 财务模块 (2026-06-25 立项, 2026-06-25 拆 3 页, 同日再合并 财务字典到 类别字典)

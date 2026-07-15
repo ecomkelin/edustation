@@ -1,3 +1,9 @@
+<!--
+  PetSpeciesTab (2026-07-15)
+  从原 PetSpeciesAdmin.vue (2026-06-21) 整体迁移, body 不变; 只改 name.
+  作为 PetCatalogAdmin 的「宠物图鉴」tab 渲染体. 后端路由 /admin/pet/species
+  仍 requirePlatformAdmin 兜底 (机构 admin 写操作会 403).
+-->
 <template>
   <div class="page">
     <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
@@ -193,7 +199,7 @@ import { PET_VISUAL_TYPE_LABELS } from '@/utils/constants'
 const VISUAL_LABELS = PET_VISUAL_TYPE_LABELS
 
 export default {
-  name: 'PetSpeciesAdmin',
+  name: 'PetSpeciesTab',
   components: { FilePicker, DestructiveConfirm },
   setup() {
     const filter = reactive({ isActive: true, keyword: '' })

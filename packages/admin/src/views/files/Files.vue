@@ -348,7 +348,7 @@ onMounted(load)
 .file-cell { display: flex; align-items: center; gap: 10px; }
 .file-thumb { width: 40px; height: 40px; border-radius: 4px; background: #f5f7fa; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; color: #909399; position: relative; }
 .file-thumb :deep(.el-image) { width: 100%; height: 100%; }
-/* 2026-07-12: 视频缩略图 = 静态首帧 + ▶ 角标（参照 PetSpeciesAdmin 同模式） */
+/* 2026-07-12: 视频缩略图 = 静态首帧 + ▶ 角标（参照 PetSpeciesTab 同模式） */
 .file-thumb .thumb-video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }  /* 让 video 不捕获 click, 透传到 .file-thumb 触发 openPreview */
 .file-thumb .thumb-play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; filter: drop-shadow(0 0 3px rgba(0,0,0,0.6)); pointer-events: none; }
 .file-meta { min-width: 0; }

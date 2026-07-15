@@ -156,7 +156,8 @@ import { handleRemoveError } from '@/utils/removable'
 import { PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS } from '@/utils/constants'
 
 export default {
-  name: 'PetConsumableAdmin',
+  // 2026-07-15: 从 PetConsumableAdmin 改为 PetConsumableTab (作为 PetCatalogAdmin 的子 tab 渲染)
+  name: 'PetConsumableTab',
   components: { FilePicker, DestructiveConfirm },
   setup() {
     const filter = reactive({ kind: '', isActive: true, keyword: '' })

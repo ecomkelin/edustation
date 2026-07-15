@@ -177,19 +177,11 @@ const menuGroups = [
       { path: '/system/unaffiliated-users', label: '游离用户', icon: Connection, requirePlatform: true },
       // AI 管理 (2026-06-18): 会话/知识库/审计; 当前先做会话管理
       { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true },
-      // D 方案 (2026-06-22) → 重构 (2026-06-22 用户决策):
-      // 物种/装饰/食物图鉴由平台超管统一管理，全机构共用一份图鉴
-      // requirePlatform: true，仅平台超管可见 + 可写；机构 admin 看得到页面但写操作后端 403
-      {
-        label: '宠物管理',
-        icon: MagicStick,
-        requirePlatform: true,
-        children: [
-          { path: '/pet/species', label: '宠物图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
-          { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write', requirePlatform: true }
-          // 2026-07-15: 装饰图鉴已删除（装饰系统移除）；等级配置放「学员 → 宠物实例」附近（per-org）
-        ]
-      },
+      // D 方案 (2026-06-22) → 重构 (2026-06-22 用户决策) → 合并 (2026-07-15):
+      // 物种/消耗品/等级配置合并到单页 3 标签 /pet/catalog (图鉴 / 食物玩具 / 等级配置)
+      // requirePlatform: true，仅平台超管可见菜单入口；机构 admin 看不到菜单但 URL 直链可进 level-config tab
+      // (level-config 后端是 per-org 兜底, 图鉴/食物玩具写操作后端 requirePlatformAdmin 兜底)
+      { path: '/pet/catalog', label: '宠物管理', icon: Notebook, perm: 'pet.write', requirePlatform: true },
       // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典
       { path: '/regions', label: '地区管理', icon: Box, requirePlatform: true },
       // 平台配置 (2026-06-22): 4 个平台级配置项合并子组
@@ -327,10 +319,9 @@ const menuGroups = [
       // 宠物实例 (2026-06-21 pet-system-v2): 机构全量宠物 + 事件流 + 调整
       // D 方案 (2026-06-22): 实例留在学员与订单 (per-org 强隔离, 学员侧资产)
       { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' },
-      // 等级配置 (2026-07-15): per-org 宠物等级/经验曲线；机构管理员即可改本机构
-      { path: '/pet/level-config', label: '宠物等级配置', icon: MagicStick, perm: 'pet.write' },
       // 商城流水 (2026-06-22 pet-shop): 看学生买/老师代发 流水；本机构看本机构
       { path: '/pet/shop-orders', label: '商城流水', icon: Tickets, perm: 'pet.read' }
+      // 2026-07-15: 「宠物等级配置」移至系统管理 → 宠物管理 (合并到 /pet/catalog 的 level-config tab)
     ]
   },
   {
