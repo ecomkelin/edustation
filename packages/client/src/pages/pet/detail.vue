@@ -1002,8 +1002,10 @@ export default {
   }
 
   &__pet {
+    // 2026-07-15: 9:16 视频最终给客户看 1:1 — 加 aspect-ratio 锁正方形,
+    //             width 跟 stage 一致, height 自动 = width
     width: 100%;
-    height: 100%;
+    aspect-ratio: 1 / 1;
     position: relative;
     @include flex-center;
     overflow: hidden;
@@ -1014,11 +1016,19 @@ export default {
     height: 90%;
     object-fit: contain;
   }
-  // 2026-07-15: 视频主图改 cover — 上下裁切填满方形 stage, 边角水印一并切掉
+  // 2026-07-15: 视频永远是 9:16, 容器 1:1 (上面 aspect-ratio 锁的) — 显式 177.78% 锁 9:16 高度
+  //             物理尺寸 200×355.5rpx (按容器宽度算), 垂直居中, 父 overflow: hidden 裁掉上下 77.75rpx
+  //             露出中间 1:1, 视频原比例不变形, 边角水印一并切掉
   &__pet-video {
-    width: 90%;
-    height: 90%;
-    object-fit: cover;
+    position: absolute !important;
+    top: 50% !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 177.78% !important;  /* 16/9 for 9:16 */
+    display: block !important;
+    transform: translateY(-50%) !important;
+    object-fit: fill !important;
+    z-index: 1;
   }
   &__pet-emoji {
     font-size: 240rpx;
@@ -1037,8 +1047,19 @@ export default {
   &__equip-layer--clothes   { top: 50%;  left: 50%; transform: translateX(-50%); width: 70%; height: 36%; z-index: 2; }
   &__equip-layer--accessory { top: 36%;  left: 50%; transform: translateX(-50%); width: 45%; height: 18%; z-index: 4; }
   &__equip-layer--halo      { top: -4%;  left: 50%; transform: translateX(-50%); width: 75%; height: 30%; opacity: 0.85; z-index: 2; }
-  // 2026-07-15: 装备叠加层 video 改 cover (跟主图一致, 防止左右黑边)
-  &__equip-video,
+  // 2026-07-15: 装备叠加层 video 跟主图同款 — 177.78% 锁 9:16, 父 slot overflow 裁上下
+  //             !important 兜底: uni-app H5 偶尔覆盖 inline 样式
+  &__equip-video {
+    position: absolute !important;
+    top: 50% !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 177.78% !important;
+    display: block !important;
+    transform: translateY(-50%) !important;
+    object-fit: fill !important;
+    pointer-events: none;
+  }
   &__equip-img {
     width: 100%;
     height: 100%;
