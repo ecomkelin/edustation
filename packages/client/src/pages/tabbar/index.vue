@@ -119,14 +119,16 @@
               :src="petSpecies.videoFile.url"
               :key="petSpecies._id"
               autoplay loop muted playsinline
-              style="object-fit: contain"
+              :controls="false"
+              :show-play-btn="false"
+              :show-fullscreen-btn="false"
               class="home__pet-portrait-video"
             />
             <image
               v-else-if="petSpecies && petSpecies.imageFile && petSpecies.imageFile.url"
               :src="petSpecies.imageFile.url"
               class="home__pet-portrait-img"
-              mode="aspectFit"
+              mode="aspectFill"
             />
             <text v-else class="home__pet-portrait-emoji">{{ petEmoji }}</text>
 
@@ -144,14 +146,16 @@
                   :src="petEquipLayer[slot].videoUrl"
                   :key="slot"
                   autoplay loop muted playsinline
-                  style="object-fit: contain"
+                  :controls="false"
+                  :show-play-btn="false"
+                  :show-fullscreen-btn="false"
                   class="home__pet-equip-video"
                 />
                 <image
                   v-else-if="petEquipLayer[slot] && petEquipLayer[slot].imageFile && petEquipLayer[slot].imageFile.url"
                   :src="petEquipLayer[slot].imageFile.url"
                   class="home__pet-equip-img"
-                  mode="aspectFit"
+                  mode="aspectFill"
                 />
               </view>
             </view>
@@ -1905,27 +1909,38 @@ export default {
     position: relative;
     z-index: 1;
   }
-  // 2026-07-14: video / image 物种 — 跟 svg 同尺寸规则, object-fit: contain 保留比例
-  &__pet-portrait-video,
-  &__pet-portrait-img {
-    position: relative;
+  // 2026-07-15: 视频永远是 9:16, 容器是 1:1 (200rpx) — 不用 object-fit
+  //             height: auto 在 absolute 定位下算 0 (video metadata 加载前无内禀尺寸) → 视频不可见
+  //             改 height: 177.78% (16/9) 显式锁死: 200rpx 宽 × 355.5rpx 高
+  //             垂直居中 (top: 50% + translateY -50%), 父 overflow: hidden 裁掉上下 77.75rpx
+  //             露出中间 1:1 部分, 视频原比例不变形, 边角水印一并切掉
+  &__pet-portrait-video {
+    position: absolute !important;
+    top: 50% !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 177.78% !important;  /* 16/9 for 9:16 */
+    display: block !important;
+    transform: translateY(-50%) !important;
     z-index: 1;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
+    object-fit: fill !important;  /* 物理尺寸已锁 9:16, fill 不变形 */
   }
   // 2026-07-04 重做: svg-wrap 容器 + :deep(svg) (跟 admin PetEquipmentOverlay .svg-wrap 同款)
   &__svg-wrap { width: 100%; height: 100%; display: block; }
   &__svg-wrap :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; }
-  // 2026-07-14: 装备叠加层 video / image (跟 svg 同尺寸规则)
-  &__pet-equip-video,
-  &__pet-equip-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    display: block;
+  // 2026-07-15: 装备叠加层 video 跟主图同款 — 显式 177.78% 锁 9:16 高度, 父 slot 裁上下
+  &__pet-equip-video {
+    position: absolute !important;
+    top: 50% !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 177.78% !important;
+    display: block !important;
+    transform: translateY(-50%) !important;
+    object-fit: fill !important;
   }
+  // 装备 img: uni-app mode="aspectFill" 已经是 cover 行为, 不用再改
+  &__pet-equip-img { display: block; }
   // 2026-07-04: 装备背景层 (跟 admin PetClassroomDisplay.pet-display-bg 同款:
   // 绝对定位铺满 portrait, 显示蓝天草地这类背景, 不挡交互)
   &__pet-bg {

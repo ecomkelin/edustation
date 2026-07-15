@@ -77,6 +77,9 @@
             :src="backgroundItem.videoUrl"
             :key="backgroundItem.key"
             autoplay loop muted playsinline
+            :controls="false"
+            :show-play-btn="false"
+            :show-fullscreen-btn="false"
             class="pet-detail__bg-video"
           />
           <image
@@ -129,7 +132,9 @@
             :src="species.videoFile.url"
             :key="species._id"
             autoplay loop muted playsinline
-            style="object-fit: contain"
+            :controls="false"
+            :show-play-btn="false"
+            :show-fullscreen-btn="false"
             class="pet-detail__pet-video"
           />
           <image v-else-if="species && species.imageFile && species.imageFile.url" :src="species.imageFile.url" class="pet-detail__pet-svg" mode="aspectFit" />
@@ -150,7 +155,9 @@
                 :src="layer.videoUrl"
                 :key="layer.key"
                 autoplay loop muted playsinline
-                style="object-fit: contain"
+                :controls="false"
+                :show-play-btn="false"
+                :show-fullscreen-btn="false"
                 class="pet-detail__equip-video"
               />
               <image v-else-if="layer.url" :src="layer.url" class="pet-detail__equip-img" mode="aspectFit" />
@@ -219,6 +226,9 @@
                 :key="c.key"
                 muted
                 preload="metadata"
+                :controls="false"
+                :show-play-btn="false"
+                :show-fullscreen-btn="false"
                 class="pet-detail__food-video"
               />
               <image
@@ -1004,11 +1014,11 @@ export default {
     height: 90%;
     object-fit: contain;
   }
-  // 2026-07-14: 视频形式的物种主图 (跟 admin PetEquipmentOverlay .video-render 同款)
+  // 2026-07-15: 视频主图改 cover — 上下裁切填满方形 stage, 边角水印一并切掉
   &__pet-video {
     width: 90%;
     height: 90%;
-    object-fit: contain;
+    object-fit: cover;
   }
   &__pet-emoji {
     font-size: 240rpx;
@@ -1027,12 +1037,12 @@ export default {
   &__equip-layer--clothes   { top: 50%;  left: 50%; transform: translateX(-50%); width: 70%; height: 36%; z-index: 2; }
   &__equip-layer--accessory { top: 36%;  left: 50%; transform: translateX(-50%); width: 45%; height: 18%; z-index: 4; }
   &__equip-layer--halo      { top: -4%;  left: 50%; transform: translateX(-50%); width: 75%; height: 30%; opacity: 0.85; z-index: 2; }
-  // 2026-07-14: 装备叠加层 video / image (跟 svg-wrap 同尺寸规则)
+  // 2026-07-15: 装备叠加层 video 改 cover (跟主图一致, 防止左右黑边)
   &__equip-video,
   &__equip-img {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     pointer-events: none;
   }
   // 2026-07-04 重做: SVG-wrap 容器 + :deep(svg) (uni-app H5 走 v-html)
