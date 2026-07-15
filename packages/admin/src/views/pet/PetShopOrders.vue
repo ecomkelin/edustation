@@ -9,7 +9,6 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="filters.type" placeholder="全部" clearable style="width:160px">
-            <el-option label="学生买装饰" value="purchase_item" />
             <el-option label="学生买食物" value="purchase_consumable" />
           </el-select>
         </el-form-item>
@@ -97,9 +96,9 @@ export default {
     async fetchList() {
       this.loading = true
       try {
-        // 用 events 接口过滤 type=purchase_item|purchase_consumable
+        // 用 events 接口过滤 type=purchase_consumable（装饰系统删除后仅剩消耗品）
         const r = await petAdminApi.events({
-          type: 'purchase_item,purchase_consumable',
+          type: 'purchase_consumable',
           keyword: this.filters.keyword || undefined,
           page: this.page,
           pageSize: this.pageSize
@@ -119,13 +118,12 @@ export default {
       }
     },
     typeLabel(t) {
-      return { purchase_item: '买装饰', purchase_consumable: '买食物' }[t] || t
+      return { purchase_consumable: '买食物' }[t] || t
     },
     typeTagType(t) {
-      return { purchase_item: 'warning', purchase_consumable: 'success' }[t] || ''
+      return { purchase_consumable: 'success' }[t] || ''
     },
     itemLabel(row) {
-      if (row.type === 'purchase_item') return row.payload?.itemKey || '—'
       return row.payload?.consumableKey || '—'
     },
     formatDate

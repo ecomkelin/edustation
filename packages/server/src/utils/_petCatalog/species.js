@@ -20,7 +20,6 @@ const SPECIES = [
   {
     key: 'cat_orange',
     name: '橘猫',
-    tier: 'C',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -93,7 +92,6 @@ const SPECIES = [
   {
     key: 'dog_puppy',
     name: '小奶狗',
-    tier: 'C',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -161,7 +159,6 @@ const SPECIES = [
   {
     key: 'rabbit_white',
     name: '小白兔',
-    tier: 'C',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -232,7 +229,6 @@ const SPECIES = [
   {
     key: 'hamster_gold',
     name: '金丝熊',
-    tier: 'C',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -298,7 +294,6 @@ const SPECIES = [
   {
     key: 'fox_red',
     name: '小狐狸',
-    tier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -344,7 +339,6 @@ const SPECIES = [
   {
     key: 'panda_baby',
     name: '熊猫宝宝',
-    tier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -388,7 +382,6 @@ const SPECIES = [
   {
     key: 'penguin_baby',
     name: '小企鹅',
-    tier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -433,7 +426,6 @@ const SPECIES = [
   {
     key: 'owl_horned',
     name: '角鸮',
-    tier: 'B',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -479,7 +471,6 @@ const SPECIES = [
   {
     key: 'wolf_arctic',
     name: '北极狼',
-    tier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -555,7 +546,6 @@ const SPECIES = [
   {
     key: 'deer_white',
     name: '白鹿',
-    tier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -631,7 +621,6 @@ const SPECIES = [
   {
     key: 'hawk_red',
     name: '赤鸢',
-    tier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -694,7 +683,6 @@ const SPECIES = [
   {
     key: 'dolphin_blue',
     name: '蓝海豚',
-    tier: 'A',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -771,7 +759,6 @@ const SPECIES = [
   {
     key: 'dragon_emperor',
     name: '应龙',
-    tier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -864,7 +851,6 @@ const SPECIES = [
   {
     key: 'phoenix_fire',
     name: '朱雀',
-    tier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -955,7 +941,6 @@ const SPECIES = [
   {
     key: 'unicorn_rainbow',
     name: '独角兽',
-    tier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -1063,7 +1048,6 @@ const SPECIES = [
   {
     key: 'griffin_gold',
     name: '金翅狮鹫',
-    tier: 'S',
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>

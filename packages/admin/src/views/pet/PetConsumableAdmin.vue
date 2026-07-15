@@ -1,8 +1,8 @@
 <template>
   <div class="page">
     <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
-      <template #title>平台级共享图鉴（2026-06-22 重构）</template>
-      本表所有记录由<b>平台超管</b>统一管理，全机构共用一份。机构 admin 仅可查看，写操作会被后端拒绝。
+      <template #title>平台级共享图鉴</template>
+      本表所有记录由<b>平台超管</b>统一管理，全机构共用一份。喂食数值为单套（无等阶）。
     </el-alert>
     <div class="filter-bar">
       <el-select v-model="filter.kind" placeholder="类型" clearable style="width:120px" @change="load">
@@ -21,6 +21,9 @@
             <el-image :src="row.imageFile.url" :alt="row.name" fit="cover" style="width:48px;height:48px;border-radius:6px" />
           </div>
           <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
+          <div v-else-if="row.visualType === 'video' && row.videoFile" class="thumb svg-thumb clickable" @click="openPreview(row)">
+            <video :src="row.videoFile.url" muted preload="metadata" style="width:48px;height:48px;object-fit:cover;border-radius:6px" />
+          </div>
           <el-icon v-else :size="32" color="#ccc"><Picture /></el-icon>
         </template>
       </el-table-column>
@@ -31,21 +34,9 @@
           <el-tag size="small" :type="row.kind === 'food' ? 'success' : 'warning'">{{ PET_CONSUMABLE_KIND_LABELS[row.kind] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="适用阶" width="120">
+      <el-table-column label="数值" min-width="240">
         <template #default="{ row }">
-          <el-tag size="small">{{ PET_CONSUMABLE_APPLICABLE_TIER_LABELS[row.applicableTier] }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="数值预览" min-width="280">
-        <template #default="{ row }">
-          <span class="muted" v-if="row.applicableTier === 'all'">
-            <span v-for="t in PET_TIERS" :key="t" style="margin-right:12px">
-              <b>{{ t }}:</b> {{ row.perTier[t]?.pointCost || 0 }}积分 / +{{ row.perTier[t]?.hungerRestore || 0 }}饱 / +{{ row.perTier[t]?.expGain || 0 }}exp
-            </span>
-          </span>
-          <span v-else>
-            <b>{{ row.applicableTier }}:</b> {{ row.perTier[row.applicableTier]?.pointCost || 0 }}积分 / +{{ row.perTier[row.applicableTier]?.hungerRestore || 0 }}饱 / +{{ row.perTier[row.applicableTier]?.expGain || 0 }}exp
-          </span>
+          <span>{{ row.pointCost }}积分 / +{{ row.hungerRestore }}饱 / +{{ row.expGain }}exp</span>
         </template>
       </el-table-column>
       <el-table-column label="启用" width="80">
@@ -70,10 +61,10 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialog" :title="form._id ? '编辑消耗品' : '新建消耗品'" width="720px" :close-on-click-modal="false" @close="resetForm">
+    <el-dialog v-model="dialog" :title="form._id ? '编辑消耗品' : '新建消耗品'" width="640px" :close-on-click-modal="false" @close="resetForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="Key" prop="key">
-          <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 food_normal_c" />
+          <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 food_normal" />
         </el-form-item>
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
@@ -83,45 +74,22 @@
             <el-radio v-for="k in PET_CONSUMABLE_KINDS" :key="k" :value="k">{{ PET_CONSUMABLE_KIND_LABELS[k] }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="适用阶" prop="applicableTier">
-          <el-radio-group v-model="form.applicableTier">
-            <el-radio v-for="t in PET_CONSUMABLE_APPLICABLE_TIERS" :key="t" :value="t">{{ PET_CONSUMABLE_APPLICABLE_TIER_LABELS[t] }}</el-radio>
-          </el-radio-group>
+        <el-form-item label="积分价" prop="pointCost">
+          <el-input-number v-model="form.pointCost" :min="0" :max="100000" />
         </el-form-item>
-
-        <!-- perTier 表格 -->
-        <el-form-item label="数值配置">
-          <el-table :data="perTierRows" border size="small" style="width:100%">
-            <el-table-column label="阶" width="100">
-              <template #default="{ row }">{{ row.tier }}</template>
-            </el-table-column>
-            <el-table-column label="积分价" width="120">
-              <template #default="{ row }">
-                <el-input-number v-model="row.pointCost" :min="0" :max="100000" :disabled="!row.editable" size="small" />
-              </template>
-            </el-table-column>
-            <el-table-column label="饱腹度" width="120">
-              <template #default="{ row }">
-                <el-input-number v-model="row.hungerRestore" :min="0" :max="100" :disabled="!row.editable" size="small" />
-              </template>
-            </el-table-column>
-            <el-table-column label="经验值">
-              <template #default="{ row }">
-                <el-input-number v-model="row.expGain" :min="0" :max="100000" :disabled="!row.editable" size="small" />
-              </template>
-            </el-table-column>
-            <el-table-column label="" width="80">
-              <template #default="{ row }">
-                <span v-if="!row.editable" class="muted">不适用</span>
-              </template>
-            </el-table-column>
-          </el-table>
+        <el-form-item label="饱腹度">
+          <el-input-number v-model="form.hungerRestore" :min="0" :max="1000" />
+          <span class="hint">喂食恢复饱腹度（0-1000）</span>
+        </el-form-item>
+        <el-form-item label="经验值">
+          <el-input-number v-model="form.expGain" :min="0" :max="100000" />
         </el-form-item>
 
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
             <el-radio value="image">图片</el-radio>
             <el-radio value="svg">SVG</el-radio>
+            <el-radio value="video">视频</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'image'" label="图标">
@@ -134,9 +102,19 @@
             <el-button :icon="Upload" size="small">上传新图</el-button>
           </el-upload>
         </el-form-item>
-        <el-form-item v-else label="SVG 内容" prop="svgContent">
+        <el-form-item v-else-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
           <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
           <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
+        </el-form-item>
+        <el-form-item v-else label="视频文件">
+          <FilePicker v-model="videoPicker" scope="pet" mime-prefix="video/" title="选择图标视频" @select="onPickVideo" />
+          <div v-if="form.videoFile" class="preview">
+            <video :src="form.videoFile.url" controls preload="metadata" style="width:200px;max-height:140px;border-radius:6px" />
+            <el-button link type="danger" @click="form.videoFile = null">清除</el-button>
+          </div>
+          <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadVideo" accept="video/*">
+            <el-button :icon="Upload" size="small">上传新视频</el-button>
+          </el-upload>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.isActive" />
@@ -151,11 +129,12 @@
       </template>
     </el-dialog>
 
-    <!-- 图标大图预览（点击列表缩略图触发） -->
+    <!-- 图标大图预览 -->
     <el-dialog v-model="previewOpen" :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '图标预览'" width="480px" :show-close="true" align-center>
       <div v-if="previewRow" class="preview-large-wrap">
         <el-image v-if="previewRow.visualType === 'image' && previewRow.imageFile" :src="previewRow.imageFile.url" :alt="previewRow.name" fit="contain" style="width:100%;max-height:60vh" />
         <div v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
+        <video v-else-if="previewRow.visualType === 'video' && previewRow.videoFile" :src="previewRow.videoFile.url" controls autoplay muted loop style="width:100%;max-height:60vh;background:#000" />
         <div v-else class="preview-large-empty">
           <el-icon :size="64" color="#ccc"><Picture /></el-icon>
           <span>暂无图标</span>
@@ -166,7 +145,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Upload, Picture } from '@element-plus/icons-vue'
 import { petCatalogApi } from '@/api/petCatalog'
@@ -174,7 +153,7 @@ import { storageApi } from '@/api/storage'
 import FilePicker from '@/components/FilePicker.vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { handleRemoveError } from '@/utils/removable'
-import { PET_TIERS, PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS, PET_CONSUMABLE_APPLICABLE_TIERS, PET_CONSUMABLE_APPLICABLE_TIER_LABELS } from '@/utils/constants'
+import { PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS } from '@/utils/constants'
 
 export default {
   name: 'PetConsumableAdmin',
@@ -186,38 +165,22 @@ export default {
     const dialog = ref(false)
     const saving = ref(false)
     const imagePicker = ref(false)
+    const videoPicker = ref(false)
     const formRef = ref(null)
     const previewOpen = ref(false)
     const previewRow = ref(null)
     const form = reactive({
-      _id: null, key: '', name: '', kind: 'food', applicableTier: 'all',
-      visualType: 'image', imageFile: null, svgContent: '',
+      _id: null, key: '', name: '', kind: 'food',
+      pointCost: 5, hungerRestore: 15, expGain: 10,
+      visualType: 'image', imageFile: null, svgContent: '', videoFile: null,
       isActive: true, description: ''
-    })
-
-    // perTier 行：按 applicableTier 决定哪些行可编辑
-    const perTierRows = computed(() => {
-      const rows = []
-      for (const t of [...PET_TIERS, 'all']) {
-        const cfg = form._id
-          ? (items.value.find(i => i._id === form._id)?.perTier?.[t] || {})
-          : (form[`_tier_${t}`] || {})
-        rows.push({
-          tier: t,
-          pointCost: cfg.pointCost ?? 0,
-          hungerRestore: cfg.hungerRestore ?? 0,
-          expGain: cfg.expGain ?? 0,
-          editable: form.applicableTier === 'all' ? t === 'all' : t === form.applicableTier
-        })
-      }
-      return rows
     })
 
     const rules = {
       key: [{ required: true, message: 'key 必填', trigger: 'blur' }],
       name: [{ required: true, message: '名称 必填', trigger: 'blur' }],
       kind: [{ required: true, message: '类型 必填', trigger: 'change' }],
-      applicableTier: [{ required: true, message: '适用阶 必填', trigger: 'change' }],
+      pointCost: [{ required: true, message: '积分价 必填', trigger: 'blur' }],
       visualType: [{ required: true, message: '视觉类型 必填', trigger: 'change' }]
     }
 
@@ -240,8 +203,9 @@ export default {
 
     function resetForm() {
       Object.assign(form, {
-        _id: null, key: '', name: '', kind: 'food', applicableTier: 'all',
-        visualType: 'image', imageFile: null, svgContent: '',
+        _id: null, key: '', name: '', kind: 'food',
+        pointCost: 5, hungerRestore: 15, expGain: 10,
+        visualType: 'image', imageFile: null, svgContent: '', videoFile: null,
         isActive: true, description: ''
       })
       formRef.value?.clearValidate()
@@ -255,19 +219,21 @@ export default {
     function openEdit(row) {
       resetForm()
       Object.assign(form, {
-        _id: row._id, key: row.key, name: row.name,
-        kind: row.kind, applicableTier: row.applicableTier,
+        _id: row._id, key: row.key, name: row.name, kind: row.kind,
+        pointCost: row.pointCost ?? 0,
+        hungerRestore: row.hungerRestore ?? 0,
+        expGain: row.expGain ?? 0,
         visualType: row.visualType || 'image',
         imageFile: row.imageFile || null,
         svgContent: row.svgContent || '',
+        videoFile: row.videoFile || null,
         isActive: row.isActive, description: row.description || ''
       })
       dialog.value = true
     }
 
-    function onPickImage(file) {
-      form.imageFile = file
-    }
+    function onPickImage(file) { form.imageFile = file }
+    function onPickVideo(file) { form.videoFile = file }
 
     async function uploadImage(req) {
       try {
@@ -278,20 +244,13 @@ export default {
       }
     }
 
-    function buildPerTierPayload() {
-      const out = { C: null, B: null, A: null, S: null, all: null }
-      for (const row of perTierRows.value) {
-        if (!row.editable) continue
-        out[row.tier] = {
-          pointCost: Number(row.pointCost) || 0,
-          hungerRestore: Number(row.hungerRestore) || 0,
-          expGain: Number(row.expGain) || 0
-        }
+    async function uploadVideo(req) {
+      try {
+        const { data } = await storageApi.upload({ file: req.file, scope: 'pet' })
+        form.videoFile = data
+      } catch (e) {
+        ElMessage.error('视频上传失败')
       }
-      // 校验
-      if (form.applicableTier === 'all' && !out.all) throw new Error('适用阶为「通用」时必须填 all 行')
-      if (form.applicableTier !== 'all' && !out[form.applicableTier]) throw new Error(`适用阶为「${form.applicableTier}」时必须填对应行`)
-      return out
     }
 
     async function submit() {
@@ -299,16 +258,17 @@ export default {
       try { await formRef.value.validate() } catch (_) { return }
       saving.value = true
       try {
-        const perTier = buildPerTierPayload()
         const payload = {
           key: form.key.trim(),
           name: form.name.trim(),
           kind: form.kind,
-          applicableTier: form.applicableTier,
-          perTier,
+          pointCost: Number(form.pointCost) || 0,
+          hungerRestore: Number(form.hungerRestore) || 0,
+          expGain: Number(form.expGain) || 0,
           visualType: form.visualType,
           imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
+          videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
           isActive: !!form.isActive,
           description: form.description || null
         }
@@ -338,21 +298,20 @@ export default {
       }
     }
 
-    onMounted(load)
-
     function openPreview(row) {
       previewRow.value = row
       previewOpen.value = true
     }
 
+    onMounted(load)
+
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      perTierRows, imagePicker, previewOpen, previewRow,
-      PET_TIERS, PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS,
-      PET_CONSUMABLE_APPLICABLE_TIERS, PET_CONSUMABLE_APPLICABLE_TIER_LABELS,
+      imagePicker, videoPicker, previewOpen, previewRow,
+      PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS,
       Plus, Upload, Picture,
       petCatalogApi,
-      load, openCreate, openEdit, resetForm, onPickImage, uploadImage, submit, onRemoveConfirm, openPreview
+      load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm, openPreview
     }
   }
 }
@@ -361,6 +320,7 @@ export default {
 <style scoped>
 .filter-bar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
 .muted { color: #999; font-size: 12px; }
+.hint { margin-left: 12px; color: #999; font-size: 12px; }
 .preview { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
 .thumb { display: flex; align-items: center; justify-content: center; }
 .svg-thumb { width: 48px; height: 48px; }

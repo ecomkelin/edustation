@@ -1,39 +1,23 @@
 'use strict'
 
 const { Schema, model } = require('mongoose')
-const { PET_CONSUMABLE_KINDS, PET_CONSUMABLE_APPLICABLE_TIERS } = require('@shared/enums')
+const { PET_CONSUMABLE_KINDS } = require('@shared/enums')
 
 /**
- * 宠物消耗品图鉴（PetConsumable，2026-06-21 pet-system-v2-ext / 2026-06-22 重构）
+ * 宠物消耗品图鉴（PetConsumable，2026-06-21 pet-system-v2-ext）
  *
  * 合并食物 + 玩具（同机制：pointCost + hungerRestore + expGain 三字段）
  *
- * 平台级共享（2026-06-22 改造：去除 per-org override）：
- *   - 全部由平台超管统一管理
+ * 平台级共享：全部由平台超管统一管理。
  *
- * applicableTier：
- *   - 'C'/'B'/'A'/'S': 仅适用该阶宠物
- *   - 'all':           适用所有阶（perTier 每阶独立数值；service 喂食时取 perTier[petTier]）
- *
- * perTier schema（per 阶 config）：
- *   - pointCost:      积分成本（>0）
- *   - hungerRestore:  饱腹度恢复（0-100）
- *   - expGain:        经验值
+ * 2026-07-15 重构：删等阶后，去 applicableTier + perTier（{C,B,A,S,all}），
+ * 改单套扁平数值（pointCost / hungerRestore / expGain）。
  *
  * 与 PetAccount 的关系：
  *   - PetAccount 自身不存 consumable 引用
  *   - 喂食扣分走 points.recordTransaction({trigger:'pet', meta:{action:'feed', consumableKey}})
  *   - 历史消费由 PetEvent 'feed' payload 含 consumableKey 审计
  */
-const PerTierValueSchema = new Schema(
-  {
-    pointCost:     { type: Number, required: true, min: 0, max: 100000 },
-    hungerRestore: { type: Number, required: true, min: 0, max: 100 },
-    expGain:       { type: Number, required: true, min: 0, max: 100000 }
-  },
-  { _id: false }
-)
-
 const PetConsumableSchema = new Schema(
   {
     // 唯一 key（全局唯一，无 org 维度）
@@ -45,26 +29,16 @@ const PetConsumableSchema = new Schema(
     // food / toy
     kind: { type: String, enum: PET_CONSUMABLE_KINDS, required: true, index: true },
 
-    // 适用阶
-    applicableTier: { type: String, enum: PET_CONSUMABLE_APPLICABLE_TIERS, required: true },
+    // 扁平数值（无 tier）
+    pointCost:     { type: Number, required: true, min: 0, max: 100000 },
+    hungerRestore: { type: Number, required: true, min: 0, max: 1000 },
+    expGain:       { type: Number, required: true, min: 0, max: 100000 },
 
-    // 每阶配置；service 查 perTier[petTier] 或 perTier.all
-    perTier: {
-      type: {
-        C:   { type: PerTierValueSchema, default: null },
-        B:   { type: PerTierValueSchema, default: null },
-        A:   { type: PerTierValueSchema, default: null },
-        S:   { type: PerTierValueSchema, default: null },
-        all: { type: PerTierValueSchema, default: null }
-      },
-      default: () => ({}),
-      _id: false
-    },
-
-    // 图标（2026-06-22 user SVG 决策）
-    visualType: { type: String, enum: ['image', 'svg'], default: 'image' },
+    // 图标（image / svg / video 三选；消耗品是小图标，不强制 video）
+    visualType: { type: String, enum: ['image', 'svg', 'video'], default: 'image' },
     imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
     svgContent: { type: String, default: null, maxlength: 50000 },
+    videoFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
 
     // 软启用
     isActive: { type: Boolean, default: true, index: true },

@@ -4,13 +4,12 @@ const s = require('./petAdmin.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => {
-  const { page, pageSize, state, tier, keyword } = req.query
+  const { page, pageSize, state, keyword } = req.query
   res.json(ApiResponse.ok(await s.list({
     orgId: req.orgId,
     page: page ? Number(page) : 1,
     pageSize: pageSize ? Number(pageSize) : 20,
     state: state || undefined,
-    tier: tier || undefined,
     keyword: keyword || undefined
   })))
 }
@@ -43,7 +42,7 @@ exports.update = async (req, res) => {
   })))
 }
 
-// ─── 2026-06-21 pet-system-v2-ext：老师/admin 代操作 6 端点 ───
+// ─── 老师/admin 代操作（去 swap/tier/equip） ───
 
 exports.adoptOnBehalf = async (req, res) => {
   res.status(201).json(ApiResponse.created(await s.adoptOnBehalf({
@@ -70,38 +69,10 @@ exports.hatchOnBehalf = async (req, res) => {
   })))
 }
 
-exports.swapEggOnBehalf = async (req, res) => {
-  res.json(ApiResponse.ok(await s.swapEggOnBehalf({
+exports.setDefaultOnBehalf = async (req, res) => {
+  res.json(ApiResponse.ok(await s.setDefaultOnBehalf({
     orgId: req.orgId,
     petAccountId: req.params.id,
-    operatorId: req.user?.id
-  })))
-}
-
-// 2026-06-22: 手动升阶（不扣积分，绕开 feed 自动触发）
-exports.tierUpOnBehalf = async (req, res) => {
-  res.json(ApiResponse.ok(await s.tierUpOnBehalf({
-    orgId: req.orgId,
-    petAccountId: req.params.id,
-    operatorId: req.user?.id
-  })))
-}
-
-exports.tierDownOnBehalf = async (req, res) => {
-  res.json(ApiResponse.ok(await s.tierDownOnBehalf({
-    orgId: req.orgId,
-    petAccountId: req.params.id,
-    targetTier: req.body.targetTier,
-    operatorId: req.user?.id
-  })))
-}
-
-exports.equipOnBehalf = async (req, res) => {
-  res.json(ApiResponse.ok(await s.equipOnBehalf({
-    orgId: req.orgId,
-    petAccountId: req.params.id,
-    slot: req.body.slot,
-    itemKey: req.body.itemKey,
     operatorId: req.user?.id
   })))
 }

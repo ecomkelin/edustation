@@ -13,11 +13,11 @@
       <div v-else class="pet-content">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="状态">{{ stateLabel(pet.state) }}</el-descriptions-item>
-          <el-descriptions-item label="阶">{{ pet.tier || pet.eggTier || '—' }}</el-descriptions-item>
           <el-descriptions-item label="种类">{{ pet.speciesRecord?.name || '—' }}</el-descriptions-item>
           <el-descriptions-item label="等级">Lv.{{ pet.level }}</el-descriptions-item>
-          <el-descriptions-item label="经验">{{ pet.experience }} / {{ pet.nextExpToLevel || pet.tierUpThreshold || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="经验">{{ pet.experience }} / {{ pet.nextExpToLevel != null ? pet.nextExpToLevel : '满级' }}</el-descriptions-item>
           <el-descriptions-item label="饱腹度">{{ pet.currentHunger }} / {{ pet.maxHunger }}</el-descriptions-item>
+          <el-descriptions-item label="默认宠物">{{ pet.isDefault ? '是' : '否' }}</el-descriptions-item>
         </el-descriptions>
 
         <el-divider content-position="left">最近事件</el-divider>

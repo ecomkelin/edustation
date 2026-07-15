@@ -1,13 +1,12 @@
 'use strict'
 
 /**
- * Pet Controller（2026-06-21 pet-system-v2 完整版）
+ * Pet Controller（2026-06-21 pet-system-v2；2026-07-15 重构：多宠 + petId 化 + 无装饰）
  *
  * C 端（家长）路由 — 不需要业务权限码，仅 auth + activeStudent + requireEnrolledStudent
  */
 
 const s = require('./pet.service')
-const petItems = require('./petItems.service')
 const petCatalog = require('./petCatalog.service')
 const ApiResponse = require('@utils/ApiResponse')
 const ApiError = require('@utils/ApiError')
@@ -18,16 +17,23 @@ function studentIdOf(req) {
   return sid
 }
 
-// 懒创建兜底（任何路由都先 ensure）
-async function ensureOrThrow(orgId, studentId) {
-  await s.ensurePetAccount(orgId, studentId)
+function petIdOf(req) {
+  const pid = req.params.petId || req.body?.petId
+  if (!pid) throw ApiError.badRequest('缺少 petId')
+  return pid
 }
 
-// GET /api/v1/pet/me — 当前 active child 的 PetAccount
+// GET /api/v1/pet/me — 当前 active child 的默认宠物
 exports.me = async (req, res) => {
   const studentId = studentIdOf(req)
-  await ensureOrThrow(req.orgId, studentId)
   const result = await s.getMine({ orgId: req.orgId, studentId })
+  res.json(ApiResponse.ok(result))
+}
+
+// GET /api/v1/pet/list — 当前 active child 的全部宠物（默认宠物在前）
+exports.list = async (req, res) => {
+  const studentId = studentIdOf(req)
+  const result = await s.listMine({ orgId: req.orgId, studentId })
   res.json(ApiResponse.ok(result))
 }
 
@@ -36,75 +42,49 @@ exports.species = async (req, res) => {
   res.json(ApiResponse.ok(await petCatalog.listSpecies(req.query || {})))
 }
 
-// 2026-07-03 加: GET /pet/consumables (C 端食物图鉴, 复用 petCatalog)
-// 不分 enrolled, 让未领养也能看商店浏览 (实际购买用 /pet/feed 端点要求 enrolled)
+// GET /pet/consumables — 食物图鉴
 exports.consumables = async (req, res) => {
   res.json(ApiResponse.ok(await petCatalog.listConsumables(req.query || {})))
 }
 
-// GET /api/v1/pet/items — 装饰图鉴 + 解锁/装备状态
-exports.items = async (req, res) => {
-  const studentId = studentIdOf(req)
-  await ensureOrThrow(req.orgId, studentId)
-  const result = await petItems.listCatalog({ orgId: req.orgId, studentId })
-  res.json(ApiResponse.ok(result))
-}
-
-// POST /api/v1/pet/adopt — 0 积分（懒创建兜底；幂等）
+// POST /api/v1/pet/adopt — 领养一只新宠物（≤ 上限）
 exports.adopt = async (req, res) => {
   const studentId = studentIdOf(req)
-  const result = await s.adopt({ orgId: req.orgId, studentId, by: 'manual' })
-  res.json(ApiResponse.ok(s.decoratePet(result)))
-}
-
-// POST /api/v1/pet/hatch — 0 积分
-exports.hatch = async (req, res) => {
-  const studentId = studentIdOf(req)
-  const result = await s.hatch({ orgId: req.orgId, studentId })
+  const result = await s.adopt({ orgId: req.orgId, studentId, by: 'parent' })
   res.json(ApiResponse.ok(result))
 }
 
-// POST /api/v1/pet/feed — { consumableKey }
+// POST /api/v1/pet/:petId/hatch — 破壳（0 积分）
+exports.hatch = async (req, res) => {
+  const studentId = studentIdOf(req)
+  const result = await s.hatch({ orgId: req.orgId, studentId, petId: petIdOf(req) })
+  res.json(ApiResponse.ok(result))
+}
+
+// POST /api/v1/pet/:petId/feed — { consumableKey }
 exports.feed = async (req, res) => {
   const studentId = studentIdOf(req)
   const { consumableKey } = req.body || {}
   if (!consumableKey) throw ApiError.badRequest('缺少 consumableKey')
-  const result = await s.feed({ orgId: req.orgId, studentId, consumableKey })
+  const result = await s.feed({ orgId: req.orgId, studentId, petId: petIdOf(req), consumableKey })
   res.json(ApiResponse.ok(result))
 }
 
-// POST /api/v1/pet/swap-egg — 扣积分
-exports.swapEgg = async (req, res) => {
+// POST /api/v1/pet/:petId/set-default — 设为默认宠物
+exports.setDefault = async (req, res) => {
   const studentId = studentIdOf(req)
-  const result = await s.swapEgg({ orgId: req.orgId, studentId })
+  const result = await s.setDefault({ orgId: req.orgId, studentId, petId: petIdOf(req) })
   res.json(ApiResponse.ok(result))
 }
 
-// POST /api/v1/pet/tier-down — { targetTier }
-exports.tierDown = async (req, res) => {
-  const studentId = studentIdOf(req)
-  const { targetTier } = req.body || {}
-  if (!targetTier) throw ApiError.badRequest('缺少 targetTier')
-  const result = await s.tierDown({ orgId: req.orgId, studentId, targetTier })
-  res.json(ApiResponse.ok(result))
-}
-
-// POST /api/v1/pet/equip — { slot, itemKey }
-exports.equip = async (req, res) => {
-  const studentId = studentIdOf(req)
-  const { slot, itemKey } = req.body || {}
-  if (!slot) throw ApiError.badRequest('缺少 slot')
-  const result = await petItems.equip({ orgId: req.orgId, studentId, slot, itemKey: itemKey ?? null })
-  res.json(ApiResponse.ok(result))
-}
-
-// GET /api/v1/pet/events — 事件流分页
+// GET /api/v1/pet/events — 事件流分页（可选 petId 过滤）
 exports.events = async (req, res) => {
   const studentId = studentIdOf(req)
-  const { page, pageSize } = req.query
+  const { page, pageSize, petId } = req.query
   const result = await s.listEvents({
     orgId: req.orgId,
     studentId,
+    petId: petId || undefined,
     page: page ? Number(page) : 1,
     pageSize: pageSize ? Number(pageSize) : 20
   })

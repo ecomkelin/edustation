@@ -75,9 +75,9 @@ Auth 列简写:
 | 19 | report | /reports | report/ | 7 |
 | 20 | points | /points | points/ | 3 |
 | 21 | pointsAdmin | /points-admin | pointsAdmin/ | 5 |
-| 22 | pet (client) | /pet | pet/pet.routes.js | 10 |
-| 23 | petAdmin | /admin/pet | petAdmin/ | 18 |
-| 24 | petCatalog | /admin/pet | pet/petCatalog.admin.routes.js | 11 |
+| 22 | pet (client) | /pet | pet/pet.routes.js | 8 |
+| 23 | petAdmin | /admin/pet | petAdmin/ | 12 |
+| 24 | petCatalog | /admin/pet | pet/petCatalog.admin.routes.js | 14 |
 | 25 | parent | /parents | parent/ | 14 |
 | 26 | childLead | /child-leads | childLead/ | 11 |
 | 27 | trialBooking | /trial-bookings | trialBooking/ | 14 |
@@ -403,16 +403,18 @@ Auth 列简写:
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-2200 | GET | /pet/events | GUARD | — | 事件流水 | |
+| R-2200 | GET | /pet/events | GUARD | — | 事件流水（可选 petId 过滤） | |
 | R-2206 | GET | /pet/species | GUARD | — | 物种字典 | |
-| R-2207 | GET | /pet/items | GUARD | — | 道具字典 | |
-| R-2263 | POST | /pet/adopt | GUARD | — | 领养 | 未报班不可用 |
-| R-2264 | POST | /pet/hatch | GUARD | — | 孵化 | |
-| R-2265 | POST | /pet/feed | GUARD | — | 喂养 | |
-| R-2266 | POST | /pet/equip | GUARD | — | 换装 | |
-| R-2267 | POST | /pet/swap-egg | GUARD | — | 换蛋 | |
-| R-2268 | POST | /pet/tier-down | GUARD | — | 降阶 | |
-| R-2272 | GET | /pet/me | GUARD | — | 我的宠物 | 懒创建 |
+| R-2208 | GET | /pet/list | GUARD | — | 该学员全部宠物（默认在前） | 2026-07-15 多宠 |
+| R-2263 | POST | /pet/adopt | GUARD | — | 领养新宠物 | ≤10；未报班不可用 |
+| R-2264 | POST | /pet/:petId/hatch | GUARD | — | 孵化 | 2026-07-15 petId 化 |
+| R-2265 | POST | /pet/:petId/feed | GUARD | — | 喂养 | 2026-07-15 petId 化 |
+| R-2269 | POST | /pet/:petId/set-default | GUARD | — | 设为默认宠物 | 2026-07-15 新增 |
+| R-2272 | GET | /pet/me | GUARD | — | 默认宠物 | 懒创建首只 |
+| ~~R-2207~~ | ~~GET~~ | ~~/pet/items~~ | — | — | **DEPRECATED** 装饰系统删除 | 2026-07-15 |
+| ~~R-2266~~ | ~~POST~~ | ~~/pet/equip~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2267~~ | ~~POST~~ | ~~/pet/swap-egg~~ | — | — | **DEPRECATED** 去等阶 | 2026-07-15 |
+| ~~R-2268~~ | ~~POST~~ | ~~/pet/tier-down~~ | — | — | **DEPRECATED** 去等阶 | 2026-07-15 |
 
 ### MM=23 petAdmin (URL: /admin/pet)
 
@@ -423,24 +425,25 @@ Auth 列简写:
 | R-2303 | PUT | /admin/pet/accounts/:id | PERM | pet.write | 更新 | |
 | R-2306 | GET | /admin/pet/accounts-by-student | PERM | pet.read | 按 studentId 查 | 课堂展示页用 |
 | R-2307 | GET | /admin/pet/events | PERM | pet.read | 事件流水（cursor 分页：query=cursor&limit） | 2026-06-22 由 page 改 cursor |
-| R-2363 | POST | /admin/pet/accounts | PERM | pet.write | 代领养 | 老师/admin 代操作 |
+| R-2363 | POST | /admin/pet/accounts | PERM | pet.write | 代领养（可多只 ≤10） | 老师/admin 代操作 |
 | R-2364 | POST | /admin/pet/accounts/:id/hatch | PERM | pet.write | 代孵化 | |
 | R-2365 | POST | /admin/pet/accounts/:id/feed | PERM | pet.write | 代喂养 | |
-| R-2366 | POST | /admin/pet/accounts/:id/equip | PERM | pet.write | 代换装 | |
-| R-2367 | POST | /admin/pet/accounts/:id/swap-egg | PERM | pet.write | 代换蛋 | |
-| R-2368 | POST | /admin/pet/accounts/:id/tier-down | PERM | pet.write | 代降阶 | |
-| R-2376 | POST | /admin/pet/accounts/:id/tier-up | PERM | pet.write | 手动升阶 | 满级+经验达标时主动升阶（不扣积分） |
-| R-2373 | POST | /admin/pet/grant-item | PERM | pet.write | 代买装饰 | 扣学员积分 + unlocked |
+| R-2369 | POST | /admin/pet/accounts/:id/set-default | PERM | pet.write | 代设默认 | 2026-07-15 新增 |
+| ~~R-2366~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/equip~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2367~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/swap-egg~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2368~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/tier-down~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2376~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/tier-up~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2373~~ | ~~POST~~ | ~~/admin/pet/grant-item~~ | — | — | **DEPRECATED** 装饰删除 | 2026-07-15 |
 | R-2374 | POST | /admin/pet/grant-consumable | PERM | pet.write | 代买食物/玩具 | 扣学员积分 + 立即喂 |
-| R-2375 | GET | /admin/pet/shop | PERM | pet.read | 商城列表（admin 端） | 不走 C 端 activeStudent 中间件 |
+| R-2375 | GET | /admin/pet/shop | PERM | pet.read | 商城列表（admin 端，仅消耗品） | 不走 C 端 activeStudent 中间件 |
 
 ### petShop C 端 (URL: /pet/shop)
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-2370 | GET | /pet/shop | GUARD | enrolled? | 商城列表（items + consumables） | active student 上下文 |
-| R-2371 | POST | /pet/shop/buy-item | GUARD | enrolled | 学生买装饰 | 扣学生积分 + unlocked |
-| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具 | 扣学生积分 + 立即喂 |
+| R-2370 | GET | /pet/shop | GUARD | enrolled? | 商城列表（仅消耗品） | active student 上下文 |
+| ~~R-2371~~ | ~~POST~~ | ~~/pet/shop/buy-item~~ | — | — | **DEPRECATED** 装饰删除 | 2026-07-15 |
+| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具（petId 可选，默认默认宠物） | 扣学生积分 + 立即喂 |
 
 ### MM=24 petCatalog (URL: /admin/pet)
 
@@ -452,18 +455,20 @@ Auth 列简写:
 | R-2483 | PUT | /admin/pet/species/:id | ADMIN | pet.write | 更新物种 | 平台超管 |
 | R-2484 | GET | /admin/pet/species/:id/removable-check | PERM | pet.read | 删除预检 | |
 | R-2485 | DELETE | /admin/pet/species/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
-| R-2486 | GET | /admin/pet/items | PERM | pet.read | 道具列表 | |
-| R-2487 | POST | /admin/pet/items | ADMIN | pet.write | 新建道具 | 平台超管 |
-| R-2488 | GET | /admin/pet/items/:id | PERM | pet.read | 道具详情 | |
-| R-2489 | PUT | /admin/pet/items/:id | ADMIN | pet.write | 更新道具 | 平台超管 |
-| R-2490 | GET | /admin/pet/items/:id/removable-check | PERM | pet.read | 删除预检 | |
-| R-2491 | DELETE | /admin/pet/items/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| ~~R-2486~~ | ~~GET~~ | ~~/admin/pet/items~~ | — | — | **DEPRECATED** 装饰系统整体删除 | 2026-07-15 |
+| ~~R-2487~~ | ~~POST~~ | ~~/admin/pet/items~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2488~~ | ~~GET~~ | ~~/admin/pet/items/:id~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2489~~ | ~~PUT~~ | ~~/admin/pet/items/:id~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2490~~ | ~~GET~~ | ~~/admin/pet/items/:id/removable-check~~ | — | — | **DEPRECATED** | 2026-07-15 |
+| ~~R-2491~~ | ~~DELETE~~ | ~~/admin/pet/items/:id~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | R-2492 | GET | /admin/pet/consumables | PERM | pet.read | 消耗品列表 | |
 | R-2493 | POST | /admin/pet/consumables | ADMIN | pet.write | 新建消耗品 | 平台超管 |
 | R-2494 | GET | /admin/pet/consumables/:id | PERM | pet.read | 消耗品详情 | |
 | R-2495 | PUT | /admin/pet/consumables/:id | ADMIN | pet.write | 更新消耗品 | 平台超管 |
 | R-2496 | GET | /admin/pet/consumables/:id/removable-check | PERM | pet.read | 删除预检 | |
 | R-2497 | DELETE | /admin/pet/consumables/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| R-2498 | GET | /admin/pet/level-config | PERM | pet.read | 等级配置读 | 2026-07-15 per-org 等级曲线 |
+| R-2499 | PUT | /admin/pet/level-config | PERM | pet.write | 等级配置写 | 机构管理员即可改本机构 |
 
 ### MM=25 parent (URL: /parents)
 

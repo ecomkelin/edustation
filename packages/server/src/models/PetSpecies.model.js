@@ -1,29 +1,26 @@
 'use strict'
 
 const { Schema, model } = require('mongoose')
-const { PET_TIERS, PET_VISUAL_TYPES } = require('@shared/enums')
+const { PET_VISUAL_TYPES } = require('@shared/enums')
 
 /**
- * 宠物形象图鉴（PetSpecies，2026-06-21 pet-system-v2-ext / 2026-06-22 重构）
+ * 宠物形象图鉴（PetSpecies，2026-06-21 pet-system-v2-ext）
  *
- * 平台级共享（2026-06-22 改造：去除 per-org override）：
- *   - 全部由平台超管统一管理；所有机构共用一份图鉴
- *   - 任何 PetAccount.species 字符串解析时直接查本表 key 命中即可
+ * 平台级共享：全部由平台超管统一管理；所有机构共用一份图鉴。
  *
  * PetAccount.species 存 key 字符串（不存 ObjectId 引用），便于：
  *   1. 物种删除/重命名不影响已生成 PetAccount（前端 fallback emoji）
  *   2. 跨机构数据兼容（同 key 全平台语义一致）
  *
- * visualType：
- *   - image: 上传图片，存 imageFile (File ref)
- *   - svg:   内联 SVG，存 svgContent (string)
- *   - video: 上传视频，存 videoFile (File ref)（2026-07-12 加）
- * 不支持 html/css/js（XSS 风险，service 写入时 sanitize）
+ * 2026-07-15 重构：
+ *   - 删 tier 字段（无等阶）
+ *   - visualType 收敛为 'video'（宠物本体只用视频；imageFile/svgContent 保留仅兜底渲染）
+ *   - rollSpecies 全池加权随机（不再按 tier 分池）
  *
  * 字段：
- *   - key / name / tier / visualType / imageFile / svgContent / videoFile
+ *   - key / name / visualType / videoFile (+ imageFile/svgContent 兜底)
  *   - weight  (破壳加权随机权重)
- *   - isActive / description / meta
+ *   - hungerDecayMinutes / isActive / description / meta
  *   - createdBy / updatedBy  (审计)
  */
 const PetSpeciesSchema = new Schema(
@@ -34,11 +31,8 @@ const PetSpeciesSchema = new Schema(
     // 中文名（玩家可见）
     name: { type: String, required: true, trim: true, maxlength: 64 },
 
-    // 阶
-    tier: { type: String, enum: PET_TIERS, required: true, index: true },
-
-    // 视觉类型
-    visualType: { type: String, enum: PET_VISUAL_TYPES, required: true },
+    // 视觉类型（重构后宠物本体固定 'video'；enum 仍保留三值以便兜底渲染）
+    visualType: { type: String, enum: PET_VISUAL_TYPES, required: true, default: 'video' },
 
     // image 时存 File ref
     imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
@@ -75,7 +69,6 @@ const PetSpeciesSchema = new Schema(
   }
 )
 
-// 列表查询索引：按 tier + isActive 过滤
-PetSpeciesSchema.index({ tier: 1, isActive: 1 })
+// isActive 已在字段上 index: true；无需额外复合索引（去 tier 后列表仅按 isActive/keyword）
 
 module.exports = model('PetSpecies', PetSpeciesSchema)

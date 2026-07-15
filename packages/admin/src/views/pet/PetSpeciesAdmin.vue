@@ -1,13 +1,10 @@
 <template>
   <div class="page">
     <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
-      <template #title>平台级共享图鉴（2026-06-22 重构）</template>
-      本表所有记录由<b>平台超管</b>统一管理，全机构共用一份。机构 admin 仅可查看，写操作会被后端拒绝。
+      <template #title>平台级共享图鉴（宠物本体统一用视频）</template>
+      本表所有记录由<b>平台超管</b>统一管理，全机构共用一份。宠物形象建议使用 <b>9:16 竖版视频</b>（前端裁成正方形展示）。
     </el-alert>
     <div class="filter-bar">
-      <el-select v-model="filter.tier" placeholder="阶" clearable style="width:120px" @change="load">
-        <el-option v-for="t in PET_TIERS" :key="t" :label="PET_TIER_LABELS[t]" :value="t" />
-      </el-select>
       <el-switch v-model="filter.isActive" active-text="仅启用" @change="load" />
       <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable style="width:240px" @keyup.enter="load" @clear="load" />
       <el-button type="primary" @click="load">查询</el-button>
@@ -31,11 +28,6 @@
       </el-table-column>
       <el-table-column prop="key" label="Key" width="160" sortable />
       <el-table-column prop="name" label="名称" width="160" sortable />
-      <el-table-column label="阶" width="80" sortable :sort-by="tierSortKey" prop="tier">
-        <template #default="{ row }">
-          <el-tag :type="tierTagType(row.tier)" size="small">{{ PET_TIER_LABELS[row.tier] || row.tier }}</el-tag>
-        </template>
-      </el-table-column>
       <el-table-column prop="weight" label="权重" width="80" sortable />
       <el-table-column label="衰减" width="100" sortable prop="hungerDecayMinutes">
         <template #default="{ row }">
@@ -79,16 +71,11 @@
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="阶" prop="tier">
-          <el-radio-group v-model="form.tier">
-            <el-radio v-for="t in PET_TIERS" :key="t" :value="t">{{ PET_TIER_LABELS[t] }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
+            <el-radio value="video">视频（推荐 9:16）</el-radio>
             <el-radio value="image">图片</el-radio>
             <el-radio value="svg">SVG</el-radio>
-            <el-radio value="video">视频</el-radio><!-- 2026-07-12 加 -->
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'image'" label="图片">
@@ -201,7 +188,7 @@ import FilePicker from '@/components/FilePicker.vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { handleRemoveError } from '@/utils/removable'
 import { formatDate } from '@/utils/format'
-import { PET_TIERS, PET_TIER_LABELS, PET_VISUAL_TYPE_LABELS } from '@/utils/constants'
+import { PET_VISUAL_TYPE_LABELS } from '@/utils/constants'
 
 const VISUAL_LABELS = PET_VISUAL_TYPE_LABELS
 
@@ -209,11 +196,8 @@ export default {
   name: 'PetSpeciesAdmin',
   components: { FilePicker, DestructiveConfirm },
   setup() {
-    const filter = reactive({ tier: '', isActive: true, keyword: '' })
+    const filter = reactive({ isActive: true, keyword: '' })
 
-    // 2026-07-08: 阶列按 PET_TIERS 数组索引升序 (C→B→A→S)
-    const TIER_RANK = { C: 0, B: 1, A: 2, S: 3 }
-    const tierSortKey = (row) => (TIER_RANK[row.tier] ?? 999)
     const items = ref([])
     const loading = ref(false)
     const dialog = ref(false)
@@ -235,20 +219,18 @@ export default {
       _id: null,
       key: '',
       name: '',
-      tier: 'C',
-      visualType: 'image',
+      visualType: 'video',
       imageFile: null,
       svgContent: '',
-      videoFile: null,  // 2026-07-12
+      videoFile: null,
       weight: 100,
-      hungerDecayMinutes: 60,  // 2026-06-23
+      hungerDecayMinutes: 60,
       isActive: true,
       description: ''
     })
     const rules = {
       key: [{ required: true, message: 'key 必填', trigger: 'blur' }],
       name: [{ required: true, message: '名称 必填', trigger: 'blur' }],
-      tier: [{ required: true, message: '阶 必填', trigger: 'change' }],
       visualType: [{ required: true, message: '视觉类型 必填', trigger: 'change' }]
     }
 
@@ -256,22 +238,11 @@ export default {
       loading.value = true
       try {
         const params = {
-          tier: filter.tier || undefined,
           isActive: filter.isActive,
           keyword: filter.keyword || undefined
         }
         const { data } = await petCatalogApi.listSpecies(params)
-        // 2026-07-08: JS 端预排序 (阶升序 C→B→A→S, 同阶内按衰减分钟数升序)
-        // Element Plus default-sort + :sort-by 在 initial render 时不调用 sort-by 函数,
-        // 手动点表头才生效, 所以这里直接预先排好
-        const list = data.items || []
-        const TIER_ORDER = { C: 0, B: 1, A: 2, S: 3 }
-        items.value = list.slice().sort((a, b) => {
-          const ta = TIER_ORDER[a.tier] ?? 999
-          const tb = TIER_ORDER[b.tier] ?? 999
-          if (ta !== tb) return ta - tb
-          return (a.hungerDecayMinutes || 60) - (b.hungerDecayMinutes || 60)
-        })
+        items.value = data.items || []
       } catch (e) {
         items.value = []
         ElMessage.error('加载物种失败：' + (e?.message || 'unknown'))
@@ -282,8 +253,8 @@ export default {
 
     function resetForm() {
       Object.assign(form, {
-        _id: null, key: '', name: '', tier: 'C', visualType: 'image',
-        imageFile: null, svgContent: '', videoFile: null,  // 2026-07-12
+        _id: null, key: '', name: '', visualType: 'video',
+        imageFile: null, svgContent: '', videoFile: null,
         weight: 100, hungerDecayMinutes: 60, isActive: true, description: ''
       })
       formRef.value?.clearValidate()
@@ -300,13 +271,12 @@ export default {
         _id: row._id,
         key: row.key,
         name: row.name,
-        tier: row.tier,
         visualType: row.visualType,
         imageFile: row.imageFile || null,
         svgContent: row.svgContent || '',
-        videoFile: row.videoFile || null,  // 2026-07-12
+        videoFile: row.videoFile || null,
         weight: row.weight,
-        hungerDecayMinutes: row.hungerDecayMinutes || 60,  // 2026-06-23
+        hungerDecayMinutes: row.hungerDecayMinutes || 60,
         isActive: row.isActive,
         description: row.description || ''
       })
@@ -347,13 +317,12 @@ export default {
         const payload = {
           key: form.key.trim(),
           name: form.name.trim(),
-          tier: form.tier,
           visualType: form.visualType,
           imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
-          videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,  // 2026-07-12
+          videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
           weight: Number(form.weight) || 0,
-          hungerDecayMinutes: Number(form.hungerDecayMinutes) || 60,  // 2026-06-23
+          hungerDecayMinutes: Number(form.hungerDecayMinutes) || 60,
           isActive: !!form.isActive,
           description: form.description || null
         }
@@ -383,13 +352,6 @@ export default {
       }
     }
 
-    function tierTagType(t) {
-      // el-tag 的 type 校验只接受 primary/success/info/warning/danger，
-      // 不能用空串占位（会触发 Invalid prop 警告）。给 C 阶用 info（中性灰），
-      // 与 B/A/S 形成 4 阶递进的视觉等级。
-      return { C: 'info', B: 'success', A: 'warning', S: 'danger' }[t] || 'info'
-    }
-
     function openPreview(row) {
       previewRow.value = row
       previewOpen.value = true
@@ -399,13 +361,12 @@ export default {
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      imagePicker, videoPicker, previewOpen, previewRow, previewVideoRef,   // 2026-07-12 加 videoPicker / previewVideoRef
-      PET_TIERS, PET_TIER_LABELS, VISUAL_LABELS,
-      tierSortKey,
-      Plus, Upload, Picture, VideoPlay,  // 2026-07-12 加 VideoPlay
+      imagePicker, videoPicker, previewOpen, previewRow, previewVideoRef,
+      VISUAL_LABELS,
+      Plus, Upload, Picture, VideoPlay,
       petCatalogApi,
-      load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm,  // 2026-07-12 加 onPickVideo/uploadVideo
-      openPreview, onPreviewClosed, tierTagType, formatDate
+      load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm,
+      openPreview, onPreviewClosed, formatDate
     }
   }
 }

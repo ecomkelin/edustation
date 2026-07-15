@@ -3,21 +3,7 @@
  * 运行时用于 UI 展示;后端是 source of truth
  */
 
-// === 宠物 ===
-export const PetTier = {
-  C: 'C',
-  B: 'B',
-  A: 'A',
-  S: 'S'
-}
-export const PetTierLabel = { C: 'C 阶', B: 'B 阶', A: 'A 阶', S: 'S 阶' }
-export const PetTierColor = {
-  C: '#9CA3AF', // 灰
-  B: '#7CD9B7', // 绿
-  A: '#5B9EE6', // 蓝
-  S: '#F5C148'  // 金
-}
-
+// === 宠物 (2026-07-15 重构：去等阶 + 去装饰) ===
 export const PetState = {
   EGG: 'egg',
   ALIVE: 'alive',
@@ -25,41 +11,20 @@ export const PetState = {
 }
 export const PetStateLabel = { egg: '蛋', alive: '已破壳', dead: '沉睡中' }
 
-export const PetSlot = {
-  HAT: 'hat',
-  SCARF: 'scarf',
-  CLOTHES: 'clothes',
-  ACCESSORY: 'accessory',
-  HALO: 'halo',
-  BACKGROUND: 'background'
-}
-export const PetSlotLabel = {
-  hat: '帽子',
-  scarf: '围巾',
-  clothes: '衣服',
-  accessory: '配饰',
-  halo: '光环',
-  background: '背景'
-}
-
-// 兜底 emoji (visualType 找不到记录时)
+// 兜底 emoji (species video 缺失时)
 export const PET_SPECIES_EMOJI = {
   cat_orange: '🐱',
-  cat_white: '😺',
-  cat_black: '🐈‍⬛',
-  dog_brown: '🐶',
-  rabbit_pink: '🐰',
+  dog_puppy: '🐶',
+  rabbit_white: '🐰',
+  hamster_gold: '🐹',
   fox_red: '🦊',
-  bear_brown: '🐻',
-  panda_black: '🐼',
-  penguin: '🐧',
-  owl: '🦉',
-  dragon_green: '🐲',
-  unicorn: '🦄',
-  axolotl: '🦎',
-  hamster: '🐹',
-  parrot: '🦜',
-  frog_green: '🐸'
+  panda_baby: '🐼',
+  penguin_baby: '🐧',
+  owl_horned: '🦉',
+  dragon_emperor: '🐲',
+  phoenix_fire: '🔥',
+  unicorn_rainbow: '🦄',
+  griffin_gold: '🦅'
 }
 
 // === 考勤 ===

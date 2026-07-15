@@ -189,33 +189,13 @@ const PetType = Object.freeze({
 })
 const PET_TYPES = Object.values(PetType)
 
-/**
- * 宠物阶（PetAccount.tier / eggTier 字段，2026-06-21 pet-system-v2 立项）
- *   - C: 入门阶，喂养便宜（normal 5 积分），适合积分少 / 学习频率低的学生
- *   - B: 进阶阶
- *   - A: 高级阶
- *   - S: 至尊阶，喂养昂贵（normal 100 积分），死亡阈值最短（逼高频学习）
- *
- * 与 shared/petConfig.js 的 PET_TIER_CONFIG 阶表一一对应；本枚举只做 key 校验 + i18n label。
- */
-const PetTier = Object.freeze({
-  C: 'C',
-  B: 'B',
-  A: 'A',
-  S: 'S'
-})
-const PET_TIERS = Object.values(PetTier)
-const PET_TIER_LABELS = Object.freeze({
-  C: 'C 级',
-  B: 'B 级',
-  A: 'A 级',
-  S: 'S 级'
-})
+// 2026-07-15 重构：PetTier / PET_TIERS / PET_TIER_LABELS 已删除（宠物不再分等阶）。
+// 老代码若引用 tier，一并删除即可。
 
 /**
  * 宠物状态机（PetAccount.state 字段，2026-06-21 pet-system-v2）
  *   - egg:   蛋态，等待 hatch
- *   - alive: 存活态，可喂食/换装/置换/降阶
+ *   - alive: 存活态，可喂食
  *   - dead:  死亡态（瞬间态，cron 同一 tick 内 reborn 为 egg，玩家几乎不可见）
  */
 const PetState = Object.freeze({
@@ -233,32 +213,28 @@ const PET_STATE_LABELS = Object.freeze({
 /**
  * 宠物事件类型（PetEvent.type 字段）
  *
- * 12 种业务事件 + 6 种 admin 代操作事件；与 points.transaction 的 trigger='pet' (meta.action) 区分：
+ * 2026-07-15 重构：删等阶 + 删装饰后，移除 tierup/tierdown/swap/equip/unequip/purchase_item
+ * 及对应 admin_* 事件；新增 set_default / admin_set_default（切换默认宠物）。
+ *
+ * 业务事件 + admin 代操作事件；与 points.transaction 的 trigger='pet' (meta.action) 区分：
  *   - PetEvent 是宠物自身状态变更的全审计
- *   - PointsTransaction 是积分变动的账本（仅 feed / swap 触发）
+ *   - PointsTransaction 是积分变动的账本（仅 feed 触发）
  */
 const PetEventType = Object.freeze({
-  ADOPT: 'adopt',           // 首次领养
+  ADOPT: 'adopt',           // 领养（得蛋）
   HATCH: 'hatch',           // 破壳
   FEED: 'feed',             // 喂食
   LEVELUP: 'levelup',       // 升级
-  TIERUP: 'tierup',         // 满级升阶
-  TIERDOWN: 'tierdown',     // 主动降阶
-  SWAP: 'swap',             // 置换蛋
   DEATH: 'death',           // 死亡
   REBIRTH: 'rebirth',       // 死→蛋
-  EQUIP: 'equip',           // 装备
-  UNEQUIP: 'unequip',       // 卸下
-  ADMIN_OVERRIDE: 'admin_override', // admin 调整
-  // ── 2026-06-21 pet-system-v2-ext：admin 代操作审计（与业务事件区分） ──
-  ADMIN_ADOPT: 'admin_adopt',     // 老师/admin 代领蛋
-  ADMIN_FEED: 'admin_feed',       // 老师/admin 代喂食
-  ADMIN_HATCH: 'admin_hatch',     // 老师/admin 代破壳
-  ADMIN_SWAP: 'admin_swap',       // 老师/admin 代置换
-  ADMIN_TIERDOWN: 'admin_tierdown', // 老师/admin 代降阶
-  ADMIN_EQUIP: 'admin_equip',     // 老师/admin 代换装
-  // ── 2026-06-22 pet-shop：购买/代发（by 区分 student / admin） ──
-  PURCHASE_ITEM: 'purchase_item',         // 买装饰（解锁进背包）
+  SET_DEFAULT: 'set_default', // 设为默认宠物
+  ADMIN_OVERRIDE: 'admin_override', // admin 调整字段
+  // ── admin 代操作审计（与业务事件区分） ──
+  ADMIN_ADOPT: 'admin_adopt',       // 老师/admin 代领蛋
+  ADMIN_FEED: 'admin_feed',         // 老师/admin 代喂食
+  ADMIN_HATCH: 'admin_hatch',       // 老师/admin 代破壳
+  ADMIN_SET_DEFAULT: 'admin_set_default', // 老师/admin 代设默认
+  // ── pet-shop：购买/代发消耗品（by 区分 student / admin） ──
   PURCHASE_CONSUMABLE: 'purchase_consumable' // 买食物/玩具（立即喂一次）
 })
 const PET_EVENT_TYPES = Object.values(PetEventType)
@@ -319,48 +295,8 @@ const PET_CONSUMABLE_KIND_LABELS = Object.freeze({
   toy: '玩具'
 })
 
-/**
- * 消耗品适用阶（PetConsumable.applicableTier）
- *   - C/B/A/S: 仅适用该阶宠物
- *   - all:     适用所有阶（perTier 每阶独立数值）
- */
-const PetConsumableApplicableTier = Object.freeze({
-  C: 'C',
-  B: 'B',
-  A: 'A',
-  S: 'S',
-  ALL: 'all'
-})
-const PET_CONSUMABLE_APPLICABLE_TIERS = Object.values(PetConsumableApplicableTier)
-const PET_CONSUMABLE_APPLICABLE_TIER_LABELS = Object.freeze({
-  C: '仅 C 阶',
-  B: '仅 B 阶',
-  A: '仅 A 阶',
-  S: '仅 S 阶',
-  all: '通用（各阶独立数值）'
-})
-
-/**
- * 宠物装饰 slot 类型（PetItem.slot，复用原 petItems.js SLOT_TYPES 的 6 个槽位）
- * 与 PetItem.slot 字段一一对应。
- */
-const PetItemSlot = Object.freeze({
-  HAT: 'hat',
-  SCARF: 'scarf',
-  CLOTHES: 'clothes',
-  ACCESSORY: 'accessory',
-  HALO: 'halo',
-  BACKGROUND: 'background'
-})
-const PET_ITEM_SLOTS = Object.values(PetItemSlot)
-const PET_ITEM_SLOT_LABELS = Object.freeze({
-  hat: '帽子',
-  scarf: '围巾',
-  clothes: '衣服',
-  accessory: '饰品',
-  halo: '光环',
-  background: '背景'
-})
+// 2026-07-15 重构：PetConsumableApplicableTier 已删除（消耗品不再分阶，改单套扁平数值）。
+// 2026-07-15 重构：PetItemSlot / PET_ITEM_SLOTS 已删除（装饰系统整体移除）。
 
 /**
  * StudentProduct 来源（source 字段）
@@ -737,9 +673,7 @@ exports.PointsType = PointsType
 exports.POINTS_TYPES = POINTS_TYPES
 exports.PetType = PetType
 exports.PET_TYPES = PET_TYPES
-exports.PetTier = PetTier
-exports.PET_TIERS = PET_TIERS
-exports.PET_TIER_LABELS = PET_TIER_LABELS
+// 2026-07-15: PetTier / PET_TIERS / PET_TIER_LABELS 已删除（无等阶）
 exports.PetState = PetState
 exports.PET_STATES = PET_STATES
 exports.PET_STATE_LABELS = PET_STATE_LABELS
@@ -748,17 +682,10 @@ exports.PET_EVENT_TYPES = PET_EVENT_TYPES
 exports.PetVisualType = PetVisualType
 exports.PET_VISUAL_TYPES = PET_VISUAL_TYPES
 exports.PET_VISUAL_TYPE_LABELS = PET_VISUAL_TYPE_LABELS
-// 2026-07-08: PetItemUnlockType / PET_ITEM_UNLOCK_TYPES / PET_ITEM_UNLOCK_TYPE_LABELS 已废弃
-// 原枚举拆为独立字段 unlockLevel / unlockTier, 不再导出
 exports.PetConsumableKind = PetConsumableKind
 exports.PET_CONSUMABLE_KINDS = PET_CONSUMABLE_KINDS
 exports.PET_CONSUMABLE_KIND_LABELS = PET_CONSUMABLE_KIND_LABELS
-exports.PetConsumableApplicableTier = PetConsumableApplicableTier
-exports.PET_CONSUMABLE_APPLICABLE_TIERS = PET_CONSUMABLE_APPLICABLE_TIERS
-exports.PET_CONSUMABLE_APPLICABLE_TIER_LABELS = PET_CONSUMABLE_APPLICABLE_TIER_LABELS
-exports.PetItemSlot = PetItemSlot
-exports.PET_ITEM_SLOTS = PET_ITEM_SLOTS
-exports.PET_ITEM_SLOT_LABELS = PET_ITEM_SLOT_LABELS
+// 2026-07-15: PetConsumableApplicableTier / PetItemSlot 及其派生已删除
 exports.StudentProductSource = StudentProductSource
 exports.STUDENT_PRODUCT_SOURCES = STUDENT_PRODUCT_SOURCES
 exports.SchedulePlanMode = SchedulePlanMode

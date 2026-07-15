@@ -1,14 +1,18 @@
 /**
- * Pet API - 宠物 (C 端)
- * R-2272 me / R-2200 events / R-2206 species / R-2207 items
- * R-2263 adopt / R-2264 hatch / R-2265 feed / R-2266 equip
- * R-2267 swap-egg / R-2268 tier-down
+ * Pet API - 宠物 (C 端；2026-07-15 重构：多宠 + petId 化 + 无装饰)
+ * R-2272 me(默认宠物) / R-2208 list / R-2200 events / R-2206 species / consumables
+ * R-2263 adopt / R-2264 :petId/hatch / R-2265 :petId/feed / R-2269 :petId/set-default
  */
 import { http } from './request'
 
 export const petApi = {
   me() {
     return http.get('/pet/me')
+  },
+
+  // 该学员全部宠物（默认宠物在前）
+  list() {
+    return http.get('/pet/list')
   },
 
   events(params = {}) {
@@ -19,36 +23,25 @@ export const petApi = {
     return http.get('/pet/species', { data: params })
   },
 
-  items(params = {}) {
-    return http.get('/pet/items', { data: params })
-  },
-
-  // 2026-07-03 加: 食物图鉴 (C 端调, 复用 admin petCatalog)
+  // 食物图鉴
   consumables(params = {}) {
     return http.get('/pet/consumables', { data: params })
   },
 
+  // 领养一只新宠物（≤ 上限）
   adopt(data = {}) {
     return http.post('/pet/adopt', data)
   },
 
-  hatch() {
-    return http.post('/pet/hatch', {})
+  hatch(petId) {
+    return http.post(`/pet/${petId}/hatch`, {})
   },
 
-  feed(data) {
-    return http.post('/pet/feed', data)
+  feed(petId, data) {
+    return http.post(`/pet/${petId}/feed`, data)
   },
 
-  equip(data) {
-    return http.post('/pet/equip', data)
-  },
-
-  swapEgg(data = {}) {
-    return http.post('/pet/swap-egg', data)
-  },
-
-  tierDown(data) {
-    return http.post('/pet/tier-down', data)
+  setDefault(petId) {
+    return http.post(`/pet/${petId}/set-default`, {})
   }
 }

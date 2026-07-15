@@ -89,31 +89,15 @@
               <text class="home__pet-name">{{ petName }}</text>
               <text class="home__pet-state">待破壳</text>
             </view>
-            <text class="home__pet-tier-tag" :style="{ color: petTierColor }">{{ petTier }} 阶</text>
             <text class="home__pet-cta">✨ 点击破壳看看 ›</text>
           </view>
         </view>
 
-        <!-- 已破壳: 主卡 (头像 + 名字 + 阶位 + 双进度条) -->
+        <!-- 已破壳: 主卡 (默认宠物视频 + 名字 + 双进度条) -->
         <view v-else class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
-            <!-- 2026-07-04 重做: 跟 admin PetClassroomDisplay 严格对齐
-                 - 背景层独立铺满 portrait 区, 走 svg-wrap + v-html
-                 - species + 装备叠加层 走 svg-wrap + v-html + :deep(svg) CSS -->
-
-            <!-- 背景层 -->
-            <view
-              v-if="petEquipLayer.background && petEquipLayer.background.svgContent"
-              class="home__pet-bg"
-            >
-              <view class="home__svg-wrap" v-html="petEquipLayer.background.svgContent" />
-            </view>
-
-            <!-- species 主图: 三分支 svg / video / image (2026-07-14 跟 detail.vue PetEquipmentOverlay 范式对齐) -->
+            <!-- species 主图: svg / video / image / emoji 兜底（9:16 裁 1:1） -->
             <view v-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
-            <!-- 2026-07-14: 跟 admin PetEquipmentOverlay 严格对齐 — 极简单行 video (无 uni-app props / 无 event handlers)
-                 之前加了一堆 uni-app 特定 props + Vue @canplay/@loadedmetadata → uni-app x 3.0-alpha H5
-                 触发内部 [petVideo] error 假信号, ref 未就位时 handler 跑不到, autoplay 链断 -->
             <video
               v-else-if="petSpecies && petSpecies.visualType === 'video' && petSpecies.videoFile && petSpecies.videoFile.url"
               :src="petSpecies.videoFile.url"
@@ -131,38 +115,6 @@
               mode="aspectFill"
             />
             <text v-else class="home__pet-portrait-emoji">{{ petEmoji }}</text>
-
-            <!-- 装备叠加层 (hat/scarf/clothes/accessory/halo) — 三分支 (2026-07-14 补 video/image) -->
-            <view class="home__pet-equips">
-              <view
-                v-for="slot in ['hat','scarf','clothes','accessory','halo']"
-                :key="slot"
-                class="home__pet-equip-layer"
-                :class="`home__pet-equip-layer--${slot}`"
-              >
-                <view v-if="petEquipLayer[slot] && petEquipLayer[slot].svgContent" class="home__svg-wrap" v-html="petEquipLayer[slot].svgContent" />
-                <video
-                  v-else-if="petEquipLayer[slot] && petEquipLayer[slot].visualType === 'video' && petEquipLayer[slot].videoUrl"
-                  :src="petEquipLayer[slot].videoUrl"
-                  :key="slot"
-                  autoplay loop muted playsinline
-                  :controls="false"
-                  :show-play-btn="false"
-                  :show-fullscreen-btn="false"
-                  class="home__pet-equip-video"
-                />
-                <image
-                  v-else-if="petEquipLayer[slot] && petEquipLayer[slot].imageFile && petEquipLayer[slot].imageFile.url"
-                  :src="petEquipLayer[slot].imageFile.url"
-                  class="home__pet-equip-img"
-                  mode="aspectFill"
-                />
-              </view>
-            </view>
-
-            <view class="home__pet-tier-badge" :style="{ background: petTierColor }">
-              <text>{{ petTier }}</text>
-            </view>
           </view>
           <view class="home__pet-info">
             <view class="home__pet-name-row">
@@ -443,8 +395,6 @@ import { greetingByHour, PET_SPECIES_EMOJI } from '@/utils/constants'
 import { haptic } from '@/utils/haptic'
 import { toast } from '@/components/common/Toast'
 
-const TIER_EMOJI = { C: '🥚', B: '🐣', A: '🦊', S: '🐉' }
-const TIER_COLOR = { C: '#9CA3AF', B: '#7CD9B7', A: '#5B9EE6', S: '#F5C148' }
 // 2026-07-11 v0.9: 通知类型 emoji (跟 components/messages/InboxList.vue TYPE_ICON 同源)
 const NOTIF_ICON = {
   lesson_remind_1h: '📚', lesson_remind_24h: '📅', lesson_absent: '⚠️',
@@ -456,8 +406,7 @@ const NOTIF_ICON = {
   access_stranger: '🚨',
   system_notice: '📢'
 }
-// 2026-07-03: 装备 slot 常量 (与 detail.vue / admin 对齐)
-const PET_ITEM_SLOTS = ['background', 'hat', 'scarf', 'clothes', 'accessory', 'halo']
+// 2026-07-15 重构：装饰系统删除，PET_ITEM_SLOTS 不再需要
 
 export default {
   components: { ActiveStudentHeader, EmptyState, PendingConsents },
@@ -473,8 +422,6 @@ export default {
       pet: null,
       petSpecies: null,
       petBlockReason: '',
-      // 2026-07-03 加: 装备 catalog 缓存 (用 petApi.items 拉一次), 给首页宠物卡显示"已装备 N 件"
-      petEquipMap: {},
       // 我的课程 (2026-07-03 简化, 只剩当前孩子报名的课程; 2026-07-02 替换原"今日课程" section)
       enrollments: [],
       enrollmentsLoading: false,
@@ -606,13 +553,7 @@ export default {
     selectedDay() {
       return this.weekDays.find((d) => d.date === this.selectedDate) || null
     },
-    // 宠物概略 (2026-07-02 加)
-    petTier() {
-      return this.pet?.tier || this.pet?.eggTier || 'C'
-    },
-    petTierColor() {
-      return TIER_COLOR[this.petTier] || TIER_COLOR.C
-    },
+    // 宠物概略 (2026-07-15 重构：去等阶)
     petHungerPercent() {
       if (!this.pet) return 0
       const max = this.pet.maxHunger || 100
@@ -620,75 +561,22 @@ export default {
     },
     petExpToNext() {
       if (!this.pet) return 100
-      const L = this.pet.level || 1
-      const tier = this.petTier
-      const formula = { C: 50 + L * 20, B: 80 + L * 30, A: 120 + L * 50, S: 200 + L * 80 }
-      return formula[tier] || 100
+      // 后端 decoratePet 已按 per-org 等级配置算好 nextExpToLevel（满级为 null）
+      return this.pet.nextExpToLevel != null ? this.pet.nextExpToLevel : (this.pet.experience || 100)
     },
     petExpPercent() {
       if (!this.pet) return 0
+      if (this.pet.nextExpToLevel == null) return 100
       return Math.max(0, Math.min(100, ((this.pet.experience || 0) / this.petExpToNext) * 100))
     },
     petEmoji() {
       if (!this.pet) return '🐾'
-      // 2026-07-14: visualType==='video'/'image' 物种靠真实素材渲染, emoji 仅兜底 (物种无素材)
-      // 已破壳用 speciesRecord (admin 维护的 svg 优先), 否则按 species key 查 emoji
-      if (this.pet.state !== 'egg' && this.petSpecies && this.petSpecies.visualType !== 'svg' && this.petSpecies.visualType !== 'video' && this.petSpecies.visualType !== 'image' && this.petSpecies.icon) {
-        return this.petSpecies.icon
-      }
       const key = this.pet.species
-      return (key && PET_SPECIES_EMOJI[key]) || TIER_EMOJI[this.petTier] || '🐾'
-    },
-
-    // 2026-07-02: species.visualType='svg' 时, 把 svgContent 转 data URI 让 image 渲染
-    // base64 编码避免引号转义问题, 跟 admin PetClassroomDisplay v-html 等效
-    petSvgSrc() {
-      if (!this.petSpecies || this.petSpecies.visualType !== 'svg' || !this.petSpecies.svgContent) return ''
-      // uni-app image 不支持 v-html, 转 base64 data URI
-      try {
-        // #ifdef H5
-        // H5 端 base64 编码有 btoa, 走 btoa
-        if (typeof btoa === 'function') {
-          return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(this.petSpecies.svgContent)))
-        }
-        // #endif
-        // 其他端 (小程序) 用 encodeURIComponent + 手写 base64
-        return 'data:image/svg+xml;base64,' + this._b64encode(this.petSpecies.svgContent)
-      } catch (e) {
-        return ''
-      }
+      return (key && PET_SPECIES_EMOJI[key]) || '🐾'
     },
     petName() {
-      return this.pet?.nickname || this.petSpecies?.name || TIER_EMOJI[this.petTier] || '我的宠物'
-    },
-    petStateLabel() {
-      if (!this.pet) return ''
-      if (this.pet.state === 'egg') return '🥚 待破壳'
-      return `Lv.${this.pet.level || 1} · ${this.petTier} 阶`
-    },
-    // 2026-07-04 重做: 直接透传 svgContent, 模板走 svg-wrap + v-html (跟 admin 同源)
-    petEquipLayer() {
-      const out = { background: null, hat: null, scarf: null, clothes: null, accessory: null, halo: null }
-      if (!this.pet) return out
-      const equipped = this.pet.equipped || {}
-      for (const slot of PET_ITEM_SLOTS) {
-        const key = equipped[slot]
-        if (!key) continue
-        const meta = this.petEquipMap[key]
-        if (!meta) continue
-        out[slot] = {
-          key,
-          // 2026-07-14: 透传 visualType + videoFile + videoUrl (跟 detail.vue equipmentLayers 字段对齐)
-          visualType: meta.visualType || 'image',
-          svgContent: meta.svgContent || '',
-          url: (meta.imageFile && meta.imageFile.url) || '',
-          imageFile: meta.imageFile || null,
-          videoFile: meta.videoFile || null,
-          videoUrl: meta.videoFile && meta.videoFile.url ? meta.videoFile.url : ''
-        }
-      }
-      return out
-    },
+      return this.pet?.nickname || this.petSpecies?.name || '我的宠物'
+    }
     // 2026-07-04 学习画像 (mini 预览): 取第一个非空字段做高亮 label + 60 字预览
     // 端点实际返 personality/learningGoal/weakness/classFeedback/strengths/followUp (老师手填画像)
     profileHighlight() {
@@ -913,7 +801,7 @@ export default {
         //   → admin 显示真正的 SVG, client 显示 🐣 完全不一致
         // fix: 直接吃 /pet/me 已 populate 的 speciesRecord (pet.service.decoratePet 注入)
         this.petSpecies = (this.pet && this.pet.speciesRecord) || null
-        // 兜底: 万一后端没 populate (旧版本兼容), 再去查一次全集不限 tier
+        // 兜底: 万一后端没 populate (旧版本兼容), 再去查一次全集
         if (this.pet && this.pet.species && !this.petSpecies) {
           try {
             const list = await petApi.species({ isActive: true })
@@ -923,9 +811,6 @@ export default {
             this.petSpecies = null
           }
         }
-        // 2026-07-03: 拉一次 catalog (itemMap) 给首页装备叠加层渲染用;
-        // 与 detail.vue loadCatalog 一致, 只缓存用过的 visual 数据, 不全展开
-        await this.loadEquipCatalog()
       } catch (e) {
         if (e && (e.code === 'notEnrolled' || e.statusCode === 422)) {
           this.petBlockReason = 'notEnrolled'
@@ -934,45 +819,6 @@ export default {
         this.petSpecies = null
       } finally {
         this.petLoading = false
-      }
-    },
-
-    // 2026-07-03: 首页装备 catalog — 只为已装备的 6 slot 各查一次, 不拉全量
-    // 与 detail.vue loadCatalog 区别: 首页不需要 chip 列表, 只需要已装备的 url/svgContent
-    async loadEquipCatalog() {
-      if (!this.pet) {
-        this.petEquipMap = {}
-        return
-      }
-      const equipped = this.pet.equipped || {}
-      const needed = PET_ITEM_SLOTS.map((s) => equipped[s]).filter(Boolean)
-      if (needed.length === 0) {
-        this.petEquipMap = {}
-        return
-      }
-      try {
-        const ir = await petApi.items({ pageSize: 100 })
-        const bySlot = ir?.items || {}
-        const map = {}
-        for (const slotKey of Object.keys(bySlot)) {
-          const group = bySlot[slotKey]
-          const list = Array.isArray(group?.items) ? group.items : []
-          for (const it of list) {
-            if (needed.indexOf(it.key) < 0) continue
-            map[it.key] = {
-              name: it.name,
-              slot: it.slot || slotKey,
-              // 2026-07-14: 同步存 visualType + videoFile (跟 detail.vue equipmentLayers 字段对齐)
-              visualType: it.visualType || 'image',
-              svgContent: it.svgContent || '',
-              imageFile: it.imageFile || null,
-              videoFile: it.videoFile || null
-            }
-          }
-        }
-        this.petEquipMap = map
-      } catch (e) {
-        this.petEquipMap = {}
       }
     },
 
@@ -1192,7 +1038,8 @@ export default {
       uni.navigateTo({ url: '/pages/pet/detail' })
     },
     goPetAdopt() {
-      uni.navigateTo({ url: '/pages/pet/adopt' })
+      // 2026-07-15: 领养走详情页（详情页 !pet 时提供领养 CTA + 多宠管理）
+      uni.navigateTo({ url: '/pages/pet/detail' })
     }
   }
 }

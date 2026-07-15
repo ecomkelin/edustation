@@ -186,10 +186,8 @@ const menuGroups = [
         requirePlatform: true,
         children: [
           { path: '/pet/species', label: '宠物图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
-          { path: '/pet/items', label: '装饰图鉴', icon: MagicStick, perm: 'pet.write', requirePlatform: true },
           { path: '/pet/consumables', label: '食物玩具', icon: MagicStick, perm: 'pet.write', requirePlatform: true }
-          // 2026-07-11: 商城流水从本子组挪到「学员 → 宠物实例」附近。商城流水是本机构数据
-          // 不归平台 catalog; 原位置让持有 pet.read 的普通员工看见整个「宠物管理」子组 label
+          // 2026-07-15: 装饰图鉴已删除（装饰系统移除）；等级配置放「学员 → 宠物实例」附近（per-org）
         ]
       },
       // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典
@@ -329,8 +327,9 @@ const menuGroups = [
       // 宠物实例 (2026-06-21 pet-system-v2): 机构全量宠物 + 事件流 + 调整
       // D 方案 (2026-06-22): 实例留在学员与订单 (per-org 强隔离, 学员侧资产)
       { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' },
+      // 等级配置 (2026-07-15): per-org 宠物等级/经验曲线；机构管理员即可改本机构
+      { path: '/pet/level-config', label: '宠物等级配置', icon: MagicStick, perm: 'pet.write' },
       // 商城流水 (2026-06-22 pet-shop): 看学生买/老师代发 流水；本机构看本机构
-      // 2026-07-11: 从「系统管理 → 宠物管理」子组挪来，业务上是本机构流水，不归平台 catalog
       { path: '/pet/shop-orders', label: '商城流水', icon: Tickets, perm: 'pet.read' }
     ]
   },

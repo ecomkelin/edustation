@@ -21,19 +21,15 @@ export const petCatalogApi = {
   removeSpecies: (id, { password } = {}) => http.delete(`/admin/pet/species/${id}`, { data: { password } }),
   removableCheckSpecies: (id) => http.get(`/admin/pet/species/${id}/removable-check`),
 
-  // ─── Items ───
-  listItems: (params) => http.get('/admin/pet/items', { params }),
-  getItem: (id) => http.get(`/admin/pet/items/${id}`),
-  createItem: (data) => http.post('/admin/pet/items', data),
-  updateItem: (id, data) => http.put(`/admin/pet/items/${id}`, data),
-  removeItem: (id, { password } = {}) => http.delete(`/admin/pet/items/${id}`, { data: { password } }),
-  removableCheckItem: (id) => http.get(`/admin/pet/items/${id}/removable-check`),
-
   // ─── Consumables ───
   listConsumables: (params) => http.get('/admin/pet/consumables', { params }),
   getConsumable: (id) => http.get(`/admin/pet/consumables/${id}`),
   createConsumable: (data) => http.post('/admin/pet/consumables', data),
   updateConsumable: (id, data) => http.put(`/admin/pet/consumables/${id}`, data),
   removeConsumable: (id, { password } = {}) => http.delete(`/admin/pet/consumables/${id}`, { data: { password } }),
-  removableCheckConsumable: (id) => http.get(`/admin/pet/consumables/${id}/removable-check`)
+  removableCheckConsumable: (id) => http.get(`/admin/pet/consumables/${id}/removable-check`),
+
+  // ─── Level Config（per-org 等级配置，2026-07-15） ───
+  getLevelConfig: () => http.get('/admin/pet/level-config'),
+  updateLevelConfig: (data) => http.put('/admin/pet/level-config', data)
 }

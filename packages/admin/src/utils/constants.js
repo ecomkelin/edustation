@@ -143,20 +143,12 @@ export const FINANCE_REASON_DIRECTION_LABEL = {
   out: '支出'
 }
 
-// ─── 宠物系统 (pet-system-v2-ext 2026-06-21) ───
-export const PET_TIERS = ['C', 'B', 'A', 'S']
-export const PET_TIER_LABELS = { C: 'C 级', B: 'B 级', A: 'A 级', S: 'S 级' }
-export const PET_TIER_TAG_TYPE = { C: '', B: 'success', A: 'warning', S: 'danger' }
+// ─── 宠物系统 (pet-system-v2-ext 2026-06-21；2026-07-15 重构：去等阶+去装饰) ───
 export const PET_STATES = ['egg', 'alive', 'dead']
 export const PET_STATE_LABELS = { egg: '蛋', alive: '存活', dead: '死亡' }
-export const PET_VISUAL_TYPES = ['image', 'svg', 'video']   // 2026-07-12 加 video
+export const PET_VISUAL_TYPES = ['image', 'svg', 'video']
 export const PET_VISUAL_TYPE_LABELS = { image: '图片', svg: 'SVG', video: '视频' }
-export const PET_ITEM_SLOTS = ['hat', 'scarf', 'clothes', 'accessory', 'halo', 'background']
-export const PET_ITEM_SLOT_LABELS = { hat: '帽子', scarf: '围巾', clothes: '衣服', accessory: '饰品', halo: '光环', background: '背景' }
-// 2026-07-08: PET_ITEM_UNLOCK_TYPES / PET_ITEM_UNLOCK_TYPE_LABELS 已废弃
-// 原互斥枚举 level/tier 拆为两个独立字段 unlockLevel / unlockTier (DB PetItem)
-// UI 现在直接用 PET_TIERS / el-input-number, 不再需要这两个常量
 export const PET_CONSUMABLE_KINDS = ['food', 'toy']
 export const PET_CONSUMABLE_KIND_LABELS = { food: '食物', toy: '玩具' }
-export const PET_CONSUMABLE_APPLICABLE_TIERS = ['C', 'B', 'A', 'S', 'all']
-export const PET_CONSUMABLE_APPLICABLE_TIER_LABELS = { C: '仅 C 阶', B: '仅 B 阶', A: '仅 A 阶', S: '仅 S 阶', all: '通用（各阶独立数值）' }
+// 2026-07-15 删除：PET_TIERS / PET_TIER_LABELS / PET_TIER_TAG_TYPE / PET_ITEM_SLOTS / PET_ITEM_SLOT_LABELS /
+//   PET_CONSUMABLE_APPLICABLE_TIERS（宠物不再分等阶，装饰系统整体移除，消耗品改扁平数值）

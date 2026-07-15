@@ -39,19 +39,7 @@ router.get('/species/:id/removable-check', mws.requirePermission('pet.read'), c.
 // R-2485 DELETE /admin/pet/species/:id
 router.delete('/species/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), mws.requirePlatformPassword, c.removeSpecies)
 
-// ─── Items ───
-// R-2486 GET /admin/pet/items
-router.get('/items', mws.requirePermission('pet.read'), c.listItems)
-// R-2487 POST /admin/pet/items
-router.post('/items', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.createItem)
-// R-2488 GET /admin/pet/items/:id
-router.get('/items/:id', mws.requirePermission('pet.read'), c.getItem)
-// R-2489 PUT /admin/pet/items/:id
-router.put('/items/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), c.updateItem)
-// R-2490 GET /admin/pet/items/:id/removable-check
-router.get('/items/:id/removable-check', mws.requirePermission('pet.read'), c.removableCheckItem)
-// R-2491 DELETE /admin/pet/items/:id
-router.delete('/items/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), mws.requirePlatformPassword, c.removeItem)
+// ─── Items ───（2026-07-15 装饰系统整体删除；R-2486~2491 DEPRECATED，见 routes-server.md §4.1）
 
 // ─── Consumables ───
 // R-2492 GET /admin/pet/consumables
@@ -66,5 +54,11 @@ router.put('/consumables/:id', mws.requirePlatformAdmin, mws.requirePermission('
 router.get('/consumables/:id/removable-check', mws.requirePermission('pet.read'), c.removableCheckConsumable)
 // R-2497 DELETE /admin/pet/consumables/:id
 router.delete('/consumables/:id', mws.requirePlatformAdmin, mws.requirePermission('pet.write'), mws.requirePlatformPassword, c.removeConsumable)
+
+// ─── Level Config（per-org 等级配置；机构管理员即可改本机构） ───
+// R-2498 GET /admin/pet/level-config
+router.get('/level-config', mws.requirePermission('pet.read'), c.getLevelConfig)
+// R-2499 PUT /admin/pet/level-config
+router.put('/level-config', mws.requirePermission('pet.write'), c.updateLevelConfig)
 
 module.exports = router

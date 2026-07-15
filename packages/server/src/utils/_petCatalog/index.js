@@ -11,11 +11,9 @@
  *   await PetSpecies.insertMany(seed.SPECIES)
  */
 const SPECIES = require('./species')
-const ITEMS = require('./items')
 const CONSUMABLES = require('./consumables')
 
 module.exports = {
   SPECIES,
-  ITEMS,
   CONSUMABLES
 }

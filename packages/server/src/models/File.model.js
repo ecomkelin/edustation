@@ -34,9 +34,8 @@ const REF_ENTITY = {
   LESSON_SCHEDULE: 'LessonSchedule',
   SUBJECT: 'Subject',
   COURSE_INSTANCE: 'CourseInstance',
-  // 2026-06-21 pet-system-v2-ext: 宠物图鉴三表的 imageFile 字段
+  // 2026-06-21 pet-system-v2-ext: 宠物图鉴的 imageFile/videoFile 字段
   PET_SPECIES: 'PetSpecies',
-  PET_ITEM: 'PetItem',
   PET_CONSUMABLE: 'PetConsumable'
 }
 

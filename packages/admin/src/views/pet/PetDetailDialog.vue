@@ -6,13 +6,10 @@
     width="720px"
   >
     <div v-if="pet" class="detail-content">
-      <!-- 2026-06-22: 顶部加宠物图 + 装备叠加层 — 与课堂展示页面对齐
-           蛋/死态走 emoji 占位；存活态用 PetEquipmentOverlay 渲染物种图 + 已装备装饰 -->
+      <!-- 存活态用 PetEquipmentOverlay 渲染物种视频；蛋/死态走 emoji 占位 -->
       <div v-if="pet.state === 'alive' && pet.speciesRecord" class="pet-preview">
         <PetEquipmentOverlay
           :species-record="pet.speciesRecord"
-          :equipped="pet.equipped || {}"
-          :item-map="itemMap"
           mode="dialog"
           fallback-emoji="🐾"
         />
@@ -31,11 +28,11 @@
         <el-descriptions-item label="昵称">
           {{ pet.nickname || '—' }}
         </el-descriptions-item>
+        <el-descriptions-item label="默认">{{ pet.isDefault ? '是' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="状态">{{ stateLabel(pet.state) }}</el-descriptions-item>
-        <el-descriptions-item label="阶">{{ pet.tier || pet.eggTier || '—' }}</el-descriptions-item>
         <el-descriptions-item label="种类">{{ pet.speciesRecord?.name || '—' }}</el-descriptions-item>
         <el-descriptions-item label="等级">Lv.{{ pet.level }}</el-descriptions-item>
-        <el-descriptions-item label="经验">{{ pet.experience }} / {{ pet.nextExpToLevel || pet.tierUpThreshold || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="经验">{{ pet.experience }} / {{ pet.nextExpToLevel != null ? pet.nextExpToLevel : '满级' }}</el-descriptions-item>
         <el-descriptions-item label="饱腹度">
           {{ pet.currentHunger }} / {{ pet.maxHunger }}
           <span v-if="pet.state === 'alive'" style="color:#909399;font-size:12px;margin-left:6px">
@@ -52,7 +49,7 @@
       <el-divider content-position="left">字段调整 (pet.write)</el-divider>
       <el-form :model="editForm" inline label-width="80px" size="small">
         <el-form-item label="饱腹度">
-          <el-input-number v-model="editForm.currentHunger" :min="0" :max="100" />
+          <el-input-number v-model="editForm.currentHunger" :min="0" :max="1000" />
         </el-form-item>
         <el-form-item label="昵称">
           <el-input v-model="editForm.nickname" maxlength="32" />
@@ -74,7 +71,6 @@
 <script>
 import { ElMessage } from 'element-plus'
 import { petAdminApi } from '@/api/pet'
-import { petCatalogApi } from '@/api/petCatalog'
 import * as petUtil from '@/utils/pet'
 import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
 import { formatDate } from '@/utils/format'
@@ -91,9 +87,7 @@ export default {
     return {
       pet: null,
       editForm: { currentHunger: 100, nickname: '', lastFedAt: null, reason: '' },
-      saving: false,
-      // 2026-06-22: itemMap 给 PetEquipmentOverlay 装备叠加层用 (key → {name, svgContent, imageFile})
-      itemMap: {}
+      saving: false
     }
   },
   computed: {
@@ -127,10 +121,6 @@ export default {
       return `${(min / 1440).toFixed(1)} 天`
     },
     async fetchDetail() {
-      // 顶部装备叠加层需要 item.svgContent/imageFile → 一次性拉 items 建 map
-      if (Object.keys(this.itemMap).length === 0) {
-        this.loadItemMap()
-      }
       try {
         const r = await petAdminApi.get(this.petId)
         const payload = r?.data?.pet ? r.data : r
@@ -143,25 +133,6 @@ export default {
         }
       } catch (e) {
         this.pet = null
-      }
-    },
-    async loadItemMap() {
-      // 平台共享 catalog，无需 org；拉全量后建 key → {name, slot, visualType, svgContent, imageFile} map
-      try {
-        const { data } = await petCatalogApi.listItems({ pageSize: 100 })
-        const map = {}
-        for (const it of (data.items || [])) {
-          map[it.key] = {
-            name: it.name,
-            slot: it.slot,
-            visualType: it.visualType,
-            svgContent: it.svgContent || null,
-            imageFile: it.imageFile || null
-          }
-        }
-        this.itemMap = map
-      } catch (_) {
-        this.itemMap = {}
       }
     },
     async onSave() {

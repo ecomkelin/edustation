@@ -22,10 +22,9 @@ const CONSUMABLES = [
     key: 'food_normal',
     name: '普通食物',
     kind: 'food',
-    applicableTier: 'all',
-    perTier: {
-      all: { pointCost: 5, hungerRestore: 15, expGain: 10 }
-    },
+    pointCost: 5,
+    hungerRestore: 15,
+    expGain: 10,
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <!-- 碗 -->
@@ -49,10 +48,9 @@ const CONSUMABLES = [
     key: 'food_premium',
     name: '高级食物',
     kind: 'food',
-    applicableTier: 'all',
-    perTier: {
-      all: { pointCost: 15, hungerRestore: 40, expGain: 30 }
-    },
+    pointCost: 15,
+    hungerRestore: 40,
+    expGain: 30,
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <!-- 圆瓷盘 -->
@@ -82,10 +80,9 @@ const CONSUMABLES = [
     key: 'food_super',
     name: '特级食物',
     kind: 'food',
-    applicableTier: 'all',
-    perTier: {
-      all: { pointCost: 40, hungerRestore: 100, expGain: 80 }
-    },
+    pointCost: 40,
+    hungerRestore: 100,
+    expGain: 80,
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -124,10 +121,9 @@ const CONSUMABLES = [
     key: 'toy_ball',
     name: '小毛球',
     kind: 'toy',
-    applicableTier: 'all',
-    perTier: {
-      all: { pointCost: 3, hungerRestore: 0, expGain: 5 }
-    },
+    pointCost: 3,
+    hungerRestore: 0,
+    expGain: 5,
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -156,10 +152,9 @@ const CONSUMABLES = [
     key: 'toy_feather',
     name: '羽毛逗猫棒',
     kind: 'toy',
-    applicableTier: 'all',
-    perTier: {
-      all: { pointCost: 8, hungerRestore: 0, expGain: 15 }
-    },
+    pointCost: 8,
+    hungerRestore: 0,
+    expGain: 15,
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <!-- 棒 -->
@@ -185,10 +180,9 @@ const CONSUMABLES = [
     key: 'toy_musicbox',
     name: '八音盒',
     kind: 'toy',
-    applicableTier: 'all',
-    perTier: {
-      all: { pointCost: 20, hungerRestore: 0, expGain: 35 }
-    },
+    pointCost: 20,
+    hungerRestore: 0,
+    expGain: 35,
     visualType: 'svg',
     svgContent: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
       <defs>

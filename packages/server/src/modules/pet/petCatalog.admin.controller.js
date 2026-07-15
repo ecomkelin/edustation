@@ -20,7 +20,6 @@ function wrap(fn) {
 exports.listSpecies = wrap(async (req, res) => {
   const items = await s.listSpecies({
     orgId: req.orgId,
-    tier: req.query.tier,
     isActive: req.query.isActive !== undefined ? req.query.isActive === 'true' : undefined,
     keyword: req.query.keyword
   })
@@ -58,52 +57,6 @@ exports.removableCheckSpecies = wrap(async (req, res) => {
 
 exports.removeSpecies = wrap(async (req, res) => {
   const data = await s.removeSpecies({ orgId: req.orgId, id: req.params.id })
-  res.json({ success: true, data })
-})
-
-/* ─── Items ─────────────────────────────────── */
-
-exports.listItems = wrap(async (req, res) => {
-  const items = await s.listItems({
-    orgId: req.orgId,
-    slot: req.query.slot,
-    isActive: req.query.isActive !== undefined ? req.query.isActive === 'true' : undefined,
-    keyword: req.query.keyword
-  })
-  res.json({ success: true, data: { items } })
-})
-
-exports.getItem = wrap(async (req, res) => {
-  const data = await s.getItem({ orgId: req.orgId, id: req.params.id })
-  res.json({ success: true, data })
-})
-
-exports.createItem = wrap(async (req, res) => {
-  const data = await s.createItem({
-    orgId: req.orgId,
-    payload: req.body || {},
-    operatorId: req.user && req.user.id
-  })
-  res.status(201).json({ success: true, data })
-})
-
-exports.updateItem = wrap(async (req, res) => {
-  const data = await s.updateItem({
-    orgId: req.orgId,
-    id: req.params.id,
-    payload: req.body || {},
-    operatorId: req.user && req.user.id
-  })
-  res.json({ success: true, data })
-})
-
-exports.removableCheckItem = wrap(async (req, res) => {
-  const data = await s.removableCheckItem({ orgId: req.orgId, id: req.params.id })
-  res.json({ success: true, data })
-})
-
-exports.removeItem = wrap(async (req, res) => {
-  const data = await s.removeItem({ orgId: req.orgId, id: req.params.id })
   res.json({ success: true, data })
 })
 
@@ -150,5 +103,21 @@ exports.removableCheckConsumable = wrap(async (req, res) => {
 
 exports.removeConsumable = wrap(async (req, res) => {
   const data = await s.removeConsumable({ orgId: req.orgId, id: req.params.id })
+  res.json({ success: true, data })
+})
+
+/* ─── Level Config（per-org 等级配置） ─────────────────────────────────── */
+
+exports.getLevelConfig = wrap(async (req, res) => {
+  const data = await s.getLevelConfig({ orgId: req.orgId })
+  res.json({ success: true, data })
+})
+
+exports.updateLevelConfig = wrap(async (req, res) => {
+  const data = await s.updateLevelConfig({
+    orgId: req.orgId,
+    payload: req.body || {},
+    operatorId: req.user && req.user.id
+  })
   res.json({ success: true, data })
 })

@@ -21,8 +21,7 @@ router.get('/shop', asyncHandler(c.listShop))
 
 // 写操作：必须 enrolled（学员至少报 1 个班才能消费）
 router.use(mws.requireEnrolledStudent)
-// R-2371 POST /pet/shop/buy-item
-router.post('/shop/buy-item', asyncHandler(c.buyItem))
+// 2026-07-15 DEPRECATED: R-2371 buy-item 已随装饰系统删除
 // R-2372 POST /pet/shop/buy-consumable
 router.post('/shop/buy-consumable', asyncHandler(c.buyConsumable))
 

@@ -14,14 +14,6 @@
             <el-option label="死亡" value="dead" />
           </el-select>
         </el-form-item>
-        <el-form-item label="阶">
-          <el-select v-model="filters.tier" placeholder="全部" clearable style="width: 100px">
-            <el-option label="C" value="C" />
-            <el-option label="B" value="B" />
-            <el-option label="A" value="A" />
-            <el-option label="S" value="S" />
-          </el-select>
-        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="fetchList">查询</el-button>
           <el-button type="success" @click="openAdoptDialog">
@@ -33,6 +25,12 @@
 
     <el-table :data="list" v-loading="loading" style="margin-top: 16px" stripe>
       <el-table-column prop="studentName" label="学员" width="120" />
+      <el-table-column label="默认" width="70">
+        <template #default="{ row }">
+          <el-tag v-if="row.isDefault" type="success" size="small">默认</el-tag>
+          <span v-else style="color:#c0c4cc">—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="80">
         <template #default="{ row }">
           <el-tag :type="stateTagType(row.state)">{{ stateLabel(row.state) }}</el-tag>
@@ -41,12 +39,6 @@
       <el-table-column label="种类" width="100">
         <template #default="{ row }">
           {{ row.speciesRecord?.name || '—' }}
-        </template>
-      </el-table-column>
-      <el-table-column label="阶" width="60">
-        <template #default="{ row }">
-          <el-tag v-if="row.tier" :type="tierTagType(row.tier)" size="small">{{ row.tier }}</el-tag>
-          <span v-else>—</span>
         </template>
       </el-table-column>
       <el-table-column label="等级" width="80">
@@ -85,10 +77,13 @@
       </el-table-column>
       <!-- 2026-07-07: 删除列表行的「代喂食」按钮 (课堂展示里已有, 详情弹窗只展示不可写);
            留详情 / 课堂展示 / 事件 三个按钮, 操作列宽度从 320 缩到 280 -->
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="{ row }">
           <el-tooltip content="宠物详情（只读）" placement="top">
             <el-button size="small" @click="openDetail(row)">详情</el-button>
+          </el-tooltip>
+          <el-tooltip content="设为该学员的默认宠物" placement="top">
+            <el-button size="small" type="success" plain :disabled="row.isDefault" @click="onSetDefault(row)">设为默认</el-button>
           </el-tooltip>
           <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看，含喂食操作）" placement="top">
             <el-button size="small" type="primary" plain @click="openClassroom(row)">课堂展示</el-button>
@@ -182,7 +177,7 @@ export default {
   components: { PetDetailDialog, PetEventsDialog },
   data() {
     return {
-      filters: { keyword: '', state: '', tier: '' },
+      filters: { keyword: '', state: '' },
       list: [],
       page: 1,
       pageSize: 20,
@@ -220,7 +215,6 @@ export default {
         }
         if (this.filters.keyword) params.keyword = this.filters.keyword
         if (this.filters.state) params.state = this.filters.state
-        if (this.filters.tier) params.tier = this.filters.tier
         // ⚠️ 当前 http.js 第 125 行 return body (未真正解包)，r 是 {success, code, message, data}
         const r = await petAdminApi.list(params)
         this.list = r.data?.items || []
@@ -238,6 +232,17 @@ export default {
     openClassroom(row) {
       const url = `/class/pet-display?studentId=${row.student}`
       window.open(url, '_blank')
+    },
+
+    // ─── 设为默认宠物 ───
+    async onSetDefault(row) {
+      try {
+        await petAdminApi.setDefaultOnBehalf(row._id)
+        ElMessage.success(`已将【${row.studentName || '该学员'}】的默认宠物设为此只`)
+        await this.fetchList()
+      } catch (e) {
+        ElMessage.error(e?.response?.data?.message || e?.message || '设置失败')
+      }
     },
 
     // ─── 事件流（列表行）：弹 PetEventsDialog ───
@@ -265,8 +270,6 @@ export default {
       try {
         const r = await studentApi.list({
           keyword: this.studentKeyword || undefined,
-          // 2026-06-22: 代领养弹窗默认只显示未领养学员；后端也校验防绕过
-          hasPet: 'false',
           pageSize: 20,
           page: 1
         })
@@ -321,11 +324,6 @@ export default {
     },
     stateTagType(s) {
       return { egg: 'info', alive: 'success', dead: 'danger' }[s] || ''
-    },
-    tierTagType(t) {
-      // el-tag 的 type 校验只接受 primary/success/info/warning/danger，
-      // fallback 不能用空串，否则脏 tier 数据会触发 Invalid prop 警告。
-      return { C: 'info', B: 'primary', A: 'warning', S: 'danger' }[t] || 'info'
     },
     hungerColor(h, max = 1000) {
       // 2026-06-23: maxHunger 改 1000，按百分比判断颜色（保持视觉一致）

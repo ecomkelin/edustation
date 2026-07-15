@@ -178,19 +178,6 @@
       }
     },
     {
-      "path": "pages/pet/hatch",
-      "style": {
-        "navigationBarTitleText": "破壳",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/pet/equip",
-      "style": {
-        "navigationBarTitleText": "换装"
-      }
-    },
-    {
       "path": "pages/pet/detail",
       "style": {
         "navigationBarTitleText": "我的宠物",

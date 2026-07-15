@@ -30,7 +30,6 @@
 const PetAccount = require('@models/PetAccount.model')
 const PetSpecies = require('@models/PetSpecies.model')
 const petEvent = require('./petEvent.service')
-const petConfig = require('@shared/petConfig')
 // 2026-07-13: siteConfigService 已不再用 (getHungerDecayMinutes 在 2026-06-23 删),
 //   PetSpecies.hungerDecayMinutes 是单一来源
 const cronRegistry = require('@modules/common/cronRegistry')
@@ -70,7 +69,7 @@ async function sweepAll() {
 
   // 用 cursor 流式处理（万级 collection 不爆内存）
   const cursor = PetAccount.find({ state: 'alive' })
-    .select('_id org student tier currentHunger lastFedAt lastHungerDecayAt deathThresholdDays maxHunger eggTier')
+    .select('_id org student currentHunger lastFedAt lastHungerDecayAt deathThresholdDays maxHunger')
     .lean()
     .cursor({ batchSize: 200 })
 
@@ -149,55 +148,31 @@ async function sweepOne(pet, now, decayMs) {
   if (newHunger === 0 && pet.lastFedAt) {
     const daysAtZero = (now.getTime() - new Date(pet.lastFedAt).getTime()) / DAY_MS
     if (daysAtZero >= pet.deathThresholdDays) {
-      const result = await dieAndRebirth(pet, now)
-      if (result === 'ok') {
-        return 'died'
+        const result = await dieAndRebirth(pet, now)
+        if (result === 'ok') {
+          return 'died'
+        }
+        // 'cas_failed': 并发改了 state, 静默跳过, 不算 died 也不算 error
+        return null
       }
-      if (result === 'no_tier_config') {
-        // 数据异常 (pet.tier 不在 PET_TIER_CONFIG), sweepOne 走 errors 路径
-        // 这里抛回 'die_error', sweepAll catch 后 +stats.errors
-        return 'die_error'
-      }
-      // 'cas_failed': 并发改了 state, 静默跳过, 不算 died 也不算 error
-      return null
-    }
   }
   return 'decayed'
 }
 
 /**
- * 死亡 → 同阶回蛋（同一 tick 内完成，状态可观察点 = egg）
+ * 死亡 → 回蛋（同一 tick 内完成，状态可观察点 = egg）
  *
- * 2026-07-13 原子化:
- *   旧实现: 写 death event → atomic state update → 写 rebirth event (3 步, 任意一步崩了都不一致)
- *   新实现:
- *     1. atomic state update (CAS: state='alive' AND currentHunger=0)
- *     2. 写 death + rebirth 2 个 event, 用确定性 eventKey (eventKey 唯一索引幂等)
- *        同分钟内重试触发 duplicate key → recordEvent 返回 null, 视为幂等成功
- *     3. event 写失败仅 log, 不影响状态 (state 是 source of truth)
+ * 2026-07-15 重构：去等阶后回蛋清 species（下次 hatch 全池重随机），
+ * 不再依赖 PET_TIER_CONFIG。
  *
- * 2026-07-13 v2:
- *   返回结果给调用方 (sweepOne) 据此决定 stats 计数, 不再静默失败
- *   返回 'ok' | 'cas_failed' | 'no_tier_config'
- *   - 'ok': CAS 成功, 事件已尝试写入 (幂等 dedup 算成功)
- *   - 'cas_failed': CAS 失败 (并发改了 state/hunger) → sweepOne 跳过, 不算 died
- *   - 'no_tier_config': pet.tier 不在 PET_TIER_CONFIG 里 (数据异常) → sweepOne 跳过 + 累计 errors
+ * 原子化:
+ *   1. atomic state update (CAS: state='alive' AND currentHunger=0)
+ *   2. 写 death + rebirth 2 个 event, 用确定性 eventKey 幂等
+ *   3. event 写失败仅 log, 不影响状态 (state 是 source of truth)
  *
- * 收益:
- *   - state 永远是 source of truth; event 缺失仅丢审计, 不影响业务
- *   - 重试 (cron 崩了重启 / leader 切到另一副本) 在同分钟内不会写重复 event
- *   - 不依赖 mongo replica set 事务 (单机 dev 也能跑)
- *   - sweepOne stats 不再谎报 ('died' 只在真成功时 +1)
- *
- * @returns {Promise<'ok'|'cas_failed'|'no_tier_config'>}
+ * @returns {Promise<'ok'|'cas_failed'>}
  */
 async function dieAndRebirth(pet, now) {
-  const cfg = petConfig.PET_TIER_CONFIG[pet.tier]
-  if (!cfg) {
-    // 数据异常: pet.tier 异常 (被外部瞎改 / seed 漏字段) → bail, 让 sweepOne 记 error
-    return 'no_tier_config'
-  }
-
   // 1. 原子状态更新 (CAS): 仅当 state 仍是 'alive' + hunger 仍是 0 才更新
   const updated = await PetAccount.findOneAndUpdate(
     { _id: pet._id, state: 'alive', currentHunger: 0 },
@@ -205,14 +180,13 @@ async function dieAndRebirth(pet, now) {
       $set: {
         state: 'egg',
         stateChangedAt: now,
-        eggTier: pet.tier, // 同阶回蛋
         eggAdoptedAt: now,
+        species: null,       // 回蛋清 species，下次 hatch 全池重随机
         level: 1,
         experience: 0,
         currentHunger: pet.maxHunger,
         lastFedAt: null,
         lastHungerDecayAt: now
-        // species / unlocked / equipped / tier 全部保留
       }
     },
     { new: true }
@@ -238,7 +212,6 @@ async function dieAndRebirth(pet, now) {
     petAccountId: pet._id,
     type: 'death',
     payload: {
-      tier: pet.tier,
       hunger: pet.currentHunger,
       daysAtZero,
       reason: 'hunger'
@@ -251,7 +224,7 @@ async function dieAndRebirth(pet, now) {
     studentId: pet.student,
     petAccountId: pet._id,
     type: 'rebirth',
-    payload: { tier: pet.tier, fromDeath: true }
+    payload: { fromDeath: true }
   })
 
   return 'ok'
