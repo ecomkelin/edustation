@@ -14,6 +14,9 @@ rm -rf packages/admin/node_modules/.vite
 ---
 
 ## 当前版本
+**v0.8.41 ** （2026-07-15）
+- 优化 video宠物 视频 遮挡上下logo
+
 **v0.8.40 ** （2026-07-14）
 - 优化 video宠物
 

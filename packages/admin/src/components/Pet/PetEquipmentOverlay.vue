@@ -117,7 +117,14 @@ export default {
 
 .pet-frame > img,
 .pet-frame > .svg-wrap,
-.pet-frame > .video-render,
+.pet-frame > .video-render {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  display: block;
+  /* 2026-07-15: 遮豆包水印 — 上裁 10%, 下裁 15%(水印在视频边角浮动,边缘一起切掉) */
+  clip-path: inset(10% 0 15% 0);
+}
 .pet-frame > .emoji-fallback {
   width: 100%;
   max-height: 60vh;
@@ -128,6 +135,9 @@ export default {
   width: 100%;
   max-height: 60vh;
   display: block;
+  /* 2026-07-15: SVG viewBox 留白多，1.4 倍居中放大让主体贴满卡片 (overflow 由父 .pet-display 裁掉) */
+  transform: scale(1.4);
+  transform-origin: center;
 }
 .pet-frame > .emoji-fallback {
   font-size: 280px;
