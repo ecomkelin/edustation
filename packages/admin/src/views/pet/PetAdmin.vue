@@ -7,11 +7,11 @@
         <el-form-item label="学员">
           <el-input v-model="filters.keyword" placeholder="按学员名搜索" clearable style="width: 200px" />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item label="含宠物状态">
           <el-select v-model="filters.state" placeholder="全部" clearable style="width: 120px">
-            <el-option label="蛋" value="egg" />
-            <el-option label="存活" value="alive" />
-            <el-option label="死亡" value="dead" />
+            <el-option label="含蛋态" value="egg" />
+            <el-option label="含存活" value="alive" />
+            <el-option label="含死亡" value="dead" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -23,76 +23,70 @@
       </el-form>
     </el-card>
 
-    <el-table :data="list" v-loading="loading" style="margin-top: 16px" stripe>
+    <el-table :data="studentRows" v-loading="loading" style="margin-top: 16px" stripe>
       <el-table-column prop="studentName" label="学员" width="120" />
-      <el-table-column label="默认" width="70">
+      <!-- 2026-07-17: 种类列里 inline 显示「N 只 / M 种」 + 去重种类 tag -->
+      <el-table-column label="种类" min-width="240">
         <template #default="{ row }">
-          <el-tag v-if="row.isDefault" type="success" size="small">默认</el-tag>
-          <span v-else style="color:#c0c4cc">—</span>
+          <el-tag
+            size="small"
+            :type="row.petCount > 0 ? 'success' : 'info'"
+            style="margin-right:8px"
+          >{{ row.petCount }} 只 / {{ row.speciesCount }} 种</el-tag>
+          <span v-if="row.speciesList.length === 0" style="color:#c0c4cc">—</span>
+          <template v-else>
+            <el-tag
+              v-for="(s, idx) in row.speciesList"
+              :key="idx"
+              size="small"
+              effect="plain"
+              style="margin-right:4px"
+            >{{ s.name }}</el-tag>
+          </template>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="80">
+      <el-table-column label="默认宠物" width="140">
         <template #default="{ row }">
-          <el-tag :type="stateTagType(row.state)">{{ stateLabel(row.state) }}</el-tag>
+          <template v-if="row.defaultPet">
+            <el-tag v-if="row.defaultPet.state === 'alive'" type="success" size="small">{{ row.defaultPet.speciesRecord?.name || '—' }} · Lv.{{ row.defaultPet.level }}</el-tag>
+            <el-tag v-else-if="row.defaultPet.state === 'egg'" type="warning" size="small">🥚 蛋</el-tag>
+            <el-tag v-else size="small" type="info">—</el-tag>
+          </template>
+          <span v-else style="color:#c0c4cc">未领养</span>
         </template>
       </el-table-column>
-      <el-table-column label="种类" width="100">
+      <el-table-column label="饱腹度" width="160">
         <template #default="{ row }">
-          {{ row.speciesRecord?.name || '—' }}
-        </template>
-      </el-table-column>
-      <el-table-column label="等级" width="80">
-        <template #default="{ row }">
-          Lv.{{ row.level }}
-        </template>
-      </el-table-column>
-      <el-table-column label="经验" width="100">
-        <template #default="{ row }">
-          {{ row.experience }}
-        </template>
-      </el-table-column>
-      <el-table-column label="饱腹度" width="140">
-        <template #default="{ row }">
-          <el-tooltip
-            v-if="row.state === 'alive'"
-            :content="`每 ${rowEffectiveDecay(row)} 分钟 -1; 剩 ${row.currentHunger}/${row.maxHunger || 1000}`"
-            placement="top"
-          >
+          <template v-if="row.defaultPet">
             <el-progress
-              :percentage="Math.round((row.currentHunger / (row.maxHunger || 1000)) * 100)"
+              v-if="row.defaultPet.state === 'alive'"
+              :percentage="Math.round((row.defaultPet.currentHunger / (row.defaultPet.maxHunger || 1000)) * 100)"
               :stroke-width="8"
               :show-text="true"
-              :format="() => `${row.currentHunger}/${row.maxHunger || 1000}`"
-              :color="hungerColor(row.currentHunger, row.maxHunger || 1000)"
+              :format="() => `${row.defaultPet.currentHunger}/${row.defaultPet.maxHunger || 1000}`"
+              :color="hungerColor(row.defaultPet.currentHunger, row.defaultPet.maxHunger || 1000)"
             />
-          </el-tooltip>
-          <span v-else-if="row.state === 'egg'" style="color:#909399;font-size:12px">🥚 蛋态</span>
-          <span v-else style="color:#909399;font-size:12px">💀 已死亡</span>
+            <span v-else-if="row.defaultPet.state === 'egg'" style="color:#909399;font-size:12px">🥚 蛋态</span>
+            <span v-else style="color:#909399;font-size:12px">💀 已死亡</span>
+          </template>
+          <span v-else style="color:#c0c4cc">—</span>
         </template>
       </el-table-column>
       <el-table-column label="最后喂食" width="160">
         <template #default="{ row }">
-          {{ formatDate(row.lastFedAt) }}
+          {{ row.defaultPet ? formatDate(row.defaultPet.lastFedAt) : '—' }}
         </template>
       </el-table-column>
-      <!-- 2026-07-07: 删除列表行的「代喂食」按钮 (课堂展示里已有, 详情弹窗只展示不可写);
-           留详情 / 课堂展示 / 事件 三个按钮, 操作列宽度从 320 缩到 280 -->
+      <!-- 操作: 一行 = 一学员，绑默认 pet (若有) -->
       <el-table-column label="操作" width="340" fixed="right">
         <template #default="{ row }">
-          <el-tooltip content="宠物详情（只读）" placement="top">
-            <el-button size="small" @click="openDetail(row)">详情</el-button>
-          </el-tooltip>
-          <el-tooltip content="设为该学员的默认宠物" placement="top">
-            <el-button size="small" type="success" plain :disabled="row.isDefault" @click="onSetDefault(row)">设为默认</el-button>
-          </el-tooltip>
+          <el-button size="small" :disabled="!row.defaultPet" @click="openDetail(row.defaultPet)">详情</el-button>
           <el-tooltip content="新窗口打开课堂展示页（老师投影给全班看，含喂食操作）" placement="top">
             <el-button size="small" type="primary" plain @click="openClassroom(row)">课堂展示</el-button>
           </el-tooltip>
-          <el-tooltip content="查看该宠物的事件流" placement="top">
-            <el-button size="small" type="info" plain @click="openEventsDialog(row)">
-              <el-icon style="margin-right:2px;vertical-align:-2px"><Tickets /></el-icon>事件
-            </el-button>
-          </el-tooltip>
+          <el-button size="small" :disabled="!row.defaultPet" @click="openEventsDialog(row.defaultPet)">
+            <el-icon style="margin-right:2px;vertical-align:-2px"><Tickets /></el-icon>事件
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -180,7 +174,7 @@ export default {
       filters: { keyword: '', state: '' },
       list: [],
       page: 1,
-      pageSize: 20,
+      pageSize: 50, // 2026-07-17: 一行=一学员后, 拉更多 pet 才能聚合更多学员
       total: 0,
       loading: false,
       detailVisible: false,
@@ -200,6 +194,62 @@ export default {
       eventsDialogVisible: false,
       eventsPetId: null,
       eventsStudentName: ''
+    }
+  },
+  computed: {
+    /**
+     * 2026-07-17: 一行 = 一学员（不是一宠物）。
+     * 把后端 petAdminApi.list 返回的 pets 按 student 聚合：
+     *   - 默认宠物 (isDefault=true) 优先；都没有则取最早领养的
+     *   - petCount: 该学员的宠物总数
+     *   - speciesCount: 去重的种类数
+     *   - speciesList: [{key, name}] 去重排序
+     */
+    studentRows() {
+      const map = new Map()
+      for (const p of this.list) {
+        const sid = String(p.student)
+        if (!map.has(sid)) {
+          map.set(sid, {
+            student: p.student,
+            studentName: p.studentName,
+            studentGender: p.studentGender,
+            pets: []
+          })
+        }
+        map.get(sid).pets.push(p)
+      }
+      const rows = []
+      for (const v of map.values()) {
+        // 1) 默认宠物优先；2) 否则取 updatedAt 最早那只
+        const def = v.pets.find(x => x.isDefault) ||
+                    v.pets.slice().sort((a, b) => new Date(a.updatedAt || 0) - new Date(b.updatedAt || 0))[0] ||
+                    null
+        // 3) 种类去重
+        const seen = new Set()
+        const speciesList = []
+        for (const p of v.pets) {
+          if (!p.species || seen.has(p.species)) continue
+          seen.add(p.species)
+          speciesList.push({ key: p.species, name: p.speciesRecord?.name || p.species })
+        }
+        rows.push({
+          student: v.student,
+          studentName: v.studentName,
+          studentGender: v.studentGender,
+          defaultPet: def,
+          petCount: v.pets.length,
+          speciesCount: speciesList.length,
+          speciesList
+        })
+      }
+      // 默认宠物放在第一位，其余按更新时间倒序
+      rows.sort((a, b) => {
+        const aUpd = a.defaultPet ? new Date(a.defaultPet.updatedAt || 0).getTime() : 0
+        const bUpd = b.defaultPet ? new Date(b.defaultPet.updatedAt || 0).getTime() : 0
+        return bUpd - aUpd
+      })
+      return rows
     }
   },
   mounted() {

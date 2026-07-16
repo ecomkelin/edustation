@@ -96,8 +96,19 @@
         <!-- 已破壳: 主卡 (默认宠物视频 + 名字 + 双进度条) -->
         <view v-else class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
-            <!-- species 主图: svg / video / emoji 兜底（9:16 裁 1:1） -->
-            <view v-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
+            <!-- 2026-07-17: 优先 pet.currentVisual (per-level override)，其次 petSpecies 兜底 -->
+            <view v-if="pet && pet.currentVisual && pet.currentVisual.visualType === 'svg' && pet.currentVisual.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="pet.currentVisual.svgContent" />
+            <video
+              v-else-if="pet && pet.currentVisual && pet.currentVisual.visualType === 'video' && pet.currentVisual.videoFile && pet.currentVisual.videoFile.url"
+              :src="pet.currentVisual.videoFile.url"
+              :key="`${pet.currentVisual.source}-${pet.currentVisual.level}-${pet.level}`"
+              autoplay loop muted playsinline
+              :controls="false"
+              :show-play-btn="false"
+              :show-fullscreen-btn="false"
+              class="home__pet-portrait-video"
+            />
+            <view v-else-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
             <video
               v-else-if="petSpecies && petSpecies.visualType === 'video' && petSpecies.videoFile && petSpecies.videoFile.url"
               :src="petSpecies.videoFile.url"

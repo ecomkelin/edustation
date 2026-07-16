@@ -114,14 +114,14 @@
           </div>
         </div>
 
-        <!-- 其他领养的宠物 — 9:16 视频卡片；点「设为默认」切主图 / 蛋可代破壳 -->
+        <!-- 领养的宠物列表 — 包含默认宠物；默认那张不带「设为默认」按钮 -->
         <div class="stat-card">
           <div class="label">
-            其他领养的宠物（{{ otherPets.length }} 只 · 共 {{ pets.length }}/{{ MAX_PETS }}）
+            领养的宠物（{{ pets.length }} 只 · 共 {{ pets.length }}/{{ MAX_PETS }}）
             <span v-if="pets.length >= MAX_PETS" class="max-hint">已达上限, 需先弃养腾位</span>
           </div>
           <div class="other-pets-grid">
-            <div v-for="p in otherPets" :key="p._id" class="other-pet-card">
+            <div v-for="p in pets" :key="p._id" class="other-pet-card" :class="{ 'other-pet-card--default': p.isDefault }">
               <div class="other-pet-media">
                 <!-- 2026-07-16: 优先 currentVisual (per-level override)，其次 speciesRecord (兜底) -->
                 <video
@@ -136,9 +136,13 @@
                 <span v-else-if="p.state === 'alive' && p.speciesRecord?.visualType === 'svg' && p.speciesRecord.svgContent" class="other-pet-svg" v-html="p.speciesRecord.svgContent" />
                 <span v-else class="other-pet-emoji">{{ p.state === 'egg' ? '🥚' : '🐾' }}</span>
               </div>
-              <div class="other-pet-name">{{ p.speciesRecord?.name || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}</div>
+              <div class="other-pet-name">
+                <span v-if="p.isDefault" class="default-star" title="默认展示">★</span>
+                {{ p.speciesRecord?.name || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}
+              </div>
               <div class="other-pet-actions" v-if="canWrite">
-                <el-button size="small" type="success" plain @click="onSetDefault(p)">设为默认</el-button>
+                <el-button v-if="p.isDefault" size="small" type="success" plain disabled>已是默认</el-button>
+                <el-button v-else size="small" type="success" plain @click="onSetDefault(p)">设为默认</el-button>
                 <el-button v-if="p.state === 'egg'" size="small" type="warning" plain @click="onHatchOther(p)">代破壳</el-button>
                 <!-- 2026-07-16 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码 + removable-check 预检) -->
                 <DestructiveConfirm
@@ -213,6 +217,7 @@ export default {
     let hatchTimers = []
 
     const otherPets = computed(() => pets.value.filter(p => !pet.value || String(p._id) !== String(pet.value._id)))
+    // 2026-07-17: 「其他领养的宠物」改为展示全部（含默认），原 otherPets 仅保留供旧逻辑/调试用，模板循环改用 pets
 
     const expPercent = computed(() => {
       if (!pet.value) return 0
@@ -724,6 +729,17 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+}
+/* 2026-07-17: 默认宠物在网格里的高亮 (金边 + 浅黄背景) */
+.other-pet-card--default {
+  background: rgba(255, 215, 0, 0.08);
+  border: 1.5px solid rgba(255, 200, 50, 0.55);
+}
+.default-star {
+  color: #ffc832;
+  margin-right: 3px;
+  font-size: 13px;
+  vertical-align: -1px;
 }
 .other-pet-media {
   width: 100%;
