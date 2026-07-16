@@ -29,6 +29,7 @@
         v-model="filter.keyword"
         placeholder="搜索触发时机 / 接收人 / 标题"
         clearable
+        autocomplete="off"
         style="width: 320px"
         @clear="recomputeView"
         @keyup.enter="recomputeView"

@@ -45,10 +45,11 @@
             代破壳
           </el-button>
         </div>
-        <!-- 存活态：默认宠物本体（PetEquipmentOverlay 现在只渲染 species 视频） -->
+        <!-- 存活态：默认宠物本体 (currentVisual 优先 = per-level override; 否则 fallback species) -->
         <template v-else-if="pet?.speciesRecord">
           <PetEquipmentOverlay
             :species-record="pet.speciesRecord"
+            :current-visual="pet.currentVisual"
             mode="classroom"
             :fallback-emoji="speciesEmoji"
           />
@@ -122,11 +123,17 @@
           <div class="other-pets-grid">
             <div v-for="p in otherPets" :key="p._id" class="other-pet-card">
               <div class="other-pet-media">
+                <!-- 2026-07-16: 优先 currentVisual (per-level override)，其次 speciesRecord (兜底) -->
                 <video
-                  v-if="p.state === 'alive' && p.speciesRecord?.visualType === 'video' && p.speciesRecord.videoFile?.url"
+                  v-if="p.state === 'alive' && p.currentVisual?.visualType === 'video' && p.currentVisual.videoFile?.url"
+                  :src="p.currentVisual.videoFile.url" autoplay loop muted playsinline class="other-pet-video"
+                />
+                <span v-else-if="p.state === 'alive' && p.currentVisual?.visualType === 'svg' && p.currentVisual.svgContent" class="other-pet-svg" v-html="p.currentVisual.svgContent" />
+                <video
+                  v-else-if="p.state === 'alive' && p.speciesRecord?.visualType === 'video' && p.speciesRecord.videoFile?.url"
                   :src="p.speciesRecord.videoFile.url" autoplay loop muted playsinline class="other-pet-video"
                 />
-                <span v-else-if="p.state === 'alive' && p.speciesRecord?.visualType === 'svg'" class="other-pet-svg" v-html="p.speciesRecord.svgContent" />
+                <span v-else-if="p.state === 'alive' && p.speciesRecord?.visualType === 'svg' && p.speciesRecord.svgContent" class="other-pet-svg" v-html="p.speciesRecord.svgContent" />
                 <span v-else class="other-pet-emoji">{{ p.state === 'egg' ? '🥚' : '🐾' }}</span>
               </div>
               <div class="other-pet-name">{{ p.speciesRecord?.name || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}</div>

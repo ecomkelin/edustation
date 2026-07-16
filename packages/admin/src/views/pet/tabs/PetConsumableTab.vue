@@ -9,7 +9,7 @@
         <el-option v-for="k in PET_CONSUMABLE_KINDS" :key="k" :label="PET_CONSUMABLE_KIND_LABELS[k]" :value="k" />
       </el-select>
       <el-switch v-model="filter.isActive" active-text="仅启用" @change="load" />
-      <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable style="width:240px" @keyup.enter="load" @clear="load" />
+      <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable autocomplete="off" style="width:240px" @keyup.enter="load" @clear="load" />
       <el-button type="primary" @click="load">查询</el-button>
       <el-button type="primary" :icon="Plus" @click="openCreate">新建消耗品</el-button>
     </div>

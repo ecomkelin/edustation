@@ -48,7 +48,8 @@ async function listSpecies({ isActive, keyword } = {}) {
       Model: PetSpecies,
       baseFilter: base,
       keyword,
-      populateFields: ['videoFile']
+      // 2026-07-16: 加 levelVisuals.videoFile，decoratePet 需要 videoFile.url
+      populateFields: ['videoFile', 'levelVisuals.videoFile']
     })
     if (items.length === 0) {
       // eslint-disable-next-line no-console
@@ -63,8 +64,11 @@ async function listSpecies({ isActive, keyword } = {}) {
 
 async function getSpecies({ key }) {
   if (!key) return null
+  // 2026-07-16: 必须 populate levelVisuals.videoFile，否则 pet.service.decoratePet
+  // 拿到的 currentVisual.videoFile 是 ObjectId 字符串，C 端无法渲染视频
   const doc = await PetSpecies.findOne({ key })
     .populate('videoFile', 'url mime')
+    .populate('levelVisuals.videoFile', 'url mime originalName')
     .lean()
   if (doc) return doc
   const shared = sharedPetSpecies.getSpecies(key)

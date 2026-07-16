@@ -13,7 +13,7 @@
     </el-alert>
     <div class="filter-bar">
       <el-switch v-model="filter.isActive" active-text="仅启用" @change="load" />
-      <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable style="width:240px" @keyup.enter="load" @clear="load" />
+      <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable autocomplete="off" style="width:240px" @keyup.enter="load" @clear="load" />
       <el-button type="primary" @click="load">查询</el-button>
       <el-button type="primary" :icon="Plus" @click="openCreate">新建物种</el-button>
     </div>
@@ -418,6 +418,37 @@ export default {
       try { await formRef.value.validate() } catch (_) { return }
       saving.value = true
       try {
+        // 2026-07-16: 前端兜底 — 防御性去重 + 必填校验，避免 backend E11000 409
+        const seen = new Set()
+        for (const v of (form.levelVisuals || [])) {
+          const lv = Number(v.level)
+          if (!Number.isFinite(lv) || lv < 1 || lv > 100) {
+            ElMessage.error(`levelVisuals[].level=${v.level} 必须在 1-100 之间`)
+            saving.value = false
+            return
+          }
+          if (lv > Number(form.maxLevel)) {
+            ElMessage.error(`levelVisuals[level=${lv}] 超过物种 maxLevel=${form.maxLevel}`)
+            saving.value = false
+            return
+          }
+          if (seen.has(lv)) {
+            ElMessage.error(`levelVisuals[].level=${lv} 重复（每条 level 必须唯一）`)
+            saving.value = false
+            return
+          }
+          seen.add(lv)
+          if (v.visualType === 'video' && !v.videoFile) {
+            ElMessage.error(`levelVisuals[level=${lv}] visualType=video 时必须填 videoFile`)
+            saving.value = false
+            return
+          }
+          if (v.visualType === 'svg' && !v.svgContent) {
+            ElMessage.error(`levelVisuals[level=${lv}] visualType=svg 时必须填 svgContent`)
+            saving.value = false
+            return
+          }
+        }
         const payload = {
           key: form.key.trim(),
           name: form.name.trim(),

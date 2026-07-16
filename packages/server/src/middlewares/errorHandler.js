@@ -19,8 +19,10 @@ module.exports = function errorHandler(err, req, res, _next) {
   } else if (err && err.name === 'CastError') {
     apiError = ApiError.badRequest(`参数类型错误: ${err.path}`)
   } else if (err && err.code === 11000) {
+    // 2026-07-16: dup key 错误消息更具可读性 (sub-document 数组索引路径)
     const field = Object.keys(err.keyValue || {})[0] || 'field'
-    apiError = ApiError.conflict(`字段 ${field} 已存在`)
+    const dupVal = err.keyValue ? JSON.stringify(err.keyValue[field]) : ''
+    apiError = ApiError.conflict(`字段 ${field}=${dupVal} 已存在`)
   } else {
     apiError = ApiError.internal(config.isProd ? '服务器内部错误' : err.message)
     errorLog(err, req)

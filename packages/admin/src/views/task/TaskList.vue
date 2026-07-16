@@ -36,7 +36,7 @@
       <el-select v-model="filter.priority" placeholder="优先级" clearable style="width: 120px" @change="reload">
         <el-option v-for="o in PRIORITY_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
       </el-select>
-      <el-input v-model="filter.keyword" placeholder="搜索标题" clearable style="width: 200px" @keyup.enter="reload" @clear="reload" />
+      <el-input v-model="filter.keyword" placeholder="搜索标题" clearable autocomplete="off" style="width: 200px" @keyup.enter="reload" @clear="reload" />
       <el-button @click="reload">查询</el-button>
     </div>
 
