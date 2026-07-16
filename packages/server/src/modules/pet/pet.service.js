@@ -127,15 +127,40 @@ async function adopt({ orgId, studentId, by = 'parent' }) {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 破壳：state=egg → state=alive，species 全池加权随机。
+ * 破壳：state=egg → state=alive，species 全池加权随机（跳过该学员已养种类）。
+ *
+ * 2026-07-16: 同种唯一约束后, 抽到已养 species 会撞 partial unique 索引 E11000。
+ * 在 service 层循环重抽, 最多 MAX_PETS_PER_STUDENT 次 (物种池子规模上限),
+ * 仍冲突 → 422「运气太差」(用户可换蛋或先弃养)。
  */
 async function hatch({ orgId, studentId, petId, by = 'parent' }) {
   const pet = await loadOwnedPet({ orgId, studentId, petId })
   if (pet.state !== 'egg') throw ApiError.unprocessable('当前不是蛋状态，无法破壳')
 
-  const rolled = await petCatalog.rollSpecies()
-  if (!rolled) throw ApiError.unprocessable('当前没有可选的宠物种类，请联系管理员配置')
-  const species = rolled.key
+  // 取该学员已养 species 集合 (蛋态 species=null 不算)
+  const ownedPets = await PetAccount.find({
+    org: orgId,
+    student: studentId,
+    species: { $ne: null, $exists: true }
+  }).select('species').lean()
+  const ownedKeys = new Set(ownedPets.map((p) => p.species))
+
+  let species = null
+  for (let i = 0; i < MAX_PETS_PER_STUDENT; i++) {
+    const rolled = await petCatalog.rollSpecies()
+    if (!rolled) break
+    if (!ownedKeys.has(rolled.key)) {
+      species = rolled.key
+      break
+    }
+  }
+  if (!species) {
+    throw ApiError.unprocessable(
+      ownedKeys.size === 0
+        ? '当前没有可选的宠物种类，请联系管理员配置'
+        : `运气太差，${ownedKeys.size} 种都已养，请先弃养或换蛋`
+    )
+  }
 
   const now = new Date()
   const updated = await PetAccount.findOneAndUpdate(
@@ -300,6 +325,80 @@ async function setDefault({ orgId, studentId, petId, by = 'parent', operatorId =
 }
 
 // ─────────────────────────────────────────────────────────────
+// 弃养 (2026-07-16)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 物理删除宠物 (1 学生 + 1 species 唯一约束后, 多余可弃养)。
+ *
+ * 守门：
+ *   - loadOwnedPet 已校验 petId 归属 (org + student + _id 三元组)
+ *   - 最后一只挡板: 总数 ≤ 1 → 422, 引导用户先领养
+ *   - isDefault 转移: 若弃养的是默认宠物, 自动把剩余最早领养的一只置为默认
+ *     (没有剩余 → 该 student 退化为 0 只状态, 下次 ensureFirstPet 重建首只)
+ *
+ * 不退积分 (与 feed 扣分对称, 弃养为用户主动放弃)
+ * 写一条 PetEvent (type: abandon / admin_abandon) 作审计
+ */
+async function abandon({ orgId, studentId, petId, by = 'parent', operatorId = null }) {
+  if (!orgId) throw ApiError.badRequest('缺少 orgId')
+  if (!studentId) throw ApiError.badRequest('缺少 studentId')
+  if (!petId) throw ApiError.badRequest('缺少 petId')
+
+  const pet = await loadOwnedPet({ orgId, studentId, petId })
+
+  // 最后一只挡板 (避免 0 只 + isDefault 漂移)
+  const total = await PetAccount.countDocuments({ org: orgId, student: studentId })
+  if (total <= 1) {
+    throw ApiError.unprocessable('最后一只不能弃养，请先领养新宠物')
+  }
+
+  // isDefault 转移: 弃养的是默认 → 把剩余最早领养的提升为默认
+  if (pet.isDefault) {
+    const other = await PetAccount.findOne({
+      org: orgId,
+      student: studentId,
+      _id: { $ne: pet._id }
+    }).sort({ adoptedAt: 1 }).lean()
+    if (other) {
+      await PetAccount.updateOne(
+        { _id: other._id },
+        { $set: { isDefault: true } }
+      )
+    }
+  }
+
+  // 删档
+  const deleted = await PetAccount.deleteOne({
+    _id: pet._id,
+    org: orgId,
+    student: studentId
+  })
+  if (deleted.deletedCount === 0) {
+    throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
+  }
+
+  // 审计 (弃养事件 sparse eventKey 不需要 — 一次性手动操作, 无幂等需求)
+  await petEvent.recordEvent({
+    orgId,
+    studentId,
+    petAccountId: pet._id,
+    type: by === 'admin' ? 'admin_abandon' : 'abandon',
+    payload: {
+      reason: by === 'admin' ? 'admin' : 'manual',
+      operator: by === 'admin' ? operatorId : null,
+      // 顺手记下弃养时的 species, 后续 admin 事件流好追溯
+      species: pet.species || null,
+      level: pet.level || 1,
+      experience: pet.experience || 0,
+      nickname: pet.nickname || null
+    }
+  })
+
+  return { abandonedPetId: pet._id }
+}
+
+// ─────────────────────────────────────────────────────────────
 // 读
 // ─────────────────────────────────────────────────────────────
 
@@ -412,6 +511,7 @@ module.exports = {
   hatch,
   feed,
   setDefault,
+  abandon,
   listMine,
   getMine,
   decoratePet,

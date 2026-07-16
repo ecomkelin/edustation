@@ -116,7 +116,10 @@
 
         <!-- 其他领养的宠物 — 9:16 视频卡片；点「设为默认」切主图 / 蛋可代破壳 -->
         <div class="stat-card">
-          <div class="label">其他领养的宠物（{{ otherPets.length }} 只 · 共 {{ pets.length }}/{{ MAX_PETS }}）</div>
+          <div class="label">
+            其他领养的宠物（{{ otherPets.length }} 只 · 共 {{ pets.length }}/{{ MAX_PETS }}）
+            <span v-if="pets.length >= MAX_PETS" class="max-hint">已达上限, 需先弃养腾位</span>
+          </div>
           <div class="other-pets-grid">
             <div v-for="p in otherPets" :key="p._id" class="other-pet-card">
               <div class="other-pet-media">
@@ -132,9 +135,24 @@
               <div class="other-pet-actions" v-if="canWrite">
                 <el-button size="small" type="success" plain @click="onSetDefault(p)">设为默认</el-button>
                 <el-button v-if="p.state === 'egg'" size="small" type="warning" plain @click="onHatchOther(p)">代破壳</el-button>
+                <!-- 2026-07-16 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码 + removable-check 预检) -->
+                <DestructiveConfirm
+                  :target="`${p.speciesRecord?.name || (p.state==='egg' ? '待破壳' : p.species || '宠物')} · Lv.${p.level}`"
+                  warning="中风险"
+                  reason="该操作会物理删除这只宠物及其等级经验，操作后无法恢复。如该宠物是默认宠物，弃养后会自动切到剩余最早领养的一只。"
+                  :precheck="() => precheckAbandon(p)"
+                  @confirm="(evt) => onAbandon(p, evt)"
+                >
+                  <el-button size="small" type="danger" plain :disabled="pets.length <= 1">弃养</el-button>
+                </DestructiveConfirm>
               </div>
             </div>
-            <div v-if="canWrite && pets.length < MAX_PETS" class="other-pet-card adopt-card" @click="onAdopt">
+            <!-- 已达上限: 显示禁用的「上限占位卡」提示, 不要让 + 直接消失 (2026-07-16 UX 修复) -->
+            <div v-if="canWrite && pets.length >= MAX_PETS" class="other-pet-card adopt-card adopt-card--full" title="已达上限, 请先弃养一只">
+              <div class="adopt-plus">×</div>
+              <div class="other-pet-name">已达上限</div>
+            </div>
+            <div v-else-if="canWrite" class="other-pet-card adopt-card" @click="onAdopt">
               <div class="adopt-plus">＋</div>
               <div class="other-pet-name">代领养</div>
             </div>
@@ -156,10 +174,12 @@ import { petCatalogApi } from '@/api/petCatalog'
 import { pointsAdminApi } from '@/api/pointsAdmin'
 import { effectiveHungerDecayMinutes } from '@/utils/pet'
 import PetEquipmentOverlay from '@/components/Pet/PetEquipmentOverlay.vue'
+import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { useUserPerms } from '@/composables/useUserPerms'
+import { handleRemoveError } from '@/utils/removable'
 import { formatDate } from '@/utils/format'
 
-const MAX_PETS = 10
+const MAX_PETS = 5  // 2026-07-16: 与 shared/petConfig.MAX_PETS_PER_STUDENT 同步
 
 const SPECIES_EMOJI_FALLBACK = {
   cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
@@ -169,7 +189,7 @@ const SPECIES_EMOJI_FALLBACK = {
 
 export default {
   name: 'PetClassroomDisplay',
-  components: { PetEquipmentOverlay },
+  components: { PetEquipmentOverlay, DestructiveConfirm },
   setup() {
     const route = useRoute()
     const { can } = useUserPerms()
@@ -371,6 +391,23 @@ export default {
       }
     }
 
+    // 2026-07-16 弃养 (§8.1 防护: DestructiveConfirm 已走 密码 + 预检)
+    // precheck 必须在 setup 里包一层 (template 闭包拿不到模块级 import)
+    function precheckAbandon(p) {
+      return petAdminApi.removableCheckPetAccount(p._id).then((r) => r.data || r)
+    }
+    async function onAbandon(p, { password }) {
+      if (!p?._id) return
+      const name = p.speciesRecord?.name || (p.state === 'egg' ? '待破壳' : (p.species || '宠物'))
+      try {
+        await petAdminApi.removePetAccount(p._id, { password })
+        ElMessage.success(`已弃养「${name}」`)
+        await fetchOnce()
+      } catch (e) {
+        await handleRemoveError(e, '无法弃养 · 中风险', name)
+      }
+    }
+
     function clearHatchTimers() {
       hatchTimers.forEach(clearTimeout)
       hatchTimers = []
@@ -400,7 +437,7 @@ export default {
       consumableEntries, studentPoints,
       expPercent, hungerPercent, speciesEmoji,
       Picture, Coin,
-      onHatch, onHatchOther, onSetDefault, onAdopt, onBuyConsumable, onClose, formatDate,
+      onHatch, onHatchOther, onSetDefault, onAdopt, precheckAbandon, onAbandon, onBuyConsumable, onClose, formatDate,
       hungerDecayMinutes, hungerMinutesLeft, formatTimeLeft
     }
   }
@@ -719,7 +756,17 @@ export default {
   transition: background 0.15s;
 }
 .adopt-card:hover { background: rgba(255,255,255,0.12); }
+/* 2026-07-16 已达上限占位卡: 灰色 + 不可点 */
+.adopt-card--full {
+  cursor: not-allowed;
+  border-style: solid;
+  border-color: rgba(255,255,255,0.15);
+  opacity: 0.5;
+}
+.adopt-card--full:hover { background: rgba(255,255,255,0.06); }
+.adopt-card--full .adopt-plus { color: #888; }
 .adopt-plus { font-size: 40px; color: #67c23a; line-height: 1; }
+.max-hint { font-size: 12px; color: #e6a23c; margin-left: 8px; font-weight: normal; }
 
 .pet-bottom-btn {
   margin-top: 16px;

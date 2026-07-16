@@ -58,6 +58,10 @@ export const POINTS_TYPES = enums.POINTS_TYPES
 export const PetType = enums.PetType
 export const PET_TYPES = enums.PET_TYPES
 
+// 2026-07-16 加: 弃养事件 (abandon / admin_abandon) 也走 PetEventType enum, 前端按需 label 化
+export const PetEventType = enums.PetEventType
+export const PET_EVENT_TYPES = enums.PET_EVENT_TYPES
+
 export const StudentProductSource = enums.StudentProductSource
 export const STUDENT_PRODUCT_SOURCES = enums.STUDENT_PRODUCT_SOURCES
 

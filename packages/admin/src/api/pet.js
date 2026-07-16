@@ -30,5 +30,11 @@ export const petAdminApi = {
 
   // ─── pet-shop：老师/admin 代买消耗品（扣学员积分） ───
   grantConsumable: (petAccountId, { consumableKey }) => http.post('/admin/pet/grant-consumable', { petAccountId, consumableKey }),
-  shopList: (params) => http.get('/admin/pet/shop', { params })
+  shopList: (params) => http.get('/admin/pet/shop', { params }),
+
+  // ─── 弃养 (2026-07-16 §8.1 三重防护, R-2377) ───
+  // 物理删除 PetAccount; 需平台超管 + pet.write + 二次密码 (body.password)
+  // 配套预检 R-2378: removableCheckPetAccount(id) → { canRemove, blockers }
+  removePetAccount: (id, { password } = {}) => http.delete(`/admin/pet/accounts/${id}`, { data: { password } }),
+  removableCheckPetAccount: (id) => http.get(`/admin/pet/accounts/${id}/removable-check`)
 }

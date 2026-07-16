@@ -19,8 +19,8 @@
 const MAX_HUNGER = 1000
 const INIT_HUNGER_AFTER_HATCH = 300
 
-// 每个学生最多领养的宠物数
-const MAX_PETS_PER_STUDENT = 10
+// 每个学生最多领养的宠物数 (2026-07-16 产品决策: 10 → 5)
+const MAX_PETS_PER_STUDENT = 5
 
 // per-org 等级配置的默认兜底（无 PetLevelConfig 记录时使用）
 const DEFAULT_LEVEL_CONFIG = Object.freeze({

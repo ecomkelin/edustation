@@ -85,4 +85,12 @@ PetAccountSchema.index({ org: 1, state: 1, lastHungerDecayAt: 1 })
 // admin 端按 (org, state) 过滤列表
 PetAccountSchema.index({ org: 1, state: 1 })
 
+// 2026-07-16 同种唯一: 1 学生 + 1 species ≤ 1 只
+// partialFilterExpression 仅在 species 是字符串(活态锁定)时生效
+// 蛋态 species=null 不参与, 否则所有蛋都会撞唯一约束
+PetAccountSchema.index(
+  { org: 1, student: 1, species: 1 },
+  { unique: true, partialFilterExpression: { species: { $type: 'string' } } }
+)
+
 module.exports = model('PetAccount', PetAccountSchema)

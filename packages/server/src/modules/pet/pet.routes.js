@@ -42,6 +42,8 @@ router.post('/:petId/hatch', asyncHandler(c.hatch))
 router.post('/:petId/feed', asyncHandler(c.feed))
 // R-2269 POST /pet/:petId/set-default
 router.post('/:petId/set-default', asyncHandler(c.setDefault))
+// 2026-07-16 R-2379 POST /pet/:petId/abandon — 家长弃养 (1 学生 + 1 species 唯一约束后多余可物理删除)
+router.post('/:petId/abandon', asyncHandler(c.abandon))
 // 2026-07-15 DEPRECATED（装饰/等阶删除）：R-2266 equip / R-2267 swap-egg / R-2268 tier-down / R-2207 items 已移除
 
 // ─── 2026-06-22 pet-shop：商城子路由（R-2370/2371/2372） ───

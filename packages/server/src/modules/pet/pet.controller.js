@@ -77,6 +77,16 @@ exports.setDefault = async (req, res) => {
   res.json(ApiResponse.ok(result))
 }
 
+// 2026-07-16: POST /api/v1/pet/:petId/abandon — 家长弃养
+//   1 学生 + 1 species 唯一约束后, 多余可物理删除
+//   守门: activeStudent 监护人校验 + loadOwnedPet 三元组 (org + student + petId)
+//   无密码: C 端家长操作自家宠物, 走两步 modal 确认 (uni-app showModal)
+exports.abandon = async (req, res) => {
+  const studentId = studentIdOf(req)
+  const result = await s.abandon({ orgId: req.orgId, studentId, petId: petIdOf(req), by: 'parent' })
+  res.json(ApiResponse.ok(result))
+}
+
 // GET /api/v1/pet/events — 事件流分页（可选 petId 过滤）
 exports.events = async (req, res) => {
   const studentId = studentIdOf(req)

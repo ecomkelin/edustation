@@ -20,6 +20,7 @@ const PetEvent = require('@models/PetEvent.model')
 const PetSpecies = require('@models/PetSpecies.model')
 const Student = require('@models/Student.model')
 const ApiError = require('@utils/ApiError')
+const removable = require('@utils/removable')
 const petService = require('@modules/pet/pet.service')
 const petEvent = require('@modules/pet/petEvent.service')
 
@@ -327,6 +328,88 @@ async function getByStudent({ orgId, studentId }) {
   return { pet: defaultPet, pets: decorated, recentEvents }
 }
 
+/* ─── 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码 + 互锁预检) ─── */
+
+/**
+ * PetAccount 弃养用法互锁声明 (CLAUDE.md §8.1 范式)。
+ *
+ * 当前没有任何下游实体硬引用 PetAccount 文档 (PetEvent 是软审计, deleteOne PetAccount
+ * 时 PetEvent.petAccount 变成 dangling ref; admin 事件流按 createdAt 展示不影响)。
+ * 后续若加积分自动扣 / 招生转化等下游再补。
+ */
+function petAccountUsageChecks(_petAccountId) {
+  return []
+}
+
+/**
+ * 预检: DELETE 前告诉前端 0 阻挡 or 列出 blockers
+ * 普通员工 (pet.read) 即可调, 不需超管+密码
+ */
+async function removableCheckPetAccount({ orgId, petAccountId }) {
+  if (!orgId || !petAccountId) throw ApiError.badRequest('缺少 orgId/petAccountId')
+  const doc = await PetAccount.findOne({ _id: petAccountId, org: orgId }).lean()
+  if (!doc) {
+    return {
+      canRemove: false,
+      blockers: [{ entity: 'PetAccount', label: '宠物', count: 0, hint: '宠物不存在' }]
+    }
+  }
+  return removable.check(orgId, petAccountUsageChecks(petAccountId))
+}
+
+/**
+ * Admin 代弃养 (物理删除 PetAccount 文档)。
+ * 与 C 端 pet.service.abandon 语义一致, 只是 by='admin' 走 §8.1 三重防护。
+ */
+async function removePetAccount({ orgId, petAccountId, operatorId }) {
+  if (!orgId || !petAccountId) throw ApiError.badRequest('缺少 orgId/petAccountId')
+  if (!operatorId) throw ApiError.badRequest('缺少 operatorId')
+
+  const pet = await PetAccount.findOne({ _id: petAccountId, org: orgId })
+  if (!pet) throw ApiError.notFound('宠物不存在')
+
+  // §8.1 业务互锁 (removable.assertUnused 内部 throw 422 + blockers)
+  await removable.assertUnused(orgId, petAccountUsageChecks(petAccountId))
+
+  // 最后一只挡板
+  const total = await PetAccount.countDocuments({ org: orgId, student: pet.student })
+  if (total <= 1) throw ApiError.unprocessable('最后一只不能弃养')
+
+  // isDefault 转移
+  if (pet.isDefault) {
+    const other = await PetAccount.findOne({
+      org: orgId,
+      student: pet.student,
+      _id: { $ne: pet._id }
+    }).sort({ adoptedAt: 1 }).lean()
+    if (other) {
+      await PetAccount.updateOne({ _id: other._id }, { $set: { isDefault: true } })
+    }
+  }
+
+  // 删档
+  const deleted = await PetAccount.deleteOne({ _id: pet._id, org: orgId })
+  if (deleted.deletedCount === 0) throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
+
+  // 审计
+  await petEvent.recordEvent({
+    orgId,
+    studentId: pet.student,
+    petAccountId: pet._id,
+    type: 'admin_abandon',
+    payload: {
+      reason: 'admin',
+      operator: operatorId,
+      species: pet.species || null,
+      level: pet.level || 1,
+      experience: pet.experience || 0,
+      nickname: pet.nickname || null
+    }
+  })
+
+  return { abandonedPetId: pet._id }
+}
+
 module.exports = {
   list,
   get,
@@ -336,5 +419,7 @@ module.exports = {
   feedOnBehalf,
   hatchOnBehalf,
   setDefaultOnBehalf,
-  getByStudent
+  getByStudent,
+  removePetAccount,
+  removableCheckPetAccount
 }

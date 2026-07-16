@@ -85,3 +85,22 @@ exports.getByStudent = async (req, res) => {
     studentId: req.query.studentId
   })))
 }
+
+// ─── 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码 + 互锁预检) ───
+// 2026-07-16 R-2377 DELETE /admin/pet/accounts/:id
+exports.removePetAccount = async (req, res) => {
+  res.json(ApiResponse.ok(await s.removePetAccount({
+    orgId: req.orgId,
+    petAccountId: req.params.id,
+    operatorId: req.user?.id
+  })))
+}
+
+// 2026-07-16 R-2378 GET /admin/pet/accounts/:id/removable-check
+// 预检端点: pet.read 即可调 (不需超管+密码), 告诉前端 0 阻挡 or 列出 blockers
+exports.removableCheckPetAccount = async (req, res) => {
+  res.json(ApiResponse.ok(await s.removableCheckPetAccount({
+    orgId: req.orgId,
+    petAccountId: req.params.id
+  })))
+}

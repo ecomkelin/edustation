@@ -60,7 +60,7 @@
 # 第二部分：宠物子系统（Pet v3，2026-07-15 重构）
 
 > **2026-07-15 重构（从 Pet v2 → v3）**：删等阶 C/B/A/S、删装饰系统、宠物本体收敛为 video、
-> 一个学生可领养多只宠物（≤10，首只为默认）、等级曲线改 per-org 后台可配置。
+> 一个学生可领养多只宠物（**≤5**，2026-07-16 由 10 调为 5；首只为默认）、等级曲线改 per-org 后台可配置。
 > 历史 v2（4 阶 + 6 槽装饰 + 1 学生 1 宠）设计已废弃，本文只描述 v3。
 
 ## 一、设计总览
@@ -69,7 +69,7 @@
 
 | model | 角色 | collection | 关系 |
 |-------|------|------------|------|
-| `PetAccount` | 业务实体：1 学生 = N 宠物（≤10） | `pet_accounts` | ref Student (1:N), org；`isDefault` partial-unique |
+| `PetAccount` | 业务实体：1 学生 = N 宠物（≤5） | `pet_accounts` | ref Student (1:N), org；`isDefault` partial-unique |
 | `PetEvent` | 事件流：状态变更 / 代操作全审计 | `pet_events` | ref Student, PetAccount |
 | `PetSpecies` | catalog：物种图鉴（video-only，无 tier） | `pet_species` | 平台级共享 |
 | `PetConsumable` | catalog：食物 + 玩具（扁平数值，无 tier） | `pet_consumables` | 平台级共享 |
@@ -120,12 +120,13 @@
 **索引**：
 - `{org, student}`（普通复合，非 unique）
 - `{org, student, isDefault}` **partial unique** `where isDefault=true`（保证唯一默认）
+- `{org, student, species}` **partial unique** `where species={$type:'string'}`（**2026-07-16 新增**：1 学生 + 1 species ≤ 1 只；蛋态 species=null 不参与）
 - `{org, state, lastHungerDecayAt}`（cron 扫表）
 - `{org, state}`（admin 列表）
 
 ### 2.2 PetEvent
 
-`type` enum（v3）：`adopt` / `hatch` / `feed` / `levelup` / `death` / `rebirth` / `set_default` / `admin_override` / `admin_adopt` / `admin_feed` / `admin_hatch` / `admin_set_default` / `purchase_consumable`。
+`type` enum（v3）：`adopt` / `hatch` / `feed` / `levelup` / `death` / `rebirth` / `set_default` / `admin_override` / `admin_adopt` / `admin_feed` / `admin_hatch` / `admin_set_default` / `purchase_consumable` / **`abandon`** / **`admin_abandon`**（2026-07-16 新增：家长弃养 / admin 代弃养，物理删除 PetAccount 前写一条审计）。
 
 > 删除：`tierup` / `tierdown` / `swap` / `equip` / `unequip` / `admin_swap` / `admin_tierdown` / `admin_tierup` / `admin_equip` / `purchase_item`。
 
@@ -188,6 +189,20 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 
 `petCron.js`：1h tick + leaderElect；`resolveHungerDecayMinutes`（PetSpecies.hungerDecayMinutes 优先，默认 60）；CAS 衰减 + 单 tick 补偿；`dieAndRebirth` 去 `PET_TIER_CONFIG` 依赖，回蛋清 species。
 
+### 3.4 同种唯一 + 弃养（2026-07-16）
+
+**不变量**：1 学生 + 1 species ≤ 1 只（同种不能养两只）。强制通过 `PetAccount` 的 partial unique index `{org, student, species}` where `species={$type:'string'}`。
+
+**破壳**：`pet.service.hatch` 在调用 `petCatalog.rollSpecies()` 时循环重抽，跳过该学员已养 species，最多 `MAX_PETS_PER_STUDENT` 次（5 次，2026-07-16 由 10 调为 5），仍冲突 → 422「运气太差，N 种都已养，请先弃养或换蛋」。
+
+**弃养**（物理删除 PetAccount）：
+- C 端 `POST /pet/:petId/abandon`（家长，2 道守门：activeStudent 监护人 + loadOwnedPet 三元组；无密码，前端走两步 modal 确认）
+- admin 端 `DELETE /admin/pet/accounts/:id`（**§8.1 三重防护**：平台超管 + pet.write + requirePlatformPassword 二次密码 + removable-check 预检；写 PetEvent `admin_abandon` 审计）
+- **最后一只挡板**：该学员总数 ≤ 1 → 422「最后一只不能弃养，请先领养新宠物」
+- **isDefault 转移**：若弃养的是默认宠物，自动把剩余 `adoptedAt` 最早的一只提升为默认；没有剩余 → 该 student 退化为 0 只状态，下次 `ensureFirstPet` 重建
+- **不退积分**（与 feed 扣分对称，弃养为用户主动放弃；保持积分账本纯净）
+- 上 partial unique index 前必须先 dedupe：`pnpm db:seed:dedupe-pet-species`（干跑加 `--dry-run`）按 (org, student, species) 分组保留最早领养，其余 deleteOne + 写 `admin_abandon` reason='seed-dedupe' 审计
+
 ---
 
 ## 四、管理规则
@@ -207,11 +222,13 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 - `list`（filter state / keyword；去 tier）
 - `get` / `update`（白名单 nickname/currentHunger(0-1000)/lastFedAt/deathThresholdDays/state/level/experience/maxHunger；isDefault 走 set-default）
 - `getByStudent`（课堂展示轮询）：返回 `{ pet:默认宠物, pets:[全部], recentEvents }`
+- **`DELETE /admin/pet/accounts/:id`**（2026-07-16 弃养，§8.1 三重防护）
+- **`GET /admin/pet/accounts/:id/removable-check`**（2026-07-16 弃养预检，pet.read 即可调）
 
 ### 4.4 老师 / admin 代操作
 | 端点 | 行为 | 积分 |
 |------|------|------|
-| `POST /admin/pet/accounts` `{studentId}` | 代领养（可多只 ≤10） | 0 |
+| `POST /admin/pet/accounts` `{studentId}` | 代领养（可多只 ≤5） | 0 |
 | `POST /admin/pet/accounts/:id/feed` `{consumableKey}` | 代喂食 | 扣学员积分（operator 记录） |
 | `POST /admin/pet/accounts/:id/hatch` | 代破壳 | 0 |
 | `POST /admin/pet/accounts/:id/set-default` | 代设默认 | 0 |
@@ -236,14 +253,14 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
   - `tabs/PetConsumableTab.vue`（从原 PetConsumableAdmin 平移，扁平数值）
   - `tabs/PetLevelConfigTab.vue`（从原 PetLevelConfigAdmin 平移，去掉 h2 与容器页重复）
   - 旧路由 `/pet/species` `/pet/consumables` `/pet/level-config` 改为 `redirect: '/pet/catalog?tab=...'`，兼容历史书签
-- `views/classroom/PetClassroomDisplay.vue`（其他宠物网格）
+- `views/classroom/PetClassroomDisplay.vue`（其他宠物网格 **+ 弃养按钮 2026-07-16**）
 - `components/Pet/PetEquipmentOverlay.vue`（退化为 species 渲染）、`GrantOnBehalfDialog.vue`（仅消耗品）
 - **删**：`PetItemAdmin.vue` / `EquipOnBehalfDialog.vue` / `FeedOnBehalfDialog.vue` / `PetSpeciesAdmin.vue` / `PetConsumableAdmin.vue` / `PetLevelConfigAdmin.vue`（2026-07-15 合并到 PetCatalogAdmin）
 - 菜单：拍平「系统管理→宠物管理」为单 leaf（icon `Notebook`）；学员组下「宠物等级配置」已删除（合并到 catalog 的 level-config tab）
 
 ### Client（packages/client, uni-app）
 - `api/pet.js`：`me` / `list` / `adopt` / `:petId/hatch` / `:petId/feed` / `:petId/set-default` / `species` / `consumables`（删 items/equip/swapEgg/tierDown）
-- `pages/pet/detail.vue`：默认宠物主图（9:16 裁 1:1 video）+ exp/hunger + 食物 chip + **其他宠物区（视频卡 + 领养）**
+- `pages/pet/detail.vue`：默认宠物主图（9:16 裁 1:1 video）+ exp/hunger + 食物 chip + **其他宠物区（视频卡 + 领养）** + **弃养按钮 (2026-07-16, 副信息条 + 其他宠物卡都可见)**
 - `pages/tabbar/index.vue`：首页宠物卡渲染默认宠物 video（去 tier-badge / 装备层 / 背景层）
 - `utils/constants.js`：仅留 `PetState`/`PetStateLabel`/`PET_SPECIES_EMOJI`（删 PetTier*/PetSlot*）
 - **删**：`pages/pet/equip.vue` / `pages/pet/hatch.vue`（占位页）
@@ -257,4 +274,4 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 **模型**：`models/PetAccount|PetSpecies|PetConsumable|PetEvent|PetLevelConfig.model.js`（PetItem 已删）
 **Shared**：`shared/petConfig.js`（DEFAULT_LEVEL_CONFIG / MAX_PETS_PER_STUDENT / expToNext）、`shared/petSpecies.js`、`shared/enums.js`（Pet* enums）；`shared/petItems.js` 已删
 **Service**：`modules/pet/{pet.service, petCatalog.service, petCatalog.admin.service, petCatalog.admin.controller/.routes, petCron, petShop.service/.controller/.routes, petPoints.helper, petEvent.service}`；`modules/petAdmin/{petAdmin.service/.controller/.routes}`；`petItems.service.js` 已删
-**Seed**：`utils/petCatalogSeed.js`、`utils/_petCatalog/{index,species,consumables}.js`（items.js 已删）
+**Seed**：`utils/petCatalogSeed.js`、`utils/_petCatalog/{index,species,consumables}.js`（items.js 已删）；`scripts/db/_seed-dedupe-pet-species.js`（2026-07-16 上同种唯一 index 前必跑；`pnpm db:seed:dedupe-pet-species`，支持 `--dry-run`）

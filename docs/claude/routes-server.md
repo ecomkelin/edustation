@@ -411,6 +411,7 @@ Auth 列简写:
 | R-2265 | POST | /pet/:petId/feed | GUARD | — | 喂养 | 2026-07-15 petId 化 |
 | R-2269 | POST | /pet/:petId/set-default | GUARD | — | 设为默认宠物 | 2026-07-15 新增 |
 | R-2272 | GET | /pet/me | GUARD | — | 默认宠物 | 懒创建首只 |
+| R-2379 | POST | /pet/:petId/abandon | GUARD | enrolled | 弃养（物理删除） | 2026-07-16；同种唯一后多余可弃养；isDefault 自动转移；最后一只挡板 |
 | ~~R-2207~~ | ~~GET~~ | ~~/pet/items~~ | — | — | **DEPRECATED** 装饰系统删除 | 2026-07-15 |
 | ~~R-2266~~ | ~~POST~~ | ~~/pet/equip~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2267~~ | ~~POST~~ | ~~/pet/swap-egg~~ | — | — | **DEPRECATED** 去等阶 | 2026-07-15 |
@@ -429,6 +430,8 @@ Auth 列简写:
 | R-2364 | POST | /admin/pet/accounts/:id/hatch | PERM | pet.write | 代孵化 | |
 | R-2365 | POST | /admin/pet/accounts/:id/feed | PERM | pet.write | 代喂养 | |
 | R-2369 | POST | /admin/pet/accounts/:id/set-default | PERM | pet.write | 代设默认 | 2026-07-15 新增 |
+| R-2377 | DELETE | /admin/pet/accounts/:id | ADMIN_PWD | pet.write | 代弃养（§8.1 三重防护） | 2026-07-16；平台超管+密码；body.password 二次确认；写 PetEvent(admin_abandon) |
+| R-2378 | GET | /admin/pet/accounts/:id/removable-check | PERM | pet.read | 弃养预检 | 2026-07-16；pet.read 即可调，返 { canRemove, blockers } |
 | ~~R-2366~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/equip~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2367~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/swap-egg~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2368~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/tier-down~~ | — | — | **DEPRECATED** | 2026-07-15 |

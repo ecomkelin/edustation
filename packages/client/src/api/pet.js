@@ -43,5 +43,12 @@ export const petApi = {
 
   setDefault(petId) {
     return http.post(`/pet/${petId}/set-default`, {})
+  },
+
+  // 2026-07-16 R-2379 弃养: 1 学生 + 1 species 唯一后, 家长可弃养多余
+  // 守门: activeStudent 监护人校验 + 后端 loadOwnedPet 三元组 (org + student + petId)
+  // 无密码: C 端家长操作自家宠物, 前端走两步 modal 确认
+  abandon(petId) {
+    return http.post(`/pet/${petId}/abandon`, {})
   }
 }

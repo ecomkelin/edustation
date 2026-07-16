@@ -235,7 +235,12 @@ const PetEventType = Object.freeze({
   ADMIN_HATCH: 'admin_hatch',       // 老师/admin 代破壳
   ADMIN_SET_DEFAULT: 'admin_set_default', // 老师/admin 代设默认
   // ── pet-shop：购买/代发消耗品（by 区分 student / admin） ──
-  PURCHASE_CONSUMABLE: 'purchase_consumable' // 买食物/玩具（立即喂一次）
+  PURCHASE_CONSUMABLE: 'purchase_consumable', // 买食物/玩具（立即喂一次）
+  // 2026-07-16 新增: 弃养（物理删除 PetAccount）
+  //   C 端家长主动: abandon / admin 端代操作: admin_abandon
+  //   配合 PetAccount 同种唯一约束, 弃养后该 species 槽位空出可重新破壳
+  ABANDON: 'abandon',
+  ADMIN_ABANDON: 'admin_abandon'
 })
 const PET_EVENT_TYPES = Object.values(PetEventType)
 

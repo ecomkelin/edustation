@@ -11,6 +11,7 @@
     "db:seed:nuke": "node scripts/db/index.js --force",
     "db:seed-finance": "node -e \"require('module-alias/register'); require('dotenv').config(); require('./scripts/db/seeds/finance.seed').run().then(()=>process.exit())\"",
     "db:seed-legal": "node -e \"require('module-alias/register'); require('dotenv').config(); require('./scripts/db/seeds/legal.seed').run().then(()=>process.exit())\"",
+    "db:seed:dedupe-pet-species": "node scripts/db/_seed-dedupe-pet-species.js",
     "migrate:finance-permissions": "node scripts/db/_migrate-finance-permissions.js",
     "test": "jest --passWithNoTests"
   },

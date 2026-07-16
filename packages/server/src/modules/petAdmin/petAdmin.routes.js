@@ -34,6 +34,16 @@ router.post('/accounts/:id/feed', mws.requirePermission('pet.write'), asyncHandl
 router.post('/accounts/:id/hatch', mws.requirePermission('pet.write'), asyncHandler(c.hatchOnBehalf))
 // R-2369 POST /admin/pet/accounts/:id/set-default
 router.post('/accounts/:id/set-default', mws.requirePermission('pet.write'), asyncHandler(c.setDefaultOnBehalf))
+// 2026-07-16 R-2377 DELETE /admin/pet/accounts/:id — 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码)
+// 2026-07-16 R-2378 GET /admin/pet/accounts/:id/removable-check — 预检 (pet.read, 不需超管+密码)
+router.delete('/accounts/:id',
+  mws.requirePlatformAdmin,
+  mws.requirePermission('pet.write'),
+  mws.requirePlatformPassword,
+  asyncHandler(c.removePetAccount))
+router.get('/accounts/:id/removable-check',
+  mws.requirePermission('pet.read'),
+  asyncHandler(c.removableCheckPetAccount))
 // 2026-07-15 DEPRECATED（装饰/等阶删除）：R-2366 equip / R-2367 swap-egg / R-2368 tier-down / R-2376 tier-up 已移除
 
 // ─── pet-shop：老师/admin 代买消耗品（扣学员积分） ───

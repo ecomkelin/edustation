@@ -49,6 +49,8 @@
         <text v-if="pet.state === 'egg'" class="pet-detail__state pet-detail__state--egg">🥚 待破壳</text>
         <text v-else class="pet-detail__state pet-detail__state--alive">✨ 存活</text>
         <view class="pet-detail__points" v-if="points != null">💰 {{ points }}</view>
+        <!-- 2026-07-16 弃养默认宠物 (仅多宠时可见) -->
+        <view v-if="pets.length > 1" class="pet-detail__abandon-main" @tap="onAbandon(pet)">弃养</view>
       </view>
 
       <!-- 主图区（默认宠物） -->
@@ -183,6 +185,8 @@
             <view class="pet-detail__other-actions">
               <view class="pet-detail__other-btn" @tap="onSetDefault(p)">设为默认</view>
               <view v-if="p.state === 'egg'" class="pet-detail__other-btn pet-detail__other-btn--warn" @tap="onHatchOther(p)">破壳</view>
+              <!-- 2026-07-16 弃养 (C 端家长无密码, 走两步 modal 确认) -->
+              <view v-if="pets.length > 1" class="pet-detail__other-btn pet-detail__other-btn--danger" @tap="onAbandon(p)">弃养</view>
             </view>
           </view>
           <view v-if="pets.length < MAX_PETS" class="pet-detail__other-card pet-detail__adopt-card press" @tap="onAdopt">
@@ -201,7 +205,7 @@ import { pointsApi } from '@/api/points'
 import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
 
-const MAX_PETS = 10
+const MAX_PETS = 5  // 2026-07-16: 与 shared/petConfig.MAX_PETS_PER_STUDENT 同步
 const SPECIES_EMOJI = {
   cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
   fox_red: '🦊', panda_baby: '🐼', penguin_baby: '🐧', owl_horned: '🦉',
@@ -422,6 +426,38 @@ export default {
       }
     },
 
+    // 2026-07-16 弃养: 走两步 modal 确认 (无密码, 因操作者已通过 activeStudent 监护人校验)
+    async onAbandon(p) {
+      if (!p || !p._id) return
+      if (this.pets.length <= 1) {
+        toast.warn('最后一只不能弃养，请先领养新宠物')
+        return
+      }
+      haptic.tap()
+      const name = (p.speciesRecord && p.speciesRecord.name) || (p.state === 'egg' ? '待破壳蛋' : (p.species || '宠物'))
+      const isDefaultTip = p.isDefault ? '（弃养的是默认宠物, 弃养后会自动切换到剩余最早领养的宠物）' : ''
+      let res
+      try {
+        res = await uni.showModal({
+          title: '确认弃养?',
+          content: `「${name}」将永久删除, 等级经验一起消失${isDefaultTip}`,
+          confirmText: '确认弃养',
+          cancelText: '再想想',
+          confirmColor: '#F56C6C'
+        })
+      } catch (_) {
+        return
+      }
+      if (!res || !res.confirm) return
+      try {
+        await petApi.abandon(p._id)
+        toast.success('已弃养')
+        await this.load()
+      } catch (e) {
+        toast.error(e?.message || '弃养失败')
+      }
+    },
+
     goBack() { uni.navigateBack({ delta: 1 }) },
     goEnroll() { uni.switchTab({ url: '/pages/tabbar/explore' }) }
   }
@@ -517,6 +553,17 @@ export default {
     font-size: $font-sm;
     color: $gold;
     font-weight: $font-weight-semibold;
+  }
+
+  // 2026-07-16 弃养按钮 (默认宠物 subbar 右侧)
+  &__abandon-main {
+    margin-left: $spacing-sm;
+    font-size: $font-xs;
+    color: $danger;
+    border: 1rpx solid $danger;
+    border-radius: $radius-pill;
+    padding: 4rpx 16rpx;
+    cursor: pointer;
   }
 
   &__stage {
@@ -788,6 +835,8 @@ export default {
     color: $accent;
     cursor: pointer;
     &--warn { background: $warning-light; color: $warning; }
+    // 2026-07-16 弃养按钮 (其他宠物卡片底部)
+    &--danger { background: rgba(245, 108, 108, 0.10); color: $danger; }
   }
   &__adopt-card {
     justify-content: center;
