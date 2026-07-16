@@ -1,7 +1,7 @@
 # 数据模型 - 积分 / 宠物 / 喂养
 
 > **何时读这个文件**：改积分账户、积分流水、宠物养成（多宠 / 领养 / 破壳 / 喂食 / 饿死 / 等级配置）、宠物 catalog（species / consumables）、积分发放 trigger 时读。
-> **一行摘要**：积分 MVP（PointsAccount + PointsTransaction ledger） + Pet v3（多宠 + 无等阶 + 无装饰 + video-only + per-org 等级配置，2026-07-15 重构）。
+> **一行摘要**：积分 MVP（PointsAccount + PointsTransaction ledger） + Pet v3（多宠 + 无等阶 + 无装饰 + svg/video + per-org 经验曲线含逐级覆盖 + 增量锁定 300 + per-species 最高等级，2026-07-15 重构 / 2026-07-16 删 image + maxLevel 迁 species + 经验曲线逐级手填 + expIncrement 锁常量）。
 
 ---
 
@@ -84,8 +84,9 @@
 - **其他宠物**展示在：admin 课堂展示「其他领养的宠物」网格 / client 详情页「其他宠物」区
 - **状态机**：`egg → alive → (death→rebirth=egg 同 tick)`（去 tier 后无 tierup/swap/tierdown 回蛋）
 - **无等阶**：所有宠物用同一套等级 / 经验 / 喂养数值
-- **等级曲线 per-org**：`PetLevelConfig`（maxLevel 默认 12、expBase 100、expIncrement 50）；无记录时用 `shared/petConfig.DEFAULT_LEVEL_CONFIG` 兜底
-- **species video-only**：`visualType` 固定 `video`（前端 9:16 裁成 1:1 展示）；`image`/`svg` 仅兜底渲染保留
+- **最高等级 per-species**（2026-07-16）：`PetSpecies.maxLevel`（default 12）；经验曲线 per-org 统一管理（`PetLevelConfig` expBase/expIncrement）
+- **等级曲线 per-org**：`PetLevelConfig`（expBase 100、expIncrement 50）；无记录时用 `shared/petConfig.DEFAULT_LEVEL_CONFIG` 兜底；`maxLevel` 已迁到 species
+- **species svg/video**（2026-07-16 删 image）：`visualType` 默认 `video`（前端 9:16 裁成 1:1 展示）；`svg` 保留兜底渲染
 - **PetAccount 存 species key 字符串**，不存 ObjectId
 - **C 端 vs Admin**：C 端 `/api/v1/pet/*`（auth + activeStudent + requireEnrolledStudent）；Admin `/api/v1/admin/pet/*`（pet.read / pet.write）
 
@@ -134,28 +135,37 @@
 
 ### 2.3 PetSpecies（物种图鉴，平台级）
 
-`key`(unique) / `name` / `visualType`(enum image/svg/video，**默认 video**) / `videoFile`(ref File) / `imageFile` / `svgContent`(兜底) / `weight`(破壳加权) / `hungerDecayMinutes`(default60) / `isActive` / 审计。
+`key`(unique) / `name` / `visualType`(enum **svg/video**，默认 video；2026-07-16 删 image) / `videoFile`(ref File) / `svgContent`(兜底) / **`maxLevel`(该物种最高等级，default 12，min1 max100)** / `weight`(破壳加权) / `hungerDecayMinutes`(default60) / `isActive` / 审计。
 
 - **删 `tier` 字段** + `{tier,isActive}` 索引。
+- **2026-07-16 删 `image` 视觉类型 + `imageFile` 字段**（宠物图鉴/消耗品不再支持上传图片，svg 保留）。
+- **2026-07-16 新增 `maxLevel`**：最高等级由物种自身控制（原在 per-org PetLevelConfig，已迁出）；满级后经验封顶。
 - `rollSpecies()` 在全部 `isActive` 池里加权随机（无 tier 分池）。
 
 ### 2.4 PetConsumable（食物 + 玩具，平台级）
 
-`key`(unique) / `name` / `kind`(food/toy) / **`pointCost` / `hungerRestore` / `expGain`（扁平三字段）** / `visualType`(image/svg/video) / `imageFile` / `svgContent` / `videoFile` / `isActive` / 审计。
+`key`(unique) / `name` / `kind`(food/toy) / **`pointCost` / `hungerRestore` / `expGain`（扁平三字段）** / `visualType`(**svg/video**，默认 svg；2026-07-16 删 image) / `svgContent` / `videoFile` / `isActive` / 审计。
 
-> 删 `applicableTier` + `perTier`（{C,B,A,S,all}）子文档。
+> 删 `applicableTier` + `perTier`（{C,B,A,S,all}）子文档；2026-07-16 删 `image` 视觉类型 + `imageFile` 字段。
 
-### 2.5 PetLevelConfig（per-org 等级曲线，新增）
+### 2.5 PetLevelConfig（per-org 经验曲线，新增）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `org` | ObjectId ref Org, unique | per-org 单例 |
-| `maxLevel` | Number default 12 | 满级后经验封顶 |
-| `expBase` | Number default 100 | 1→2 级所需经验 |
-| `expIncrement` | Number default 50 | 每级增量 |
+| `expBase` | Number default 100 | 1→2 级所需经验（公式兜底） |
+| `expIncrement` | Number **锁定 300**（2026-07-16） | 每级增量——**机构不可改**；逐级差异走 `levelExpOverrides` |
+| `levelExpOverrides` | `[{level:Number 1-100, exp:Number}]`，default `[]` | 逐级覆盖；命中时优先于公式 |
 | `updatedBy` | ObjectId ref User | |
 
-`expToNext(L) = expBase + expIncrement * (L-1)`（shared/petConfig.js）。无记录用 `DEFAULT_LEVEL_CONFIG` 兜底。
+**升级判定（2026-07-16 第二期：逐级覆盖 + 锁增量）**：
+- 公式： `expToNext(L) = expBase + LOCKED_EXP_INCREMENT * (L-1)`，常量 = 300
+- 覆盖：`levelExpOverrides` 中显式列出的等级走覆盖值；未列出的等级仍走公式（含基础 + 固定 300 增量）
+- 兜底：无 `PetLevelConfig` 记录时用 `DEFAULT_LEVEL_CONFIG`（`{expBase:100, expIncrement:300, levelExpOverrides:{}}`）
+- **锁定语义**：后端 `updateLevelConfig` 与 `normalizeLevelConfig` 都会**强制把 `expIncrement` 写回 300**，忽略入参 + 抹 DB 旧值。
+- **删某条覆盖条目** → 该等级自动退回公式（基础 100 + 增量 300），不会破坏升级
+
+**2026-07-16：`maxLevel` 已迁到 PetSpecies**（最高等级由物种控制）；本表只**统一管理**经验曲线。满级判定 = 物种 `maxLevel`（缺省兜底 `DEFAULT_SPECIES_MAX_LEVEL=12`）。
 
 ---
 
@@ -272,6 +282,6 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 ## 六、关键文件路径
 
 **模型**：`models/PetAccount|PetSpecies|PetConsumable|PetEvent|PetLevelConfig.model.js`（PetItem 已删）
-**Shared**：`shared/petConfig.js`（DEFAULT_LEVEL_CONFIG / MAX_PETS_PER_STUDENT / expToNext）、`shared/petSpecies.js`、`shared/enums.js`（Pet* enums）；`shared/petItems.js` 已删
+**Shared**：`shared/petConfig.js`（DEFAULT_LEVEL_CONFIG(expBase/expIncrement=300/levelExpOverrides) / LOCKED_EXP_INCREMENT / DEFAULT_SPECIES_MAX_LEVEL / MAX_PETS_PER_STUDENT / expToNext(支持 per-level 覆盖 + 锁增量) / normalizeLevelConfig / normalizeLevelOverrides / levelOverridesToRows / rowsToLevelOverrides / resolveMaxLevel）、`shared/petSpecies.js`、`shared/enums.js`（Pet* enums；PET_VISUAL_TYPES 只剩 svg/video）；`shared/petItems.js` 已删
 **Service**：`modules/pet/{pet.service, petCatalog.service, petCatalog.admin.service, petCatalog.admin.controller/.routes, petCron, petShop.service/.controller/.routes, petPoints.helper, petEvent.service}`；`modules/petAdmin/{petAdmin.service/.controller/.routes}`；`petItems.service.js` 已删
 **Seed**：`utils/petCatalogSeed.js`、`utils/_petCatalog/{index,species,consumables}.js`（items.js 已删）；`scripts/db/_seed-dedupe-pet-species.js`（2026-07-16 上同种唯一 index 前必跑；`pnpm db:seed:dedupe-pet-species`，支持 `--dry-run`）

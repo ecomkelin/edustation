@@ -26,7 +26,9 @@ export default defineConfig(({ mode }) => {
       // 2026-07-05: 加 @shared/avatars (用户/学生 10 个预制 SVG, 前端通过 .mjs 镜像)
       //   与 shared/enums.js 同理: esbuild 把 CJS 包成 `__commonJS` + `export default require_xxx()`,
       //   `.mjs` 里 namespace import 拿到的 `{ default: ... }`.
-      include: ['@shared/enums.js', '@shared/permissions.js', '@shared/avatars']
+      // 2026-07-16: petConfig 走 .mjs 桥接；.mjs 内部仍要 import .js, 所以 .js 必须留在
+      //   include 里 (否则浏览器直接拿到原始 CJS, 抛 `exports is not defined`)
+      include: ['@shared/enums.js', '@shared/permissions.js', '@shared/avatars', '@shared/petConfig.js']
     },
     server: {
       port: 8000,

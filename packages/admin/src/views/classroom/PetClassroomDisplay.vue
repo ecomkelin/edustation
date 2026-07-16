@@ -99,8 +99,7 @@
               @click="onBuyConsumable(c.key)"
             >
               <span class="food-thumb">
-                <img v-if="c.visualType === 'image' && c.imageFile?.url" :src="c.imageFile.url" :alt="c.name" />
-                <span v-else-if="c.visualType === 'svg' && c.svgContent" class="chip-svg" v-html="c.svgContent" />
+                <span v-if="c.visualType === 'svg' && c.svgContent" class="chip-svg" v-html="c.svgContent" />
                 <video v-else-if="c.visualType === 'video' && c.videoFile?.url" :src="c.videoFile.url" autoplay loop muted playsinline />
                 <span v-else class="chip-emoji">🍖</span>
               </span>
@@ -128,7 +127,6 @@
                   :src="p.speciesRecord.videoFile.url" autoplay loop muted playsinline class="other-pet-video"
                 />
                 <span v-else-if="p.state === 'alive' && p.speciesRecord?.visualType === 'svg'" class="other-pet-svg" v-html="p.speciesRecord.svgContent" />
-                <img v-else-if="p.state === 'alive' && p.speciesRecord?.imageFile?.url" :src="p.speciesRecord.imageFile.url" class="other-pet-img" />
                 <span v-else class="other-pet-emoji">{{ p.state === 'egg' ? '🥚' : '🐾' }}</span>
               </div>
               <div class="other-pet-name">{{ p.speciesRecord?.name || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}</div>
@@ -260,9 +258,8 @@ export default {
         out.push({
           key,
           name: c.name,
-          visualType: c.visualType || 'image',
+          visualType: c.visualType || 'svg',
           svgContent: c.svgContent || null,
-          imageFile: c.imageFile || null,
           videoFile: c.videoFile || null,
           pointCost: c.pointCost || 0,
           hungerRestore: c.hungerRestore || 0,
@@ -286,9 +283,8 @@ export default {
             pointCost: c.pointCost,
             hungerRestore: c.hungerRestore,
             expGain: c.expGain,
-            visualType: c.visualType || 'image',
+            visualType: c.visualType || 'svg',
             svgContent: c.svgContent || null,
-            imageFile: c.imageFile || null,
             videoFile: c.videoFile || null
           }
         }

@@ -20,10 +20,7 @@
     <el-table :data="items" v-loading="loading" stripe>
       <el-table-column label="形象" width="80">
         <template #default="{ row }">
-          <div v-if="row.visualType === 'image' && row.imageFile" class="thumb svg-thumb clickable" @click="openPreview(row)">
-            <el-image :src="row.imageFile.url" :alt="row.name" fit="cover" style="width:48px;height:48px;border-radius:6px" />
-          </div>
-          <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
+          <div v-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
           <div v-else-if="row.visualType === 'video' && row.videoFile" class="thumb video-thumb clickable" @click="openPreview(row)">
             <!-- 2026-07-12: 列表缩略图 = 静态首帧 + ▶ 角标，hover 不自动播（避免 16 行同时解码） -->
             <video :src="row.videoFile.url" muted preload="metadata" class="video-frame" />
@@ -34,6 +31,9 @@
       </el-table-column>
       <el-table-column prop="key" label="Key" width="160" sortable />
       <el-table-column prop="name" label="名称" width="160" sortable />
+      <el-table-column prop="maxLevel" label="最高等级" width="90" sortable>
+        <template #default="{ row }">Lv.{{ row.maxLevel ?? 12 }}</template>
+      </el-table-column>
       <el-table-column prop="weight" label="权重" width="80" sortable />
       <el-table-column label="衰减" width="100" sortable prop="hungerDecayMinutes">
         <template #default="{ row }">
@@ -80,19 +80,8 @@
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
             <el-radio value="video">视频（推荐 9:16）</el-radio>
-            <el-radio value="image">图片</el-radio>
             <el-radio value="svg">SVG</el-radio>
           </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="form.visualType === 'image'" label="图片">
-          <FilePicker v-model="imagePicker" scope="pet" mime-prefix="image/" title="选择物种图片" @select="onPickImage" />
-          <div v-if="form.imageFile" class="preview">
-            <el-image :src="form.imageFile.url" fit="cover" style="width:96px;height:96px;border-radius:6px" />
-            <el-button link type="danger" @click="form.imageFile = null">清除</el-button>
-          </div>
-          <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadImage" accept="image/*">
-            <el-button :icon="Upload" size="small">上传新图</el-button>
-          </el-upload>
         </el-form-item>
         <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
           <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
@@ -113,6 +102,10 @@
         <el-form-item label="权重">
           <el-input-number v-model="form.weight" :min="0" :max="10000" />
           <span class="hint">破壳时加权随机权重，0=不参与抽取</span>
+        </el-form-item>
+        <el-form-item label="最高等级">
+          <el-input-number v-model="form.maxLevel" :min="1" :max="100" />
+          <span class="hint">该物种最高等级，满级后经验封顶（每级所需经验由「等级配置」统一管理）</span>
         </el-form-item>
         <!-- 2026-06-23: 物种级饱腹度衰减间隔（分钟/点） -->
         <el-form-item label="饱腹度衰减">
@@ -143,19 +136,9 @@
     >
       <div v-if="previewRow" class="preview-large-wrap">
         <!-- 2026-07-12: per-visualType 分支, 各自优化 -->
-        <!-- 图片: el-image 自带 fit:contain + max-height, 点击进全屏预览 -->
-        <el-image
-          v-if="previewRow.visualType === 'image' && previewRow.imageFile"
-          :src="previewRow.imageFile.url"
-          :alt="previewRow.name"
-          :preview-src-list="[previewRow.imageFile.url]"
-          fit="contain"
-          style="width:100%;max-height:70vh"
-          preview-teleported
-        />
         <!-- SVG: v-html 内联渲染, 限制最大宽高避免超大 SVG 撑爆弹窗 -->
         <div
-          v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent"
+          v-if="previewRow.visualType === 'svg' && previewRow.svgContent"
           class="preview-large-svg"
           v-html="previewRow.svgContent"
         />
@@ -208,7 +191,6 @@ export default {
     const loading = ref(false)
     const dialog = ref(false)
     const saving = ref(false)
-    const imagePicker = ref(false)
     const videoPicker = ref(false)  // 2026-07-12
     const formRef = ref(null)
     const previewOpen = ref(false)
@@ -226,9 +208,9 @@ export default {
       key: '',
       name: '',
       visualType: 'video',
-      imageFile: null,
       svgContent: '',
       videoFile: null,
+      maxLevel: 12,
       weight: 100,
       hungerDecayMinutes: 60,
       isActive: true,
@@ -260,8 +242,8 @@ export default {
     function resetForm() {
       Object.assign(form, {
         _id: null, key: '', name: '', visualType: 'video',
-        imageFile: null, svgContent: '', videoFile: null,
-        weight: 100, hungerDecayMinutes: 60, isActive: true, description: ''
+        svgContent: '', videoFile: null,
+        maxLevel: 12, weight: 100, hungerDecayMinutes: 60, isActive: true, description: ''
       })
       formRef.value?.clearValidate()
     }
@@ -278,9 +260,9 @@ export default {
         key: row.key,
         name: row.name,
         visualType: row.visualType,
-        imageFile: row.imageFile || null,
         svgContent: row.svgContent || '',
         videoFile: row.videoFile || null,
+        maxLevel: row.maxLevel ?? 12,
         weight: row.weight,
         hungerDecayMinutes: row.hungerDecayMinutes || 60,
         isActive: row.isActive,
@@ -289,21 +271,8 @@ export default {
       dialog.value = true
     }
 
-    function onPickImage(file) {
-      form.imageFile = file
-    }
-
     function onPickVideo(file) {  // 2026-07-12
       form.videoFile = file
-    }
-
-    async function uploadImage(req) {
-      try {
-        const { data } = await storageApi.upload({ file: req.file, scope: 'pet' })
-        form.imageFile = data
-      } catch (e) {
-        ElMessage.error('图片上传失败：' + (e?.message || 'unknown'))
-      }
     }
 
     async function uploadVideo(req) {  // 2026-07-12
@@ -324,9 +293,9 @@ export default {
           key: form.key.trim(),
           name: form.name.trim(),
           visualType: form.visualType,
-          imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
           videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
+          maxLevel: Number(form.maxLevel) || 12,
           weight: Number(form.weight) || 0,
           hungerDecayMinutes: Number(form.hungerDecayMinutes) || 60,
           isActive: !!form.isActive,
@@ -367,11 +336,11 @@ export default {
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      imagePicker, videoPicker, previewOpen, previewRow, previewVideoRef,
+      videoPicker, previewOpen, previewRow, previewVideoRef,
       VISUAL_LABELS,
       Plus, Upload, Picture, VideoPlay,
       petCatalogApi,
-      load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm,
+      load, openCreate, openEdit, resetForm, onPickVideo, uploadVideo, submit, onRemoveConfirm,
       openPreview, onPreviewClosed, formatDate
     }
   }

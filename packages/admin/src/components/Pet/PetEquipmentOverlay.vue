@@ -1,5 +1,5 @@
 <template>
-  <!-- 2026-07-15 重构：装饰系统删除后，本组件退化为「宠物本体渲染」（视频/SVG/图片/emoji 兜底）。
+  <!-- 2026-07-15 重构：装饰系统删除后，本组件退化为「宠物本体渲染」（视频/SVG/emoji 兜底）。
        仍复用于课堂展示主图 / 详情弹窗预览。 -->
   <div class="pet-img" :class="{ 'is-dialog': mode === 'dialog' }">
     <div class="pet-frame">
@@ -7,8 +7,6 @@
              :src="speciesRecord.videoFile.url"
              autoplay loop muted playsinline
              class="video-render" />
-      <img v-else-if="speciesRecord?.visualType === 'image' && speciesRecord.imageFile"
-           :src="speciesRecord.imageFile.url" :alt="speciesRecord.name" />
       <div v-else-if="speciesRecord?.visualType === 'svg'" class="svg-wrap" v-html="speciesRecord.svgContent" />
       <div v-else class="emoji-fallback">{{ fallbackEmoji }}</div>
     </div>
@@ -22,7 +20,7 @@
  * PetEquipmentOverlay — 宠物本体渲染（2026-07-15 去装饰后简化）
  *
  * props:
- *   - speciesRecord: 来自 pet.speciesRecord (populated，含 videoFile/svgContent/imageFile)
+ *   - speciesRecord: 来自 pet.speciesRecord (populated，含 videoFile/svgContent)
  *   - mode:          'classroom' (默认,大图) | 'dialog' (小预览)
  *   - fallbackEmoji: 没有 speciesRecord 时的兜底 emoji
  */

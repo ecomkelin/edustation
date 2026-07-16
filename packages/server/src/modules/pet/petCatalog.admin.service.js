@@ -26,7 +26,7 @@ const removable = require('@utils/removable')
 const fileBind = require('@modules/storage/fileBind')
 const { withCache, invalidate: invalidateCache } = require('@modules/report/reportCache')
 const { REF_ENTITY } = require('@models/File.model')
-const { normalizeLevelConfig } = require('@shared/petConfig')
+const { normalizeLevelConfig, normalizeLevelOverrides, rowsToLevelOverrides, LOCKED_EXP_INCREMENT } = require('@shared/petConfig')
 
 /* ─── SVG XSS sanitize ─────────────────────────────────── */
 function sanitizeSvg(input) {
@@ -39,7 +39,7 @@ function sanitizeSvg(input) {
 }
 
 /* ─── 通用 list（平台级，无 org 维度） ─── */
-async function listMerged({ Model, type, baseFilter = {}, keyword, populateFields = ['imageFile'] }) {
+async function listMerged({ Model, type, baseFilter = {}, keyword, populateFields = ['videoFile'] }) {
   const filterKey = JSON.stringify({ baseFilter, keyword })
   return withCache(`${type}:global:${filterKey}`, async () => {
     const filter = { ...baseFilter }
@@ -59,13 +59,12 @@ async function listMerged({ Model, type, baseFilter = {}, keyword, populateField
 async function listSpecies({ isActive, keyword }) {
   const baseFilter = {}
   if (isActive !== undefined) baseFilter.isActive = isActive
-  return listMerged({ Model: PetSpecies, type: 'species', baseFilter, keyword, populateFields: ['imageFile', 'videoFile'] })
+  return listMerged({ Model: PetSpecies, type: 'species', baseFilter, keyword, populateFields: ['videoFile'] })
 }
 
 async function getSpecies({ id }) {
   if (!id) throw ApiError.badRequest('缺少 id')
   const doc = await PetSpecies.findOne({ _id: id })
-    .populate('imageFile', 'url mime originalName')
     .populate('videoFile', 'url mime originalName')
     .lean()
   if (!doc) throw ApiError.notFound('物种不存在')
@@ -84,9 +83,9 @@ async function createSpecies({ payload, operatorId }) {
     key: payload.key.trim(),
     name: payload.name.trim(),
     visualType,
-    imageFile: visualType === 'image' ? (payload.imageFile || null) : null,
     svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     videoFile: visualType === 'video' ? (payload.videoFile || null) : null,
+    maxLevel: Math.max(1, Math.min(100, Number(payload.maxLevel) || 12)),
     weight: Number(payload.weight) || 100,
     hungerDecayMinutes: Number(payload.hungerDecayMinutes) || 60,
     isActive: payload.isActive !== false,
@@ -96,12 +95,6 @@ async function createSpecies({ payload, operatorId }) {
   }
   const created = await PetSpecies.create(doc)
   invalidateCache('species')
-  if (doc.imageFile) {
-    await fileBind.diffSingleById({
-      orgId: null, oldId: null, newId: doc.imageFile,
-      entity: REF_ENTITY.PET_SPECIES, entityId: created._id, field: 'imageFile'
-    })
-  }
   if (doc.videoFile) {
     await fileBind.diffSingleById({
       orgId: null, oldId: null, newId: doc.videoFile,
@@ -119,13 +112,11 @@ async function updateSpecies({ id, payload, operatorId }) {
   const updates = {}
   if (payload.name !== undefined) updates.name = String(payload.name).trim()
   if (payload.visualType !== undefined) updates.visualType = payload.visualType
+  if (payload.maxLevel !== undefined) updates.maxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 1))
   if (payload.weight !== undefined) updates.weight = Number(payload.weight) || 0
   if (payload.hungerDecayMinutes !== undefined) updates.hungerDecayMinutes = Number(payload.hungerDecayMinutes) || 60
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
   if (payload.description !== undefined) updates.description = payload.description
-  if (payload.imageFile !== undefined && doc.visualType === 'image') {
-    updates.imageFile = payload.imageFile || null
-  }
   if (payload.svgContent !== undefined && doc.visualType === 'svg') {
     updates.svgContent = sanitizeSvg(payload.svgContent)
   }
@@ -134,17 +125,10 @@ async function updateSpecies({ id, payload, operatorId }) {
   }
   updates.updatedBy = operatorId
 
-  const oldImageFile = doc.imageFile ? doc.imageFile.toString() : null
   const oldVideoFile = doc.videoFile ? doc.videoFile.toString() : null
   const updated = await PetSpecies.findByIdAndUpdate(doc._id, { $set: updates }, { new: true })
   invalidateCache('species')
 
-  if (doc.visualType === 'image' && payload.imageFile !== undefined) {
-    await fileBind.diffSingleById({
-      orgId: null, oldId: oldImageFile, newId: updated.imageFile ? updated.imageFile.toString() : null,
-      entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'imageFile'
-    })
-  }
   if (doc.visualType === 'video' && payload.videoFile !== undefined) {
     await fileBind.diffSingleById({
       orgId: null, oldId: oldVideoFile, newId: updated.videoFile ? updated.videoFile.toString() : null,
@@ -179,12 +163,6 @@ async function removeSpecies({ id }) {
   const doc = await PetSpecies.findOne({ _id: id })
   if (!doc) throw ApiError.notFound('物种不存在')
   await removable.assertUnusedGlobal(speciesUsageChecks(doc.key))
-  if (doc.imageFile) {
-    await fileBind.diffSingleById({
-      orgId: null, oldId: doc.imageFile.toString(), newId: null,
-      entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'imageFile'
-    })
-  }
   if (doc.videoFile) {
     await fileBind.diffSingleById({
       orgId: null, oldId: doc.videoFile.toString(), newId: null,
@@ -202,13 +180,12 @@ async function listConsumables({ kind, isActive, keyword }) {
   const baseFilter = {}
   if (kind) baseFilter.kind = kind
   if (isActive !== undefined) baseFilter.isActive = isActive
-  return listMerged({ Model: PetConsumable, type: 'consumables', baseFilter, keyword, populateFields: ['imageFile', 'videoFile'] })
+  return listMerged({ Model: PetConsumable, type: 'consumables', baseFilter, keyword, populateFields: ['videoFile'] })
 }
 
 async function getConsumable({ id }) {
   if (!id) throw ApiError.badRequest('缺少 id')
   const doc = await PetConsumable.findOne({ _id: id })
-    .populate('imageFile', 'url mime originalName')
     .populate('videoFile', 'url mime originalName')
     .lean()
   if (!doc) throw ApiError.notFound('消耗品不存在')
@@ -225,7 +202,7 @@ async function createConsumable({ payload, operatorId }) {
   const exists = await PetConsumable.findOne({ key: payload.key }).lean()
   if (exists) throw ApiError.conflict(`消耗品 key=${payload.key} 已存在`)
 
-  const visualType = payload.visualType || 'image'
+  const visualType = payload.visualType || 'svg'
   const doc = {
     key: payload.key.trim(),
     name: payload.name.trim(),
@@ -234,7 +211,6 @@ async function createConsumable({ payload, operatorId }) {
     hungerRestore: Number(payload.hungerRestore) || 0,
     expGain: Number(payload.expGain) || 0,
     visualType,
-    imageFile: visualType === 'image' ? (payload.imageFile || null) : null,
     svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     videoFile: visualType === 'video' ? (payload.videoFile || null) : null,
     isActive: payload.isActive !== false,
@@ -244,12 +220,6 @@ async function createConsumable({ payload, operatorId }) {
   }
   const created = await PetConsumable.create(doc)
   invalidateCache('consumables')
-  if (doc.imageFile) {
-    await fileBind.diffSingleById({
-      orgId: null, oldId: null, newId: doc.imageFile,
-      entity: REF_ENTITY.PET_CONSUMABLE, entityId: created._id, field: 'imageFile'
-    })
-  }
   if (doc.videoFile) {
     await fileBind.diffSingleById({
       orgId: null, oldId: null, newId: doc.videoFile,
@@ -273,9 +243,6 @@ async function updateConsumable({ id, payload, operatorId }) {
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
   if (payload.description !== undefined) updates.description = payload.description
   if (payload.visualType !== undefined) updates.visualType = payload.visualType
-  if (payload.imageFile !== undefined && doc.visualType === 'image') {
-    updates.imageFile = payload.imageFile || null
-  }
   if (payload.svgContent !== undefined && doc.visualType === 'svg') {
     updates.svgContent = sanitizeSvg(payload.svgContent)
   }
@@ -284,17 +251,10 @@ async function updateConsumable({ id, payload, operatorId }) {
   }
   updates.updatedBy = operatorId
 
-  const oldImageFile = doc.imageFile ? doc.imageFile.toString() : null
   const oldVideoFile = doc.videoFile ? doc.videoFile.toString() : null
   const updated = await PetConsumable.findByIdAndUpdate(doc._id, { $set: updates }, { new: true })
   invalidateCache('consumables')
 
-  if (doc.visualType === 'image' && payload.imageFile !== undefined) {
-    await fileBind.diffSingleById({
-      orgId: null, oldId: oldImageFile, newId: updated.imageFile ? updated.imageFile.toString() : null,
-      entity: REF_ENTITY.PET_CONSUMABLE, entityId: doc._id, field: 'imageFile'
-    })
-  }
   if (doc.visualType === 'video' && payload.videoFile !== undefined) {
     await fileBind.diffSingleById({
       orgId: null, oldId: oldVideoFile, newId: updated.videoFile ? updated.videoFile.toString() : null,
@@ -320,12 +280,6 @@ async function removeConsumable({ id }) {
   const doc = await PetConsumable.findOne({ _id: id })
   if (!doc) throw ApiError.notFound('消耗品不存在')
   await removable.assertUnusedGlobal(consumableUsageChecks())
-  if (doc.imageFile) {
-    await fileBind.diffSingleById({
-      orgId: null, oldId: doc.imageFile.toString(), newId: null,
-      entity: REF_ENTITY.PET_CONSUMABLE, entityId: doc._id, field: 'imageFile'
-    })
-  }
   if (doc.videoFile) {
     await fileBind.diffSingleById({
       orgId: null, oldId: doc.videoFile.toString(), newId: null,
@@ -349,16 +303,39 @@ async function getLevelConfig({ orgId }) {
 async function updateLevelConfig({ orgId, payload, operatorId }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId')
   const updates = {}
-  if (payload.maxLevel !== undefined) updates.maxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 1))
   if (payload.expBase !== undefined) updates.expBase = Math.max(1, Number(payload.expBase) || 1)
-  if (payload.expIncrement !== undefined) updates.expIncrement = Math.max(0, Number(payload.expIncrement) || 0)
+  // expIncrement 已锁定（LOCKED_EXP_INCREMENT=300，2026-07-16 产品决策）：
+  // 忽略入参里的任何值；即使 DB 里有旧值也会被 $set 强制覆盖成常量。
+  if (payload.levelExpOverrides !== undefined) {
+    // 接受前端 rows 数组 [{level, exp}] 或后端 dict；归一化为 [{level, exp}]
+    updates.levelExpOverrides = rowArrToOverrides(payload.levelExpOverrides)
+  }
+  // 强制写入常量（抹掉 DB 里可能存的旧 expIncrement）
+  updates.expIncrement = LOCKED_EXP_INCREMENT
   updates.updatedBy = operatorId
   const doc = await PetLevelConfig.findOneAndUpdate(
     { org: orgId },
     { $set: updates, $setOnInsert: { org: orgId } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   ).lean()
-  return normalizeLevelConfig(doc)
+  const cfg = normalizeLevelConfig(doc)
+  return { ...cfg, exists: !!doc }
+}
+
+// 接受数组 (rows) 或 dict (keyed by level)；归一化为按 level 升序的数组
+function rowArrToOverrides(input) {
+  if (!input) return []
+  let dict
+  if (Array.isArray(input)) {
+    dict = rowsToLevelOverrides(input)
+  } else if (typeof input === 'object') {
+    dict = normalizeLevelOverrides(input)
+  } else {
+    return []
+  }
+  return Object.keys(dict)
+    .map(k => ({ level: Number(k), exp: dict[k] }))
+    .sort((a, b) => a.level - b.level)
 }
 
 module.exports = {

@@ -11,7 +11,7 @@
  *   - 圆润线条（无锐角）
  *
  * 字段顺序与 PetSpecies.model.js 对齐：
- *   key, name, tier, visualType, imageFile, svgContent, weight, isActive, description
+ *   key, name, visualType, svgContent, videoFile, maxLevel, weight, isActive, description
  */
 const SPECIES = [
   /* ========== C 阶：常见小动物 ========== */

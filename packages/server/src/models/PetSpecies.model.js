@@ -14,11 +14,16 @@ const { PET_VISUAL_TYPES } = require('@shared/enums')
  *
  * 2026-07-15 重构：
  *   - 删 tier 字段（无等阶）
- *   - visualType 收敛为 'video'（宠物本体只用视频；imageFile/svgContent 保留仅兜底渲染）
+ *   - visualType 收敛为 'video'（宠物本体只用视频；svgContent 保留仅兜底渲染）
  *   - rollSpecies 全池加权随机（不再按 tier 分池）
  *
+ * 2026-07-16：
+ *   - 删 image 视觉类型（enum 只剩 svg/video）+ 删 imageFile 字段
+ *   - 新增 maxLevel（该物种最高等级，满级后经验封顶）；经验曲线仍由 per-org PetLevelConfig 统一管理
+ *
  * 字段：
- *   - key / name / visualType / videoFile (+ imageFile/svgContent 兜底)
+ *   - key / name / visualType / videoFile (+ svgContent 兜底)
+ *   - maxLevel（该物种最高等级）
  *   - weight  (破壳加权随机权重)
  *   - hungerDecayMinutes / isActive / description / meta
  *   - createdBy / updatedBy  (审计)
@@ -31,17 +36,17 @@ const PetSpeciesSchema = new Schema(
     // 中文名（玩家可见）
     name: { type: String, required: true, trim: true, maxlength: 64 },
 
-    // 视觉类型（重构后宠物本体固定 'video'；enum 仍保留三值以便兜底渲染）
+    // 视觉类型（重构后宠物本体固定 'video'；enum 保留 svg 兜底渲染）
     visualType: { type: String, enum: PET_VISUAL_TYPES, required: true, default: 'video' },
-
-    // image 时存 File ref
-    imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
 
     // svg 时存内联字符串
     svgContent: { type: String, default: null, maxlength: 50000 },
 
     // 2026-07-12: video 时存 File ref（mp4/webm 等，列表/详情预览）
     videoFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
+
+    // 2026-07-16: 该物种最高等级（满级后经验封顶，不再升级）；经验曲线由 PetLevelConfig 统一管理
+    maxLevel: { type: Number, default: 12, min: 1, max: 100 },
 
     // 破壳加权随机权重
     weight: { type: Number, default: 100, min: 0, max: 10000 },

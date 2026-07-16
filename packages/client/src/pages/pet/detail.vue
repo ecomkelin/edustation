@@ -77,7 +77,7 @@
           <text v-if="hatchPhase === 'idle'" class="pet-detail__egg-cta">✨ 点击破壳看看 ›</text>
         </view>
 
-        <!-- 已破壳：默认宠物本体（视频 / svg / image / emoji 兜底） -->
+        <!-- 已破壳：默认宠物本体（视频 / svg / emoji 兜底） -->
         <view v-else class="pet-detail__pet">
           <view v-if="species && species.visualType === 'svg' && species.svgContent" class="pet-detail__svg-wrap" v-html="species.svgContent" />
           <video
@@ -90,7 +90,6 @@
             :show-fullscreen-btn="false"
             class="pet-detail__pet-video"
           />
-          <image v-else-if="species && species.imageFile && species.imageFile.url" :src="species.imageFile.url" class="pet-detail__pet-svg" mode="aspectFit" />
           <text v-else class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
         </view>
       </view>
@@ -148,7 +147,6 @@
                 :controls="false" :show-play-btn="false" :show-fullscreen-btn="false"
                 class="pet-detail__food-video"
               />
-              <image v-else-if="c.url" :src="c.url" mode="aspectFit" class="pet-detail__food-img" />
               <text v-else class="pet-detail__food-emoji">🍖</text>
               <view class="pet-detail__food-name">{{ c.name }}</view>
               <view class="pet-detail__food-meta">
@@ -178,13 +176,12 @@
                 class="pet-detail__other-video"
               />
               <view v-else-if="p.state === 'alive' && p.speciesRecord && p.speciesRecord.svgContent" class="pet-detail__svg-wrap" v-html="p.speciesRecord.svgContent" />
-              <image v-else-if="p.state === 'alive' && p.speciesRecord && p.speciesRecord.imageFile && p.speciesRecord.imageFile.url" :src="p.speciesRecord.imageFile.url" mode="aspectFit" class="pet-detail__other-img" />
               <text v-else class="pet-detail__other-emoji">{{ p.state === 'egg' ? '🥚' : '🐾' }}</text>
             </view>
             <text class="pet-detail__other-name">{{ (p.speciesRecord && p.speciesRecord.name) || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}</text>
             <view class="pet-detail__other-actions">
               <view class="pet-detail__other-btn" @tap="onSetDefault(p)">设为默认</view>
-              <view v-if="p.state === 'egg'" class="pet-detail__other-btn pet-detail__other-btn--warn" @tap="onHatchOther(p)">破壳</view>
+              <!-- 2026-07-16 学生端: 蛋必须先「设为默认」(主区顶蛋 @tap 破壳), 不在其它卡直接破壳 -->
               <!-- 2026-07-16 弃养 (C 端家长无密码, 走两步 modal 确认) -->
               <view v-if="pets.length > 1" class="pet-detail__other-btn pet-detail__other-btn--danger" @tap="onAbandon(p)">弃养</view>
             </view>
@@ -262,7 +259,6 @@ export default {
           name: c.name,
           visualType: c.visualType || '',
           svgContent: c.svgContent || '',
-          url: c.imageFile?.url || '',
           videoUrl: c.videoFile?.url || '',
           pointCost: c.pointCost || 0,
           hungerRestore: c.hungerRestore || 0,
@@ -324,7 +320,6 @@ export default {
             expGain: c.expGain,
             visualType: c.visualType || '',
             svgContent: c.svgContent || '',
-            imageFile: c.imageFile || null,
             videoFile: c.videoFile || null
           }
         }
@@ -358,18 +353,6 @@ export default {
         this.hatchPhase = 'idle'
         this.hatchActive = false
       }, 3000))
-    },
-
-    async onHatchOther(p) {
-      if (!p?._id) return
-      haptic.tap()
-      try {
-        await petApi.hatch(p._id)
-        toast.success('已破壳')
-        await this.load()
-      } catch (e) {
-        toast.error(e?.message || '破壳失败')
-      }
     },
 
     clearHatchTimers() {
@@ -834,7 +817,6 @@ export default {
     background: rgba(124, 217, 183, 0.15);
     color: $accent;
     cursor: pointer;
-    &--warn { background: $warning-light; color: $warning; }
     // 2026-07-16 弃养按钮 (其他宠物卡片底部)
     &--danger { background: rgba(245, 108, 108, 0.10); color: $danger; }
   }

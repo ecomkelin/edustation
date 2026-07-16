@@ -146,8 +146,8 @@ export const FINANCE_REASON_DIRECTION_LABEL = {
 // ─── 宠物系统 (pet-system-v2-ext 2026-06-21；2026-07-15 重构：去等阶+去装饰) ───
 export const PET_STATES = ['egg', 'alive', 'dead']
 export const PET_STATE_LABELS = { egg: '蛋', alive: '存活', dead: '死亡' }
-export const PET_VISUAL_TYPES = ['image', 'svg', 'video']
-export const PET_VISUAL_TYPE_LABELS = { image: '图片', svg: 'SVG', video: '视频' }
+export const PET_VISUAL_TYPES = ['svg', 'video']
+export const PET_VISUAL_TYPE_LABELS = { svg: 'SVG', video: '视频' }
 export const PET_CONSUMABLE_KINDS = ['food', 'toy']
 export const PET_CONSUMABLE_KIND_LABELS = { food: '食物', toy: '玩具' }
 // 2026-07-15 删除：PET_TIERS / PET_TIER_LABELS / PET_TIER_TAG_TYPE / PET_ITEM_SLOTS / PET_ITEM_SLOT_LABELS /

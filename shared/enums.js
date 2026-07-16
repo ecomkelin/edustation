@@ -245,21 +245,19 @@ const PetEventType = Object.freeze({
 const PET_EVENT_TYPES = Object.values(PetEventType)
 
 /**
- * 宠物形象视觉类型（PetSpecies.visualType，2026-06-21 pet-system-v2-ext / 2026-07-12 加 video）
- *   - image: 上传图片（File ref → URL）
- *   - svg:   内联 SVG 字符串
+ * 宠物形象视觉类型（PetSpecies / PetConsumable.visualType）
+ *   - svg:   内联 SVG 字符串（保留，宠物图鉴/消耗品可用）
  *   - video: 上传视频（File ref → URL，列表 hover/详情 controls 播放；2026-07-12 加）
  *
+ * 2026-07-16: 删除 image 类型（宠物图鉴/消耗品不再支持上传图片；宠物本体统一用视频）。
  * 不支持 html/css/js（XSS 风险）
  */
 const PetVisualType = Object.freeze({
-  IMAGE: 'image',
   SVG: 'svg',
   VIDEO: 'video'
 })
 const PET_VISUAL_TYPES = Object.values(PetVisualType)
 const PET_VISUAL_TYPE_LABELS = Object.freeze({
-  image: '图片',
   svg: 'SVG',
   video: '视频'
 })

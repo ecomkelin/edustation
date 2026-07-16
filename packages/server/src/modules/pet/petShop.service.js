@@ -24,7 +24,6 @@ const ApiError = require('@utils/ApiError')
 async function listShop({ orgId }) {
   if (!orgId) throw ApiError.badRequest('缺少 orgId')
   const allConsumables = await PetConsumable.find({ isActive: true })
-    .populate('imageFile', 'url mime')
     .populate('videoFile', 'url mime')
     .lean()
   const consumables = allConsumables.map((c) => ({
@@ -35,7 +34,6 @@ async function listShop({ orgId }) {
     hungerRestore: c.hungerRestore,
     expGain: c.expGain,
     visualType: c.visualType,
-    imageFile: c.imageFile,
     videoFile: c.videoFile,
     svgContent: c.svgContent,
     description: c.description

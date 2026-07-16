@@ -96,7 +96,7 @@
         <!-- 已破壳: 主卡 (默认宠物视频 + 名字 + 双进度条) -->
         <view v-else class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
-            <!-- species 主图: svg / video / image / emoji 兜底（9:16 裁 1:1） -->
+            <!-- species 主图: svg / video / emoji 兜底（9:16 裁 1:1） -->
             <view v-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
             <video
               v-else-if="petSpecies && petSpecies.visualType === 'video' && petSpecies.videoFile && petSpecies.videoFile.url"
@@ -107,12 +107,6 @@
               :show-play-btn="false"
               :show-fullscreen-btn="false"
               class="home__pet-portrait-video"
-            />
-            <image
-              v-else-if="petSpecies && petSpecies.imageFile && petSpecies.imageFile.url"
-              :src="petSpecies.imageFile.url"
-              class="home__pet-portrait-img"
-              mode="aspectFill"
             />
             <text v-else class="home__pet-portrait-emoji">{{ petEmoji }}</text>
           </view>

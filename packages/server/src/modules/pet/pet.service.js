@@ -33,7 +33,8 @@ const {
   INIT_HUNGER_AFTER_HATCH,
   MAX_PETS_PER_STUDENT,
   DEFAULT_DEATH_THRESHOLD_DAYS,
-  expToNext
+  expToNext,
+  resolveMaxLevel
 } = petConfig
 
 // ─────────────────────────────────────────────────────────────
@@ -215,6 +216,10 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   const hungerGain = config.hungerRestore
 
   const levelCfg = await petCatalog.getLevelConfig(orgId)
+  // 2026-07-16: 最高等级由物种自身控制（经验曲线仍统一管理）
+  const speciesRec = await petCatalog.getSpecies({ key: pet.species })
+  const maxLevel = resolveMaxLevel(speciesRec)
+  const cfg = { ...levelCfg, maxLevel }
 
   // 计算新的 exp / level / hunger
   let newExp = pet.experience + expGain
@@ -222,15 +227,15 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   let newHunger = Math.min(pet.maxHunger, pet.currentHunger + hungerGain)
   let levelUpCount = 0
 
-  while (newLevel < levelCfg.maxLevel) {
-    const need = expToNext(newLevel, levelCfg)
+  while (newLevel < maxLevel) {
+    const need = expToNext(newLevel, cfg)
     if (need == null || newExp < need) break
     newExp -= need
     newLevel += 1
     levelUpCount += 1
   }
   // 满级封顶：经验清零（进度条显示已满）
-  if (newLevel >= levelCfg.maxLevel) newExp = 0
+  if (newLevel >= maxLevel) newExp = 0
 
   // 先扣积分（不足时抛错，经验/饱腹度不变）
   const chargeResult = await petPoints.chargeForFeed({
@@ -435,6 +440,7 @@ async function getMine({ orgId, studentId }) {
 
 /**
  * 给 pet 文档补派生字段（nextExpToLevel / maxLevel / speciesRecord）。
+ * maxLevel 取自物种（PetSpecies.maxLevel）；经验曲线取自 per-org PetLevelConfig。
  */
 async function decoratePet(pet, orgId, levelCfg) {
   if (!pet) return null
@@ -443,9 +449,10 @@ async function decoratePet(pet, orgId, levelCfg) {
     result.speciesRecord = await petCatalog.getSpecies({ key: pet.species }) || null
   }
   if (pet.state === 'alive') {
-    const cfg = levelCfg || await petCatalog.getLevelConfig(orgId || pet.org)
-    result.nextExpToLevel = expToNext(pet.level, cfg)
-    result.maxLevel = cfg.maxLevel
+    const expCfg = levelCfg || await petCatalog.getLevelConfig(orgId || pet.org)
+    const maxLevel = resolveMaxLevel(result.speciesRecord)
+    result.nextExpToLevel = expToNext(pet.level, { ...expCfg, maxLevel })
+    result.maxLevel = maxLevel
   }
   return result
 }

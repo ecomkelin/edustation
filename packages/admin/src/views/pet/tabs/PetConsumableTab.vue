@@ -17,10 +17,7 @@
     <el-table :data="items" v-loading="loading" stripe>
       <el-table-column label="图标" width="80">
         <template #default="{ row }">
-          <div v-if="row.visualType === 'image' && row.imageFile" class="thumb svg-thumb clickable" @click="openPreview(row)">
-            <el-image :src="row.imageFile.url" :alt="row.name" fit="cover" style="width:48px;height:48px;border-radius:6px" />
-          </div>
-          <div v-else-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
+          <div v-if="row.visualType === 'svg' && row.svgContent" class="thumb svg-thumb clickable" v-html="row.svgContent" @click="openPreview(row)" />
           <div v-else-if="row.visualType === 'video' && row.videoFile" class="thumb svg-thumb clickable" @click="openPreview(row)">
             <video :src="row.videoFile.url" muted preload="metadata" style="width:48px;height:48px;object-fit:cover;border-radius:6px" />
           </div>
@@ -87,22 +84,11 @@
 
         <el-form-item label="视觉类型" prop="visualType">
           <el-radio-group v-model="form.visualType" :disabled="!!form._id">
-            <el-radio value="image">图片</el-radio>
             <el-radio value="svg">SVG</el-radio>
             <el-radio value="video">视频</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="form.visualType === 'image'" label="图标">
-          <FilePicker v-model="imagePicker" scope="pet" mime-prefix="image/" title="选择图标" @select="onPickImage" />
-          <div v-if="form.imageFile" class="preview">
-            <el-image :src="form.imageFile.url" fit="cover" style="width:64px;height:64px;border-radius:6px" />
-            <el-button link type="danger" @click="form.imageFile = null">清除</el-button>
-          </div>
-          <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadImage" accept="image/*">
-            <el-button :icon="Upload" size="small">上传新图</el-button>
-          </el-upload>
-        </el-form-item>
-        <el-form-item v-else-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
+        <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
           <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
           <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
         </el-form-item>
@@ -132,8 +118,7 @@
     <!-- 图标大图预览 -->
     <el-dialog v-model="previewOpen" :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '图标预览'" width="480px" :show-close="true" align-center>
       <div v-if="previewRow" class="preview-large-wrap">
-        <el-image v-if="previewRow.visualType === 'image' && previewRow.imageFile" :src="previewRow.imageFile.url" :alt="previewRow.name" fit="contain" style="width:100%;max-height:60vh" />
-        <div v-else-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
+        <div v-if="previewRow.visualType === 'svg' && previewRow.svgContent" class="preview-large-svg" v-html="previewRow.svgContent" />
         <video v-else-if="previewRow.visualType === 'video' && previewRow.videoFile" :src="previewRow.videoFile.url" controls autoplay muted loop style="width:100%;max-height:60vh;background:#000" />
         <div v-else class="preview-large-empty">
           <el-icon :size="64" color="#ccc"><Picture /></el-icon>
@@ -165,7 +150,6 @@ export default {
     const loading = ref(false)
     const dialog = ref(false)
     const saving = ref(false)
-    const imagePicker = ref(false)
     const videoPicker = ref(false)
     const formRef = ref(null)
     const previewOpen = ref(false)
@@ -173,7 +157,7 @@ export default {
     const form = reactive({
       _id: null, key: '', name: '', kind: 'food',
       pointCost: 5, hungerRestore: 15, expGain: 10,
-      visualType: 'image', imageFile: null, svgContent: '', videoFile: null,
+      visualType: 'svg', svgContent: '', videoFile: null,
       isActive: true, description: ''
     })
 
@@ -206,7 +190,7 @@ export default {
       Object.assign(form, {
         _id: null, key: '', name: '', kind: 'food',
         pointCost: 5, hungerRestore: 15, expGain: 10,
-        visualType: 'image', imageFile: null, svgContent: '', videoFile: null,
+        visualType: 'svg', svgContent: '', videoFile: null,
         isActive: true, description: ''
       })
       formRef.value?.clearValidate()
@@ -224,8 +208,7 @@ export default {
         pointCost: row.pointCost ?? 0,
         hungerRestore: row.hungerRestore ?? 0,
         expGain: row.expGain ?? 0,
-        visualType: row.visualType || 'image',
-        imageFile: row.imageFile || null,
+        visualType: row.visualType || 'svg',
         svgContent: row.svgContent || '',
         videoFile: row.videoFile || null,
         isActive: row.isActive, description: row.description || ''
@@ -233,17 +216,7 @@ export default {
       dialog.value = true
     }
 
-    function onPickImage(file) { form.imageFile = file }
     function onPickVideo(file) { form.videoFile = file }
-
-    async function uploadImage(req) {
-      try {
-        const { data } = await storageApi.upload({ file: req.file, scope: 'pet' })
-        form.imageFile = data
-      } catch (e) {
-        ElMessage.error('图片上传失败')
-      }
-    }
 
     async function uploadVideo(req) {
       try {
@@ -267,7 +240,6 @@ export default {
           hungerRestore: Number(form.hungerRestore) || 0,
           expGain: Number(form.expGain) || 0,
           visualType: form.visualType,
-          imageFile: form.visualType === 'image' ? (form.imageFile?.id || null) : null,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
           videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
           isActive: !!form.isActive,
@@ -308,11 +280,11 @@ export default {
 
     return {
       filter, items, loading, dialog, saving, form, formRef, rules,
-      imagePicker, videoPicker, previewOpen, previewRow,
+      videoPicker, previewOpen, previewRow,
       PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS,
       Plus, Upload, Picture,
       petCatalogApi,
-      load, openCreate, openEdit, resetForm, onPickImage, onPickVideo, uploadImage, uploadVideo, submit, onRemoveConfirm, openPreview
+      load, openCreate, openEdit, resetForm, onPickVideo, uploadVideo, submit, onRemoveConfirm, openPreview
     }
   }
 }

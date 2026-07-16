@@ -25,7 +25,7 @@ const sharedPetSpecies = require('@shared/petSpecies')
 const { normalizeLevelConfig } = require('@shared/petConfig')
 
 /* ─── 通用 list（平台级，无 org 维度） ─── */
-async function _listGlobal({ Model, baseFilter = {}, keyword, populateFields = ['imageFile'] }) {
+async function _listGlobal({ Model, baseFilter = {}, keyword, populateFields = ['videoFile'] }) {
   const filter = { ...baseFilter }
   if (keyword && String(keyword).trim()) {
     filter.name = { $regex: String(keyword).trim(), $options: 'i' }
@@ -48,13 +48,13 @@ async function listSpecies({ isActive, keyword } = {}) {
       Model: PetSpecies,
       baseFilter: base,
       keyword,
-      populateFields: ['imageFile', 'videoFile']
+      populateFields: ['videoFile']
     })
     if (items.length === 0) {
       // eslint-disable-next-line no-console
       console.warn('[petCatalog.listSpecies] DB 空，fallback shared/petSpecies')
       items = sharedPetSpecies.PET_SPECIES.map(s => ({
-        ...s, imageFile: null, videoFile: null, visualType: 'video', isActive: true
+        ...s, videoFile: null, visualType: 'video', isActive: true
       }))
     }
     return items
@@ -64,13 +64,12 @@ async function listSpecies({ isActive, keyword } = {}) {
 async function getSpecies({ key }) {
   if (!key) return null
   const doc = await PetSpecies.findOne({ key })
-    .populate('imageFile', 'url mime')
     .populate('videoFile', 'url mime')
     .lean()
   if (doc) return doc
   const shared = sharedPetSpecies.getSpecies(key)
   if (shared) {
-    return { ...shared, imageFile: null, videoFile: null, visualType: 'video', isActive: true, _fallback: true }
+    return { ...shared, videoFile: null, visualType: 'video', isActive: true, _fallback: true }
   }
   return null
 }
@@ -103,7 +102,7 @@ async function listConsumables({ kind, isActive, keyword } = {}) {
       Model: PetConsumable,
       baseFilter: base,
       keyword,
-      populateFields: ['imageFile', 'videoFile']
+      populateFields: ['videoFile']
     })
   }, 300_000)
 }

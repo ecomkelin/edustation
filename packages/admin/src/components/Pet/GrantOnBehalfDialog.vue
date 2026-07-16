@@ -16,8 +16,7 @@
           <el-option v-for="opt in options" :key="opt.key" :label="opt.label" :value="opt.key">
             <div class="opt-row">
               <span class="opt-thumb">
-                <img v-if="opt.visualType === 'image' && opt.imageFile?.url" :src="opt.imageFile.url" :alt="opt.label" />
-                <span v-else-if="opt.visualType === 'svg' && opt.svgContent" class="opt-svg" v-html="opt.svgContent" />
+                <span v-if="opt.visualType === 'svg' && opt.svgContent" class="opt-svg" v-html="opt.svgContent" />
                 <video v-else-if="opt.visualType === 'video' && opt.videoFile?.url" :src="opt.videoFile.url" muted preload="metadata" />
                 <span v-else class="opt-emoji">🍖</span>
               </span>
@@ -96,9 +95,8 @@ export default {
           pointCost: it.pointCost,
           priceText: `${it.pointCost} 积分`,
           hint: `+${it.expGain}经验 / +${it.hungerRestore}饱腹`,
-          visualType: it.visualType || 'image',
+          visualType: it.visualType || 'svg',
           svgContent: it.svgContent || null,
-          imageFile: it.imageFile || null,
           videoFile: it.videoFile || null
         }))
       } catch (e) {

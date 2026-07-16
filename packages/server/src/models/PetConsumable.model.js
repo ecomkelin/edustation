@@ -1,7 +1,7 @@
 'use strict'
 
 const { Schema, model } = require('mongoose')
-const { PET_CONSUMABLE_KINDS } = require('@shared/enums')
+const { PET_CONSUMABLE_KINDS, PET_VISUAL_TYPES } = require('@shared/enums')
 
 /**
  * 宠物消耗品图鉴（PetConsumable，2026-06-21 pet-system-v2-ext）
@@ -34,9 +34,8 @@ const PetConsumableSchema = new Schema(
     hungerRestore: { type: Number, required: true, min: 0, max: 1000 },
     expGain:       { type: Number, required: true, min: 0, max: 100000 },
 
-    // 图标（image / svg / video 三选；消耗品是小图标，不强制 video）
-    visualType: { type: String, enum: ['image', 'svg', 'video'], default: 'image' },
-    imageFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
+    // 图标（svg / video 二选；消耗品是小图标，不强制 video；2026-07-16 删 image）
+    visualType: { type: String, enum: PET_VISUAL_TYPES, default: 'svg' },
     svgContent: { type: String, default: null, maxlength: 50000 },
     videoFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
 

@@ -255,10 +255,10 @@ GET    /api/v1/admin/pet/species/:id/removable-check  pet.read  预检
 {
   "key": "cat_black",
   "name": "黑猫",
-  "tier": "C",
-  "visualType": "image",
-  "imageFile": "65...",          // File ref id；visualType=image 时用
+  "visualType": "video",         // svg | video（2026-07-16 删 image）
+  "videoFile": "65...",          // File ref id；visualType=video 时用
   "svgContent": "<svg>...</svg>", // visualType=svg 时用（自动 sanitize 去 script/on*）
+  "maxLevel": 12,                // 2026-07-16: 该物种最高等级（满级封顶）
   "weight": 100,
   "isActive": true,
   "description": "..."
@@ -388,7 +388,7 @@ GET    /class/pet-display?studentId=xxx       独立 layout（ClassroomLayout）
 - 报告缓存失效：`points.recordTransaction` 已自动调 `invalidateReportCache(orgId)`
 - **Catalog 缓存**（2026-06-21 ext）：`petCatalog.service` 通过 `reportCache.withCache(key, loader, 300_000)` 缓存 species/items/consumables 读；写操作（admin CRUD）调 `invalidateCatalogCache(orgId)`
 - **Catalog fallback**（2026-06-21 ext）：DB 完全空时 fallback 到 `shared/petSpecies.js` / `shared/petItems.js` 静态记录（仅 dev 兜底；上线后必填）
-- **File 上传**：admin 上传 image 走 `POST /storage/upload?scope=pet`，返回 File ref，写入 `PetSpecies.imageFile` / `PetItem.imageFile` / `PetConsumable.imageFile`（`fileBind.diffSingleById` 维护 refs）
+- **File 上传**：admin 上传视频走 `POST /storage/upload?scope=pet`，返回 File ref，写入 `PetSpecies.videoFile` / `PetConsumable.videoFile`（`fileBind.diffSingleById` 维护 refs）。2026-07-16 删 image 视觉类型 + imageFile 字段（svg 内联无需上传）
 - 文件存储：装饰图片走 `scope='pet'` + `entity='Pet'`（File 模型已预埋）
 
 ---
