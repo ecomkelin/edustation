@@ -187,7 +187,7 @@ function decodeCursor(s) {
  *
  * 白名单：nickname / currentHunger / lastFedAt / deathThresholdDays / state / level / experience / maxHunger
  * isDefault 走 setDefaultOnBehalf，不在此裸 set（避免破坏 partial unique）。
- * 不允许改：org / student / adoptedAt / species
+ * 不允许改：org / student / adoptedAt / species / maxLevel / visuals（per-pet override 已撤销，per-species 见 PetSpeciesTab）
  */
 async function update({ orgId, petAccountId, operatorId, payload }) {
   if (!orgId || !petAccountId) throw ApiError.badRequest('缺少 orgId/petAccountId')
@@ -387,7 +387,7 @@ async function removePetAccount({ orgId, petAccountId, operatorId }) {
     }
   }
 
-  // 删档
+  // 删档（PetAccount.visuals 已撤，per-species levelVisuals 在 PetSpecies 上，删 PetAccount 不用解绑 File refs）
   const deleted = await PetAccount.deleteOne({ _id: pet._id, org: orgId })
   if (deleted.deletedCount === 0) throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
 

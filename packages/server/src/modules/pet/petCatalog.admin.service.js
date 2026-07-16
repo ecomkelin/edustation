@@ -38,6 +38,112 @@ function sanitizeSvg(input) {
   return s.trim() || null
 }
 
+/* ─── PetSpecies.levelVisuals normalize (2026-07-16) ──────────── */
+// PetSpecies.levelVisuals[].videoFile 引用 File 时使用的 field 命名空间前缀。
+// 每级一个独立 field: `levelVisual.<level>` —— 删 Lv.X 不触发其他 Lv 视频的 unbind/rebind churn。
+const LEVEL_VISUAL_FIELD_PREFIX = 'levelVisual.'
+
+/**
+ * 校验 + 归一化 PetSpecies.levelVisuals[]：
+ *   - 必须是数组
+ *   - 每条 level 唯一（schema partial unique 索引兜底）
+ *   - level 必须在 [1, maxLevel] 之间（maxLevel 默认 12）
+ *   - visualType=svg 必须填 svgContent（XSS sanitize）；visualType=video 必须填 videoFile
+ *   - 按 level 升序返回
+ *
+ * 找不到任何 visual 是允许的（= 全部等级走 species 视觉字段；fallback 兜底）。
+ */
+function normalizeLevelVisuals(input, maxLevel) {
+  if (input === undefined || input === null) return undefined // 表示未传字段，调用方跳过
+  if (!Array.isArray(input)) throw ApiError.badRequest('levelVisuals 必须是数组')
+  const cap = Math.max(1, Math.min(100, Number(maxLevel) || 12))
+  const seenLevels = new Set()
+  const out = []
+  for (const v of input) {
+    if (!v) continue
+    const lvl = Number(v.level)
+    if (!Number.isFinite(lvl) || lvl < 1 || lvl > 100) {
+      throw ApiError.badRequest(`levelVisuals[].level=${v.level} 必须在 1-100 之间`)
+    }
+    if (lvl > cap) {
+      throw ApiError.badRequest(`levelVisuals[].level=${lvl} 超过该物种 maxLevel=${cap}`)
+    }
+    if (seenLevels.has(String(lvl))) {
+      throw ApiError.badRequest(`levelVisuals[].level=${lvl} 重复（每条 level 必须唯一）`)
+    }
+    seenLevels.add(String(lvl))
+    if (!['svg', 'video'].includes(v.visualType)) {
+      throw ApiError.badRequest(`levelVisuals[level=${lvl}] visualType 必须是 svg 或 video`)
+    }
+    if (v.visualType === 'svg') {
+      if (!v.svgContent) {
+        throw ApiError.badRequest(`levelVisuals[level=${lvl}] visualType=svg 时必须填 svgContent`)
+      }
+      const cleanSvg = sanitizeSvg(v.svgContent)
+      if (!cleanSvg) {
+        throw ApiError.badRequest(`levelVisuals[level=${lvl}] svgContent 被清理后为空`)
+      }
+      out.push({
+        level: lvl,
+        visualType: 'svg',
+        svgContent: cleanSvg,
+        videoFile: null
+      })
+    } else {
+      // video
+      if (!v.videoFile) {
+        throw ApiError.badRequest(`levelVisuals[level=${lvl}] visualType=video 时必须填 videoFile`)
+      }
+      const vid = typeof v.videoFile === 'string'
+        ? v.videoFile
+        : (v.videoFile._id || v.videoFile.id || null)
+      if (!vid) {
+        throw ApiError.badRequest(`levelVisuals[level=${lvl}] videoFile 缺少 id`)
+      }
+      out.push({
+        level: lvl,
+        visualType: 'video',
+        svgContent: null,
+        videoFile: vid
+      })
+    }
+  }
+  out.sort((a, b) => a.level - b.level)
+  return out
+}
+
+/**
+ * admin 更新 species.levelVisuals 时, per-level 粒度维护 File.refs。
+ * 不用 diffArrayById 整体 diff（会触发未变更等级的 unbind/rebind churn）。
+ */
+async function maintainLevelVisualsFileRefs({ speciesId, oldLevelVisuals, newLevelVisuals }) {
+  const oldMap = new Map()
+  for (const v of (oldLevelVisuals || [])) {
+    if (v && Number.isFinite(Number(v.level))) oldMap.set(String(v.level), v)
+  }
+  const newMap = new Map()
+  for (const v of (newLevelVisuals || [])) {
+    if (v && Number.isFinite(Number(v.level))) newMap.set(String(v.level), v)
+  }
+  const allLevels = new Set([...oldMap.keys(), ...newMap.keys()])
+
+  for (const lv of allLevels) {
+    const oldV = oldMap.get(lv) || null
+    const newV = newMap.get(lv) || null
+    const oldVideoId = oldV && oldV.videoFile ? String(oldV.videoFile) : null
+    const newVideoId = newV && newV.videoFile ? String(newV.videoFile) : null
+    if (oldVideoId === newVideoId) continue
+    await fileBind.diffSingleById({
+      orgId: null,
+      oldId: oldVideoId,
+      newId: newVideoId,
+      entity: REF_ENTITY.PET_SPECIES,
+      entityId: speciesId,
+      field: `${LEVEL_VISUAL_FIELD_PREFIX}${lv}`
+    })
+  }
+}
+
 /* ─── 通用 list（平台级，无 org 维度） ─── */
 async function listMerged({ Model, type, baseFilter = {}, keyword, populateFields = ['videoFile'] }) {
   const filterKey = JSON.stringify({ baseFilter, keyword })
@@ -59,13 +165,18 @@ async function listMerged({ Model, type, baseFilter = {}, keyword, populateField
 async function listSpecies({ isActive, keyword }) {
   const baseFilter = {}
   if (isActive !== undefined) baseFilter.isActive = isActive
-  return listMerged({ Model: PetSpecies, type: 'species', baseFilter, keyword, populateFields: ['videoFile'] })
+  return listMerged({
+    Model: PetSpecies, type: 'species', baseFilter, keyword,
+    // 2026-07-16: 加 populate levelVisuals.videoFile，让列表 / 详情都能展示已上传的视频
+    populateFields: ['videoFile', 'levelVisuals.videoFile']
+  })
 }
 
 async function getSpecies({ id }) {
   if (!id) throw ApiError.badRequest('缺少 id')
   const doc = await PetSpecies.findOne({ _id: id })
     .populate('videoFile', 'url mime originalName')
+    .populate('levelVisuals.videoFile', 'url mime originalName')
     .lean()
   if (!doc) throw ApiError.notFound('物种不存在')
   return doc
@@ -79,13 +190,18 @@ async function createSpecies({ payload, operatorId }) {
   const exists = await PetSpecies.findOne({ key: payload.key }).lean()
   if (exists) throw ApiError.conflict(`物种 key=${payload.key} 已存在`)
 
+  const maxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 12))
+  // 2026-07-16: 接收 levelVisuals 数组（per-species 逐级形象覆盖）
+  const levelVisuals = normalizeLevelVisuals(payload.levelVisuals, maxLevel) || []
+
   const doc = {
     key: payload.key.trim(),
     name: payload.name.trim(),
     visualType,
     svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     videoFile: visualType === 'video' ? (payload.videoFile || null) : null,
-    maxLevel: Math.max(1, Math.min(100, Number(payload.maxLevel) || 12)),
+    maxLevel,
+    levelVisuals,
     weight: Number(payload.weight) || 100,
     hungerDecayMinutes: Number(payload.hungerDecayMinutes) || 60,
     isActive: payload.isActive !== false,
@@ -101,6 +217,16 @@ async function createSpecies({ payload, operatorId }) {
       entity: REF_ENTITY.PET_SPECIES, entityId: created._id, field: 'videoFile'
     })
   }
+  // levelVisuals 每级一个 file ref
+  if (levelVisuals.length > 0) {
+    await maintainLevelVisualsFileRefs({
+      speciesId: created._id,
+      oldLevelVisuals: [],
+      newLevelVisuals: levelVisuals
+    })
+  }
+  // 2026-07-16: populate levelVisuals.videoFile 让 admin UI 拿到完整 url/mime
+  await created.populate('levelVisuals.videoFile', 'url mime originalName')
   return created.toObject()
 }
 
@@ -112,7 +238,11 @@ async function updateSpecies({ id, payload, operatorId }) {
   const updates = {}
   if (payload.name !== undefined) updates.name = String(payload.name).trim()
   if (payload.visualType !== undefined) updates.visualType = payload.visualType
-  if (payload.maxLevel !== undefined) updates.maxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 1))
+  let newMaxLevel
+  if (payload.maxLevel !== undefined) {
+    newMaxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 1))
+    updates.maxLevel = newMaxLevel
+  }
   if (payload.weight !== undefined) updates.weight = Number(payload.weight) || 0
   if (payload.hungerDecayMinutes !== undefined) updates.hungerDecayMinutes = Number(payload.hungerDecayMinutes) || 60
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
@@ -123,6 +253,21 @@ async function updateSpecies({ id, payload, operatorId }) {
   if (payload.videoFile !== undefined && doc.visualType === 'video') {
     updates.videoFile = payload.videoFile || null
   }
+
+  // 2026-07-16: levelVisuals（传 undefined = 不改；传 [] = 清空；传数组 = 覆盖）
+  let normalizedLevelVisuals = null
+  let oldLevelVisuals = []
+  if (payload.levelVisuals !== undefined) {
+    const cap = newMaxLevel != null ? newMaxLevel : doc.maxLevel
+    normalizedLevelVisuals = normalizeLevelVisuals(payload.levelVisuals, cap) || []
+    updates.levelVisuals = normalizedLevelVisuals
+    oldLevelVisuals = (doc.levelVisuals || []).map(v => ({
+      level: Number(v.level),
+      visualType: v.visualType,
+      videoFile: v.videoFile ? String(v.videoFile) : null
+    }))
+  }
+
   updates.updatedBy = operatorId
 
   const oldVideoFile = doc.videoFile ? doc.videoFile.toString() : null
@@ -135,6 +280,16 @@ async function updateSpecies({ id, payload, operatorId }) {
       entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'videoFile'
     })
   }
+  // levelVisuals 维护
+  if (normalizedLevelVisuals !== null) {
+    await maintainLevelVisualsFileRefs({
+      speciesId: doc._id,
+      oldLevelVisuals,
+      newLevelVisuals: normalizedLevelVisuals
+    })
+  }
+  // 2026-07-16: populate levelVisuals.videoFile 让 admin UI 拿到完整 url/mime
+  await updated.populate('levelVisuals.videoFile', 'url mime originalName')
   return updated.toObject()
 }
 
@@ -167,6 +322,14 @@ async function removeSpecies({ id }) {
     await fileBind.diffSingleById({
       orgId: null, oldId: doc.videoFile.toString(), newId: null,
       entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'videoFile'
+    })
+  }
+  // 2026-07-16: 解绑所有 levelVisuals[].videoFile（per-level 粒度 field=`levelVisual.<L>`）
+  if (doc.levelVisuals && doc.levelVisuals.length > 0) {
+    await maintainLevelVisualsFileRefs({
+      speciesId: doc._id,
+      oldLevelVisuals: doc.levelVisuals,
+      newLevelVisuals: []
     })
   }
   await doc.deleteOne()

@@ -453,11 +453,11 @@ Auth 列简写:
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
 | R-2480 | GET | /admin/pet/species | PERM | pet.read | 物种列表 | 共享 /admin/pet 前缀 |
-| R-2481 | POST | /admin/pet/species | ADMIN | pet.write | 新建物种 | 平台超管 |
-| R-2482 | GET | /admin/pet/species/:id | PERM | pet.read | 物种详情 | |
-| R-2483 | PUT | /admin/pet/species/:id | ADMIN | pet.write | 更新物种 | 平台超管 |
+| R-2481 | POST | /admin/pet/species | ADMIN | pet.write | 新建物种（**+ levelVisuals (2026-07-16)**） | 平台超管；payload 含 `levelVisuals[{level,visualType,svgContent\|videoFile}]`；fileBind 走 `levelVisual.<L>` 维护 refs |
+| R-2482 | GET | /admin/pet/species/:id | PERM | pet.read | 物种详情（**含 levelVisuals 2026-07-16**） | |
+| R-2483 | PUT | /admin/pet/species/:id | ADMIN | pet.write | 更新物种（**+ levelVisuals (2026-07-16)**） | 平台超管；同上 |
 | R-2484 | GET | /admin/pet/species/:id/removable-check | PERM | pet.read | 删除预检 | |
-| R-2485 | DELETE | /admin/pet/species/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| R-2485 | DELETE | /admin/pet/species/:id | ADMIN_PWD | — | 物理删除（**+ 解绑 levelVisuals refs 2026-07-16**） | 高风险；内部 `maintainLevelVisualsFileRefs` 一并解绑所有 levelVisual.X file refs |
 | ~~R-2486~~ | ~~GET~~ | ~~/admin/pet/items~~ | — | — | **DEPRECATED** 装饰系统整体删除 | 2026-07-15 |
 | ~~R-2487~~ | ~~POST~~ | ~~/admin/pet/items~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2488~~ | ~~GET~~ | ~~/admin/pet/items/:id~~ | — | — | **DEPRECATED** | 2026-07-15 |

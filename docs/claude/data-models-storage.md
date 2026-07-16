@@ -88,10 +88,11 @@
 |---|---|---|
 | `User.avatar` | String（跨租户） | diffSingle |
 | `Org.logo` | String（按 org） | diffSingle |
-| `Pet.avatar` | String（按 org） | diffSingle |
+| **`Pet.avatar`** | ~~String（按 org）~~ | **DEPRECATED** —— PetAccount 之前未实际使用，2026-07-16 改为 per-species `PetSpecies.levelVisuals[].videoFile`（见下） |
 | `StudentWork.fileUrls` | [String] | diffArray |
 | `CourseProduct.attachments` | [ObjectId<Ref:File>] | diffArrayById |
 | `LessonSchedule.materials` | [ObjectId<Ref:File>] | diffArrayById |
+| **`PetSpecies.levelVisuals[L].videoFile`** | `ObjectId<Ref:File>`（per-species per-level 子文档） | **NEW 2026-07-16**：每物种每等级独立的视频形象。fileBind 用 `field='levelVisual.<level>'` 走 per-level 粒度 `diffSingleById`（业务侧循环调，**不用**整体 `diffArrayById`，避免 churn）。`removeSpecies` 时 `maintainLevelVisualsFileRefs({oldLevelVisuals, newLevelVisuals:[]})` 一并解绑所有 levelVisual.X refs |
 
 > 新增引用 File 的字段时，沿用对应的 diff* 工具，保证引用计数正确。
 

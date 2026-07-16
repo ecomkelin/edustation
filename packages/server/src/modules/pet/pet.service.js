@@ -34,7 +34,8 @@ const {
   MAX_PETS_PER_STUDENT,
   DEFAULT_DEATH_THRESHOLD_DAYS,
   expToNext,
-  resolveMaxLevel
+  resolveMaxLevel,
+  resolveVisualAtLevel
 } = petConfig
 
 // ─────────────────────────────────────────────────────────────
@@ -216,7 +217,7 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   const hungerGain = config.hungerRestore
 
   const levelCfg = await petCatalog.getLevelConfig(orgId)
-  // 2026-07-16: 最高等级由物种自身控制（经验曲线仍统一管理）
+  // 2026-07-16: 最高等级来自 PetSpecies（per-species），PetAccount 无 override 字段
   const speciesRec = await petCatalog.getSpecies({ key: pet.species })
   const maxLevel = resolveMaxLevel(speciesRec)
   const cfg = { ...levelCfg, maxLevel }
@@ -373,7 +374,7 @@ async function abandon({ orgId, studentId, petId, by = 'parent', operatorId = nu
     }
   }
 
-  // 删档
+  // 删档 (PetAccount.visuals 已撤，per-species levelVisuals 在 PetSpecies 上，弃 PetAccount 不用解绑 File refs)
   const deleted = await PetAccount.deleteOne({
     _id: pet._id,
     org: orgId,
@@ -439,8 +440,10 @@ async function getMine({ orgId, studentId }) {
 }
 
 /**
- * 给 pet 文档补派生字段（nextExpToLevel / maxLevel / speciesRecord）。
- * maxLevel 取自物种（PetSpecies.maxLevel）；经验曲线取自 per-org PetLevelConfig。
+ * 给 pet 文档补派生字段（nextExpToLevel / maxLevel / currentVisual / speciesRecord）。
+ * maxLevel 来自 PetSpecies（per-species，PetAccount 无 override）。
+ * currentVisual 是 server 端走完 per-species fallback 链后的解析结果（species.levelVisuals[L] → species 视觉），
+ *   前端拿这一个字段渲染即可，无需自己维护 lookup。
  */
 async function decoratePet(pet, orgId, levelCfg) {
   if (!pet) return null
@@ -453,6 +456,8 @@ async function decoratePet(pet, orgId, levelCfg) {
     const maxLevel = resolveMaxLevel(result.speciesRecord)
     result.nextExpToLevel = expToNext(pet.level, { ...expCfg, maxLevel })
     result.maxLevel = maxLevel
+    // 解析当前等级的形象（per-species levelVisuals fallback 链 → species 兜底）
+    result.currentVisual = resolveVisualAtLevel(result.speciesRecord, pet.level)
   }
   return result
 }

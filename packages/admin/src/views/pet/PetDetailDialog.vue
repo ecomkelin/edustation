@@ -6,10 +6,11 @@
     width="720px"
   >
     <div v-if="pet" class="detail-content">
-      <!-- 存活态用 PetEquipmentOverlay 渲染物种视频；蛋/死态走 emoji 占位 -->
+      <!-- 存活态用 PetEquipmentOverlay 渲染当前等级形象（per-species levelVisuals fallback 已 server 端解析到 currentVisual）；蛋/死态走 emoji 占位 -->
       <div v-if="pet.state === 'alive' && pet.speciesRecord" class="pet-preview">
         <PetEquipmentOverlay
           :species-record="pet.speciesRecord"
+          :current-visual="pet.currentVisual"
           mode="dialog"
           fallback-emoji="🐾"
         />

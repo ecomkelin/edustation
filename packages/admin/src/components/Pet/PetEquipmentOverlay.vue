@@ -1,13 +1,24 @@
 <template>
   <!-- 2026-07-15 重构：装饰系统删除后，本组件退化为「宠物本体渲染」（视频/SVG/emoji 兜底）。
+       2026-07-16: 加 currentVisual prop 优先于 speciesRecord（per-level override 已 server 端解析）。
        仍复用于课堂展示主图 / 详情弹窗预览。 -->
   <div class="pet-img" :class="{ 'is-dialog': mode === 'dialog' }">
     <div class="pet-frame">
-      <video v-if="speciesRecord?.visualType === 'video' && speciesRecord.videoFile?.url"
+      <!-- 优先级 1: currentVisual (per-level override 命中) -->
+      <video v-if="currentVisual?.visualType === 'video' && currentVisual.videoFile?.url"
+             :key="`cv-${currentVisual.source}-${currentVisual.level}`"
+             :src="currentVisual.videoFile.url"
+             autoplay loop muted playsinline
+             class="video-render" />
+      <div v-else-if="currentVisual?.visualType === 'svg' && currentVisual.svgContent"
+           class="svg-wrap" v-html="currentVisual.svgContent" />
+      <!-- 优先级 2: speciesRecord (fallback) -->
+      <video v-else-if="speciesRecord?.visualType === 'video' && speciesRecord.videoFile?.url"
              :src="speciesRecord.videoFile.url"
              autoplay loop muted playsinline
              class="video-render" />
-      <div v-else-if="speciesRecord?.visualType === 'svg'" class="svg-wrap" v-html="speciesRecord.svgContent" />
+      <div v-else-if="speciesRecord?.visualType === 'svg' && speciesRecord.svgContent"
+           class="svg-wrap" v-html="speciesRecord.svgContent" />
       <div v-else class="emoji-fallback">{{ fallbackEmoji }}</div>
     </div>
 
@@ -17,17 +28,21 @@
 
 <script>
 /**
- * PetEquipmentOverlay — 宠物本体渲染（2026-07-15 去装饰后简化）
+ * PetEquipmentOverlay — 宠物本体渲染（2026-07-15 去装饰后简化；2026-07-16 加 currentVisual）
  *
  * props:
- *   - speciesRecord: 来自 pet.speciesRecord (populated，含 videoFile/svgContent)
+ *   - speciesRecord: 来自 pet.speciesRecord (populated，含 videoFile/svgContent) — 用于名字 + species fallback
+ *   - currentVisual: 来自 pet.currentVisual (server decoratePet 解析的当前等级形象) — 用于实际渲染
  *   - mode:          'classroom' (默认,大图) | 'dialog' (小预览)
  *   - fallbackEmoji: 没有 speciesRecord 时的兜底 emoji
+ *
+ * 渲染优先级：currentVisual (override 命中) > speciesRecord (species fallback) > emoji
  */
 export default {
   name: 'PetEquipmentOverlay',
   props: {
     speciesRecord: { type: Object, default: null },
+    currentVisual: { type: Object, default: null },
     mode: { type: String, default: 'classroom' },
     fallbackEmoji: { type: String, default: '🐾' }
   }

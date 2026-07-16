@@ -37,5 +37,7 @@ export const normalizeLevelOverrides = cfg.normalizeLevelOverrides
 export const levelOverridesToRows = cfg.levelOverridesToRows
 export const rowsToLevelOverrides = cfg.rowsToLevelOverrides
 export const resolveMaxLevel = cfg.resolveMaxLevel
+export const getOverrideMap = cfg.getOverrideMap
+export const resolveVisualAtLevel = cfg.resolveVisualAtLevel
 
 export default cfg

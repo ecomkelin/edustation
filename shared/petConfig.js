@@ -20,11 +20,17 @@
  *   - expToNext 优先级：levelExpOverrides[level] > 公式 expBase + expIncrement*(L-1) > 默认
  *   - 没配的等级仍按公式走（保留「删一行不破坏等级」语义）；删完整个表才退到默认
  *
+ * 2026-07-16 第三期：PetSpecies 视觉按等级覆盖
+ *   - PetSpecies 加 levelVisuals[]（per-species 逐级形象覆盖；空数组 → 全部等级用 species 视觉字段）
+ *   - resolveVisualAtLevel(species, level) 走 fallback 链：species.levelVisuals[level] → species.levelVisuals[level-1] → ... → species 视觉字段
+ *   - 1 级必须有效（要么 levelVisuals[1] 有，要么 species 自身有 visual）—— seed 保证 species 必有
+ *
  * 字段语义：
- *   - maxLevel（PetSpecies）: 该物种最大等级（满级后经验封顶，不再升级）
+ *   - maxLevel（PetSpecies）: 该物种最高等级
  *   - expBase（PetLevelConfig）: 1 级升 2 级所需经验基数（公式默认值）
  *   - expIncrement（PetLevelConfig）: 每升一级额外增加的经验需求——**产品决策：锁定 300**，机构不再可改，全部走逐级覆盖
  *   - levelExpOverrides（PetLevelConfig）: per-level 覆盖表，按 L 查 exp 需求；缺位走公式
+ *   - levelVisuals（PetSpecies）: per-level 形象覆盖，按 L 查 visual；缺位向上递归 fallback 到 species 视觉字段
  */
 const MAX_HUNGER = 1000
 const INIT_HUNGER_AFTER_HATCH = 300
@@ -162,6 +168,71 @@ function resolveMaxLevel(species) {
   return Number.isFinite(m) && m > 0 ? m : DEFAULT_SPECIES_MAX_LEVEL
 }
 
+/**
+ * 把 PetSpecies.levelVisuals[] 数组转成 `{ '1': vObj, '3': vObj }` 字典方便查找。
+ * 同 level 重复时保留首条（schema 上 unique 索引已防，写代码兜底）。
+ *
+ * @param {Array} levelVisuals - PetSpecies.levelVisuals 子文档数组
+ * @returns {Object<string, Object>} { '1': {level,visualType,svgContent,videoFile}, ... }
+ */
+function getOverrideMap(levelVisuals) {
+  const out = {}
+  if (!Array.isArray(levelVisuals)) return out
+  for (const v of levelVisuals) {
+    if (!v) continue
+    const lv = Number(v.level)
+    if (!Number.isFinite(lv) || lv < 1) continue
+    const k = String(lv)
+    if (out[k]) continue // 保留首条
+    out[k] = v
+  }
+  return out
+}
+
+/**
+ * 解析某物种在某等级的形象（含 fallback 链）。
+ * 优先级：species.levelVisuals[level] → species.levelVisuals[level-1] → ... → species.levelVisuals[1] → species 视觉字段。
+ *
+ * @param {Object|null} speciesRecord - PetSpecies 记录（visualType / svgContent / videoFile / levelVisuals）
+ * @param {Number} level - 当前等级
+ * @returns {{visualType: string, svgContent: string|null, videoFile: Object|string|null,
+ *            source: 'override'|'species', level: number}}
+ *   - source: 'override' = 命中 species.levelVisuals 的某条；'species' = 落到 species 视觉字段
+ *   - level: 命中的等级（source='override' 时为 levelVisuals[] 的 key；source='species' 时为 0）
+ *   - 找不到任何 visual（理论不可能，seed 保证 species 必有）→ 返回 video+null 占位
+ */
+function resolveVisualAtLevel(speciesRecord, level) {
+  const target = Math.max(1, Math.floor(Number(level) || 1))
+  const overrides = (speciesRecord && speciesRecord.levelVisuals) || []
+  const map = getOverrideMap(overrides)
+
+  // 从 target 向下走 fallback 链（脏数据 visualType+内容不匹配 → 继续向上找）
+  for (let lv = target; lv >= 1; lv--) {
+    const ovr = map[String(lv)]
+    if (!ovr) continue
+    if (ovr.visualType === 'svg' && ovr.svgContent) {
+      return { visualType: 'svg', svgContent: ovr.svgContent, videoFile: null, source: 'override', level: lv }
+    }
+    if (ovr.visualType === 'video' && ovr.videoFile) {
+      return { visualType: 'video', svgContent: null, videoFile: ovr.videoFile, source: 'override', level: lv }
+    }
+    // 脏数据：visualType 与内容不符 → 继续向上递归
+  }
+
+  // fallback 到 species 视觉字段
+  if (speciesRecord) {
+    return {
+      visualType: speciesRecord.visualType || 'video',
+      svgContent: speciesRecord.svgContent || null,
+      videoFile: speciesRecord.videoFile || null,
+      source: 'species',
+      level: 0
+    }
+  }
+  // 理论不可能 — seed 保证 species 必有视觉；兜底返回 video+null 引导上层走 emoji fallback
+  return { visualType: 'video', svgContent: null, videoFile: null, source: 'species', level: 0 }
+}
+
 // 导出 (CJS + named exports 双形式，与 shared/enums.js 一致)
 exports.MAX_HUNGER = MAX_HUNGER
 exports.INIT_HUNGER_AFTER_HATCH = INIT_HUNGER_AFTER_HATCH
@@ -177,4 +248,6 @@ exports.normalizeLevelOverrides = normalizeLevelOverrides
 exports.levelOverridesToRows = levelOverridesToRows
 exports.rowsToLevelOverrides = rowsToLevelOverrides
 exports.resolveMaxLevel = resolveMaxLevel
+exports.getOverrideMap = getOverrideMap
+exports.resolveVisualAtLevel = resolveVisualAtLevel
 module.exports = exports

@@ -135,12 +135,16 @@
 
 ### 2.3 PetSpecies（物种图鉴，平台级）
 
-`key`(unique) / `name` / `visualType`(enum **svg/video**，默认 video；2026-07-16 删 image) / `videoFile`(ref File) / `svgContent`(兜底) / **`maxLevel`(该物种最高等级，default 12，min1 max100)** / `weight`(破壳加权) / `hungerDecayMinutes`(default60) / `isActive` / 审计。
+`key`(unique) / `name` / `visualType`(enum **svg/video**，默认 video；2026-07-16 删 image) / `videoFile`(ref File) / `svgContent`(兜底) / **`maxLevel`(该物种最高等级，default 12，min1 max100)** / **`levelVisuals`(逐级形象覆盖，详见 §3.5)** / `weight`(破壳加权) / `hungerDecayMinutes`(default60) / `isActive` / 审计。
 
 - **删 `tier` 字段** + `{tier,isActive}` 索引。
 - **2026-07-16 删 `image` 视觉类型 + `imageFile` 字段**（宠物图鉴/消耗品不再支持上传图片，svg 保留）。
 - **2026-07-16 新增 `maxLevel`**：最高等级由物种自身控制（原在 per-org PetLevelConfig，已迁出）；满级后经验封顶。
+- **2026-07-16 新增 `levelVisuals[]`**：per-species 逐级形象覆盖（详见 §3.5）。fallback 链 `levelVisuals[level] → levelVisuals[level-1] → ... → 物种视觉字段`。
 - `rollSpecies()` 在全部 `isActive` 池里加权随机（无 tier 分池）。
+
+**索引**：
+- `{'levelVisuals.level'}` **partial unique** `where 'levelVisuals.0'={$exists:true}`（**2026-07-16 新增**：同物种内每条 `levelVisuals[].level` 必须唯一；空数组物种不参与索引）
 
 ### 2.4 PetConsumable（食物 + 玩具，平台级）
 
@@ -167,6 +171,10 @@
 
 **2026-07-16：`maxLevel` 已迁到 PetSpecies**（最高等级由物种控制）；本表只**统一管理**经验曲线。满级判定 = 物种 `maxLevel`（缺省兜底 `DEFAULT_SPECIES_MAX_LEVEL=12`）。
 
+### 3.0 per-species 逐级形象（2026-07-16 新增）
+
+详见 `PetSpecies.levelVisuals` 字段。完整 fallback 链与编辑流程见 §3.5。
+
 ---
 
 ## 三、宠物规则
@@ -179,7 +187,7 @@
    ▼
 state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
    │
-   ├─ feed (扣积分 + exp+hunger; 升级到 maxLevel 封顶; 无升阶)
+   ├─ feed (扣积分 + exp+hunger; 升级到 PetSpecies.maxLevel 封顶; 无升阶)
    └─ cron: hunger=0 且 daysSince(lastFedAt) ≥ deathThresholdDays
         → state=dead → 同 tick rebirth (state=egg, level=1, exp=0, hunger=max, species=null 重随机)
 ```
@@ -212,6 +220,74 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 - **isDefault 转移**：若弃养的是默认宠物，自动把剩余 `adoptedAt` 最早的一只提升为默认；没有剩余 → 该 student 退化为 0 只状态，下次 `ensureFirstPet` 重建
 - **不退积分**（与 feed 扣分对称，弃养为用户主动放弃；保持积分账本纯净）
 - 上 partial unique index 前必须先 dedupe：`pnpm db:seed:dedupe-pet-species`（干跑加 `--dry-run`）按 (org, student, species) 分组保留最早领养，其余 deleteOne + 写 `admin_abandon` reason='seed-dedupe' 审计
+
+### 3.5 per-species 逐级形象 fallback 链（2026-07-16 新增）
+
+**目标**：admin 可为某物种单独给每个等级配独立形象；未设置的等级自动 fallback 到上一级，直到物种自身视觉字段（`visualType/svgContent/videoFile`）。所有该物种的宠物共用这套配置。
+
+#### a) 视觉 fallback 链：`resolveVisualAtLevel(species, level)`
+```
+species.levelVisuals[level] (per-level override, 命中且 visualType+内容合法)
+  └─ species.levelVisuals[level-1] (向上递归)
+       └─ ... species.levelVisuals[1]
+            └─ species.{visualType, svgContent, videoFile} (物种兜底)
+```
+- 返回结构：`{visualType, svgContent, videoFile, source:'override'|'species', level}`
+- `source='override'` 时 `level` 为命中条目的 level；`source='species'` 时 `level=0`
+- 1 级兜底：fallback 链必然落到 species 自身视觉字段（**PetSpecies 必须总有视觉**，seed 保证 16 条 species 都有 `visualType='svg'` + 内联 svgContent；PetSpeciesTab 编辑时强制 visualType+内容二选一）
+- server 端 `pet.service.decoratePet` 一次性走完链 → 写入 `pet.currentVisual`，前端只读这一个字段渲染
+
+#### b) 编辑入口
+
+`系统管理 → 宠物图鉴`（`/pet/catalog?tab=species`）→ 点任一物种的「编辑」→ 弹窗下半部分新增 **「各等级形象 (per-species 覆盖)」** section：
+
+```
+各等级形象 (per-species 覆盖)
+[每级形象] ┌────────────────────────────────────────────────────────────┐
+           │ 共 12 级；列出 N 行的等级用该行内容，未列出的等级自动    │
+           │ 继承上一级（1 级兜底走物种自身视觉字段）。                │
+           │ ┌────────┬──────────┬─────────────────────┬────────┐   │
+           │ │ 等级   │ 视觉类型 │ 视频/SVG 内容        │ 操作   │   │
+           │ │ Lv.1   │ video    │ [选择/上传视频]      │ 删除   │   │
+           │ │ Lv.3   │ svg      │ [<svg>...</svg>]    │ 删除   │   │
+           │ │ Lv.5   │ video    │ [选择/上传视频]      │ 删除   │   │
+           │ └────────┴──────────┴─────────────────────┴────────┘   │
+           │ [新增一级覆盖]  （已达 12 级上限时禁用）                  │
+           └────────────────────────────────────────────────────────────┘
+```
+
+每行可独立选 `video` 或 `svg` 二选一；video 走 `FilePicker` + `el-upload`（与物种主视觉同款）；svg 走 textarea。
+
+#### c) API 端点
+
+**复用现有** `POST /admin/pet/species` + `PUT /admin/pet/species/:id`（需平台超管），payload 增 `levelVisuals[]`：
+```jsonc
+{
+  "key": "cat_orange",
+  "name": "橘猫",
+  "maxLevel": 12,
+  "levelVisuals": [
+    { "level": 1,  "visualType": "video", "videoFile": "<File ObjectId>" },
+    { "level": 5,  "visualType": "svg",   "svgContent": "<svg>...</svg>" },
+    { "level": 10, "visualType": "video", "videoFile": "<File ObjectId>" }
+  ]
+}
+```
+`levelVisuals` 字段含义：
+- `undefined`（不传）= 不更新；`[]` = 清空（全部等级走 species 默认）；数组 = 全量覆盖
+- `level` 必须在 `[1, maxLevel]` 之间（schema + service 双重校验）
+- 每条 `visualType` 决定 `svgContent` 还是 `videoFile` 必填（XSS sanitize + fileBind 校验）
+- 同一 species 内 `level` 必须唯一（schema partial unique 索引兜底）
+
+#### d) fileBind 维护
+
+| 字段 | field 命名 | 维护方式 |
+|---|---|---|
+| `PetSpecies.videoFile` | `'videoFile'` | `diffSingleById`（既有） |
+| `PetSpecies.levelVisuals[L].videoFile` | `'levelVisual.<L>'` | 业务侧循环 + `diffSingleById`（**2026-07-16 新增**；per-level 粒度，删 Lv.X 不触发其他级 churn） |
+| 整体删除 PetSpecies | (不限 field) | `removeSpecies` 内部 `maintainLevelVisualsFileRefs({oldLevelVisuals: doc.levelVisuals, newLevelVisuals: []})` 一并解绑 |
+
+`REF_ENTITY.PET_SPECIES` 在 `File.model.js:30` 已存在，无需新增。
 
 ---
 
@@ -264,13 +340,14 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
   - `tabs/PetLevelConfigTab.vue`（从原 PetLevelConfigAdmin 平移，去掉 h2 与容器页重复）
   - 旧路由 `/pet/species` `/pet/consumables` `/pet/level-config` 改为 `redirect: '/pet/catalog?tab=...'`，兼容历史书签
 - `views/classroom/PetClassroomDisplay.vue`（其他宠物网格 **+ 弃养按钮 2026-07-16**）
-- `components/Pet/PetEquipmentOverlay.vue`（退化为 species 渲染）、`GrantOnBehalfDialog.vue`（仅消耗品）
+- `components/Pet/PetEquipmentOverlay.vue`（退化为 species 渲染；**2026-07-16 加 `currentVisual` prop**：渲染优先级 `currentVisual > speciesRecord > emoji`；`currentVisual` 来源现在是 `PetSpecies.levelVisuals` fallback 链 server 端解析结果）、`GrantOnBehalfDialog.vue`（仅消耗品）
+- `views/pet/tabs/PetSpeciesTab.vue` 加 **「各等级形象」section**（2026-07-16）：每个物种在「编辑物种」弹窗下半部分配置 `levelVisuals[]`；每级独立选 video/svg；保存时校验 + fileBind 维护
 - **删**：`PetItemAdmin.vue` / `EquipOnBehalfDialog.vue` / `FeedOnBehalfDialog.vue` / `PetSpeciesAdmin.vue` / `PetConsumableAdmin.vue` / `PetLevelConfigAdmin.vue`（2026-07-15 合并到 PetCatalogAdmin）
 - 菜单：拍平「系统管理→宠物管理」为单 leaf（icon `Notebook`）；学员组下「宠物等级配置」已删除（合并到 catalog 的 level-config tab）
 
 ### Client（packages/client, uni-app）
 - `api/pet.js`：`me` / `list` / `adopt` / `:petId/hatch` / `:petId/feed` / `:petId/set-default` / `species` / `consumables`（删 items/equip/swapEgg/tierDown）
-- `pages/pet/detail.vue`：默认宠物主图（9:16 裁 1:1 video）+ exp/hunger + 食物 chip + **其他宠物区（视频卡 + 领养）** + **弃养按钮 (2026-07-16, 副信息条 + 其他宠物卡都可见)**
+- `pages/pet/detail.vue`：默认宠物主图（9:16 裁 1:1 video）+ exp/hunger + 食物 chip + **其他宠物区（视频卡 + 领养）** + **弃养按钮 (2026-07-16, 副信息条 + 其他宠物卡都可见)**；**2026-07-16 主图 + 其他宠物卡都改读 `currentVisual`（per-level override → species fallback → emoji 三级），server 端 `decoratePet` 解析**
 - `pages/tabbar/index.vue`：首页宠物卡渲染默认宠物 video（去 tier-badge / 装备层 / 背景层）
 - `utils/constants.js`：仅留 `PetState`/`PetStateLabel`/`PET_SPECIES_EMOJI`（删 PetTier*/PetSlot*）
 - **删**：`pages/pet/equip.vue` / `pages/pet/hatch.vue`（占位页）
@@ -282,6 +359,6 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 ## 六、关键文件路径
 
 **模型**：`models/PetAccount|PetSpecies|PetConsumable|PetEvent|PetLevelConfig.model.js`（PetItem 已删）
-**Shared**：`shared/petConfig.js`（DEFAULT_LEVEL_CONFIG(expBase/expIncrement=300/levelExpOverrides) / LOCKED_EXP_INCREMENT / DEFAULT_SPECIES_MAX_LEVEL / MAX_PETS_PER_STUDENT / expToNext(支持 per-level 覆盖 + 锁增量) / normalizeLevelConfig / normalizeLevelOverrides / levelOverridesToRows / rowsToLevelOverrides / resolveMaxLevel）、`shared/petSpecies.js`、`shared/enums.js`（Pet* enums；PET_VISUAL_TYPES 只剩 svg/video）；`shared/petItems.js` 已删
+**Shared**：`shared/petConfig.js`（DEFAULT_LEVEL_CONFIG(expBase/expIncrement=300/levelExpOverrides) / LOCKED_EXP_INCREMENT / DEFAULT_SPECIES_MAX_LEVEL / MAX_PETS_PER_STUDENT / expToNext(支持 per-level 覆盖 + 锁增量) / normalizeLevelConfig / normalizeLevelOverrides / levelOverridesToRows / rowsToLevelOverrides / resolveMaxLevel(species) / **resolveVisualAtLevel(species, level)** (2026-07-16 新增；per-species fallback 链) / **getOverrideMap(levelVisuals)** (2026-07-16 新增)）、`shared/petSpecies.js`、`shared/enums.js`（Pet* enums；PET_VISUAL_TYPES 只剩 svg/video）；`shared/petItems.js` 已删
 **Service**：`modules/pet/{pet.service, petCatalog.service, petCatalog.admin.service, petCatalog.admin.controller/.routes, petCron, petShop.service/.controller/.routes, petPoints.helper, petEvent.service}`；`modules/petAdmin/{petAdmin.service/.controller/.routes}`；`petItems.service.js` 已删
 **Seed**：`utils/petCatalogSeed.js`、`utils/_petCatalog/{index,species,consumables}.js`（items.js 已删）；`scripts/db/_seed-dedupe-pet-species.js`（2026-07-16 上同种唯一 index 前必跑；`pnpm db:seed:dedupe-pet-species`，支持 `--dry-run`）

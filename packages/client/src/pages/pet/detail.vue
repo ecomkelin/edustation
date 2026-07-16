@@ -77,13 +77,14 @@
           <text v-if="hatchPhase === 'idle'" class="pet-detail__egg-cta">✨ 点击破壳看看 ›</text>
         </view>
 
-        <!-- 已破壳：默认宠物本体（视频 / svg / emoji 兜底） -->
+        <!-- 已破壳：默认宠物本体（per-level override currentVisual → speciesRecord fallback → emoji）
+             2026-07-16: server 端 decoratePet 已解析 currentVisual，前端读这一个字段即可 -->
         <view v-else class="pet-detail__pet">
-          <view v-if="species && species.visualType === 'svg' && species.svgContent" class="pet-detail__svg-wrap" v-html="species.svgContent" />
+          <view v-if="currentVisual && currentVisual.visualType === 'svg' && currentVisual.svgContent" class="pet-detail__svg-wrap" v-html="currentVisual.svgContent" />
           <video
-            v-else-if="species && species.visualType === 'video' && species.videoFile && species.videoFile.url"
-            :src="species.videoFile.url"
-            :key="species._id"
+            v-else-if="currentVisual && currentVisual.visualType === 'video' && currentVisual.videoFile && currentVisual.videoFile.url"
+            :src="currentVisual.videoFile.url"
+            :key="`${currentVisual.source}-${currentVisual.level}-${pet.level}`"
             autoplay loop muted playsinline
             :controls="false"
             :show-play-btn="false"
@@ -167,15 +168,16 @@
         <view class="pet-detail__others">
           <view v-for="p in otherPets" :key="p._id" class="pet-detail__other-card">
             <view class="pet-detail__other-media">
+              <!-- 2026-07-16: 读 currentVisual（per-level override 命中或 species fallback），server 端已解析 -->
               <video
-                v-if="p.state === 'alive' && p.speciesRecord && p.speciesRecord.visualType === 'video' && p.speciesRecord.videoFile && p.speciesRecord.videoFile.url"
-                :src="p.speciesRecord.videoFile.url"
-                :key="p._id"
+                v-if="p.state === 'alive' && p.currentVisual && p.currentVisual.visualType === 'video' && p.currentVisual.videoFile && p.currentVisual.videoFile.url"
+                :src="p.currentVisual.videoFile.url"
+                :key="`other-${p._id}-${p.level}-${p.currentVisual.source}-${p.currentVisual.level}`"
                 autoplay loop muted playsinline
                 :controls="false" :show-play-btn="false" :show-fullscreen-btn="false"
                 class="pet-detail__other-video"
               />
-              <view v-else-if="p.state === 'alive' && p.speciesRecord && p.speciesRecord.svgContent" class="pet-detail__svg-wrap" v-html="p.speciesRecord.svgContent" />
+              <view v-else-if="p.state === 'alive' && p.currentVisual && p.currentVisual.svgContent" class="pet-detail__svg-wrap" v-html="p.currentVisual.svgContent" />
               <text v-else class="pet-detail__other-emoji">{{ p.state === 'egg' ? '🥚' : '🐾' }}</text>
             </view>
             <text class="pet-detail__other-name">{{ (p.speciesRecord && p.speciesRecord.name) || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}</text>
@@ -227,6 +229,8 @@ export default {
   },
   computed: {
     species() { return this.pet?.speciesRecord || null },
+    // 2026-07-16: 当前等级形象（per-level override 命中或 species fallback），server 端 decoratePet 解析
+    currentVisual() { return this.pet?.currentVisual || null },
     speciesEmoji() { return SPECIES_EMOJI[this.pet?.species] || '🐾' },
     speciesName() { return this.pet?.speciesRecord?.name || '' },
     otherPets() {

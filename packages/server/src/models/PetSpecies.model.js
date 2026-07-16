@@ -20,10 +20,14 @@ const { PET_VISUAL_TYPES } = require('@shared/enums')
  * 2026-07-16：
  *   - 删 image 视觉类型（enum 只剩 svg/video）+ 删 imageFile 字段
  *   - 新增 maxLevel（该物种最高等级，满级后经验封顶）；经验曲线仍由 per-org PetLevelConfig 统一管理
+ *   - 新增 levelVisuals[]（per-species 逐级形象覆盖；未列出的等级按 fallback 链
+ *     levelVisuals[level] → levelVisuals[level-1] → ... → 视觉总默认（visualType/svgContent/videoFile））。
+ *     1 级兜底：fallback 链必然命中物种自身视觉（seed + 编辑校验保证 species 视觉字段非空）。
  *
  * 字段：
  *   - key / name / visualType / videoFile (+ svgContent 兜底)
  *   - maxLevel（该物种最高等级）
+ *   - levelVisuals[{level,visualType,svgContent,videoFile}]（逐级形象覆盖；空数组 = 全部等级用 species 默认）
  *   - weight  (破壳加权随机权重)
  *   - hungerDecayMinutes / isActive / description / meta
  *   - createdBy / updatedBy  (审计)
@@ -47,6 +51,24 @@ const PetSpeciesSchema = new Schema(
 
     // 2026-07-16: 该物种最高等级（满级后经验封顶，不再升级）；经验曲线由 PetLevelConfig 统一管理
     maxLevel: { type: Number, default: 12, min: 1, max: 100 },
+
+    // 2026-07-16: per-species 逐级形象覆盖（每等级一条；空数组 → 全部等级用 species 视觉字段）
+    // fallback 链：levelVisuals[level] → levelVisuals[level-1] → ... → 物种自身视觉字段
+    levelVisuals: {
+      type: [
+        new Schema(
+          {
+            _id: false,
+            level:      { type: Number, required: true, min: 1, max: 100 },
+            visualType: { type: String, enum: PET_VISUAL_TYPES, required: true },
+            svgContent: { type: String, default: null, maxlength: 50000 },
+            videoFile:  { type: Schema.Types.ObjectId, ref: 'File', default: null }
+          },
+          { _id: false }
+        )
+      ],
+      default: []
+    },
 
     // 破壳加权随机权重
     weight: { type: Number, default: 100, min: 0, max: 10000 },
@@ -75,5 +97,12 @@ const PetSpeciesSchema = new Schema(
 )
 
 // isActive 已在字段上 index: true；无需额外复合索引（去 tier 后列表仅按 isActive/keyword）
+
+// 2026-07-16: per-species levelVisuals 同 level 必须唯一
+// partialFilterExpression 让 levelVisuals=[] 的文档不参与索引，省空间
+PetSpeciesSchema.index(
+  { 'levelVisuals.level': 1 },
+  { unique: true, partialFilterExpression: { 'levelVisuals.0': { $exists: true } } }
+)
 
 module.exports = model('PetSpecies', PetSpeciesSchema)
