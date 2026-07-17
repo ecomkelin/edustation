@@ -52,8 +52,9 @@ const routes = [
       { path: 'pet/species', redirect: '/pet/catalog?tab=species' },
       { path: 'pet/consumables', redirect: '/pet/catalog?tab=consumables' },
       { path: 'pet/level-config', redirect: '/pet/catalog?tab=level-config' },
-      // 商城流水 (2026-06-22 pet-shop): 学生买/老师代发 流水
-      { path: 'pet/shop-orders', component: () => import('@/views/pet/PetShopOrders.vue') },
+      // (商城流水 → 宠物流水 tab, 2026-07-17 合并到 /pet?tab=flow)
+      // 旧链接保留重定向, 历史书签不失效
+      { path: 'pet/shop-orders', redirect: '/pet?tab=flow' },
       // 财务模块 (2026-06-25 立项, 2026-06-25 拆 3 页, 同日再合并 财务字典到 类别字典)
       // /finance 重定向到 /finance/transactions (默认落地页)
       { path: 'finance', redirect: '/finance/transactions' },

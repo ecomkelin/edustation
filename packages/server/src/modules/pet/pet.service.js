@@ -36,7 +36,37 @@ const {
   expToNext,
   resolveMaxLevel,
   resolveVisualAtLevel
-} = petConfig
+} = require('@shared/petConfig')
+const Student = require('@models/Student.model')
+
+// ─────────────────────────────────────────────────────────────
+// PetEvent payload snapshot (2026-07-17)
+// 每个 PetEvent.recordEvent 写时, 把当时的学员姓名 + 宠物快照塞进 payload。
+// 设计动机:
+//   - admin 流水「学员」/「目标宠物」列需要稳定展示, 即使:
+//     a) populate 未生效 (server 未重启过渡期);
+//     b) PetAccount 已被弃养物理删除 (populate 返 null);
+//     c) 学员改名 / 宠物改名后, 历史事件保持原名 (audit 不可变)。
+// ─────────────────────────────────────────────────────────────
+function buildPetSnapshot(pet) {
+  return {
+    petNickname: pet?.nickname || null,
+    petSpecies: pet?.species || null,           // key, e.g. 'cat_orange'
+    petLevel: pet?.level != null ? pet.level : null,
+    petState: pet?.state || null                // egg / alive / dead
+  }
+}
+
+async function buildStudentSnapshot(orgId, studentId) {
+  if (!studentId) return { studentName: null, studentGender: null }
+  const s = await Student.findOne({ _id: studentId, org: orgId }).select('name gender').lean()
+  return { studentName: s?.name || null, studentGender: s?.gender || null }
+}
+
+// 把 snapshot 合到 payload 里 (覆盖现有键, 不破坏 type-specific 字段)
+function mergeSnapshot(payload, snap) {
+  return { ...(payload || {}), ...snap }
+}
 
 // ─────────────────────────────────────────────────────────────
 // 内部工具
@@ -96,10 +126,12 @@ async function ensureFirstPet(orgId, studentId, by = 'manual') {
 
   const now = new Date()
   const created = await PetAccount.create(baseEggDoc(orgId, studentId, true, now))
+  const stuSnap = await buildStudentSnapshot(orgId, studentId)
+  const petSnap = buildPetSnapshot(created.toObject())
   await petEvent.recordEvent({
     orgId, studentId, petAccountId: created._id,
     type: by === 'admin' ? 'admin_adopt' : 'adopt',
-    payload: { by }
+    payload: mergeSnapshot({ by }, { ...petSnap, ...stuSnap })
   })
   return created.toObject()
 }
@@ -116,10 +148,12 @@ async function adopt({ orgId, studentId, by = 'parent' }) {
   }
   const now = new Date()
   const created = await PetAccount.create(baseEggDoc(orgId, studentId, count === 0, now))
+  const stuSnap = await buildStudentSnapshot(orgId, studentId)
+  const petSnap = buildPetSnapshot(created.toObject())
   const event = await petEvent.recordEvent({
     orgId, studentId, petAccountId: created._id,
     type: by === 'admin' ? 'admin_adopt' : 'adopt',
-    payload: { by }
+    payload: mergeSnapshot({ by }, { ...petSnap, ...stuSnap })
   })
   return { petAccount: await decoratePet(created.toObject(), orgId), event }
 }
@@ -187,10 +221,12 @@ async function hatch({ orgId, studentId, petId, by = 'parent' }) {
 
   if (!updated) throw ApiError.conflict('宠物状态已变更，请刷新后重试')
 
+  const stuSnap = await buildStudentSnapshot(orgId, studentId)
+  const petSnap = buildPetSnapshot(updated)
   const event = await petEvent.recordEvent({
     orgId, studentId, petAccountId: pet._id,
     type: by === 'admin' ? 'admin_hatch' : 'hatch',
-    payload: { species, level: 1 }
+    payload: mergeSnapshot({ species, level: 1 }, { ...petSnap, ...stuSnap })
   })
 
   return { petAccount: await decoratePet(updated, orgId), event, leveledUp: false }
@@ -269,23 +305,33 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   }
 
   const events = []
+  // 2026-07-17: 同时取 student+pet 快照, payload 冗余利于 admin 流水 (含弃养后仍可查)
+  const feedStuSnap = await buildStudentSnapshot(orgId, studentId)
+  const feedPetSnap = buildPetSnapshot(updated)
   events.push(await petEvent.recordEvent({
     orgId, studentId, petAccountId: pet._id,
     type: by === 'admin' ? 'admin_feed' : 'feed',
-    payload: {
-      consumableKey, expGain,
+    payload: mergeSnapshot({
+      consumableKey,
+      // 2026-07-17: 此前缺失 — admin 流水的"积分"列拿不到扣分明细, 误以为没扣
+      // 实际扣分走 petPoints.chargeForFeed (上方 line 242), 此字段只用于审计/可视化
+      pointCost: cost,
+      expGain,
       hungerBefore: pet.currentHunger, hungerAfter: newHunger,
       expBefore: pet.experience, expAfter: newExp,
       level: newLevel,
       operator: by === 'admin' ? operatorId : null
-    }
+    }, { ...feedPetSnap, ...feedStuSnap })
   }))
   if (levelUpCount > 0) {
     for (let i = 0; i < levelUpCount; i++) {
       events.push(await petEvent.recordEvent({
         orgId, studentId, petAccountId: pet._id,
         type: 'levelup',
-        payload: { fromLevel: pet.level + i, toLevel: pet.level + i + 1 }
+        payload: mergeSnapshot(
+          { fromLevel: pet.level + i, toLevel: pet.level + i + 1 },
+          { ...feedPetSnap, ...feedStuSnap }
+        )
       }))
     }
   }
@@ -322,10 +368,15 @@ async function setDefault({ orgId, studentId, petId, by = 'parent', operatorId =
     { new: true }
   ).lean()
 
+  const stuSnap2 = await buildStudentSnapshot(orgId, studentId)
+  const petSnap2 = buildPetSnapshot(updated)
   const event = await petEvent.recordEvent({
     orgId, studentId, petAccountId: pet._id,
     type: by === 'admin' ? 'admin_set_default' : 'set_default',
-    payload: { operator: by === 'admin' ? operatorId : null }
+    payload: mergeSnapshot(
+      { operator: by === 'admin' ? operatorId : null },
+      { ...petSnap2, ...stuSnap2 }
+    )
   })
   return { petAccount: await decoratePet(updated, orgId), event }
 }
@@ -385,12 +436,15 @@ async function abandon({ orgId, studentId, petId, by = 'parent', operatorId = nu
   }
 
   // 审计 (弃养事件 sparse eventKey 不需要 — 一次性手动操作, 无幂等需求)
+  // 2026-07-17: 弃养时 PetAccount 已物理删除, 必须 snapshot 学员姓名 + 宠物昵称/物种/等级才能在 admin 流水追溯
+  const stuSnapAb = await buildStudentSnapshot(orgId, studentId)
+  const petSnapAb = buildPetSnapshot(pet)
   await petEvent.recordEvent({
     orgId,
     studentId,
     petAccountId: pet._id,
     type: by === 'admin' ? 'admin_abandon' : 'abandon',
-    payload: {
+    payload: mergeSnapshot({
       reason: by === 'admin' ? 'admin' : 'manual',
       operator: by === 'admin' ? operatorId : null,
       // 顺手记下弃养时的 species, 后续 admin 事件流好追溯
@@ -398,7 +452,7 @@ async function abandon({ orgId, studentId, petId, by = 'parent', operatorId = nu
       level: pet.level || 1,
       experience: pet.experience || 0,
       nickname: pet.nickname || null
-    }
+    }, { ...petSnapAb, ...stuSnapAb })
   })
 
   return { abandonedPetId: pet._id }

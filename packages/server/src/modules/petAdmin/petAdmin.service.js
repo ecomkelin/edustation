@@ -152,14 +152,33 @@ async function listEvents({ orgId, petAccountId, studentId, type, cursor, limit 
     }
   }
   const rows = await PetEvent.find(filter)
+    // 2026-07-17: 流水前端"学员"列需要 studentName (原 list 接口 line 116 已 populate, 这里漏了)
+    .populate('student', 'name gender')
+    // 2026-07-17: 「目标宠物」列 populate; 弃养 PetAccount 已删时为 null (前端走 payload 快照 fallback)
+    .populate('petAccount', 'nickname species level state')
     .sort({ createdAt: -1, _id: -1 })
     .limit(safeLimit + 1)
     .lean()
-  const hasMore = rows.length > safeLimit
-  const items = hasMore ? rows.slice(0, safeLimit) : rows
-  const last = items[items.length - 1]
+  // 2026-07-17: 把 populate 后的字段拍平到顶层 (替代前端继续走 row.student?.name 这种深层访问)
+  //   兼容 7-17 snapshot 重构前的老事件 (payload 里没 studentName/petNickname, 只能从 populate 拿)
+  //   也防止 admin mongoose 返回 lean() 子文档在不同 client 序列化错
+  const items = rows.map((it) => {
+    const stu = it.student && typeof it.student === 'object' ? it.student : null
+    const pet = it.petAccount && typeof it.petAccount === 'object' ? it.petAccount : null
+    return {
+      ...it,
+      populatedStudentName: stu?.name || null,
+      populatedPetNickname: pet?.nickname || null,
+      populatedPetSpecies: pet?.species || null,
+      populatedPetLevel: pet?.level ?? null,
+      populatedPetState: pet?.state || null
+    }
+  })
+  const hasMore = items.length > safeLimit
+  const trimmed = hasMore ? items.slice(0, safeLimit) : items
+  const last = trimmed[trimmed.length - 1]
   const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last._id) : null
-  return { items, nextCursor, hasMore }
+  return { items: trimmed, nextCursor, hasMore }
 }
 
 function encodeCursor(ts, id) {

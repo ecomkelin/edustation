@@ -132,7 +132,7 @@ import {
   UserFilled,
   // AI 助手 (2026-06) — 魔棒图标
   MagicStick,
-  // 商城流水 (2026-06-22 pet-shop) — 用 Tickets 图标（避免与"订单"的 ShoppingCart 重名）
+  // 通知发送流水 (2026-07-11 v0.9) — 用 Tickets 图标
   Tickets,
   // 财务 (2026-06-25 立项) — 用 Money 图标（资金/账本）
   Money,
@@ -144,7 +144,10 @@ import {
   List,
   SetUp,
   // 通知管理 (2026-07-11 v0.9) — 铃铛图标
-  Bell
+  Bell,
+  // 考勤管理 (2026-07-17 从学员域迁到教务域末位) — Stamp 印章图标
+  //   跟排课 (Calendar 日历) 区分: 印章 = 「考勤打卡/签到」语义
+  Stamp
 } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
@@ -298,7 +301,12 @@ const menuGroups = [
       { path: '/course-products', label: '课程产品', icon: Files, perm: 'courseProduct.read' },
       // 课程 (2026-06-26): 合并原「开班」+「课程报名」到单页双标签, 任一 perm 可见
       { path: '/course', label: '课程', icon: Notebook, perm: ['courseInstance.read', 'courseEnrollment.read'] },
-      { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' }
+      { path: '/schedule', label: '排课', icon: Calendar, perm: 'lessonSchedule.read' },
+      // 2026-07-17: 考勤管理迁入「教务」菜单末位
+      //   - 业务域决策更新: 教务 (排课+上课) 是考勤发生的「场景」, 比学员 (资产) 更切合用户场景
+      //   - 路由路径沿用 /student/attendance (路由名跟业务域名不再 1:1, 是历史的妥协, 不破坏老书签)
+      //   - 图标改用 Stamp 印章, 跟排课 (Calendar 日历) 区分: 印章 = 「考勤打卡/签到」语义
+      { path: '/student/attendance', label: '考勤管理', icon: Stamp, perm: 'lessonAttendance.read' }
       // 2026-06-26: 排课列表视图 (ScheduleList) 入口合并到日历右上角「列表视图」按钮, 侧栏不再独立占位
       // 2026-06-26: "上课表" 页面下线, 排课日历已承担其全部功能 (考勤/课评/补课/补齐名单/生命周期按钮)
     ]
@@ -311,16 +319,15 @@ const menuGroups = [
       { path: '/students', label: '学生管理', icon: Reading, perm: 'student.read' },
       { path: '/student-products', label: '学生课包', icon: Present, perm: 'studentProduct.read' },
       { path: '/student-works', label: '学生作品', icon: Goods, perm: 'studentWork.read' },
-      // 2026-07-09: 考勤管理从排课菜单迁到学员域 — 业务上属"学员资产"而非"排课生命周期"
-      { path: '/student/attendance', label: '考勤管理', icon: Calendar, perm: 'lessonAttendance.read' },
+      // (2026-07-17) 考勤管理迁出学员域, 改放到「教务」菜单末位; 路由路径 /student/attendance 不变, 老书签继续可用
+      //   业务域决策更新: 教务 (排课+上课) 是考勤发生的「场景」, 比学员 (资产) 更切合用户场景
       { path: '/orders', label: '订单', icon: ShoppingCart, perm: 'order.read' },
       // 积分管理 (2026-06-21): 学员积分账户列表 + 流水 + 手动调整积分
       { path: '/points', label: '积分管理', icon: Present, perm: 'points.read' },
-      // 宠物实例 (2026-06-21 pet-system-v2): 机构全量宠物 + 事件流 + 调整
+      // 宠物实例 (2026-06-21 pet-system-v2): 机构全量宠物 + 宠物流水 + 调整
       // D 方案 (2026-06-22): 实例留在学员与订单 (per-org 强隔离, 学员侧资产)
-      { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' },
-      // 商城流水 (2026-06-22 pet-shop): 看学生买/老师代发 流水；本机构看本机构
-      { path: '/pet/shop-orders', label: '商城流水', icon: Tickets, perm: 'pet.read' }
+      // 2026-07-17: 「商城流水」页下线, 流水迁入本路由的「宠物流水」tab; 一行操作可直跳该学员的流水
+      { path: '/pet', label: '宠物实例', icon: Present, perm: 'pet.read' }
       // 2026-07-15: 「宠物等级配置」移至系统管理 → 宠物管理 (合并到 /pet/catalog 的 level-config tab)
     ]
   },
