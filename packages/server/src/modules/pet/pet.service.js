@@ -72,7 +72,7 @@ function mergeSnapshot(payload, snap) {
 // 内部工具
 // ─────────────────────────────────────────────────────────────
 
-function baseEggDoc(orgId, studentId, isDefault, now) {
+function baseEggDoc(orgId, studentId, isDefault, now, species = null) {
   return {
     org: orgId,
     student: studentId,
@@ -81,7 +81,7 @@ function baseEggDoc(orgId, studentId, isDefault, now) {
     stateChangedAt: now,
     eggAdoptedAt: now,
     eggHatchedAt: null,
-    species: null,
+    species,                       // 2026-07-17: teacher 代领养可预赋值; null = 仍走随机 (默认)
     level: 1,
     experience: 0,
     hatchedAt: null,
@@ -138,22 +138,68 @@ async function ensureFirstPet(orgId, studentId, by = 'manual') {
 
 /**
  * 显式领养一只新宠物（得蛋）。校验上限 MAX_PETS_PER_STUDENT。
- * 首只自动 isDefault=true。
+ *
+ * 2026-07-17: 新增 speciesKey 可选参数 (admin 代领养手动选种类用)。
+ *   - 传了: 蛋直接 pre-assign 该 species (hatch 时不再 rollSpecies)
+ *   - 不传: 仍走默认 egg-with-null-species, hatch 时随机 roll
+ * 校验: speciesKey 必须是已激活的 PetSpecies.key
+ *
+ * 2026-07-17: 新增 asDefault 可选参数 (C 端领养体验: 新宠直接为默认)。
+ *   - true:  新宠 isDefault=true, 学员其他默认自动清空 (转移语义)
+ *   - false / null: 走原有行为 — 仅当 count===0 时 (首只) 自动默认
+ * partial unique `(org,student,isDefault)` 是 partial-filter 只对 true 生效,
+ *   所以需要"先清旧默认 → 再插新默认"的顺序, 否则 E11000
  */
-async function adopt({ orgId, studentId, by = 'parent' }) {
+async function adopt({ orgId, studentId, by = 'parent', speciesKey = null, asDefault = null }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
   const count = await PetAccount.countDocuments({ org: orgId, student: studentId })
   if (count >= MAX_PETS_PER_STUDENT) {
     throw ApiError.unprocessable(`最多领养 ${MAX_PETS_PER_STUDENT} 只宠物`)
   }
+  // 决定 isDefault: asDefault=true 显式覆盖 (C 端); 否则按 count 推 (首只默认)
+  const shouldBeDefault = asDefault === true ? true : (count === 0)
+
+  let preSpecies = null
+  if (speciesKey) {
+    const sp = await petCatalog.getSpecies({ key: speciesKey })
+    if (!sp) throw ApiError.notFound(`物种 ${speciesKey} 不存在`)
+    if (sp.isActive === false) throw ApiError.unprocessable(`物种 ${speciesKey} 已下架`)
+    preSpecies = sp.key
+  }
+
+  // 2026-07-17: 转移默认 (新宠为默认时, 清学员其他默认避开 partial unique E11000)
+  if (shouldBeDefault && count > 0) {
+    await PetAccount.updateMany(
+      { org: orgId, student: studentId, isDefault: true },
+      { $set: { isDefault: false } }
+    )
+  }
+
   const now = new Date()
-  const created = await PetAccount.create(baseEggDoc(orgId, studentId, count === 0, now))
+  let created
+  try {
+    created = await PetAccount.create(baseEggDoc(orgId, studentId, shouldBeDefault, now, preSpecies))
+  } catch (e) {
+    // 2026-07-17: 同种唯一 partial unique 索引 E11000 — 蛋已经 pre-assign 同 species
+    // (典型: 老师之前选了 cat_orange 的蛋未破壳, 现在又选 cat_orange)
+    // MongoDB 不会细分 state, 直接撞索引抛错 → 转友好提示
+    if (e && e.code === 11000 && preSpecies) {
+      const sp = await petCatalog.getSpecies({ key: preSpecies })
+      throw ApiError.unprocessable(
+        `该学员已有 ${sp?.name || preSpecies} 的蛋未破壳, 请先破壳或弃养`
+      )
+    }
+    throw e
+  }
   const stuSnap = await buildStudentSnapshot(orgId, studentId)
   const petSnap = buildPetSnapshot(created.toObject())
   const event = await petEvent.recordEvent({
     orgId, studentId, petAccountId: created._id,
     type: by === 'admin' ? 'admin_adopt' : 'adopt',
-    payload: mergeSnapshot({ by }, { ...petSnap, ...stuSnap })
+    payload: mergeSnapshot(
+      { by, preAssignedSpecies: !!preSpecies, setAsDefault: shouldBeDefault },
+      { ...petSnap, ...stuSnap }
+    )
   })
   return { petAccount: await decoratePet(created.toObject(), orgId), event }
 }
@@ -163,7 +209,11 @@ async function adopt({ orgId, studentId, by = 'parent' }) {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * 破壳：state=egg → state=alive，species 全池加权随机（跳过该学员已养种类）。
+ * 破壳：state=egg → state=alive。
+ *
+ * 物种来源优先级:
+ *   1. 蛋上 pre-assigned 的 species (admin 代领养手动选的) — 直接用, 不再 roll
+ *   2. 否则: 全池加权随机 (跳过该学员已养种类)
  *
  * 2026-07-16: 同种唯一约束后, 抽到已养 species 会撞 partial unique 索引 E11000。
  * 在 service 层循环重抽, 最多 MAX_PETS_PER_STUDENT 次 (物种池子规模上限),
@@ -173,29 +223,40 @@ async function hatch({ orgId, studentId, petId, by = 'parent' }) {
   const pet = await loadOwnedPet({ orgId, studentId, petId })
   if (pet.state !== 'egg') throw ApiError.unprocessable('当前不是蛋状态，无法破壳')
 
-  // 取该学员已养 species 集合 (蛋态 species=null 不算)
+  let species = pet.species || null  // 2026-07-17: 蛋上预赋值则优先用
+
+  // 取该学员 **其他活** 宠物的 species 集合
+  // 排除当前蛋 (_id) + 只看 alive (蛋态 species 还没真"领养") → 预赋值的蛋不被自己挡
   const ownedPets = await PetAccount.find({
     org: orgId,
     student: studentId,
+    _id: { $ne: pet._id },
+    state: 'alive',
     species: { $ne: null, $exists: true }
   }).select('species').lean()
   const ownedKeys = new Set(ownedPets.map((p) => p.species))
 
-  let species = null
-  for (let i = 0; i < MAX_PETS_PER_STUDENT; i++) {
-    const rolled = await petCatalog.rollSpecies()
-    if (!rolled) break
-    if (!ownedKeys.has(rolled.key)) {
-      species = rolled.key
-      break
-    }
-  }
   if (!species) {
-    throw ApiError.unprocessable(
-      ownedKeys.size === 0
-        ? '当前没有可选的宠物种类，请联系管理员配置'
-        : `运气太差，${ownedKeys.size} 种都已养，请先弃养或换蛋`
-    )
+    // 仅未预赋值时才 roll
+    for (let i = 0; i < MAX_PETS_PER_STUDENT; i++) {
+      const rolled = await petCatalog.rollSpecies()
+      if (!rolled) break
+      if (!ownedKeys.has(rolled.key)) {
+        species = rolled.key
+        break
+      }
+    }
+    if (!species) {
+      throw ApiError.unprocessable(
+        ownedKeys.size === 0
+          ? '当前没有可选的宠物种类，请联系管理员配置'
+          : `运气太差，${ownedKeys.size} 种都已养，请先弃养或换蛋`
+      )
+    }
+  } else if (ownedKeys.has(species)) {
+    // 预赋值已被该学员破壳领养 → 422 (提示明确)
+    const sp = await petCatalog.getSpecies({ key: species })
+    throw ApiError.unprocessable(`该学员已破壳领养 ${sp?.name || species}, 请弃养后再试`)
   }
 
   const now = new Date()

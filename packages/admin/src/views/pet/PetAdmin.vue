@@ -122,9 +122,9 @@
         <PetDetailDialog v-model="detailVisible" :pet-id="selectedPetId" @updated="onDetailUpdated" />
 
         <!-- 代领养弹窗 -->
-        <el-dialog v-model="adoptDialogVisible" title="代领养宠物" width="560px" :close-on-click-modal="false">
+        <el-dialog v-model="adoptDialogVisible" title="代领养宠物" width="640px" :close-on-click-modal="false">
           <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
-            <template #title>为指定学员代领养一只宠物（生成蛋状态，需破壳后才显示种类）</template>
+            <template #title>为指定学员代领养一只宠物（生成蛋状态，破壳后显示种类；2026-07-17 起可手动选种类）</template>
           </el-alert>
 
           <el-form label-width="80px">
@@ -139,7 +139,7 @@
                 v-loading="studentsLoading"
                 highlight-current-row
                 @current-change="onStudentPick"
-                max-height="280"
+                max-height="200"
                 style="width:100%"
                 empty-text="输入关键字搜索学员"
               >
@@ -154,12 +154,34 @@
                 <el-table-column prop="mobile" label="手机号" min-width="120" />
               </el-table>
             </el-form-item>
+
+            <!-- 2026-07-17: 手动选种类 (admin 代领养) — 已领养过的种类过滤不显示, 简化只看名字 -->
+            <el-form-item label="选择种类">
+              <div v-loading="speciesLoading" class="adopt-species-grid">
+                <div
+                  v-for="sp in availableSpecies"
+                  :key="sp.key"
+                  class="adopt-species-cell"
+                  :class="{ 'is-active': pickedSpeciesKey === sp.key }"
+                  @click="pickedSpeciesKey = sp.key"
+                >
+                  <div class="adopt-species-name">{{ sp.name }}</div>
+                  <div v-if="pickedSpeciesKey === sp.key" class="adopt-species-tip adopt-species-tip--on">已选</div>
+                </div>
+                <div v-if="availableSpecies.length === 0 && !speciesLoading" class="adopt-species-empty">
+                  暂无可选种类
+                </div>
+              </div>
+              <div class="adopt-species-help">
+                不选种类则走默认随机破壳。
+              </div>
+            </el-form-item>
           </el-form>
 
           <template #footer>
             <el-button @click="adoptDialogVisible = false">取消</el-button>
             <el-button type="primary" :loading="adopting" :disabled="!pickedStudentId" @click="submitAdopt">
-              确认领养
+              {{ pickedSpeciesKey ? `确认领养 · ${pickedSpeciesName}` : '确认领养（随机破壳）' }}
             </el-button>
           </template>
         </el-dialog>
@@ -317,6 +339,7 @@
 import { ElMessage } from 'element-plus'
 import { Plus, Tickets } from '@element-plus/icons-vue'
 import { petAdminApi } from '@/api/pet'
+import { petCatalogApi } from '@/api/petCatalog'
 import { studentApi } from '@/api/student'
 import { effectiveHungerDecayMinutes } from '@/utils/pet'
 import { formatDate } from '@/utils/format'
@@ -363,6 +386,13 @@ export default {
       pickedStudent: null,
       adopting: false,
       studentSearchTimer: null,
+      // 2026-07-17: 手动选种类 (admin 代领养) — 已领养种类过滤不显示
+      allSpecies: [],                  // 后端返的全部 active species
+      availableSpecies: [],            // 过滤该学员已领养后的可选列表
+      speciesLoading: false,
+      pickedSpeciesKey: '',             // 空 = 走默认随机破壳
+      ownedSpeciesKeys: new Set(),     // 该学员已领养 species (前端即时过滤, 后端还会再校验一次)
+      studentPetsTimer: null,
 
       // ── Tab 2: 宠物流水 (2026-07-17 从 PetShopOrders.vue 搬入) ──
       flowFilters: { keyword: '', typeGroup: '', by: '', studentId: '', petId: '' },
@@ -507,12 +537,15 @@ export default {
     },
 
     // 代领养
-    openAdoptDialog() {
+    async openAdoptDialog() {
       this.adoptDialogVisible = true
       this.studentKeyword = ''
       this.pickedStudentId = null
       this.pickedStudent = null
+      this.pickedSpeciesKey = ''
+      this.ownedSpeciesKeys = new Set()
       this.fetchStudents()
+      this.fetchAvailableSpecies()
     },
     async fetchStudents() {
       this.studentsLoading = true
@@ -529,6 +562,50 @@ export default {
         this.studentsLoading = false
       }
     },
+    // 2026-07-17: 拉 active species 全列表 (admin 选种类用); 过滤由 recomputeAvailableSpecies 做
+    async fetchAvailableSpecies() {
+      this.speciesLoading = true
+      try {
+        const r = await petCatalogApi.listSpecies({ isActive: true })
+        // ⚠️ http.js line 125 return body 不解包, 真正数据在 r.data; 后端 listSpecies 返裸数组
+        this.allSpecies = r?.data?.items || (Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []))
+        this.recomputeAvailableSpecies()
+      } catch (e) {
+        this.allSpecies = []
+        this.availableSpecies = []
+      } finally {
+        this.speciesLoading = false
+      }
+    },
+    // 2026-07-17: 根据 ownedSpeciesKeys 重算 availableSpecies (过滤已领养的)
+    recomputeAvailableSpecies() {
+      this.availableSpecies = this.allSpecies.filter((sp) => !this.ownedSpeciesKeys.has(sp.key))
+    },
+    // 2026-07-17: 选好学员后, 拉该学员已领养 species, 即时过滤
+    async refreshOwnedSpeciesForStudent(studentId) {
+      if (!studentId) {
+        this.ownedSpeciesKeys = new Set()
+        this.recomputeAvailableSpecies()
+        return
+      }
+      try {
+        const r = await petAdminApi.getByStudent(studentId)
+        const pets = r?.pets || r?.items || (Array.isArray(r) ? r : [])
+        this.ownedSpeciesKeys = new Set(pets.map((p) => p.species).filter(Boolean))
+        // 如果当前已选的 species 已被领养, 清空
+        if (this.pickedSpeciesKey && this.ownedSpeciesKeys.has(this.pickedSpeciesKey)) {
+          this.pickedSpeciesKey = ''
+        }
+        this.recomputeAvailableSpecies()
+      } catch (e) {
+        this.ownedSpeciesKeys = new Set()
+        this.recomputeAvailableSpecies()
+      }
+    },
+    pickedSpeciesName() {
+      const sp = this.availableSpecies.find((s) => s.key === this.pickedSpeciesKey)
+      return sp ? sp.name : ''
+    },
     onStudentKeywordInput() {
       if (this.studentSearchTimer) clearTimeout(this.studentSearchTimer)
       this.studentSearchTimer = setTimeout(() => this.fetchStudents(), 300)
@@ -536,11 +613,13 @@ export default {
     onStudentRadio(row) {
       this.pickedStudentId = row._id
       this.pickedStudent = row
+      this.refreshOwnedSpeciesForStudent(row._id)
     },
     onStudentPick(row) {
       if (row) {
         this.pickedStudentId = row._id
         this.pickedStudent = row
+        this.refreshOwnedSpeciesForStudent(row._id)
       }
     },
     async submitAdopt() {
@@ -550,8 +629,9 @@ export default {
       }
       this.adopting = true
       try {
-        const r = await petAdminApi.adoptOnBehalf(this.pickedStudentId)
-        ElMessage.success(`已为【${this.pickedStudent?.name}】领养宠物（蛋状态），可在列表查看`)
+        const r = await petAdminApi.adoptOnBehalf(this.pickedStudentId, { speciesKey: this.pickedSpeciesKey })
+        const tag = this.pickedSpeciesKey ? `预选 ${this.pickedSpeciesName()}` : '随机破壳'
+        ElMessage.success(`已为【${this.pickedStudent?.name}】领养宠物（蛋状态 · ${tag}），可在列表查看`)
         this.adoptDialogVisible = false
         await this.fetchList()
         const newId = r.data?._id
@@ -872,5 +952,83 @@ export default {
   border-radius: 3px;
   align-self: flex-start;
   margin-top: 1px;
+}
+
+/* 2026-07-17: 代领养弹窗 — 选种类网格 (3 列) */
+.adopt-species-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.adopt-species-cell {
+  position: relative;
+  border: 1.5px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.adopt-species-cell:hover:not(.is-disabled) {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+.adopt-species-cell.is-active {
+  border-color: #67c23a;
+  background: #f0f9eb;
+  box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.2);
+}
+.adopt-species-cell.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  background: #fafafa;
+}
+.adopt-species-cell.is-disabled .adopt-species-thumb {
+  filter: grayscale(0.8);
+}
+.adopt-species-thumb {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.adopt-species-thumb :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.adopt-species-name {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+}
+.adopt-species-tip {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #909399;
+  color: #fff;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.adopt-species-tip--on {
+  background: #67c23a;
+}
+.adopt-species-empty {
+  text-align: center;
+  color: #909399;
+  padding: 20px;
+  font-size: 13px;
+}
+.adopt-species-help {
+  color: #909399;
+  font-size: 12px;
+  margin-top: 8px;
 }
 </style>

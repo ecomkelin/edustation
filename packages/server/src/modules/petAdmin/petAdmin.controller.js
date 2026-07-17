@@ -48,6 +48,7 @@ exports.adoptOnBehalf = async (req, res) => {
   res.status(201).json(ApiResponse.created(await s.adoptOnBehalf({
     orgId: req.orgId,
     studentId: req.body.studentId,
+    speciesKey: req.body.speciesKey || null,    // 2026-07-17: 可选预选 species
     operatorId: req.user?.id
   })))
 }

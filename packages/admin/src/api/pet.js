@@ -20,7 +20,8 @@ export const petAdminApi = {
   events: (params) => http.get('/admin/pet/events', { params }),
 
   // ─── 代操作（2026-07-15 重构：去 swap/tier/equip，加 set-default） ───
-  adoptOnBehalf: (studentId) => http.post('/admin/pet/accounts', { studentId }),
+  // 2026-07-17: 接受可选 { speciesKey }, 后端会预赋值给蛋 (hatch 时不再随机)
+  adoptOnBehalf: (studentId, { speciesKey } = {}) => http.post('/admin/pet/accounts', { studentId, speciesKey: speciesKey || undefined }),
   feedOnBehalf: (petAccountId, { consumableKey }) => http.post(`/admin/pet/accounts/${petAccountId}/feed`, { consumableKey }),
   hatchOnBehalf: (petAccountId) => http.post(`/admin/pet/accounts/${petAccountId}/hatch`),
   setDefaultOnBehalf: (petAccountId) => http.post(`/admin/pet/accounts/${petAccountId}/set-default`, {}),

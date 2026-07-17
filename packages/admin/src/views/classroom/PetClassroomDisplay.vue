@@ -144,8 +144,11 @@
                 <el-button v-if="p.isDefault" size="small" type="success" plain disabled>已是默认</el-button>
                 <el-button v-else size="small" type="success" plain @click="onSetDefault(p)">设为默认</el-button>
                 <el-button v-if="p.state === 'egg'" size="small" type="warning" plain @click="onHatchOther(p)">代破壳</el-button>
-                <!-- 2026-07-16 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码 + removable-check 预检) -->
+                <!-- 2026-07-17: 默认宠物不显示「弃养」 — 默认 = 当前展示中的那只, 不该给弃养入口;
+                     要换默认先点「设为默认」切走. 仅剩 1 只时仍禁用 (业务兜底)
+                 2026-07-16 弃养 (§8.1 三重防护: 平台超管 + pet.write + 密码 + removable-check 预检) -->
                 <DestructiveConfirm
+                  v-if="!p.isDefault"
                   :target="`${p.speciesRecord?.name || (p.state==='egg' ? '待破壳' : p.species || '宠物')} · Lv.${p.level}`"
                   warning="中风险"
                   reason="该操作会物理删除这只宠物及其等级经验，操作后无法恢复。如该宠物是默认宠物，弃养后会自动切到剩余最早领养的一只。"
@@ -383,7 +386,9 @@ export default {
       }
     }
 
-    // 代领养一只新宠物
+    // 2026-07-17: 代领养一只新宠物 (可手动选种类)
+    //   - 拉 active species, 过滤掉该学员已领养的 (不显示)
+    //   - 用户点击 cell → 高亮 → 确认按钮传 speciesKey
     async function onAdopt() {
       if (!studentId) return
       if (pets.value.length >= MAX_PETS) {
@@ -391,8 +396,61 @@ export default {
         return
       }
       try {
-        await petAdminApi.adoptOnBehalf(studentId)
-        ElMessage.success('已代领养（蛋态）')
+        // ⚠️ http.js line 125 return body 不解包, 真正数据在 r.data; 后端 listSpecies 返裸数组
+        const r = await petCatalogApi.listSpecies({ isActive: true })
+        const raw = r?.data?.items || (Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []))
+        const owned = new Set(pets.value.map((p) => p.species).filter(Boolean))
+        // 2026-07-17: 已领养的直接不显示, 用户只要选可领养的
+        const available = raw.filter((sp) => !owned.has(sp.key))
+        if (available.length === 0) {
+          ElMessage.warning(raw.length === 0
+            ? '暂无可选宠物种类, 请联系管理员配置'
+            : '该学员已领养全部可选种类')
+          return
+        }
+
+        // 用 ElMessageBox 弹窗, 自定义 HTML 让用户点击选择 — 2026-07-17 简化: 纯文本 + radio, 不要 SVG
+        const html = `
+          <div class="cd-adopt-picker">
+            <div class="cd-adopt-picker__hint">不选则随机破壳</div>
+            <div class="cd-adopt-picker__grid">
+              ${available.map((sp) => `
+                <label class="cd-adopt-cell" data-key="${sp.key}">
+                  <input type="radio" name="species" value="${sp.key}" />
+                  <div class="cd-adopt-cell__name">${sp.name}</div>
+                </label>
+              `).join('')}
+            </div>
+            <div class="cd-adopt-picker__foot">
+              <label class="cd-adopt-random"><input type="radio" name="species" value="" checked /> 随机破壳</label>
+            </div>
+          </div>
+        `
+
+        let pickedSpeciesKey = ''
+        try {
+          await ElMessageBox.confirm(html, '代领养 · 选择种类', {
+            dangerouslyUseHTMLString: true,
+            confirmButtonText: '确认领养',
+            cancelButtonText: '取消',
+            customClass: 'cd-adopt-picker-confirm',
+            // 监听 DOM 单选变化 → 写 pickedSpeciesKey (闭包不能直接改, 用 confirm callback 重读)
+            // 用 beforeClose 钩子在用户点确认时读 DOM
+            beforeClose: (action, instance, done) => {
+              if (action === 'confirm') {
+                const sel = document.querySelector('.cd-adopt-picker input[name="species"]:checked')
+                pickedSpeciesKey = sel ? sel.value : ''
+              }
+              done()
+            }
+          })
+        } catch (_) {
+          return  // 用户取消
+        }
+
+        await petAdminApi.adoptOnBehalf(studentId, { speciesKey: pickedSpeciesKey || undefined })
+        const sp = available.find((s) => s.key === pickedSpeciesKey)
+        ElMessage.success(`已代领养（蛋态${sp ? ' · ' + sp.name : ' · 随机'}）`)
         await fetchOnce()
       } catch (e) {
         ElMessage.error(e?.response?.data?.message || e?.message || '领养失败')
@@ -790,5 +848,95 @@ export default {
 .pet-bottom-btn {
   margin-top: 16px;
   min-width: 160px;
+}
+
+/* 2026-07-17: 课堂展示页 — ElMessageBox 弹窗的种类选择器 (HTML 字符串注入, 不受 scoped 影响) */
+:deep(.cd-adopt-picker) {
+  text-align: left;
+}
+:deep(.cd-adopt-picker__hint) {
+  color: #909399;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+:deep(.cd-adopt-picker__grid) {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+:deep(.cd-adopt-cell) {
+  display: block;
+  position: relative;
+  border: 1.5px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 10px 6px;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+:deep(.cd-adopt-cell input[type="radio"]) {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+:deep(.cd-adopt-cell:hover:not(.is-disabled)) {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+:deep(.cd-adopt-cell:has(input:checked)) {
+  border-color: #67c23a;
+  background: #f0f9eb;
+  box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.2);
+}
+:deep(.cd-adopt-cell.is-disabled) {
+  cursor: not-allowed;
+  opacity: 0.45;
+  background: #fafafa;
+}
+:deep(.cd-adopt-cell.is-disabled .cd-adopt-cell__thumb) {
+  filter: grayscale(0.8);
+}
+:deep(.cd-adopt-cell__thumb) {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+:deep(.cd-adopt-cell__thumb svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+:deep(.cd-adopt-cell__name) {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+}
+:deep(.cd-adopt-cell__tag) {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  background: #909399;
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+:deep(.cd-adopt-random) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #606266;
+  cursor: pointer;
+}
+:deep(.cd-adopt-picker__foot) {
+  border-top: 1px dashed #e4e7ed;
+  padding-top: 10px;
 }
 </style>

@@ -270,11 +270,32 @@ async function update({ orgId, petAccountId, operatorId, payload }) {
 
 /**
  * 代领养（可多只，≤ 上限）。
+ *
+ * 2026-07-17: 新增 speciesKey 可选参数。
+ *   - 传了: 蛋直接 pre-assign 该 species (hatch 时直接用, 不再随机)
+ *   - 不传: 仍走默认 egg-with-null-species, hatch 时随机 roll
+ *
+ * 校验: speciesKey 必须存在 + isActive=true + 该学员未领养过同 species
+ *       同种唯一约束 (per-student + per-org) 二次校验防 race
  */
-async function adoptOnBehalf({ orgId, studentId, operatorId }) {
+async function adoptOnBehalf({ orgId, studentId, speciesKey, operatorId }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
   if (!operatorId) throw ApiError.badRequest('缺少 operatorId')
-  const result = await petService.adopt({ orgId, studentId, by: 'admin' })
+
+  // 2026-07-17: 预选 species 时前端校验已过滤, 这里再校验 (race-safe)
+  if (speciesKey) {
+    const sp = await PetSpecies.findOne({ key: speciesKey }).lean()
+    if (!sp) throw ApiError.notFound(`物种 ${speciesKey} 不存在`)
+    if (sp.isActive === false) throw ApiError.unprocessable(`物种 ${speciesKey} 已下架`)
+    // 同种唯一检查 (避免 admin 预选已被该学员破壳领养的 species)
+    // ⚠️ 必须过滤 state='alive' — 蛋态 species 是 admin 预赋值, 还没真"领养"
+    const dup = await PetAccount.findOne({
+      org: orgId, student: studentId, species: speciesKey, state: 'alive'
+    }).select('_id').lean()
+    if (dup) throw ApiError.unprocessable(`该学员已破壳领养 ${sp.name || speciesKey}, 请弃养后再试`)
+  }
+
+  const result = await petService.adopt({ orgId, studentId, by: 'admin', speciesKey: speciesKey || null })
   return result.petAccount
 }
 

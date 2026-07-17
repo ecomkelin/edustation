@@ -48,9 +48,10 @@ exports.consumables = async (req, res) => {
 }
 
 // POST /api/v1/pet/adopt — 领养一只新宠物（≤ 上限）
+// 2026-07-17: C 端领养新宠自动设为默认 (替换前任默认, partial unique 索引在 service 层转移)
 exports.adopt = async (req, res) => {
   const studentId = studentIdOf(req)
-  const result = await s.adopt({ orgId: req.orgId, studentId, by: 'parent' })
+  const result = await s.adopt({ orgId: req.orgId, studentId, by: 'parent', asDefault: true })
   res.json(ApiResponse.ok(result))
 }
 
