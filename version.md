@@ -14,6 +14,9 @@ rm -rf packages/admin/node_modules/.vite
 ---
 
 ## 当前版本
+**v0.8.60 ** （2026-07-18）
+- 优化
+
 **v0.8.59 ** （2026-07-18）
 - client 宠物细节
 

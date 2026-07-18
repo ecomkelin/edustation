@@ -30,6 +30,10 @@ export const notificationApi = {
   unreadCount(params = {}) {
     return http.get('/notifications/me/unread-count', { data: params })
   },
+  // R-4019 GET /notifications/:id —— 单条详情 (2026-07-18 新增, C 端 / admin 详情页共用)
+  detail(id) {
+    return http.get(`/notifications/${id}`)
+  },
   markRead(id) {
     return http.post(`/notifications/${id}/read`)
   },

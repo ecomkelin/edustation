@@ -461,8 +461,10 @@ async function generateAttendancesForSchedule({ orgId, courseInstance, lessonSch
  * 给某节排课下刚生成的考勤,每个学生的家长发"上课通知"(即时推送)
  * - 模板: NotificationTemplate (org=null, type='lesson_prepare_reminder', channel='inbox')
  * - 渲染变量: {studentName} {courseName} {time} {room}
- * - deeplink: /pages/attendance/detail?attendanceId=<attendanceId>
- *   跳考勤详情页 (R-4012) — 家长能看到本节课 + 后续作品/课评入口
+ * - deeplink: /pages/schedule/detail?id=<lessonScheduleId>  (R-1494)
+ *   跳「课程详情页」(单节排课维度), 家长能看到本节课考勤 + 作品/课评入口
+ *   注意: 不是 /pages/attendance/detail?attendanceId=... — 那个页面只是考勤 row,
+ *         看不到课程名/老师/教室, 用户反馈「前往查看应该跳课程详情不是考勤」
  * - 学生无 guardians (孤儿学员) 跳过
  * - 单条 publish 失败不阻塞其他 (fire-and-forget)
  */
@@ -502,8 +504,9 @@ async function publishLessonPrepareReminder(orgId, courseInstance, lessonSchedul
           payload: {
             entityType: 'lessonAttendance',
             entityId: a._id,
-            // C 端考勤详情页 (R-4012)
-            deeplink: `/pages/attendance/detail?attendanceId=${a._id}`
+            // 2026-07-18: 改跳「课程详情」(单节排课维度, R-1494) 而不是考勤 row
+            // 之前的 /pages/attendance/detail?attendanceId= 跳进去只能看考勤, 用户感知"看不到课程"
+            deeplink: `/pages/schedule/detail?id=${lessonScheduleId}`
           },
           vars: {
             studentName: s.name,

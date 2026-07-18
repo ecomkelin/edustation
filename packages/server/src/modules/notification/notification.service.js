@@ -283,6 +283,19 @@ async function unreadCount(userId, opts = {}) {
 }
 
 /**
+ * 单条详情（资源属主校验，不动 status — 让前端决定何时 markRead）
+ * 2026-07-18: C 端 / admin 详情页用 — 替代 listMe + find 一条的笨拙姿势
+ * @param {String} userId
+ * @param {String} id
+ * @returns {Promise<Object>}
+ */
+async function getOne(userId, id) {
+  const doc = await Notification.findOne({ _id: id, recipient: userId }).lean()
+  if (!doc) throw ApiError.notFound('消息不存在')
+  return doc
+}
+
+/**
  * 单条已读（资源属主校验）
  */
 async function markRead(userId, id) {
@@ -389,6 +402,7 @@ module.exports = {
   publish,
   listMe,
   unreadCount,
+  getOne,
   markRead,
   markAllRead,
   archive,

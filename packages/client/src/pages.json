@@ -323,6 +323,13 @@
       "style": {
         "navigationBarTitleText": "通知偏好"
       }
+    },
+    {
+      // 2026-07-18: 消息详情 (R-4019 GET /notifications/:id)
+      "path": "pages/notification/detail",
+      "style": {
+        "navigationBarTitleText": "消息详情"
+      }
     }
   ],
   "globalStyle": {

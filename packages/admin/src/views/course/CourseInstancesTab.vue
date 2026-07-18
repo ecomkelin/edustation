@@ -257,28 +257,28 @@
           <el-input-number v-model="form.schedulePlan.totalPlannedLessons" :min="1" />
           <div v-if="locked" class="form-hint">筹备状态外不可上调；下调时不能小于已排课数</div>
         </el-form-item>
-        <el-form-item label="单节时长(分钟)">
+        <el-form-item label="单节时长(分)">
           <el-input-number v-model="form.schedulePlan.minutesPerLesson" :disabled="locked" :min="1" placeholder="不填则用课程产品的设置" />
           <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
         </el-form-item>
 
         <!-- 4. 师资 / 教室（课程产品下移到这里） -->
-        <el-divider content-position="left">师资 / 教室</el-divider>
+        <el-divider content-position="left" style="margin-top: 16px">师资 / 教室</el-divider>
         <el-form-item label="课程产品" required>
           <el-select v-model="form.courseProduct" placeholder="选择课程产品（课包）" style="width: 100%">
             <el-option v-for="t in products" :key="t._id" :label="t.name" :value="t._id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="老师">
-          <el-select v-model="form.teacher" clearable filterable placeholder="可后定" style="width: 100%">
+        <el-form-item label="老师" required>
+          <el-select v-model="form.teacher" filterable placeholder="选择老师" style="width: 100%">
             <el-option v-for="t in teachers" :key="t.id" :label="t.realName || t.mobile" :value="t.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="老师简介">
           <el-input v-model="form.teacherIntro" type="textarea" :rows="3" placeholder="老师尚未确定时也可先填简介" />
         </el-form-item>
-        <el-form-item label="教室">
-          <el-select v-model="form.room" clearable placeholder="可后定" style="width: 100%">
+        <el-form-item label="教室" required>
+          <el-select v-model="form.room" filterable placeholder="选择教室" style="width: 100%">
             <el-option v-for="r in rooms" :key="r._id" :label="r.name" :value="r._id" />
           </el-select>
         </el-form-item>
@@ -408,15 +408,9 @@
           <el-input-number v-model="form.maxStudents" :min="1" />
           <div class="form-hint">仅作 UI 参考；超额允许，通过"分班"解决。</div>
         </el-form-item>
-        <el-form-item label="状态">
-          <el-tag v-if="form._id" :type="statusType(form.status)">{{ statusLabel(form.status) }}</el-tag>
-          <el-select v-else v-model="form.status" style="width: 100%">
-            <el-option label="筹备" value="planning" />
-            <el-option label="招生中" value="enrolling" />
-            <el-option label="进行中" value="active" />
-            <el-option label="已结班" value="closed" />
-          </el-select>
-          <div v-if="form._id" class="form-hint">状态变更请用列表的「改状态」/「取消」按钮（需填写原因）</div>
+        <el-form-item label="状态" v-if="form._id">
+          <el-tag :type="statusType(form.status)">{{ statusLabel(form.status) }}</el-tag>
+          <div class="form-hint">状态变更请用列表的「改状态」/「取消」按钮（需填写原因）</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -2320,6 +2314,8 @@ function openEdit(row) {
 async function submit() {
   if (!form.subject) return ElMessage.warning('请选择教学科目')
   if (!form.courseProduct) return ElMessage.warning('请选择课程产品')
+  if (!form.teacher) return ElMessage.warning('请选择老师')
+  if (!form.room) return ElMessage.warning('请选择教室')
   if (!form.startDate) return ElMessage.warning('请选择开课日')
   if (!form.schedulePlan.totalPlannedLessons) return ElMessage.warning('请填写排课计划：总课次')
   // 按 mode 分支校验
@@ -2337,6 +2333,8 @@ async function submit() {
     const payload = { ...form }
     delete payload._id
     delete payload.schedulePlanPreset
+    // status 字段仅作内部状态显示，不入 payload —— 新建后端默认 planning, 更新走专门的「改状态」流程
+    delete payload.status
     if (!payload.subject) delete payload.subject
     if (!payload.teacher) delete payload.teacher
     if (!payload.room) delete payload.room

@@ -61,6 +61,12 @@ async function bootstrap() {
   require('@middlewares/loginRateLimit')
   require('@modules/captcha/captcha.service')
 
+  // 1.5.6 (2026-07-18) 通知归档清理 cron
+  // - 每 24h 物理删除 archivedAt < now-90d 的 Notification
+  //   (客户端"删除"= archive 软归档, 90d 后才物理删除, 兜底可恢复窗口)
+  // - leaderElect: 多副本仅 leader 跑, deleteMany 幂等但减无意义 db 流量
+  require('@modules/notification/notificationPurgeCron')
+
   // 1.5.5 (2026-07-13) 副本心跳 (跨进程可见的"哪些 server 还活着")
   // - 启动时 upsert 一行 replica_status, 每 30s touch lastHeartbeatAt
   // - mongo TTL 2min 自动清掉僵尸副本 (崩了/网络断)

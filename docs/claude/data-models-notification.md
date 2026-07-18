@@ -41,7 +41,7 @@ Layer 3 — ChannelAdapter（inbox MVP / wechatMini P2 / sms P3 / push P3 / ws P
   payload: {
     entityType: String,
     entityId: ObjectId,
-    deeplink: String               // /pages/lesson/detail?id=xxx
+    deeplink: String               // /pages/schedule/detail?id=<lessonScheduleId> (R-1494, 2026-07-18)
   },
 
   status: { type: String, enum: ['unread', 'read', 'archived'], default: 'unread' },
@@ -272,11 +272,102 @@ type 是"业务代码 ↔ 模板"约定的字符串，**必须三处同步**：
 - 详情 `?includeArchived=true` bypass 403（归档 tab 跳详情用）
 - 写操作拦截：`if (doc.archivedAt) throw 422('已归档, 不可操作')`
 
+#### 3.6.1 客户端删除 = archive + 90d 物理清理（2026-07-18）
+
+**业务定位**：C 端用户看 inbox 想要"删除"按钮，但 inbox 永远可达（§1 设计原则）不能直接物理删。
+采用"两步走"：
+
+1. **客户端"删除"= 调 R-4006 archive（软归档）**
+   - UI 层（C 端 InboxList 长按 ActionSheet / admin StaffInbox 行内删除按钮）调 archive 端点
+   - archive 行为：`archivedAt = now`，若 unread 自动 `status = 'read'`
+   - 用户视角"删了"，但 DB 还留着（兜底可恢复窗口）
+2. **`notificationPurgeCron` 每 24h 物理删除 90d+ 归档**
+   - 阈值常量：`ARCHIVE_TTL_DAYS = 90`（与 StaffInbox.vue 注释"默认存留 90 天"对齐）
+   - 过滤：`{ status: 'archived', archivedAt: { $ne: null, $lt: now-90d } }`
+   - `leaderElect: true` 多副本仅 leader 跑（deleteMany 幂等但减 db 流量）
+   - 注册到 `cronRegistry`，R-4102 手动 trigger 端点可见
+   - 启动于 `main.js` 1.5.6，与 archiveCron / notificationCron 并列
+
+**为什么是 90d 不是更短**：
+- 太短（≤7d）：用户误删无救
+- 太长（≥365d）：inbox 无限增长，索引膨胀
+- 90d 是行业惯例（Gmail 30d 垃圾桶，企微 90d 撤回窗口），与 StaffInbox 文案一致
+
+**不直接给客户端 DELETE 端点的原因**：
+- inbox 永远可达是核心设计原则
+- 物理删除需要审计（误删无法追查）
+- 现有 R-4006 archive 已能覆盖"用户视角删除"语义，UI 层翻译即可
+
 ### 3.7 C 端 me 端点范式
 
 所有 `/me/*` 跳过 `requirePermission`，仅校验 `activeStudent`（沿用 c-end-me-endpoint-pattern，参考 [R-2078/R-2079](routes-server.md) 范式）。
 
 `/me/unread-count` 用 `countDocuments` 聚合管道只返 count，不拉详情。
+
+### 3.8 消息详情页范式 (2026-07-18)
+
+R-4019 `GET /notifications/:id` 是 inbox 单条详情端点，**员工/家长共用**，资源属主校验（`recipient == req.user.id`），**不动 status**。
+
+**为什么需要**：
+- 之前 InboxList / StaffInbox 点消息直接 `uni.navigateTo(deeplink)` → 跳业务页 (课程详情 / 任务详情)
+- 但很多场景用户**只想看完整 body**（2 行省略看不出全貌），不想真跳业务
+- 任务审批打回 / 订单退款等长文本通知尤其需要展开
+
+**范式（端到端）**：
+```
+InboxList.onTap  ─┐
+                  ├→  markRead (幂等, 兜底) + uni.navigateTo detail
+StaffInbox.onItem ─┘
+  ↓
+detail.vue.onLoad/mounted
+  ├─ 1. detail(id)        // R-4019, 资源属主校验
+  ├─ 2. markRead(id)      // 幂等, 推迟到进详情才算"真看"
+  ├─ 3. 渲染 hero + body (完整) + meta + channels[] + 「前往查看」/「删除」footer
+  └─ 4. 「前往查看」按钮 → 显式 navigateTo(payload.deeplink)
+```
+
+**markRead 双重触发** (tap 一次 + detail onLoad 一次) 都幂等, 不出问题:
+- tap 即 mark: 「瞥一眼列表」也算看过, 红点立刻少
+- detail onLoad 再 mark: 兼容「列表里没 mark 但跳 detail」的场景 (防御性, 当前 flow 不会触发)
+- 服务端 markRead 已写 `if (doc.status === 'unread')` 守门, 重复调 0 影响
+
+**为什么 R-4019 不动 status**:
+- 跟 markRead 职责分离, 详情只是「看」, 不强制改状态
+- 前端可以决定何时 mark (tap 即 mark / 进 detail 才 mark / 都 mark)
+- 未来想加「已读回执」「最后查看时间」等元数据, 不影响 status 字段
+
+**为什么不做 /notifications/me/:id**:
+- 单条详情**不带 activeStudent 上下文** (员工 / 平台超管也要看, 不能挂 activeStudent middleware)
+- 公共区 `/:id` 段最干净, 服务端资源属主校验足够防越权
+
+**C 端 / admin 平行设计**:
+- C 端: `pages/notification/detail.vue` + `/pages/notification/detail?id=xxx` (uni-app uni.navigateTo)
+- admin: `views/notifications/Detail.vue` + `/notifications/inbox/:id` (vue-router push)
+- 共用 R-4019 + 同一套 field rendering (title/body/meta/channels), 但 UI 范式不同:
+  - C 端: 移动端纵向滚动 + sticky footer 操作
+  - admin: 桌面端 el-card 三段 + 右上角 el-page-header 返回
+
+**数据**:
+- 返回完整 doc (含 channels[] / payload / meta / readAt / archivedAt)
+- 前端渲染 channels[] 时展示「渠道 / 状态 / 发送时间 / 错误」, 给用户审计透明度
+- 状态/原因翻译表 (C 端 + admin 复用, 详见各端 detail.vue)
+
+### 3.9 业务通知 deeplink 跳法约定 (2026-07-18)
+
+家长 / 员工从 inbox 详情页点「前往查看」,deeplink 跳哪一页有讲究:
+
+| 通知 type | 接收人 | deeplink 模板 | 跳到 | Why |
+|---|---|---|---|---|
+| `lesson_prepare_reminder` (上课通知) | 家长 | `/pages/schedule/detail?id=<lessonScheduleId>` | **课程详情(单节)** (R-1494) | 家长想看"我这节课", 不是单纯考勤 row |
+| `lesson_preparing` (排课准备) | 员工 | `/admin/schedule?highlight=<lessonScheduleId>` | admin 日历 (高亮) | 教务回日历继续准备, 没有详情路由 |
+| `task_*` / `order_*` / `evaluation_*` | 员工/家长 | 业务路由 (admin 或 C 端) | 业务详情 | — |
+
+**易错点**:
+- ❌ `lesson_prepare_reminder` 一开始写的是 `/pages/attendance/detail?attendanceId=...` —— 跳进去只看到考勤状态, **没有课程名/老师/教室/作品/课评**, 用户反馈"该跳课程详情不是考勤"
+- ✅ 改成 `/pages/schedule/detail?id=<lessonScheduleId>` —— 页面带完整课时信息, 考勤作为子模块挂下面
+- 员工 `lesson_preparing` 不能复用同一个 C 端路由 (admin 没用 uni-app), 走 admin 日历 highlight 是 D2-A 决策的妥协 (admin/schedule/:id 路由不存在)
+
+**deeplink 拼装点**: `lessonSchedule.service.js` 的 `publishLessonPrepareReminder` (家长) + `publishLessonPreparingToTeacher` (员工), 改 deeplink 时同步改这里。
 
 ## 4. 路由（MM=40，详见 routes-server.md §40）
 
@@ -298,6 +389,7 @@ type 是"业务代码 ↔ 模板"约定的字符串，**必须三处同步**：
 - **R-4016** POST /notifications/me/staff/archive-all (员工一键归档)
 - **R-4017** DELETE /notifications/templates/:type/:channel (机构覆盖 → 重置为平台默认, 幂等) [2026-07-14] — Templates UI「重置」按钮调用
 - **R-4018** POST /notifications/templates/reset-all (批量重置本机构全部覆盖, 幂等 deleteMany) [2026-07-14] — Templates UI「全部重置」按钮调用; 不可逆, 前端二级 confirm
+- **R-4019** GET /notifications/:id (单条详情, 员工/家长共用, 资源属主校验, 不动 status) [2026-07-18] — 详情页用, 见 §3.8
 
 ## 5. 权限码（3 个）
 
@@ -316,6 +408,7 @@ DEFAULT_POSITIONS：
 | 阶段 | 范围 | 周期 |
 |---|---|---|
 | Phase 1 MVP | 4 model + 3 service + inbox adapter + cron + 2 触发点 | v0.9.x，2 周 |
+| Phase 1.1 (2026-07-18) | 客户端"删除"按钮 + archive 软归档 + notificationPurgeCron 90d 物理清理 | v0.9.3 |
 | Phase 2 | 微信小程序订阅消息 + wechatMini ChannelAdapter | v0.10.x |
 | Phase 3 | 短信 (阿里云) + 微信公众号模板消息 | v0.11.x |
 | Phase 4 | WebSocket 实时推送 + UniPush | v1.0 |
@@ -332,8 +425,8 @@ DEFAULT_POSITIONS：
 
 ## 8. 风险与边界
 
-- **大量 inbox 累积**：Notification 是无限增长实体；复用 §8.2 软归档；NotificationLog TTL 30d 自动清理
-- **cron 单点**：notificationCron 单进程跑，复用 archiveCron 范式（setInterval + tickAll + unref）
+- **大量 inbox 累积**：Notification 是无限增长实体；复用 §8.2 软归档；NotificationLog TTL 30d 自动清理；**notificationPurgeCron 每 24h 物理清理 archivedAt < now-90d**（2026-07-18）
+- **cron 单点**：notificationCron / notificationPurgeCron 单进程跑（leaderElect 多副本只让 leader 跑），复用 archiveCron 范式（setInterval + tickAll + unref）
 - **隐私**：通知正文严禁身份证/卡号；模板渲染白名单字段
 - **微信订阅消息申请**：Phase 2 依赖机构先在微信公众平台申请模板 ID，提前 1 周提醒
 - **触发点遗漏**：MVP 仅 2 个 type；后续接入需逐个 audit publish 调用

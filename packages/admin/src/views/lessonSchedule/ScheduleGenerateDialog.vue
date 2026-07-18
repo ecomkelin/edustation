@@ -98,7 +98,7 @@
         <div class="form-hint">所有生成的排课都用这个时间区间</div>
       </el-form-item>
       <!-- 老师/教室：默认由开班带出来，可点"更换"展开下拉 -->
-      <el-form-item label="老师">
+      <el-form-item label="老师" required>
         <div class="locked-field">
           <el-tag v-if="form.teacher" type="info" effect="plain">
             {{ teacherLabel }}
@@ -118,7 +118,7 @@
           <el-option v-for="t in teachers" :key="t.id" :label="t.realName || t.mobile" :value="t.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="教室">
+      <el-form-item label="教室" required>
         <div class="locked-field">
           <el-tag v-if="form.room" type="info" effect="plain">
             {{ roomLabel }}

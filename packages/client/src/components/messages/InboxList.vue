@@ -2,6 +2,8 @@
   InboxList.vue - 消息 tab「系统消息」列表
   - 数据源 R-4002 /notifications/me
   - 单条点击 → R-4004 标已读 + 跳 payload.deeplink
+  - 长按单条 → 弹出 ActionSheet (删除) → 调 R-4006 archive (2026-07-18 新增)
+    注意: 客户端"删除"= 后端 archive (软归档), 用户视角删了, DB 留 90d 兜底可恢复
   - 顶部 tab: 未读 / 全部 (2026-07-12 业务决策: 客户端"删除=归档", 归档后自己看不到, 不展示归档 tab)
   - 空态: 未读 tab → "您没有未读消息"; 全部 tab → "暂无系统消息"
 -->
@@ -39,6 +41,7 @@
           :key="n._id"
           :class="['inbox__item', { 'inbox__item--unread': n.status === 'unread' }]"
           @tap="onTap(n)"
+          @longpress="onLongPress(n)"
         >
           <view class="inbox__item-icon">
             <text>{{ iconOf(n.type) }}</text>
@@ -126,18 +129,52 @@ onPullDownRefresh() {
       return `${m}-${dd}`
     },
     onTap(n) {
-      // 标已读 (幂等)
+      // 标已读 (幂等) — 即便用户只瞥一眼列表, 也算「看过」, 减少红点误判
       if (n.status === 'unread') {
         notificationApi.markRead(n._id).catch(() => {})
         n.status = 'read'
         n.readAt = new Date()
         this.unreadCount = Math.max(0, this.unreadCount - 1)
       }
-      // 跳 deeplink (如果有)
-      const dl = n.payload && n.payload.deeplink
-      if (dl) {
-        uni.navigateTo({ url: dl })
-      }
+      // 2026-07-18: 跳「消息详情」中间页 (R-4019), 不再直接 deeplink — 详情页里有"前往查看"按钮再跳业务
+      uni.navigateTo({ url: `/pages/notification/detail?id=${n._id}` })
+    },
+    // 2026-07-18: 长按弹出操作菜单 (删除) — 客户端"删除"= 后端 archive 软归档
+    //   90d 后由 notificationPurgeCron 物理清理, 中间窗口 DB 保留供兜底恢复
+    onLongPress(n) {
+      uni.showActionSheet({
+        itemList: ['删除'],
+        success: (res) => {
+          if (res.tapIndex === 0) {
+            this.confirmDelete(n)
+          }
+        },
+        fail: () => { /* 取消 */ }
+      })
+    },
+    async confirmDelete(n) {
+      // 二次确认: 删除后该消息不再可见, 防误触
+      uni.showModal({
+        title: '删除消息',
+        content: '删除后将不再显示, 确定吗?',
+        confirmText: '删除',
+        confirmColor: '#f56c6c',
+        success: async (r) => {
+          if (!r.confirm) return
+          try {
+            await notificationApi.archive(n._id)
+            // 2026-07-18: 本地直接剔, 不 reload 整个列表 (load 会重新拉接口, 体验割裂)
+            const idx = this.items.findIndex((x) => x._id === n._id)
+            if (idx !== -1) this.items.splice(idx, 1)
+            if (n.status === 'unread') {
+              this.unreadCount = Math.max(0, this.unreadCount - 1)
+            }
+            uni.showToast({ title: '已删除', icon: 'success' })
+          } catch (e) {
+            uni.showToast({ title: '删除失败', icon: 'none' })
+          }
+        }
+      })
     },
     async onReadAll() {
       try {

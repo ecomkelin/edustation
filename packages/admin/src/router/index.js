@@ -108,7 +108,9 @@ const routes = [
       { path: 'notifications/templates', component: () => import('@/views/notifications/Templates.vue') },
       { path: 'notifications/logs', component: () => import('@/views/notifications/Logs.vue') },
       // 员工 inbox (2026-07-13): 顶部铃铛点开后跳这里 (或抽屉, 路由也保留独立页)
-      { path: 'notifications/inbox', component: () => import('@/views/notifications/StaffInbox.vue') }
+      { path: 'notifications/inbox', component: () => import('@/views/notifications/StaffInbox.vue') },
+      // 2026-07-18: 单条消息详情 (R-4019 GET /notifications/:id)
+      { path: 'notifications/inbox/:id', component: () => import('@/views/notifications/Detail.vue') }
     ]
   },
   // 课堂展示 (2026-06-21 pet-system-v2-ext): 独立 layout (ClassroomLayout), 全屏深色背景

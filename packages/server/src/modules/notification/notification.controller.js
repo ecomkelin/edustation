@@ -42,6 +42,13 @@ exports.unreadCount = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// R-4019 GET /notifications/:id —— 单条详情（家长/员工共用，资源属主校验，不动 status）
+// 2026-07-18: C 端 / admin 详情页用 — listMe 拉全表过滤不优雅，单条直查 O(1)
+exports.getOne = async (req, res) => {
+  const data = await service.getOne(req.user.id, req.params.id)
+  res.json(ApiResponse.ok(data))
+}
+
 // R-3604 POST /notifications/:id/read
 exports.markRead = async (req, res) => {
   const data = await service.markRead(req.user.id, req.params.id)

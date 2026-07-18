@@ -66,5 +66,9 @@ export const notificationApi = {
   // R-3606 单条归档
   archive(id) {
     return http.post(`/notifications/${id}/archive`)
+  },
+  // R-4019 单条详情 (2026-07-18 新增, 详情页用)
+  detail(id) {
+    return http.get(`/notifications/${id}`)
   }
 }

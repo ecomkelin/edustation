@@ -47,13 +47,9 @@ staffMeRouter.post('/archive-all', asyncHandler(c.archiveAll))
 
 router.use('/me/staff', staffMeRouter)
 
-// ─── 单条操作（家长 / 员工共用，按 :id 校验属主） ───
-// R-3604 POST /api/v1/notifications/:id/read
-router.post('/:id/read', v.byId, asyncHandler(c.markRead))
-// R-3606 POST /api/v1/notifications/:id/archive
-router.post('/:id/archive', v.byId, asyncHandler(c.archive))
-
 // ─── 管理后台 / 内部接口（要求 notification.* 权限码） ───
+// 注意路由顺序：具体路径 (/publish, /templates, /admin/logs) 必须在 /:id 之前声明，
+// 否则 GET /notifications/templates 会被 /:id 抢先匹配 → CastError('_id') 400。
 // R-3601 POST /api/v1/notifications/publish —— 内部发布
 router.post(
   '/publish',
@@ -97,5 +93,14 @@ router.get(
   v.listLogs,
   asyncHandler(c.listLogs)
 )
+
+// ─── 单条操作（家长 / 员工共用，按 :id 校验属主） ───
+// 必须放在最后：/:id 是单段通配, 会抢在 /templates (单段具体) 之前匹配 → CastError 400.
+// R-4019 GET /api/v1/notifications/:id —— 单条详情（C 端 / admin 详情页共用）
+router.get('/:id', v.byId, asyncHandler(c.getOne))
+// R-3604 POST /api/v1/notifications/:id/read
+router.post('/:id/read', v.byId, asyncHandler(c.markRead))
+// R-3606 POST /api/v1/notifications/:id/archive
+router.post('/:id/archive', v.byId, asyncHandler(c.archive))
 
 module.exports = router

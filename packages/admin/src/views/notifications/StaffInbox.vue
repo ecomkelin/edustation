@@ -4,6 +4,8 @@
   - 2026-07-13 新增: 与 R-4002~R-4007 家长 /me 平行
   - 列表 / 红点 / 一键已读 / 一键归档 / 单条已读+跳转 deeplink
   - 顶部「全部 / 未读 / 已归档」三态切换
+  - 2026-07-18: 单条「删除」按钮 (调 R-4006 archive), 仅未归档行显示;
+    90d 后由 notificationPurgeCron 物理清理
 -->
 <template>
   <div class="page-inbox">
@@ -47,15 +49,26 @@
         <div class="page-inbox__item-body">{{ row.body }}</div>
         <div class="page-inbox__item-foot">
           <el-tag size="small" effect="plain">{{ typeLabels[row.type] || row.type }}</el-tag>
-          <el-button
-            v-if="row.payload && row.payload.deeplink"
-            size="small"
-            type="primary"
-            link
-            @click.stop="go(row)"
-          >
-            前往查看
-          </el-button>
+          <div class="page-inbox__item-actions">
+            <el-button
+              v-if="!row.archivedAt"
+              size="small"
+              type="danger"
+              link
+              @click.stop="removeOne(row)"
+            >
+              删除
+            </el-button>
+            <el-button
+              v-if="row.payload && row.payload.deeplink"
+              size="small"
+              type="primary"
+              link
+              @click.stop="go(row)"
+            >
+              前往查看
+            </el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -75,7 +88,7 @@
 </template>
 
 <script>
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { notificationApi } from '@/api/notification'
 
 // 2026-07-13: type 友好标签, 与 InboxList.vue (C 端) 对齐
@@ -160,7 +173,8 @@ export default {
           // 静默
         }
       }
-      this.go(row)
+      // 2026-07-18: 跳「通知详情」中间页 (R-4019), 详情页有"前往查看"按钮再跳业务
+      this.$router.push(`/notifications/inbox/${row._id}`)
     },
     go(row) {
       const link = row.payload && row.payload.deeplink
@@ -175,6 +189,25 @@ export default {
       await notificationApi.staffArchiveAll()
       ElMessage.success('已全部归档')
       await this.load()
+    },
+    // 2026-07-18: 单条删除 (= 后端 archive 软归档); 90d 后由 notificationPurgeCron 物理清理
+    async removeOne(row) {
+      try {
+        await ElMessageBox.confirm(
+          '确定要删除这条消息吗？删除后将不再显示。',
+          '删除消息',
+          { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+        )
+      } catch {
+        return
+      }
+      try {
+        await notificationApi.archive(row._id)
+        ElMessage.success('已删除')
+        await this.load()
+      } catch (e) {
+        ElMessage.error('删除失败')
+      }
     },
     formatTime(d) {
       if (!d) return ''
@@ -247,6 +280,7 @@ export default {
   justify-content: space-between;
   align-items: center;
 }
+.page-inbox__item-actions { display: flex; gap: 4px; }
 .page-inbox__pager {
   margin-top: 12px;
   text-align: right;
