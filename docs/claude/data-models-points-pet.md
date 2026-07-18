@@ -1,7 +1,7 @@
 # 数据模型 - 积分 / 宠物 / 喂养
 
 > **何时读这个文件**：改积分账户、积分流水、宠物养成（多宠 / 领养 / 破壳 / 喂食 / 饿死 / 等级配置）、宠物 catalog（species / consumables）、积分发放 trigger 时读。
-> **一行摘要**：积分 MVP（PointsAccount + PointsTransaction ledger） + Pet v3（多宠 + 无等阶 + 无装饰 + svg/video + per-org 经验曲线含逐级覆盖 + 增量锁定 300 + per-species 最高等级，2026-07-15 重构 / 2026-07-16 删 image + maxLevel 迁 species + 经验曲线逐级手填 + expIncrement 锁常量）。
+> **一行摘要**：积分 MVP（PointsAccount + PointsTransaction ledger） + Pet v3（多宠 + 无等阶 + 无装饰 + svg/video + per-org 经验曲线含逐级覆盖 + 增量锁定 300 + per-species 最高等级由 levelVisuals 列表派生，2026-07-15 重构 / 2026-07-16 删 image + maxLevel 迁 species + 经验曲线逐级手填 + expIncrement 锁常量 / 2026-07-18 删 PetSpecies.maxLevel 字段 / 2026-07-18 DEFAULT_SPECIES_MAX_LEVEL 从 12 改为 1)。
 
 ---
 
@@ -84,8 +84,8 @@
 - **其他宠物**展示在：admin 课堂展示「其他领养的宠物」网格 / client 详情页「其他宠物」区
 - **状态机**：`egg → alive → (death→rebirth=egg 同 tick)`（去 tier 后无 tierup/swap/tierdown 回蛋）
 - **无等阶**：所有宠物用同一套等级 / 经验 / 喂养数值
-- **最高等级 per-species**（2026-07-16）：`PetSpecies.maxLevel`（default 12）；经验曲线 per-org 统一管理（`PetLevelConfig` expBase/expIncrement）
-- **等级曲线 per-org**：`PetLevelConfig`（expBase 100、expIncrement 50）；无记录时用 `shared/petConfig.DEFAULT_LEVEL_CONFIG` 兜底；`maxLevel` 已迁到 species
+- **最高等级 per-species**（2026-07-16 → 2026-07-18 字段删除 → 2026-07-18 第三期）：由 `PetSpecies.levelVisuals[]` 数组派生（`max(levelVisuals[].level)`），空数组时 fallback `shared/petConfig.DEFAULT_SPECIES_MAX_LEVEL=1`（**蛋态默认**：没配任何 levelVisuals → 物种最高 1 级，不能升级；必须显式配置 ≥2 条才能让宠物升到 ≥2 级）；经验曲线 per-org 统一管理（`PetLevelConfig` expBase/expIncrement）
+- **等级曲线 per-org**：`PetLevelConfig`（expBase 100、expIncrement 50）；无记录时用 `shared/petConfig.DEFAULT_LEVEL_CONFIG` 兜底
 - **species svg/video**（2026-07-16 删 image）：`visualType` 默认 `video`（前端 9:16 裁成 1:1 展示）；`svg` 保留兜底渲染
 - **PetAccount 存 species key 字符串**，不存 ObjectId
 - **C 端 vs Admin**：C 端 `/api/v1/pet/*`（auth + activeStudent + requireEnrolledStudent）；Admin `/api/v1/admin/pet/*`（pet.read / pet.write）
@@ -135,12 +135,12 @@
 
 ### 2.3 PetSpecies（物种图鉴，平台级）
 
-`key`(unique) / `name` / `visualType`(enum **svg/video**，默认 video；2026-07-16 删 image) / `videoFile`(ref File) / `svgContent`(兜底) / **`maxLevel`(该物种最高等级，default 12，min1 max100)** / **`levelVisuals`(逐级形象覆盖，详见 §3.5)** / `weight`(破壳加权) / `hungerDecayMinutes`(default60) / `isActive` / 审计。
+`key`(unique) / `name` / `visualType`(enum **svg/video**，默认 video；2026-07-16 删 image) / `videoFile`(ref File) / `svgContent`(兜底) / **`levelVisuals`(逐级形象覆盖，最高等级 = `max(levelVisuals[].level)`，空数组 → 1 兜底即"蛋态默认"；详见 §3.5)** / `weight`(破壳加权) / `hungerDecayMinutes`(default60) / `isActive` / 审计。
 
 - **删 `tier` 字段** + `{tier,isActive}` 索引。
 - **2026-07-16 删 `image` 视觉类型 + `imageFile` 字段**（宠物图鉴/消耗品不再支持上传图片，svg 保留）。
-- **2026-07-16 新增 `maxLevel`**：最高等级由物种自身控制（原在 per-org PetLevelConfig，已迁出）；满级后经验封顶。
 - **2026-07-16 新增 `levelVisuals[]`**：per-species 逐级形象覆盖（详见 §3.5）。fallback 链 `levelVisuals[level] → levelVisuals[level-1] → ... → 物种视觉字段`。
+- **2026-07-18 删 `maxLevel` 字段**：最高等级完全由 `levelVisuals[].max(level)` 派生（`shared/petConfig.resolveMaxLevel`），字段冗余；空数组 fallback `DEFAULT_SPECIES_MAX_LEVEL=1`（**蛋态默认**，2026-07-18 第三期由 12 改 1）。原 per-org PetLevelConfig 已迁出后再删字段 — 保持数据一致。
 - `rollSpecies()` 在全部 `isActive` 池里加权随机（无 tier 分池）。
 
 **索引**：
@@ -169,7 +169,7 @@
 - **锁定语义**：后端 `updateLevelConfig` 与 `normalizeLevelConfig` 都会**强制把 `expIncrement` 写回 300**，忽略入参 + 抹 DB 旧值。
 - **删某条覆盖条目** → 该等级自动退回公式（基础 100 + 增量 300），不会破坏升级
 
-**2026-07-16：`maxLevel` 已迁到 PetSpecies**（最高等级由物种控制）；本表只**统一管理**经验曲线。满级判定 = 物种 `maxLevel`（缺省兜底 `DEFAULT_SPECIES_MAX_LEVEL=12`）。
+**2026-07-16：`maxLevel` 已迁到 PetSpecies → 2026-07-18：PetSpecies.maxLevel 字段已删除**（最高等级完全由 `levelVisuals[].max` 派生）。本表只**统一管理**经验曲线。满级判定 = `resolveMaxLevel(species)` = `max(species.levelVisuals[].level)`（缺省兜底 `DEFAULT_SPECIES_MAX_LEVEL=1`，2026-07-18 第三期从 12 改 1。**蛋态默认**：没配任何 levelVisuals → 物种最高 1 级，不能升级）。
 
 ### 3.0 per-species 逐级形象（2026-07-16 新增）
 
@@ -187,14 +187,14 @@
    ▼
 state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
    │
-   ├─ feed (扣积分 + exp+hunger; 升级到 PetSpecies.maxLevel 封顶; 无升阶)
+   ├─ feed (扣积分 + exp+hunger; 升级到 species resolveMaxLevel 封顶; 无升阶)
    └─ cron: hunger=0 且 daysSince(lastFedAt) ≥ deathThresholdDays
         → state=dead → 同 tick rebirth (state=egg, level=1, exp=0, hunger=max, species=null 重随机)
 ```
 
 **关键不变量**：
 - feed / hatch 都是 CAS（read → 计算 → findOneAndUpdate 带状态守卫）
-- 升级 loop 到 `maxLevel` 封顶，满级 exp 清 0（进度条显示已满）；**无 tierup 回蛋**
+- 升级 loop 到 `resolveMaxLevel(species)` = `max(species.levelVisuals[].level)` 封顶（缺省 1 = 蛋态默认），满级 exp 清 0（进度条显示已满）；**无 tierup 回蛋**
 - 死亡回蛋清 species，下次 hatch 全池重随机
 - 多宠：每只独立，cron 按 alive 游标天然支持
 
@@ -244,17 +244,19 @@ species.levelVisuals[level] (per-level override, 命中且 visualType+内容合�
 ```
 各等级形象 (per-species 覆盖)
 [每级形象] ┌────────────────────────────────────────────────────────────┐
-           │ 共 12 级；列出 N 行的等级用该行内容，未列出的等级自动    │
-           │ 继承上一级（1 级兜底走物种自身视觉字段）。                │
+           │ 已配 N 级（最高支持 N 级）；未列出的等级自动继承上一级  │
+           │ （1 级兜底走物种自身视觉字段）。                         │
            │ ┌────────┬──────────┬─────────────────────┬────────┐   │
            │ │ 等级   │ 视觉类型 │ 视频/SVG 内容        │ 操作   │   │
            │ │ Lv.1   │ video    │ [选择/上传视频]      │ 删除   │   │
            │ │ Lv.3   │ svg      │ [<svg>...</svg>]    │ 删除   │   │
            │ │ Lv.5   │ video    │ [选择/上传视频]      │ 删除   │   │
            │ └────────┴──────────┴─────────────────────┴────────┘   │
-           │ [新增一级覆盖]  （已达 12 级上限时禁用）                  │
+           │ [新增一级覆盖]  （最多 100 级，schema 防呆）             │
            └────────────────────────────────────────────────────────────┘
 ```
+
+**2026-07-18 变更**：删除原"最高等级"输入框 + 列表列；最高等级完全由本数组 max(level) 派生，无任何覆盖时按 `DEFAULT_SPECIES_MAX_LEVEL=1` 兜底（**蛋态默认** = 只能保持 1 级，必须显式添加 ≥2 条 levelVisuals 才能让宠物升级）。
 
 每行可独立选 `video` 或 `svg` 二选一；video 走 `FilePicker` + `el-upload`（与物种主视觉同款）；svg 走 textarea。
 
@@ -265,7 +267,6 @@ species.levelVisuals[level] (per-level override, 命中且 visualType+内容合�
 {
   "key": "cat_orange",
   "name": "橘猫",
-  "maxLevel": 12,
   "levelVisuals": [
     { "level": 1,  "visualType": "video", "videoFile": "<File ObjectId>" },
     { "level": 5,  "visualType": "svg",   "svgContent": "<svg>...</svg>" },
@@ -274,10 +275,11 @@ species.levelVisuals[level] (per-level override, 命中且 visualType+内容合�
 }
 ```
 `levelVisuals` 字段含义：
-- `undefined`（不传）= 不更新；`[]` = 清空（全部等级走 species 默认）；数组 = 全量覆盖
-- `level` 必须在 `[1, maxLevel]` 之间（schema + service 双重校验）
+- `undefined`（不传）= 不更新；`[]` = 清空（全部等级走 species 默认，最高等级 fallback 1 蛋态默认）；数组 = 全量覆盖
+- `level` 必须在 `[1, 100]` 之间（schema + service 双重校验，2026-07-18 删 maxLevel cap）
 - 每条 `visualType` 决定 `svgContent` 还是 `videoFile` 必填（XSS sanitize + fileBind 校验）
 - 同一 species 内 `level` 必须唯一（schema partial unique 索引兜底）
+- **2026-07-18**：payload 不再传 `maxLevel` 字段（后端字段已删）
 
 #### d) fileBind 维护
 

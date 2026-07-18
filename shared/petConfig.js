@@ -25,8 +25,17 @@
  *   - resolveVisualAtLevel(species, level) 走 fallback 链：species.levelVisuals[level] → species.levelVisuals[level-1] → ... → species 视觉字段
  *   - 1 级必须有效（要么 levelVisuals[1] 有，要么 species 自身有 visual）—— seed 保证 species 必有
  *
+ * 2026-07-18：删 PetSpecies.maxLevel 字段
+ *   - 最高等级完全由 species.levelVisuals[].max(level) 派生；空数组时 fallback DEFAULT_SPECIES_MAX_LEVEL
+ *   - 每级形象列表本身已描述支持到多少级 → 单独 maxLevel 字段冗余
+ *   - resolveMaxLevel(species) 改成从 levelVisuals 派生；调用方零改动
+ *
+ * 2026-07-18 第三期：DEFAULT_SPECIES_MAX_LEVEL 从 12 改为 1
+ *   - 旧: 空数组 → 12 级兜底 (用户「新建物种没配 levelVisuals 默认就有 12 级可升」不合理)
+ *   - 新: 空数组 → 1 级 (物种默认就是破壳后 1 级, 不配 levelVisuals 就不能升级, 必须显式配)
+ *   - 语义对齐产品决策: 「没配就是蛋态默认」, 升级必须显式开
+ *
  * 字段语义：
- *   - maxLevel（PetSpecies）: 该物种最高等级
  *   - expBase（PetLevelConfig）: 1 级升 2 级所需经验基数（公式默认值）
  *   - expIncrement（PetLevelConfig）: 每升一级额外增加的经验需求——**产品决策：锁定 300**，机构不再可改，全部走逐级覆盖
  *   - levelExpOverrides（PetLevelConfig）: per-level 覆盖表，按 L 查 exp 需求；缺位走公式
@@ -38,10 +47,12 @@ const INIT_HUNGER_AFTER_HATCH = 300
 // 每个学生最多领养的宠物数 (2026-07-16 产品决策: 10 → 5)
 const MAX_PETS_PER_STUDENT = 5
 
-// 物种最高等级的默认兜底（PetSpecies.maxLevel 缺失 / 蛋态无 species 时用）
-const DEFAULT_SPECIES_MAX_LEVEL = 12
+// 物种最高等级的默认兜底（PetSpecies.levelVisuals=[] / 蛋态无 species 时用）
+// 2026-07-18 第三期: 默认 1 级 — 没配 levelVisuals 时物种保持初始状态，不能升级。
+// 必须显式在「各等级形象」section 添加 ≥2 条才能让宠物升到 ≥2 级。
+const DEFAULT_SPECIES_MAX_LEVEL = 1
 
-// per-org 经验曲线的默认兜底（无 PetLevelConfig 记录时使用；仅经验，maxLevel 已迁到 species）
+// per-org 经验曲线的默认兜底（无 PetLevelConfig 记录时使用；仅经验，最高等级已迁到 species.levelVisuals）
 // 2026-07-16：expIncrement 固定为 300（产品决策：每级增量统一 300，机构不再可改，全部逐级手填覆盖）
 const LOCKED_EXP_INCREMENT = 300
 const DEFAULT_LEVEL_CONFIG = Object.freeze({
@@ -61,7 +72,7 @@ const DEFAULT_DEATH_THRESHOLD_DAYS = 30
  *
  * @param {Number} level - 当前等级（1-based）
  * @param {Object} [cfg] - { maxLevel, expBase, expIncrement, levelExpOverrides }
- *   - maxLevel 来自 PetSpecies（缺省 DEFAULT_SPECIES_MAX_LEVEL）
+ *   - maxLevel 由调用方传入（推荐 = resolveMaxLevel(speciesRecord)，缺省 DEFAULT_SPECIES_MAX_LEVEL）
  *   - expBase/expIncrement/levelExpOverrides 来自 PetLevelConfig（缺省 DEFAULT_LEVEL_CONFIG）
  * @returns {Number|null} 满级时返回 null；缺级时不会返回 null
  */
@@ -160,12 +171,30 @@ function rowsToLevelOverrides(rows) {
 }
 
 /**
- * 解析某物种的最高等级（PetSpecies.maxLevel，缺省兜底 DEFAULT_SPECIES_MAX_LEVEL）。
- * @param {Object|null} species - PetSpecies 记录（含 maxLevel）
+ * 解析某物种的最高等级（2026-07-18: 由 species.levelVisuals[].max(level) 派生，
+ * 缺省/空数组时 fallback DEFAULT_SPECIES_MAX_LEVEL=1）。
+ *
+ * 旧版：直接读 PetSpecies.maxLevel → 12。
+ * 新版：levelVisuals 数组本身就是「支持到多少级」的描述，每条 levelVisuals.level
+ *   表示该物种在那个等级有自定义形象。
+ *
+ * 2026-07-18 第三期：默认 1 级而非 12 级
+ *   - 没配任何 levelVisuals → 物种默认 1 级（破壳后保持 Lv.1，不能升级）
+ *   - 配了 N 条 → 最高等级 = max(levelVisuals[].level)
+ *   - 必须显式配置 ≥2 条 levelVisuals 才能让宠物升到 ≥2 级
+ *
+ * @param {Object|null} species - PetSpecies 记录（含 levelVisuals[]）
+ * @returns {number} >= 1
  */
 function resolveMaxLevel(species) {
-  const m = species && species.maxLevel
-  return Number.isFinite(m) && m > 0 ? m : DEFAULT_SPECIES_MAX_LEVEL
+  const lvs = species && Array.isArray(species.levelVisuals) ? species.levelVisuals : []
+  let max = DEFAULT_SPECIES_MAX_LEVEL  // 默认 1（2026-07-18 第三期：从 0 改为 1）
+  for (const v of lvs) {
+    if (!v) continue
+    const lv = Number(v.level)
+    if (Number.isFinite(lv) && lv > max) max = lv
+  }
+  return max
 }
 
 /**

@@ -258,10 +258,13 @@ GET    /api/v1/admin/pet/species/:id/removable-check  pet.read  预检
   "visualType": "video",         // svg | video（2026-07-16 删 image）
   "videoFile": "65...",          // File ref id；visualType=video 时用
   "svgContent": "<svg>...</svg>", // visualType=svg 时用（自动 sanitize 去 script/on*）
-  "maxLevel": 12,                // 2026-07-16: 该物种最高等级（满级封顶）
   "weight": 100,
   "isActive": true,
-  "description": "..."
+  "description": "...",
+  "levelVisuals": [              // 2026-07-16 新增, 2026-07-18: 最高等级由本数组 max 派生, 删 maxLevel 字段
+    { "level": 1,  "visualType": "video", "videoFile": "66..." },
+    { "level": 5,  "visualType": "svg",   "svgContent": "<svg>...</svg>" }
+  ]
 }
 ```
 

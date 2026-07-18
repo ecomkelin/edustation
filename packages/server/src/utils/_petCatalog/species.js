@@ -9,7 +9,8 @@
  * 后续按需手动添加。
  *
  * 字段顺序与 PetSpecies.model.js 对齐：
- *   key, name, visualType, svgContent, videoFile, maxLevel, weight, isActive, description
+ *   key, name, visualType, svgContent, videoFile, weight, isActive, description
+ *   2026-07-18: 删 maxLevel（最高等级由 levelVisuals[].max(level) 派生；空数组 → DEFAULT_SPECIES_MAX_LEVEL=1 兜底, 即"蛋态默认"只能 1 级）
  */
 const SPECIES = [
   /* ───── 1. 橘猫 — 经典圆胖橘猫（眨眼 + 摇尾 + 呼吸） ───── */
@@ -70,7 +71,6 @@ const SPECIES = [
     <line x1="70" y1="58" x2="78" y2="58" stroke="#262626" stroke-width="1"/>
   </g>
 </svg>`,
-    maxLevel: 12,
     weight: 100,
     isActive: true,
     description: '圆圆胖胖的橘猫，慵懒可爱'
@@ -130,7 +130,6 @@ const SPECIES = [
     </circle>
   </g>
 </svg>`,
-    maxLevel: 12,
     weight: 100,
     isActive: true,
     description: '软萌垂耳奶狗，摇尾巴等你'
@@ -195,7 +194,6 @@ const SPECIES = [
     <path d="M 66 56 L 66 64" stroke="#0D47A1" stroke-width="1"/>
   </g>
 </svg>`,
-    maxLevel: 12,
     weight: 100,
     isActive: true,
     description: '流线蓝海豚，跃出浪花'

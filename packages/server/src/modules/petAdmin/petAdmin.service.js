@@ -206,7 +206,7 @@ function decodeCursor(s) {
  *
  * 白名单：nickname / currentHunger / lastFedAt / deathThresholdDays / state / level / experience / maxHunger
  * isDefault 走 setDefaultOnBehalf，不在此裸 set（避免破坏 partial unique）。
- * 不允许改：org / student / adoptedAt / species / maxLevel / visuals（per-pet override 已撤销，per-species 见 PetSpeciesTab）
+ * 不允许改：org / student / adoptedAt / species / visuals（per-pet override 已撤销，per-species 见 PetSpeciesTab；最高等级 2026-07-18 删 maxLevel 字段，由 species.levelVisuals 派生）
  */
 async function update({ orgId, petAccountId, operatorId, payload }) {
   if (!orgId || !petAccountId) throw ApiError.badRequest('缺少 orgId/petAccountId')

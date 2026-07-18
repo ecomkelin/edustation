@@ -133,7 +133,8 @@ async function findConsumable({ key }) {
 
 /**
  * 取某机构的宠物等级配置（无记录时返回归一化后的默认）。
- * @returns {Promise<{maxLevel, expBase, expIncrement}>}
+ * 注意：最高等级已不在本表 (2026-07-16 迁 species → 2026-07-18 删字段)，本接口只返经验曲线。
+ * @returns {Promise<{expBase, expIncrement, levelExpOverrides}>}
  */
 async function getLevelConfig(orgId) {
   if (!orgId) return normalizeLevelConfig(null)

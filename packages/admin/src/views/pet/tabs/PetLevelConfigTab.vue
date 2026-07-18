@@ -1,18 +1,20 @@
 <!--
-  PetLevelConfigTab (2026-07-15 立项；2026-07-16 升级为逐级手填)
+  PetLevelConfigTab (2026-07-15 立项；2026-07-16 升级为逐级手填；2026-07-18 删 maxLevel 文案)
   经验曲线：base + increment 公式兜底 + 可逐级覆盖的 overrides 表（手动调整）。
-  最高等级由各 PetSpecies.maxLevel 控制（不在本页）。
+  最高等级：2026-07-18 起由各 PetSpecies 的「各等级形象 (levelVisuals[])」列表本身决定
+    (max(levelVisuals[].level)，空数组 → DEFAULT_SPECIES_MAX_LEVEL=1 兜底, 即"蛋态默认"只能 1 级);
+    本页不再有"最高等级"概念 — 详细见 shared/petConfig.js。
 -->
 <template>
   <div class="pet-level-config">
     <div class="tab-tip">
       <el-tooltip
-        content="逐级管理本机构宠物的晋升经验。未列出的等级仍按公式（基础经验 + 每级增量 × (L-1)）自动计算。最高等级由各物种在「宠物图鉴」里单独设置。"
+        content="逐级管理本机构宠物的晋升经验。未列出的等级仍按公式（基础经验 + 每级增量 × (L-1)）自动计算。物种最高等级由「宠物图鉴 → 各等级形象」列表决定（无覆盖时按 1 级兜底，即'蛋态默认'不能升级）。"
         placement="bottom"
       >
         <el-icon class="help-icon"><QuestionFilled /></el-icon>
       </el-tooltip>
-      <span class="tab-tip-text">本机构宠物经验曲线（per-org 可配，公式 + 逐级覆盖）；最高等级由各物种自行控制</span>
+      <span class="tab-tip-text">本机构宠物经验曲线（per-org 可配，公式 + 逐级覆盖）；物种最高等级在「宠物图鉴」由「各等级形象」列表决定</span>
     </div>
 
     <el-card v-loading="loading" class="config-card">
@@ -107,7 +109,8 @@
         2026-07-16: 删掉重复的"各级经验曲线预览"表。
         原预览表与上方"逐级覆盖"表完全重叠（同一份 Lv→exp 数据），
         上方覆盖表已有"公式默认"列实时显示与公式值的差，预览表纯冗余。
-        满级后的行为：expToNext(L) 在 level >= species.maxLevel 时返回 null，
+        满级后的行为：expToNext(L) 在 level >= resolveMaxLevel(species) 时返回 null；
+        2026-07-18: 最高等级由 species.levelVisuals[].max 派生 (无字段 maxLevel)。
         详情见 shared/petConfig.js 文档。
       -->
     </el-card>

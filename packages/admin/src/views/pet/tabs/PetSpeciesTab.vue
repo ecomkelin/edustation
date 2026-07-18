@@ -1,8 +1,11 @@
 <!--
-  PetSpeciesTab (2026-07-15 重构, 2026-07-16 加 per-species 逐级形象)
-  「宠物图鉴」编辑: key/name/视觉/权重/最高等级/饱腹度/启用/描述
-  + 2026-07-16 新增「各等级形象」section: 为每个等级独立配 visualType+内容,
+  PetSpeciesTab (2026-07-15 重构, 2026-07-16 加 per-species 逐级形象, 2026-07-18 删 maxLevel 字段)
+  「宠物图鉴」编辑: key/name/视觉/权重/饱腹度/启用/描述
+  + 「各等级形象」section: 为每个等级独立配 visualType+内容,
     未列出的等级自动 fallback 到上一级，直到物种自身视觉字段（visualType/svgContent/videoFile）。
+  + 2026-07-18 删「最高等级」输入框 + 列表列 — 最高等级完全由 levelVisuals[].max(level) 派生
+    (后端 shared/petConfig.resolveMaxLevel, 缺省 DEFAULT_SPECIES_MAX_LEVEL=1; 没配任何 levelVisuals 即"蛋态默认"只能 1 级);
+    「新增一级覆盖」按钮的 "已达上限" 提示也走派生。
   后端路由 /admin/pet/species 仍 requirePlatformAdmin 兜底 (机构 admin 写操作会 403)。
 -->
 <template>
@@ -32,9 +35,7 @@
       </el-table-column>
       <el-table-column prop="key" label="Key" width="160" sortable />
       <el-table-column prop="name" label="名称" width="160" sortable />
-      <el-table-column prop="maxLevel" label="最高等级" width="90" sortable>
-        <template #default="{ row }">Lv.{{ row.maxLevel ?? 12 }}</template>
-      </el-table-column>
+      <!-- 2026-07-18: 删「最高等级」列 — 由 levelVisuals[].max 派生 (后端 resolveMaxLevel) -->
       <el-table-column prop="weight" label="权重" width="80" sortable />
       <el-table-column label="衰减" width="100" sortable prop="hungerDecayMinutes">
         <template #default="{ row }">
@@ -104,17 +105,14 @@
           <el-input-number v-model="form.weight" :min="0" :max="10000" />
           <span class="hint">破壳时加权随机权重，0=不参与抽取</span>
         </el-form-item>
-        <el-form-item label="最高等级">
-          <el-input-number v-model="form.maxLevel" :min="1" :max="100" @change="onMaxLevelChange" />
-          <span class="hint">该物种最高等级，满级后经验封顶（每级所需经验由「等级配置」统一管理）</span>
-        </el-form-item>
 
         <!-- 2026-07-16: per-species 逐级形象覆盖（fallback 链：visuals[L] → visuals[L-1] → ... → 物种自身视觉） -->
+        <!-- 2026-07-18: 删「最高等级」输入框 — 最高等级完全由 levelVisuals[].max(level) 派生 -->
         <el-divider content-position="left">各等级形象 (per-species 覆盖)</el-divider>
         <el-form-item label="每级形象">
           <div class="level-visuals-block">
             <div class="level-visuals-hint">
-              共 <strong>{{ form.maxLevel }}</strong> 级；列出 N 行的等级用该行内容，未列出的等级自动继承上一级（1 级兜底走物种自身视觉字段）。
+              未列出的等级自动继承上一级（1 级兜底走物种自身视觉字段）。
             </div>
             <el-table :data="form.levelVisuals" size="small" border class="level-visuals-table" row-key="rowKey">
               <el-table-column label="等级" width="100" align="center">
@@ -158,10 +156,9 @@
               </el-table-column>
             </el-table>
             <div class="level-visuals-add">
-              <el-button size="small" type="primary" :icon="Plus" :disabled="form.levelVisuals.length >= form.maxLevel" @click="addLevelVisual">
+              <el-button size="small" type="primary" :icon="Plus" @click="addLevelVisual">
                 新增一级覆盖
               </el-button>
-              <span v-if="form.levelVisuals.length >= form.maxLevel" class="hint">已达 {{ form.maxLevel }} 级上限</span>
             </div>
           </div>
         </el-form-item>
@@ -268,7 +265,7 @@ export default {
       visualType: 'video',
       svgContent: '',
       videoFile: null,
-      maxLevel: 12,
+      // 2026-07-18: 删 form.maxLevel — 最高等级完全由 levelVisuals[].max 派生
       levelVisuals: [],  // 2026-07-16: [{level,visualType,svgContent,videoFile,rowKey}]
       weight: 100,
       hungerDecayMinutes: 60,
@@ -288,17 +285,12 @@ export default {
     }
 
     // === 2026-07-16: per-species 逐级形象覆盖 helpers ===
-    function onMaxLevelChange() {
-      // maxLevel 改小时，删除超出范围的覆盖
-      form.levelVisuals = (form.levelVisuals || [])
-        .filter(v => Number(v.level) <= Number(form.maxLevel))
-        .sort((a, b) => a.level - b.level)
-    }
+    // 2026-07-18: 删 onMaxLevelChange — 无 maxLevel 字段；改成 schema 防呆 1-100 (后端 normalizeLevelVisuals 校验)
     function addLevelVisual() {
       const used = new Set(form.levelVisuals.map(v => Number(v.level)))
       let lv = 1
       while (used.has(lv)) lv += 1
-      if (lv > Number(form.maxLevel)) return
+      if (lv > 100) return  // schema 上限 (后端 normalizeLevelVisuals 也校验)
       form.levelVisuals.push({
         rowKey: nextRowKey(),
         level: lv,
@@ -345,7 +337,8 @@ export default {
       Object.assign(form, {
         _id: null, key: '', name: '', visualType: 'video',
         svgContent: '', videoFile: null,
-        maxLevel: 12, levelVisuals: [],
+        // 2026-07-18: 删 maxLevel: 12
+        levelVisuals: [],
         weight: 100, hungerDecayMinutes: 60, isActive: true, description: ''
       })
       formRef.value?.clearValidate()
@@ -390,7 +383,7 @@ export default {
         visualType: fullRow.visualType,
         svgContent: fullRow.svgContent || '',
         videoFile: fullRow.videoFile || null,
-        maxLevel: fullRow.maxLevel ?? 12,
+        // 2026-07-18: 删 form.maxLevel — 后端字段已删
         levelVisuals,
         weight: fullRow.weight,
         hungerDecayMinutes: fullRow.hungerDecayMinutes || 60,
@@ -419,16 +412,12 @@ export default {
       saving.value = true
       try {
         // 2026-07-16: 前端兜底 — 防御性去重 + 必填校验，避免 backend E11000 409
+        // 2026-07-18: 删 maxLevel 上限校验（已删字段）；保留 schema 1-100 防呆
         const seen = new Set()
         for (const v of (form.levelVisuals || [])) {
           const lv = Number(v.level)
           if (!Number.isFinite(lv) || lv < 1 || lv > 100) {
             ElMessage.error(`levelVisuals[].level=${v.level} 必须在 1-100 之间`)
-            saving.value = false
-            return
-          }
-          if (lv > Number(form.maxLevel)) {
-            ElMessage.error(`levelVisuals[level=${lv}] 超过物种 maxLevel=${form.maxLevel}`)
             saving.value = false
             return
           }
@@ -455,7 +444,7 @@ export default {
           visualType: form.visualType,
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
           videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
-          maxLevel: Number(form.maxLevel) || 12,
+          // 2026-07-18: 删 maxLevel — 后端字段已删
           // 2026-07-16: per-species 逐级形象覆盖 (levelVisuals[].videoFile 只发 id)
           levelVisuals: (form.levelVisuals || [])
             .map(v => ({
@@ -512,7 +501,7 @@ export default {
       Plus, Upload, Picture, VideoPlay,
       petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickVideo, uploadVideo, submit, onRemoveConfirm,
-      onMaxLevelChange, addLevelVisual, removeLevelVisual, onPickLvVideo, uploadLvVideo,  // 2026-07-16
+      addLevelVisual, removeLevelVisual, onPickLvVideo, uploadLvVideo,  // 2026-07-16
       openPreview, onPreviewClosed, formatDate
     }
   }

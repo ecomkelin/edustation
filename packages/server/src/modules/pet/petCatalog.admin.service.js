@@ -47,16 +47,16 @@ const LEVEL_VISUAL_FIELD_PREFIX = 'levelVisual.'
  * 校验 + 归一化 PetSpecies.levelVisuals[]：
  *   - 必须是数组
  *   - 每条 level 唯一（schema partial unique 索引兜底）
- *   - level 必须在 [1, maxLevel] 之间（maxLevel 默认 12）
+ *   - level 必须在 [1, 100] 之间（2026-07-18: 删 maxLevel 后，cap 直接写死 100；
+ *     物种最高等级由数组 max 派生，理论无上限但 schema 防呆限 100）
  *   - visualType=svg 必须填 svgContent（XSS sanitize）；visualType=video 必须填 videoFile
  *   - 按 level 升序返回
  *
  * 找不到任何 visual 是允许的（= 全部等级走 species 视觉字段；fallback 兜底）。
  */
-function normalizeLevelVisuals(input, maxLevel) {
+function normalizeLevelVisuals(input) {
   if (input === undefined || input === null) return undefined // 表示未传字段，调用方跳过
   if (!Array.isArray(input)) throw ApiError.badRequest('levelVisuals 必须是数组')
-  const cap = Math.max(1, Math.min(100, Number(maxLevel) || 12))
   const seenLevels = new Set()
   const out = []
   for (const v of input) {
@@ -64,9 +64,6 @@ function normalizeLevelVisuals(input, maxLevel) {
     const lvl = Number(v.level)
     if (!Number.isFinite(lvl) || lvl < 1 || lvl > 100) {
       throw ApiError.badRequest(`levelVisuals[].level=${v.level} 必须在 1-100 之间`)
-    }
-    if (lvl > cap) {
-      throw ApiError.badRequest(`levelVisuals[].level=${lvl} 超过该物种 maxLevel=${cap}`)
     }
     if (seenLevels.has(String(lvl))) {
       throw ApiError.badRequest(`levelVisuals[].level=${lvl} 重复（每条 level 必须唯一）`)
@@ -190,9 +187,9 @@ async function createSpecies({ payload, operatorId }) {
   const exists = await PetSpecies.findOne({ key: payload.key }).lean()
   if (exists) throw ApiError.conflict(`物种 key=${payload.key} 已存在`)
 
-  const maxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 12))
   // 2026-07-16: 接收 levelVisuals 数组（per-species 逐级形象覆盖）
-  const levelVisuals = normalizeLevelVisuals(payload.levelVisuals, maxLevel) || []
+  // 2026-07-18: 最高等级由数组 max 派生，无 maxLevel 上限约束
+  const levelVisuals = normalizeLevelVisuals(payload.levelVisuals) || []
 
   const doc = {
     key: payload.key.trim(),
@@ -200,7 +197,6 @@ async function createSpecies({ payload, operatorId }) {
     visualType,
     svgContent: visualType === 'svg' ? sanitizeSvg(payload.svgContent) : null,
     videoFile: visualType === 'video' ? (payload.videoFile || null) : null,
-    maxLevel,
     levelVisuals,
     weight: Number(payload.weight) || 100,
     hungerDecayMinutes: Number(payload.hungerDecayMinutes) || 60,
@@ -238,11 +234,7 @@ async function updateSpecies({ id, payload, operatorId }) {
   const updates = {}
   if (payload.name !== undefined) updates.name = String(payload.name).trim()
   if (payload.visualType !== undefined) updates.visualType = payload.visualType
-  let newMaxLevel
-  if (payload.maxLevel !== undefined) {
-    newMaxLevel = Math.max(1, Math.min(100, Number(payload.maxLevel) || 1))
-    updates.maxLevel = newMaxLevel
-  }
+  // 2026-07-18: 删 maxLevel 入参分支 — 最高等级完全由 doc.levelVisuals[].max 派生
   if (payload.weight !== undefined) updates.weight = Number(payload.weight) || 0
   if (payload.hungerDecayMinutes !== undefined) updates.hungerDecayMinutes = Number(payload.hungerDecayMinutes) || 60
   if (payload.isActive !== undefined) updates.isActive = !!payload.isActive
@@ -255,11 +247,11 @@ async function updateSpecies({ id, payload, operatorId }) {
   }
 
   // 2026-07-16: levelVisuals（传 undefined = 不改；传 [] = 清空；传数组 = 覆盖）
+  // 2026-07-18: 删 maxLevel cap（删字段后无上限约束）— normalizeLevelVisuals 自己保证 1-100
   let normalizedLevelVisuals = null
   let oldLevelVisuals = []
   if (payload.levelVisuals !== undefined) {
-    const cap = newMaxLevel != null ? newMaxLevel : doc.maxLevel
-    normalizedLevelVisuals = normalizeLevelVisuals(payload.levelVisuals, cap) || []
+    normalizedLevelVisuals = normalizeLevelVisuals(payload.levelVisuals) || []
     updates.levelVisuals = normalizedLevelVisuals
     oldLevelVisuals = (doc.levelVisuals || []).map(v => ({
       level: Number(v.level),

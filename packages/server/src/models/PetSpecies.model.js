@@ -19,14 +19,18 @@ const { PET_VISUAL_TYPES } = require('@shared/enums')
  *
  * 2026-07-16：
  *   - 删 image 视觉类型（enum 只剩 svg/video）+ 删 imageFile 字段
- *   - 新增 maxLevel（该物种最高等级，满级后经验封顶）；经验曲线仍由 per-org PetLevelConfig 统一管理
  *   - 新增 levelVisuals[]（per-species 逐级形象覆盖；未列出的等级按 fallback 链
  *     levelVisuals[level] → levelVisuals[level-1] → ... → 视觉总默认（visualType/svgContent/videoFile））。
  *     1 级兜底：fallback 链必然命中物种自身视觉（seed + 编辑校验保证 species 视觉字段非空）。
  *
+ * 2026-07-18：
+ *   - 删 maxLevel 字段（最高等级由 levelVisuals[] 数组本身决定：max(levelVisuals[].level)，
+ *     空数组时用 DEFAULT_SPECIES_MAX_LEVEL=1 兜底，即"蛋态默认"只能保持 1 级；
+ *     经验曲线仍由 per-org PetLevelConfig 统一管理）。
+ *   - 删 maxLevel 后，「最高等级」这一信息完全冗余 — 每级形象列表本身已描述支持到多少级。
+ *
  * 字段：
  *   - key / name / visualType / videoFile (+ svgContent 兜底)
- *   - maxLevel（该物种最高等级）
  *   - levelVisuals[{level,visualType,svgContent,videoFile}]（逐级形象覆盖；空数组 = 全部等级用 species 默认）
  *   - weight  (破壳加权随机权重)
  *   - hungerDecayMinutes / isActive / description / meta
@@ -49,11 +53,9 @@ const PetSpeciesSchema = new Schema(
     // 2026-07-12: video 时存 File ref（mp4/webm 等，列表/详情预览）
     videoFile: { type: Schema.Types.ObjectId, ref: 'File', default: null },
 
-    // 2026-07-16: 该物种最高等级（满级后经验封顶，不再升级）；经验曲线由 PetLevelConfig 统一管理
-    maxLevel: { type: Number, default: 12, min: 1, max: 100 },
-
     // 2026-07-16: per-species 逐级形象覆盖（每等级一条；空数组 → 全部等级用 species 视觉字段）
     // fallback 链：levelVisuals[level] → levelVisuals[level-1] → ... → 物种自身视觉字段
+    // 2026-07-18: 最高等级由本数组派生 (max(levelVisuals[].level))，数组外不再存 maxLevel
     levelVisuals: {
       type: [
         new Schema(

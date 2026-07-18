@@ -61,7 +61,18 @@
                 <text>{{ ch.label }}</text>
               </view>
             </view>
-            <text v-if="ch.hint" class="prefs__channels-hint">{{ ch.hint }}</text>
+            <!--
+              2026-07-18 bug fix: 原 v-if="ch.hint" 写在 v-for 外, ch 未定义 → TypeError.
+              现在: 把 hint 挪到 chip 内, 仅在锁定且有 hint 时显示
+            -->
+            <view
+              v-for="ch in channelList.filter((c) => c.locked && c.hint)"
+              :key="'hint-' + ch.key"
+              class="prefs__channels-hint-row"
+            >
+              <text class="prefs__channels-hint-emoji">🔒</text>
+              <text class="prefs__channels-hint">{{ ch.label }}：{{ ch.hint }}</text>
+            </view>
           </view>
         </view>
       </view>
@@ -306,11 +317,20 @@ export default {
     }
   }
   &__chip > text { color: inherit; }
+  &__channels-hint-row {
+    display: flex;
+    align-items: center;
+    gap: 6rpx;
+    margin-top: 6rpx;
+  }
+  &__channels-hint-emoji {
+    font-size: $font-xs;
+  }
   &__channels-hint {
     font-size: $font-xs;
     color: $text-tertiary;
-    margin-top: 6rpx;
     display: block;
+    line-height: 1.4;
   }
 
   &__muted-text {
