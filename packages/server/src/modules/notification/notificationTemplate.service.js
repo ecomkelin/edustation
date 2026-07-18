@@ -19,6 +19,7 @@
  */
 
 const NotificationTemplate = require('@models/NotificationTemplate.model')
+const ApiError = require('@utils/ApiError')
 
 // 占位符白名单（按 CLAUDE.md §"v0.9 推送通知" plan §11.1 隐私红线）
 // 2026-07-13: 加 5 个任务触发点占位符 (task_assigned / rejected / approved / cancelled)
@@ -48,26 +49,28 @@ const PLACEHOLDER_KEYS = new Set([
 ])
 
 /**
- * 拉取模板：先查机构自定义，再 fallback 平台默认
+ * 拉取模板 (v4 2026-07-18: org-only)
+ *
+ * 之前: 先查机构自定义，再 fallback 平台默认 — 新机构没自定义时, 默认就走平台默认,
+ *   等于「未启用也照发通知」, 跟用户「不启用则不发」语义不符.
+ * 现在: 只查本机构 org 副本.
+ *   - 找到 → 返回 (不论 isActive, 交给 publish 判断)
+ *   - 找不到 → 返回 null → publish skipped (通知不发)
+ *
+ * 「平台默认」仅用于:
+ *   1. list 接口返给 UI 用于展示"如果启用会长什么样" (预览文案)
+ *   2. toggle 启用本机构时, 作为新 org 副本的初始文案 (一键复制)
+ *
+ * 不再参与 publish 决策路径.
  */
 async function getTemplate(orgId, type, channel = 'inbox') {
   if (!type) return null
-  // 机构自定义
-  let tpl = await NotificationTemplate.findOne({
+  const tpl = await NotificationTemplate.findOne({
     org: orgId,
     type,
-    channel,
-    isActive: true
+    channel
   }).lean()
-  if (tpl) return tpl
-  // 平台默认
-  tpl = await NotificationTemplate.findOne({
-    org: null,
-    type,
-    channel,
-    isActive: true
-  }).lean()
-  return tpl
+  return tpl || null
 }
 
 /**
@@ -99,18 +102,36 @@ function render(template, vars) {
 }
 
 /**
- * 管理后台列表：合并机构自定义 + 平台默认（机构优先）
+ * 管理后台列表：合并机构自定义 + 平台默认（**两条都返**, UI 自决显示)
+ *
+ * 2026-07-18 重构: 之前 Map 合并时机构版直接覆盖 platform, 平台默认那条永远不返,
+ *   导致 UI 上"本机构开关"看起来跟"平台默认"是同一个开关, 用户实际关闭后
+ *   publish 仍走 platform fallback 继续发送. 现在两条都返, UI 区分显示.
+ *
+ * 返回结构: Array<{ type, channel, org: doc|null, platform: doc|null, effective: 'org'|'platform'|'none' }>
+ *   - org 有 → effective='org' (本机构覆盖生效)
+ *   - org 无 + platform 有 → effective='platform' (走平台默认)
+ *   - 都没有 → effective='none' (publish 时走 type 兜底)
  */
 async function list(orgId) {
   const [orgTemplates, platformTemplates] = await Promise.all([
     NotificationTemplate.find({ org: orgId }).sort({ type: 1, channel: 1 }).lean(),
     NotificationTemplate.find({ org: null }).sort({ type: 1, channel: 1 }).lean()
   ])
-  // 合并：机构覆盖平台默认（同 type+channel 时机构优先）
-  const merged = new Map()
-  for (const t of platformTemplates) merged.set(`${t.type}__${t.channel}`, { ...t, source: 'platform' })
-  for (const t of orgTemplates) merged.set(`${t.type}__${t.channel}`, { ...t, source: 'org' })
-  return Array.from(merged.values()).sort((a, b) => {
+  // 索引化
+  const orgMap = new Map(orgTemplates.map((t) => [`${t.type}__${t.channel}`, t]))
+  const platformMap = new Map(platformTemplates.map((t) => [`${t.type}__${t.channel}`, t]))
+  // key 合并: org ∪ platform 的 key 集
+  const allKeys = new Set([...orgMap.keys(), ...platformMap.keys()])
+  const result = []
+  for (const k of allKeys) {
+    const org = orgMap.get(k) || null
+    const platform = platformMap.get(k) || null
+    const effective = org ? 'org' : (platform ? 'platform' : 'none')
+    const [type, channel] = k.split('__')
+    result.push({ type, channel, org, platform, effective })
+  }
+  return result.sort((a, b) => {
     if (a.type !== b.type) return a.type.localeCompare(b.type)
     return a.channel.localeCompare(b.channel)
   })
@@ -182,11 +203,43 @@ async function listActiveTypes() {
   }))
 }
 
+/**
+ * 平台超管: 切换平台默认模板 isActive (2026-07-18 新增)
+ *
+ * 重要: 这个操作影响**所有未自定义本机构覆盖**的机构 (即所有走平台默认的机构).
+ * 必须 requirePlatformAdmin 才能调.
+ *
+ * 场景: 平台超管在管理后台看到 7 条平台默认模板, 想批量/单个停用某条.
+ *       也支持改 title/body (重置全平台文案).
+ */
+async function upsertPlatform(type, channel, payload) {
+  if (!type || !channel) throw ApiError.badRequest('type/channel 必填')
+  // upsert org=null (平台默认)
+  const doc = await NotificationTemplate.findOneAndUpdate(
+    { org: null, type, channel },
+    {
+      $set: {
+        org: null,
+        type,
+        channel,
+        title: payload.title,
+        body: payload.body,
+        wechatTemplateId: payload.wechatTemplateId || null,
+        smsTemplateCode: payload.smsTemplateCode || null,
+        isActive: payload.isActive !== false
+      }
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean()
+  return doc
+}
+
 module.exports = {
   getTemplate,
   render,
   list,
   upsert,
+  upsertPlatform,
   removeOrgOverride,
   removeAllOrgOverrides,
   listActiveTypes,

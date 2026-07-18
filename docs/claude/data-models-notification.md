@@ -369,6 +369,41 @@ detail.vue.onLoad/mounted
 
 **deeplink 拼装点**: `lessonSchedule.service.js` 的 `publishLessonPrepareReminder` (家长) + `publishLessonPreparingToTeacher` (员工), 改 deeplink 时同步改这里。
 
+### 3.10 模板「启用本机构」v4 范式 (2026-07-18)
+
+**用户语义 (v4)**: 「本机构开关 = 本机构要不要这条通知」。
+- 新机构**默认所有通知都不发** (必须显式启用才会发)
+- 开关 off = 通知不发 (不论有没有 platform 默认)
+- 开关 on = 通知按本机构副本文案发送 (无副本时 upsert 时以 platform 文案为初始)
+
+**后端 v4 改动**:
+1. `getTemplate(orgId, type, channel)` 只查 `org=orgId`, **不再 fallback 到 platform** (org=null)
+2. `publish` 入口:
+   - `tpl.isActive === false` → `return { skipped: true, reason: 'org_template_disabled' }`
+   - `tpl == null` → `return { skipped: true, reason: 'org_template_not_enabled' }` (默认不发)
+   - 两者都不进 publish 落库逻辑
+3. list 接口仍返 `{ type, channel, org, platform, effective }` (org + platform 都返), **仅用于 UI 预览**, 不参与 publish 路径
+
+**UI v4 改造**:
+- 启用列: 单开关, 列名「启用本机构」
+- 无 chip (开关本身就是状态)
+- tooltip 解释三种语义:
+  - 默认 (无 org 副本 + 开关 off): "本机构未启用 (通知不发送)；点击启用后将以平台默认文案为基础创建本机构副本"
+  - 开关 off + 有 org 副本: "本机构已停用，点击启用 (通知恢复发送)"
+  - 开关 on: "本机构已启用，点击停用 (通知将彻底不发)"
+- 顶部说明: 「启用本机构 = 本机构启用该通知 (默认未启用); 停用 = 本机构该通知彻底不发; 重置 = 删除本机构自定义, 回到未启用状态」
+
+**反复迭代记录**:
+- v1: 单开关 (UI 看着对, 但 service isActive:true 过滤 fallback 到 platform, toggle 无效)
+- v2: 双开关 (本机构 + 平台默认) → 平台默认不该暴露给机构管理员, 复杂
+- v3: 单开关 + 三态 chip → 仍然是「未启用=跟随平台默认」, 新机构没主动 toggle 也会发通知
+- **v4 (当前)**: 单开关 + 默认未启用, getTemplate 改 org-only, publish 双跳 (org_template_disabled / org_template_not_enabled)
+
+**禁止**:
+- ❌ 在 `getTemplate` 继续 fallback 到 platform —— 这是 v4 之前的行为, 必须移除
+- ❌ 在 `publish` 找不到 tpl 时兜底 title=type —— 用户没启用就不该有任何通知
+- ❌ 在本 UI 暴露「平台默认」开关 —— 平台默认是 SaaS 全局配置, 机构管理员不感知
+
 ## 4. 路由（MM=40，详见 routes-server.md §40）
 
 - R-4001 POST /notifications/publish (notification.send)
@@ -390,6 +425,7 @@ detail.vue.onLoad/mounted
 - **R-4017** DELETE /notifications/templates/:type/:channel (机构覆盖 → 重置为平台默认, 幂等) [2026-07-14] — Templates UI「重置」按钮调用
 - **R-4018** POST /notifications/templates/reset-all (批量重置本机构全部覆盖, 幂等 deleteMany) [2026-07-14] — Templates UI「全部重置」按钮调用; 不可逆, 前端二级 confirm
 - **R-4019** GET /notifications/:id (单条详情, 员工/家长共用, 资源属主校验, 不动 status) [2026-07-18] — 详情页用, 见 §3.8
+- **R-4020** PUT /notifications/templates/platform/:type/:channel (平台超管 toggle/编辑平台默认模板, requirePlatformAdmin) [2026-07-18] — Templates UI 「平台默认」开关 (仅超管可见), 见 §3.10
 
 ## 5. 权限码（3 个）
 

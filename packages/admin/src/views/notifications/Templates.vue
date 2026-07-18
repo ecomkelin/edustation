@@ -1,26 +1,26 @@
 <!--
-  Notification Templates.vue (admin 端) - 通知模板管理 (v0.9.1 重做, 2026-07-14)
+  Notification Templates.vue (admin 端) - 通知模板管理
 
-  设计要点:
-    - 7 条固定 type (后端 publish 调用的硬编码 key), 不允许 UI 新建 → 杜绝孤儿模板
-    - type 用 "触发时机 + 接收人" 双维自然语言展示, 不暴露技术字符串
-    - 内部 type 字符串以小灰字附在触发时机 cell 内, hover 给出 hint (供客服 / 开发定位)
-    - 渠道列隐藏 (MVP 仅 inbox, 等 Phase 2/3 再展开)
-    - "覆盖" → "重置" 语义修正, 且附带二级 confirm 弹窗 (destroy 操作)
-    - 编辑弹窗 type 字段 read-only (强调它是技术约定, 不是用户输入)
+  v4 2026-07-18: 「本机构开关 = 本机构要不要这条通知」
+    - 开关 off (默认) = 本机构未启用 → publish 不发送 (走 org-only 路径)
+    - 开关 on         = 本机构已启用 → publish 走本机构副本文案 (upsert 时复用 platform 文案)
+    - 「重置」按钮 = 删本机构副本, 回到「未启用」状态 (不发)
+    - 平台默认只在 UI 预览用 + toggle 启用时作为初始文案 (复制), 不参与发送路径
 
   数据源:
-    R-4010 listTemplates         列表
-    R-4011 upsertTemplate        修改 title / body / isActive
-    R-4017 removeTemplate        重置 (删本机构覆盖行, 回到平台默认)
+    R-4010 listTemplates         列表 (org + platform 两条都返, 用于预览)
+    R-4011 upsertTemplate        toggle 创建/更新 org 副本
+    R-4017 removeTemplate        重置 = 删 org 副本
 -->
 <template>
   <div class="page-templates">
     <div class="page-templates__header">
       <h2>通知模板</h2>
       <p class="page-templates__desc">
-        7 类系统通知的文案与开关，全部走平台默认模板；
-        你可以修改本机构的标题 / 正文 / 启用状态，或点「重置」回退为平台默认。
+        7 类系统通知的本机构文案与开关。
+        「<strong>启用本机构</strong>」= 本机构启用该通知（默认未启用）；
+        「<strong>停用</strong>」= 本机构该通知<strong>彻底不发</strong>。
+        「<strong>重置</strong>」= 删除本机构自定义，回到未启用状态。
       </p>
     </div>
 
@@ -39,7 +39,7 @@
         plain
         :loading="resettingAll"
         @click="onResetAll"
-      >全部重置</el-button>
+      >全部重置本机构</el-button>
     </div>
 
     <el-table :data="filteredTemplates" v-loading="loading" border stripe style="width: 100%">
@@ -49,7 +49,13 @@
           <div class="page-templates__trigger">
             <div class="page-templates__trigger-main">
               {{ row._trigger.triggerText }}
-              <el-tag v-if="row.source === 'org'" type="warning" size="small" effect="plain">已修改</el-tag>
+              <el-tag
+                v-if="row.effective === 'org'"
+                type="warning"
+                size="small"
+                effect="plain"
+              >本机构覆盖</el-tag>
+              <el-tag v-else type="info" size="small" effect="plain">走平台默认</el-tag>
             </div>
             <el-tooltip :content="row._trigger.hint" placement="top" :show-after="200">
               <div class="page-templates__trigger-type">type: {{ row.type }}</div>
@@ -74,35 +80,44 @@
       </el-table-column>
 
       <!-- 标题 -->
-      <el-table-column label="标题" min-width="200" show-overflow-tooltip>
+      <el-table-column label="标题" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
-          <span :class="{ 'page-templates__muted': row.source !== 'org' }">{{ row.title }}</span>
+          <span>{{ (row.org || row.platform || {}).title }}</span>
         </template>
       </el-table-column>
 
       <!-- 正文预览 -->
-      <el-table-column label="正文预览" min-width="280" show-overflow-tooltip>
+      <el-table-column label="正文预览" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
-          <span :class="{ 'page-templates__muted': row.source !== 'org' }">{{ row.body }}</span>
+          <span>{{ (row.org || row.platform || {}).body }}</span>
         </template>
       </el-table-column>
 
-      <!-- 启用 -->
-      <el-table-column label="启用" width="80">
+      <!-- 启用本机构 (v4 2026-07-18: 单开关, 无 chip, 默认未启用) -->
+      <el-table-column label="启用本机构" width="120">
         <template #default="{ row }">
-          <el-switch
-            :model-value="row.isActive !== false"
-            @change="(v) => onToggleActive(row, v)"
-          />
+          <el-tooltip
+            :content="row.org
+              ? (row.org.isActive !== false ? '本机构已启用，点击停用 (通知将彻底不发)' : '本机构已停用，点击启用 (通知恢复发送)')
+              : '本机构未启用 (通知不发送)；点击启用后将以平台默认文案为基础创建本机构副本'"
+            placement="top"
+            :show-after="300"
+          >
+            <el-switch
+              :model-value="orgActive(row)"
+              :loading="row._toggling"
+              @change="(v) => onToggle(row, v)"
+            />
+          </el-tooltip>
         </template>
       </el-table-column>
 
-      <!-- 操作: 编辑 / 重置 (仅已修改时显示重置) -->
+      <!-- 操作: 编辑 / 重置 (org 覆盖才显示重置) -->
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" link @click="onEdit(row)">编辑</el-button>
           <el-button
-            v-if="row.source === 'org'"
+            v-if="row.effective === 'org'"
             type="danger"
             link
             @click="onReset(row)"
@@ -178,6 +193,7 @@ export default {
       dialogVisible: false,
       form: {
         _id: null,
+        _isNewOrg: false,
         type: '',
         channel: 'inbox',
         title: '',
@@ -194,7 +210,7 @@ export default {
     }
   },
   computed: {
-    /** 把后端 listTemplates 的 items 按 NOTIFICATION_TRIGGERS 顺序排序, 缺失的补占位 */
+    /** 按 NOTIFICATION_TRIGGERS 顺序排序, 加触发时机 meta */
     sortedTemplates() {
       return this.templates
         .slice()
@@ -205,14 +221,14 @@ export default {
         })
         .map((row) => ({
           ...row,
-          // 找不到时给 fallback, 不至于空白
           _trigger: NOTIFICATION_TRIGGER_MAP[row.type] || {
             triggerText: row.type,
             recipientText: '?',
             recipientChip: '❓',
             recipientChipType: 'info',
             hint: '未在 NOTIFICATION_TRIGGERS 字表里的 type'
-          }
+          },
+          _toggling: false
         }))
     },
     filteredTemplates() {
@@ -220,7 +236,8 @@ export default {
       if (!kw) return this.sortedTemplates
       return this.sortedTemplates.filter((t) => {
         if ((t.type || '').toLowerCase().includes(kw)) return true
-        if ((t.title || '').toLowerCase().includes(kw)) return true
+        const src = t.org || t.platform
+        if (src && (src.title || '').toLowerCase().includes(kw)) return true
         if (t._trigger.triggerText.toLowerCase().includes(kw)) return true
         if (t._trigger.recipientText.toLowerCase().includes(kw)) return true
         return false
@@ -229,7 +246,6 @@ export default {
     dialogTitle() {
       return this.form._id ? '编辑通知模板' : '新建通知模板'
     },
-    /** 当前编辑的 type 对应的触发时机描述 (编辑弹窗只读展示) */
     currentTriggerMeta() {
       return NOTIFICATION_TRIGGER_MAP[this.form.type] || {
         triggerText: this.form.type,
@@ -246,10 +262,8 @@ export default {
       try {
         const res = await notificationApi.listTemplates()
         const data = res && res.data ? res.data : res
-        // 后端 listTemplates 已按 org > platform 合并 + source 标记
         this.templates = (data && data.items) || (Array.isArray(data) ? data : [])
       } catch (e) {
-        // listTemplates 后端未走 ApiResponse 标准包装的可能性兜底
         ElMessage.error(e.message || '加载失败')
         this.templates = []
       } finally {
@@ -257,11 +271,49 @@ export default {
       }
     },
     recomputeView() {
-      // computed 自动重算, 这里给一个 hook 让模板的 @clear @keyup.enter 能优雅引用
+      // computed 自动重算
+    },
+    /**
+     * 开关状态 (v4 本机构维度):
+     *   - 有 org 副本 → org.isActive (true = 启用 / false = 停用)
+     *   - 无 org 副本 → false (默认未启用, 通知不发)
+     */
+    orgActive(row) {
+      if (row.org) return row.org.isActive !== false
+      return false
+    },
+    /**
+     * 切换本机构开关 (v4 2026-07-18)
+     *
+     * 任何 toggle 都走 upsert 创建/更新 org 副本 (R-4011):
+     *   - 当前无副本 + 开 → 创建 org 副本 isActive=true (以 platform 文案为初始)
+     *   - 当前无副本 + 关 → 创建 org 副本 isActive=false (显式禁用)
+     *   - 当前有副本 (不论 isActive) → upsert 更新 isActive 字段
+     *
+     * 后端 publish: org.isActive=false 或 tpl=null 都返 skipped (不发送).
+     * 所以 v4 起, 新机构默认所有通知都不发, 必须显式启用才会发.
+     */
+    async onToggle(row, v) {
+      row._toggling = true
+      try {
+        const src = row.org || row.platform || { title: '', body: '' }
+        await notificationApi.upsertTemplate(row.type, row.channel, {
+          title: src.title,
+          body: src.body,
+          isActive: v
+        })
+        ElMessage.success(v ? '已启用本机构通知' : '已停用本机构通知')
+        await this.load()
+      } catch (e) {
+        ElMessage.error(e.message || '操作失败')
+      } finally {
+        row._toggling = false
+      }
     },
     resetForm() {
       this.form = {
         _id: null,
+        _isNewOrg: false,
         type: '',
         channel: 'inbox',
         title: '',
@@ -272,36 +324,31 @@ export default {
       }
     },
     onEdit(row) {
+      // v4 编辑: 总是以 org 副本为准.
+      // - 有 org 副本 → 编辑 org
+      // - 无 org 副本 → 编辑弹窗打开, 文案以 platform 默认填充, 保存时 upsert 创建 org 副本
+      const src = row.org || row.platform
+      if (!src) {
+        ElMessage.warning('该通知没有任何模板数据 (无 org 也无 platform)')
+        return
+      }
       this.form = {
-        _id: row._id,
+        _id: row.org ? row.org._id : null,
+        _isNewOrg: !row.org,
         type: row.type,
         channel: row.channel,
-        title: row.title,
-        body: row.body,
-        wechatTemplateId: row.wechatTemplateId || '',
-        smsTemplateCode: row.smsTemplateCode || '',
-        isActive: row.isActive !== false
+        title: src.title,
+        body: src.body,
+        wechatTemplateId: (row.org && row.org.wechatTemplateId) || '',
+        smsTemplateCode: (row.org && row.org.smsTemplateCode) || '',
+        isActive: row.org ? (row.org.isActive !== false) : true
       }
       this.dialogVisible = true
-    },
-    async onToggleActive(row, v) {
-      // 关闭平台默认开关时也走 upsert (创建一份禁用的 org 副本), 与原行为一致
-      try {
-        await notificationApi.upsertTemplate(row.type, row.channel, {
-          title: row.title,
-          body: row.body,
-          isActive: v
-        })
-        ElMessage.success(v ? '已启用' : '已停用')
-        await this.load()
-      } catch (e) {
-        ElMessage.error(e.message || '操作失败')
-      }
     },
     async onReset(row) {
       try {
         await ElMessageBox.confirm(
-          `确定把「${row._trigger.triggerText}」（${row._trigger.recipientText}）重置为平台默认模板？\n\n您已修改的文案 "${row.title}" 将被丢弃，操作不可撤销。`,
+          `确定把「${row._trigger.triggerText}」（${row._trigger.recipientText}）重置为平台默认模板？\n\n您已修改的文案将被丢弃，操作不可撤销。`,
           '重置模板',
           {
             confirmButtonText: '确定重置',
@@ -311,7 +358,6 @@ export default {
           }
         )
       } catch (e) {
-        // 用户取消
         return
       }
       try {
@@ -323,12 +369,10 @@ export default {
       }
     },
     async onResetAll() {
-      // 2026-07-14 批量重置: 一次性清空本机构所有 org 自定义模板 → 回退 7 条平台默认
-      // 不可逆操作, 必须二级 confirm
       try {
         await ElMessageBox.confirm(
           '确定把本机构所有 7 条自定义模板都重置为平台默认吗？\n\n所有本机构已修改的标题 / 正文 / 启停用状态都将被丢弃，操作不可撤销。',
-          '全部重置模板',
+          '全部重置本机构模板',
           {
             confirmButtonText: '全部重置',
             cancelButtonText: '取消',
@@ -337,7 +381,7 @@ export default {
           }
         )
       } catch (e) {
-        return // 用户取消
+        return
       }
       this.resettingAll = true
       try {
@@ -355,6 +399,7 @@ export default {
         if (!valid) return
         this.saving = true
         try {
+          // 本 UI 仅编辑本机构 org 模板 → R-4011
           await notificationApi.upsertTemplate(this.form.type, this.form.channel, {
             title: this.form.title,
             body: this.form.body,
@@ -389,8 +434,14 @@ export default {
   }
   &__desc {
     color: #606266;
-    font-size: 14px;
-    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+    margin: 0 0 12px;
+  }
+  &__platform-hint {
+    color: #909399;
+    border-bottom: 1px dashed #909399;
+    cursor: help;
   }
   &__toolbar {
     display: flex;
@@ -421,10 +472,12 @@ export default {
   &__recipient-emoji {
     font-size: 13px;
   }
-  &__muted {
-    color: #909399;
-    /* source='platform' 时的样式: 显示是平台默认的, 不让管理员以为这是他改的 */
-    font-style: italic;
+
+  // 启用列 (v4 单开关, 无 chip)
+  &__switch-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   &__form-static {

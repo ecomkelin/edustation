@@ -33,6 +33,10 @@ export const notificationApi = {
   resetAllTemplates() {
     return http.post('/notifications/templates/reset-all')
   },
+  // R-4020 平台超管专属: toggle/编辑平台默认模板 (2026-07-18 新增, 影响所有走平台默认的机构)
+  upsertPlatformTemplate(type, channel, payload = {}) {
+    return http.put(`/notifications/templates/platform/${type}/${channel}`, payload)
+  },
   // R-4012 发送流水
   listLogs(params = {}) {
     return http.get('/notifications/admin/logs', { params })

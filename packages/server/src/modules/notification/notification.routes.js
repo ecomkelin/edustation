@@ -86,6 +86,15 @@ router.post(
   mws.requirePermission('notification.write'),
   asyncHandler(c.resetOrgTemplates)
 )
+// R-4020 PUT /api/v1/notifications/templates/platform/:type/:channel
+// 2026-07-18 新增: 平台超管专属 — toggle/编辑平台默认模板 (影响所有用平台默认的机构)
+// 放 templates/platform/ 段, 避免与 /templates/:type/:channel 的 :type 段冲突
+router.put(
+  '/templates/platform/:type/:channel',
+  mws.requirePlatformAdmin,
+  v.upsertTemplate,
+  asyncHandler(c.upsertPlatformTemplate)
+)
 // R-3612 GET /api/v1/notifications/admin/logs
 router.get(
   '/admin/logs',

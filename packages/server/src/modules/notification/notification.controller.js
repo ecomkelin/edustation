@@ -101,6 +101,13 @@ exports.upsertTemplate = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// R-4020 PUT /notifications/templates/platform/:type/:channel
+// 2026-07-18 新增: 平台超管 toggle 平台默认模板 isActive / 改文案 (影响所有用平台默认的机构)
+exports.upsertPlatformTemplate = async (req, res) => {
+  const data = await tplService.upsertPlatform(req.params.type, req.params.channel, req.body || {})
+  res.json(ApiResponse.ok(data))
+}
+
 // R-4017 DELETE /notifications/templates/:type/:channel
 // 2026-07-14: 机构自定义重置为平台默认 (幂等, 不存在不报错)
 exports.removeTemplate = async (req, res) => {

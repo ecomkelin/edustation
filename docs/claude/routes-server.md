@@ -696,6 +696,8 @@ Auth 列简写:
 | R-4016 | POST | /notifications/me/staff/archive-all | AUTH | — | 员工一键归档 | |
 | R-4017 | DELETE | /notifications/templates/:type/:channel | PERM | notification.write | 重置机构覆盖回平台默认 | **2026-07-14 新增**: admin Templates UI「重置」按钮调用; 幂等, 不存在不报错 (deleted=0 OK); 注意类型锁定 7 条 (见 constants/notificationTriggers.js), ui 不暴露 channel 维度 |
 | R-4018 | POST | /notifications/templates/reset-all | PERM | notification.write | 批量重置 — 一次性清空本机构全部 org 自定义 | **2026-07-14 新增**: admin Templates UI「全部重置」按钮调用; 幂等 deleteMany({org}); 不可逆, 前端二级 confirm |
+| R-4019 | GET | /notifications/:id | AUTH | — | 单条详情 (员工/家长共用) | **2026-07-18 新增**: 详情页 (R-4019) 用, 资源属主校验 (recipient == req.user.id), **不动 status** (markRead 职责分离); 公共区 (员工/家长/平台超管都能调) |
+| R-4020 | PUT | /notifications/templates/platform/:type/:channel | PLATFORM_ADMIN | — | 平台超管 toggle/编辑平台默认模板 | **2026-07-18 新增**: 仅 `requirePlatformAdmin` 能调; 改 org=null 的平台默认; 影响所有未自定义 org 覆盖的机构; **当前 admin Templates UI 不暴露** (用户反馈「机构管理不需要看到平台默认」), 仅作为内部 API 待后续 platform 配置页使用 |
 
 ### MM=41 system ops (URL: /admin/cron)
 

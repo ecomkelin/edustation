@@ -132,19 +132,24 @@ async function publish(input) {
     return { skipped: true, reason: 'recipient_blocked' }
   }
 
-  // 拉模板（inbox）
+  // 拉模板（inbox） — v4 2026-07-18: org-only 语义, 没本机构副本 = 不发
   const tpl = await tplService.getTemplate(orgId, type, 'inbox')
+  // (a) 本机构显式禁用 (org.isActive=false) → 不发
+  if (tpl && tpl.isActive === false) {
+    return { skipped: true, reason: 'org_template_disabled' }
+  }
+  // (b) 本机构没副本 (tpl=null) → 默认未启用, 不发
+  //   跟之前 v3 的 "没副本 fallback platform 默认" 不同: 用户语义是不启用就不发,
+  //   所以这里直接 return skipped. 平台默认仍存在但只用于 UI 预览, 不参与 publish.
+  if (!tpl) {
+    return { skipped: true, reason: 'org_template_not_enabled' }
+  }
+  // (c) 正常: 渲染模板, 落库
   let title = ''
   let body = ''
-  if (tpl) {
-    const rendered = tplService.render(tpl, input.vars || {})
-    title = rendered.title
-    body = rendered.body
-  } else {
-    // 兜底：模板缺失时 publish 仍可落库（管理员可后期补模板）
-    title = type
-    body = type
-  }
+  const rendered = tplService.render(tpl, input.vars || {})
+  title = rendered.title
+  body = rendered.body
 
   // 计算可用渠道
   // - inbox 永远在；其余渠道：globalEnabled + category.enabled + channel.enabled + channel.capability
