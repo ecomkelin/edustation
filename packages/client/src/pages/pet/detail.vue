@@ -49,8 +49,7 @@
         <text v-if="pet.state === 'egg'" class="pet-detail__state pet-detail__state--egg">🥚 待破壳</text>
         <text v-else class="pet-detail__state pet-detail__state--alive">✨ 存活</text>
         <view class="pet-detail__points" v-if="points != null">💰 {{ points }}</view>
-        <!-- 2026-07-16 弃养默认宠物 (仅多宠时可见) -->
-        <view v-if="pets.length > 1" class="pet-detail__abandon-main" @tap="onAbandon(pet)">弃养</view>
+        <!-- 2026-07-18 移除: C 端主区顶「弃养」按钮 (用户在其它宠物卡上仍可弃养非默认宠物, 主区默认宠物的弃养由 admin 在管理端处理) -->
       </view>
 
       <!-- 主图区（默认宠物） -->
@@ -188,10 +187,7 @@
               <view v-if="pets.length > 1" class="pet-detail__other-btn pet-detail__other-btn--danger" @tap="onAbandon(p)">弃养</view>
             </view>
           </view>
-          <view v-if="pets.length < MAX_PETS" class="pet-detail__other-card pet-detail__adopt-card press" @tap="onAdopt">
-            <text class="pet-detail__adopt-plus">＋</text>
-            <text class="pet-detail__other-name">领养</text>
-          </view>
+          <!-- 2026-07-18 移除: 「+ 领养」入口卡 (admin 代领养已覆盖场景, C 端不再重复暴露入口) -->
         </view>
       </view>
     </template>
@@ -542,16 +538,7 @@ export default {
     font-weight: $font-weight-semibold;
   }
 
-  // 2026-07-16 弃养按钮 (默认宠物 subbar 右侧)
-  &__abandon-main {
-    margin-left: $spacing-sm;
-    font-size: $font-xs;
-    color: $danger;
-    border: 1rpx solid $danger;
-    border-radius: $radius-pill;
-    padding: 4rpx 16rpx;
-    cursor: pointer;
-  }
+  // 2026-07-18 移除: &__abandon-main 弃养默认宠物的 subbar 按钮 (死代码, 主区不再展示)
 
   &__stage {
     margin: $spacing-lg $spacing-lg;
@@ -824,11 +811,6 @@ export default {
     // 2026-07-16 弃养按钮 (其他宠物卡片底部)
     &--danger { background: rgba(245, 108, 108, 0.10); color: $danger; }
   }
-  &__adopt-card {
-    justify-content: center;
-    border: 2rpx dashed $divider;
-    cursor: pointer;
-  }
-  &__adopt-plus { font-size: 64rpx; color: $accent; line-height: 1; }
+  // 2026-07-18 移除: &__adopt-card / &__adopt-plus 「+ 领养」卡片样式 (死代码, 已删入口)
 }
 </style>
