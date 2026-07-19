@@ -1,11 +1,15 @@
 <!--
-  PetSpeciesTab (2026-07-15 重构, 2026-07-16 加 per-species 逐级形象, 2026-07-18 删 maxLevel 字段)
+  PetSpeciesTab (2026-07-15 重构, 2026-07-16 加 per-species 逐级形象, 2026-07-18 删 maxLevel 字段,
+                2026-07-18 第四期 加「升级特效」列)
   「宠物图鉴」编辑: key/name/视觉/权重/饱腹度/启用/描述
   + 「各等级形象」section: 为每个等级独立配 visualType+内容,
     未列出的等级自动 fallback 到上一级，直到物种自身视觉字段（visualType/svgContent/videoFile）。
   + 2026-07-18 删「最高等级」输入框 + 列表列 — 最高等级完全由 levelVisuals[].max(level) 派生
     (后端 shared/petConfig.resolveMaxLevel, 缺省 DEFAULT_SPECIES_MAX_LEVEL=1; 没配任何 levelVisuals 即"蛋态默认"只能 1 级);
     「新增一级覆盖」按钮的 "已达上限" 提示也走派生。
+  + 2026-07-18 第四期: 加「升级特效」列 — 每行嵌入 levelUpEffect {visualType, svgContent|videoFile}。
+    与形象区分：形象 = 持续循环状态（有 fallback 链），特效 = 升级瞬时事件（无 fallback，未配 = 无特效）。
+    跨级时前端按 fromLevel 升序串行播放; server resolveLevelUpEffectAtLevel 解析。
   后端路由 /admin/pet/species 仍 requirePlatformAdmin 兜底 (机构 admin 写操作会 403)。
 -->
 <template>
@@ -108,48 +112,90 @@
 
         <!-- 2026-07-16: per-species 逐级形象覆盖（fallback 链：visuals[L] → visuals[L-1] → ... → 物种自身视觉） -->
         <!-- 2026-07-18: 删「最高等级」输入框 — 最高等级完全由 levelVisuals[].max(level) 派生 -->
-        <el-divider content-position="left">各等级形象 (per-species 覆盖)</el-divider>
-        <el-form-item label="每级形象">
+        <el-divider content-position="left">各等级配置 (per-species 覆盖)</el-divider>
+        <el-form-item label="每级配置">
           <div class="level-visuals-block">
             <div class="level-visuals-hint">
               未列出的等级自动继承上一级（1 级兜底走物种自身视觉字段）。
+              每级同时配置「形象」（持续循环）与「升级特效」（升级瞬时事件，未配=无特效）。
             </div>
             <el-table :data="form.levelVisuals" size="small" border class="level-visuals-table" row-key="rowKey">
-              <el-table-column label="等级" width="100" align="center">
+              <el-table-column label="等级" width="80" align="center" fixed>
                 <template #default="{ row }">
                   <span class="level-chip">Lv.{{ row.level }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="视觉类型" width="160">
-                <template #default="{ row }">
-                  <el-radio-group v-model="row.visualType" size="small">
-                    <el-radio-button value="video">视频</el-radio-button>
-                    <el-radio-button value="svg">SVG</el-radio-button>
-                  </el-radio-group>
-                </template>
-              </el-table-column>
-              <el-table-column :label="form.levelVisuals[0] && form.levelVisuals[0].visualType === 'svg' ? 'SVG 内容' : '视频文件'" min-width="280">
+              <!-- 2026-07-18 第四期 UX: 把「视觉类型+内容」与「升级特效」合并到同一列
+                   (每级一行的完整配置在同一 cell 内, 操作和查看都更顺手) -->
+              <el-table-column label="每级配置 (形象 + 升级特效)" min-width="560">
                 <template #default="{ row, $index }">
-                  <!-- video: 上传/选择 -->
-                  <template v-if="row.visualType === 'video'">
-                    <div v-if="row.videoFile?.url" class="video-current">
-                      <video :src="row.videoFile.url" controls preload="metadata" class="row-video-preview" />
-                      <el-button link type="danger" size="small" @click="row.videoFile = null">清除</el-button>
+                  <div class="level-row-cell">
+                    <!-- 形象分组: 持续循环的本体视觉 -->
+                    <div class="level-row-section">
+                      <div class="level-row-section__head">
+                        <span class="level-row-section__title">🎭 形象</span>
+                        <span class="level-row-section__hint">该等级时循环播放</span>
+                      </div>
+                      <div class="level-row-section__body">
+                        <el-radio-group v-model="row.visualType" size="small">
+                          <el-radio-button value="video">视频</el-radio-button>
+                          <el-radio-button value="svg">SVG</el-radio-button>
+                        </el-radio-group>
+                        <div class="level-row-section__content">
+                          <template v-if="row.visualType === 'video'">
+                            <div v-if="row.videoFile?.url" class="video-current">
+                              <video :src="row.videoFile.url" controls preload="metadata" class="row-video-preview" />
+                              <el-button link type="danger" size="small" @click="row.videoFile = null">清除</el-button>
+                            </div>
+                            <div v-else class="upload-row">
+                              <FilePicker v-model="row._pickerOpen" scope="pet" mime-prefix="video/" title="选择形象视频" @select="(f) => onPickLvVideo($index, f)" />
+                              <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvVideo($index, req)" accept="video/*">
+                                <el-button :icon="Upload" size="small">上传形象视频</el-button>
+                              </el-upload>
+                            </div>
+                          </template>
+                          <template v-else>
+                            <el-input v-model="row.svgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
+                          </template>
+                        </div>
+                      </div>
                     </div>
-                    <div v-else class="upload-row">
-                      <FilePicker v-model="row._pickerOpen" scope="pet" mime-prefix="video/" title="选择视频" @select="(f) => onPickLvVideo($index, f)" />
-                      <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvVideo($index, req)" accept="video/*">
-                        <el-button :icon="Upload" size="small">上传新视频</el-button>
-                      </el-upload>
+                    <!-- 升级特效分组: 升级瞬时事件, 与形象严格区分; 未配 = 无特效 -->
+                    <div class="level-row-section level-row-section--effect">
+                      <div class="level-row-section__head">
+                        <span class="level-row-section__title">✨ 升级特效</span>
+                        <span class="level-row-section__hint">升到该等级时播一次</span>
+                      </div>
+                      <div class="level-row-section__body">
+                        <el-radio-group v-model="row.effVType" size="small">
+                          <el-radio-button :value="''">无</el-radio-button>
+                          <el-radio-button value="video">视频</el-radio-button>
+                          <el-radio-button value="svg">SVG</el-radio-button>
+                        </el-radio-group>
+                        <div class="level-row-section__content">
+                          <template v-if="row.effVType === 'video'">
+                            <div v-if="row.effVideoFile?.url" class="video-current">
+                              <video :src="row.effVideoFile.url" controls preload="metadata" class="row-video-preview" />
+                              <el-button link type="danger" size="small" @click="row.effVideoFile = null">清除</el-button>
+                            </div>
+                            <div v-else class="upload-row">
+                              <FilePicker :model-value="row._effPickerOpen" scope="pet" mime-prefix="video/" title="选择升级特效视频" @update:model-value="(v) => row._effPickerOpen = v" @select="(f) => onPickLvEffVideo($index, f)" />
+                              <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvEffVideo($index, req)" accept="video/*">
+                                <el-button :icon="Upload" size="small">上传特效视频</el-button>
+                              </el-upload>
+                            </div>
+                          </template>
+                          <template v-else-if="row.effVType === 'svg'">
+                            <el-input v-model="row.effSvgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
+                          </template>
+                          <span v-else class="level-row-section__placeholder">未配 — 升级时直接换形象，无过渡特效</span>
+                        </div>
+                      </div>
                     </div>
-                  </template>
-                  <!-- svg: textarea -->
-                  <template v-else>
-                    <el-input v-model="row.svgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
-                  </template>
+                  </div>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="100" align="center" fixed="right">
+              <el-table-column label="操作" width="80" align="center" fixed="right">
                 <template #default="{ $index, row }">
                   <el-button link type="danger" size="small" @click="removeLevelVisual($index)">删除</el-button>
                 </template>
@@ -286,6 +332,8 @@ export default {
 
     // === 2026-07-16: per-species 逐级形象覆盖 helpers ===
     // 2026-07-18: 删 onMaxLevelChange — 无 maxLevel 字段；改成 schema 防呆 1-100 (后端 normalizeLevelVisuals 校验)
+    // 2026-07-18 第四期: 每行加 升级特效 (levelUpEffect) 临时字段 effVType/effSvgContent/effVideoFile;
+    //   空字符串 effVType = "未配", submit 时映射成 levelUpEffect: null
     function addLevelVisual() {
       const used = new Set(form.levelVisuals.map(v => Number(v.level)))
       let lv = 1
@@ -297,7 +345,12 @@ export default {
         visualType: 'video',
         svgContent: '',
         videoFile: null,
-        _pickerOpen: false  // FilePicker v-model 状态（per-row）
+        _pickerOpen: false,  // FilePicker v-model 状态（per-row）
+        // 2026-07-18 第四期: 升级特效 (默认空 = 未配)
+        effVType: '',
+        effSvgContent: '',
+        effVideoFile: null,
+        _effPickerOpen: false
       })
       form.levelVisuals.sort((a, b) => a.level - b.level)
     }
@@ -313,6 +366,18 @@ export default {
         form.levelVisuals[idx].videoFile = data
       } catch (e) {
         ElMessage.error('视频上传失败：' + (e?.message || 'unknown'))
+      }
+    }
+    // 2026-07-18 第四期: 升级特效 (per-level) helpers
+    function onPickLvEffVideo(idx, file) {
+      form.levelVisuals[idx].effVideoFile = file
+    }
+    async function uploadLvEffVideo(idx, req) {
+      try {
+        const { data } = await storageApi.upload({ file: req.file, scope: 'pet' })
+        form.levelVisuals[idx].effVideoFile = data
+      } catch (e) {
+        ElMessage.error('特效视频上传失败：' + (e?.message || 'unknown'))
       }
     }
 
@@ -365,16 +430,38 @@ export default {
       const rawLv = Array.isArray(fullRow.levelVisuals) ? fullRow.levelVisuals : []
       const levelVisuals = rawLv
         .filter(v => v && Number.isFinite(Number(v.level)))
-        .map(v => ({
-          rowKey: nextRowKey(),
-          level: Number(v.level),
-          visualType: v.visualType || 'video',
-          svgContent: v.svgContent || '',
-          videoFile: v.videoFile && typeof v.videoFile === 'object'
-            ? { id: v.videoFile._id || v.videoFile.id, url: v.videoFile.url, mime: v.videoFile.mime }
-            : (v.videoFile ? { id: String(v.videoFile), url: null } : null),
-          _pickerOpen: false  // FilePicker v-model 状态（per-row）
-        }))
+        .map(v => {
+          // 2026-07-18 第四期: 反序列化 levelUpEffect → eff* 临时字段
+          // (整个子字段缺省/null/visualType=null 都视为 "无")
+          const eff = v.levelUpEffect
+          let effVType = ''
+          let effSvgContent = ''
+          let effVideoFile = null
+          if (eff && typeof eff === 'object' && (eff.visualType === 'svg' || eff.visualType === 'video')) {
+            effVType = eff.visualType
+            effSvgContent = eff.svgContent || ''
+            if (eff.videoFile && typeof eff.videoFile === 'object') {
+              effVideoFile = { id: eff.videoFile._id || eff.videoFile.id, url: eff.videoFile.url, mime: eff.videoFile.mime }
+            } else if (eff.videoFile) {
+              effVideoFile = { id: String(eff.videoFile), url: null }
+            }
+          }
+          return {
+            rowKey: nextRowKey(),
+            level: Number(v.level),
+            visualType: v.visualType || 'video',
+            svgContent: v.svgContent || '',
+            videoFile: v.videoFile && typeof v.videoFile === 'object'
+              ? { id: v.videoFile._id || v.videoFile.id, url: v.videoFile.url, mime: v.videoFile.mime }
+              : (v.videoFile ? { id: String(v.videoFile), url: null } : null),
+            _pickerOpen: false,  // FilePicker v-model 状态（per-row）
+            // 2026-07-18 第四期: 升级特效临时字段
+            effVType,
+            effSvgContent,
+            effVideoFile,
+            _effPickerOpen: false
+          }
+        })
         .sort((a, b) => a.level - b.level)
       Object.assign(form, {
         _id: fullRow._id,
@@ -413,6 +500,7 @@ export default {
       try {
         // 2026-07-16: 前端兜底 — 防御性去重 + 必填校验，避免 backend E11000 409
         // 2026-07-18: 删 maxLevel 上限校验（已删字段）；保留 schema 1-100 防呆
+        // 2026-07-18 第四期: 加 升级特效 (levelUpEffect) 必填校验
         const seen = new Set()
         for (const v of (form.levelVisuals || [])) {
           const lv = Number(v.level)
@@ -437,6 +525,17 @@ export default {
             saving.value = false
             return
           }
+          // 升级特效校验: 类型选了就要配内容
+          if (v.effVType === 'video' && !v.effVideoFile) {
+            ElMessage.error(`levelVisuals[level=${lv}] 升级特效 visualType=video 时必须填视频`)
+            saving.value = false
+            return
+          }
+          if (v.effVType === 'svg' && !v.effSvgContent) {
+            ElMessage.error(`levelVisuals[level=${lv}] 升级特效 visualType=svg 时必须填 SVG 内容`)
+            saving.value = false
+            return
+          }
         }
         const payload = {
           key: form.key.trim(),
@@ -446,15 +545,29 @@ export default {
           videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
           // 2026-07-18: 删 maxLevel — 后端字段已删
           // 2026-07-16: per-species 逐级形象覆盖 (levelVisuals[].videoFile 只发 id)
+          // 2026-07-18 第四期: 同步发 levelUpEffect
+          //   - effVType 空/未设 = 无升级特效, 发 null (显式清除)
+          //   - video 时发 effVideoFile.id; svg 时发 effSvgContent
           levelVisuals: (form.levelVisuals || [])
-            .map(v => ({
-              level: Number(v.level),
-              visualType: v.visualType,
-              svgContent: v.visualType === 'svg' ? (v.svgContent || null) : null,
-              videoFile: v.visualType === 'video'
-                ? (v.videoFile?.id || (typeof v.videoFile === 'string' ? v.videoFile : null) || null)
-                : null
-            }))
+            .map(v => {
+              // 升级特效序列化
+              let levelUpEffect = null
+              if (v.effVType === 'video') {
+                const id = v.effVideoFile?.id || (typeof v.effVideoFile === 'string' ? v.effVideoFile : null) || null
+                if (id) levelUpEffect = { visualType: 'video', svgContent: null, videoFile: id }
+              } else if (v.effVType === 'svg') {
+                if (v.effSvgContent) levelUpEffect = { visualType: 'svg', svgContent: v.effSvgContent, videoFile: null }
+              }
+              return {
+                level: Number(v.level),
+                visualType: v.visualType,
+                svgContent: v.visualType === 'svg' ? (v.svgContent || null) : null,
+                videoFile: v.visualType === 'video'
+                  ? (v.videoFile?.id || (typeof v.videoFile === 'string' ? v.videoFile : null) || null)
+                  : null,
+                levelUpEffect
+              }
+            })
             .sort((a, b) => a.level - b.level),
           weight: Number(form.weight) || 0,
           hungerDecayMinutes: Number(form.hungerDecayMinutes) || 60,
@@ -502,6 +615,7 @@ export default {
       petCatalogApi,
       load, openCreate, openEdit, resetForm, onPickVideo, uploadVideo, submit, onRemoveConfirm,
       addLevelVisual, removeLevelVisual, onPickLvVideo, uploadLvVideo,  // 2026-07-16
+      onPickLvEffVideo, uploadLvEffVideo,  // 2026-07-18 第四期: 升级特效 helpers
       openPreview, onPreviewClosed, formatDate
     }
   }
@@ -543,4 +657,55 @@ export default {
 .row-video-preview { width: 180px; max-height: 100px; border-radius: 4px; }
 .video-current { display: flex; align-items: center; gap: 8px; }
 .upload-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* 2026-07-18 第四期 UX: 合并「形象 + 升级特效」到同一列后的 cell 布局
+   - 两段 (level-row-section) 上下排, 中间 1px 分隔
+   - 每段: head (title + hint) + body (radio + 内容) */
+.level-row-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+.level-row-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+.level-row-section--effect {
+  border-top: 1px dashed #e4e7ed;
+  padding-top: 12px;
+}
+.level-row-section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.level-row-section__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+.level-row-section__hint {
+  font-size: 11px;
+  color: #909399;
+}
+.level-row-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.level-row-section__content {
+  min-height: 32px;
+  display: flex;
+  align-items: flex-start;
+}
+.level-row-section__placeholder {
+  font-size: 12px;
+  color: #c0c4cc;
+  font-style: italic;
+  padding: 6px 0;
+}
+.level-row-section .el-textarea__inner { min-height: 56px; }
 </style>

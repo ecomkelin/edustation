@@ -29,9 +29,17 @@ const { PET_VISUAL_TYPES } = require('@shared/enums')
  *     经验曲线仍由 per-org PetLevelConfig 统一管理）。
  *   - 删 maxLevel 后，「最高等级」这一信息完全冗余 — 每级形象列表本身已描述支持到多少级。
  *
+ * 2026-07-18 第四期：升级特效 (levelUpEffect)
+ *   - 在 levelVisuals[] 每条子文档里嵌一个可选的 levelUpEffect 子字段 {visualType, svgContent, videoFile}
+ *   - 与「持续循环播放的形象 (levelVisuals[L].visualType+内容)」对称，但语义是**瞬时事件**而非状态：
+ *     升级到 L 时**一次性**播放该等级的特效；播放结束即回到 L 的 currentVisual 持续循环
+ *   - 没配 = 升级时无特效（直接换形象）；不向 fallback 链上溯（不像 visual 有 1→0 的递归）
+ *   - 同 species 内嵌：复用 partial unique 索引 (按 level 唯一)；file ref 维护也走 per-level field
+ *     命名空间 `levelVisual.<L>.levelUpEffect`
+ *
  * 字段：
  *   - key / name / visualType / videoFile (+ svgContent 兜底)
- *   - levelVisuals[{level,visualType,svgContent,videoFile}]（逐级形象覆盖；空数组 = 全部等级用 species 默认）
+ *   - levelVisuals[{level,visualType,svgContent,videoFile, levelUpEffect?}]（逐级形象 + 可选升级特效）
  *   - weight  (破壳加权随机权重)
  *   - hungerDecayMinutes / isActive / description / meta
  *   - createdBy / updatedBy  (审计)
@@ -56,6 +64,8 @@ const PetSpeciesSchema = new Schema(
     // 2026-07-16: per-species 逐级形象覆盖（每等级一条；空数组 → 全部等级用 species 视觉字段）
     // fallback 链：levelVisuals[level] → levelVisuals[level-1] → ... → 物种自身视觉字段
     // 2026-07-18: 最高等级由本数组派生 (max(levelVisuals[].level))，数组外不再存 maxLevel
+    // 2026-07-18 第四期: 每条子文档可选嵌 levelUpEffect — 升级到该等级时一次性播放的特效视频/SVG
+    //   与形象区分：形象 = 持续循环状态；特效 = 升级瞬时事件。未配 = 升级时无特效。
     levelVisuals: {
       type: [
         new Schema(
@@ -64,7 +74,21 @@ const PetSpeciesSchema = new Schema(
             level:      { type: Number, required: true, min: 1, max: 100 },
             visualType: { type: String, enum: PET_VISUAL_TYPES, required: true },
             svgContent: { type: String, default: null, maxlength: 50000 },
-            videoFile:  { type: Schema.Types.ObjectId, ref: 'File', default: null }
+            videoFile:  { type: Schema.Types.ObjectId, ref: 'File', default: null },
+            // 2026-07-18 第四期: 升级特效 (瞬时事件, 跟形象区分)。整段缺省 / 字段 null = 无特效。
+            // 注意：整个子字段缺省视为未配，不参与 file ref 维护；只 visualType+内容双全才有效。
+            levelUpEffect: {
+              type: new Schema(
+                {
+                  _id: false,
+                  visualType: { type: String, enum: PET_VISUAL_TYPES, default: null },
+                  svgContent: { type: String, default: null, maxlength: 50000 },
+                  videoFile:  { type: Schema.Types.ObjectId, ref: 'File', default: null }
+                },
+                { _id: false }
+              ),
+              default: null
+            }
           },
           { _id: false }
         )

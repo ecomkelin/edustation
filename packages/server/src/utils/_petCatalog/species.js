@@ -73,7 +73,70 @@ const SPECIES = [
 </svg>`,
     weight: 100,
     isActive: true,
-    description: '圆圆胖胖的橘猫，慵懒可爱'
+    description: '圆圆胖胖的橘猫，慵懒可爱',
+    // 2026-07-18 第四期: 升级特效示例 (演示完整数据形态)
+    //   - Lv.5 配独立形象 + 升级闪光特效
+    //   - resolveMaxLevel 派生 = 5 (物种最高等级 = 5)
+    //   - 跨 Lv.1→5 喂养时, pet.service.feed 会返 levelUpEffects[] = [Lv.5 升级特效], 前端串行播放
+    //   - Lv.1 兜底走 species 自身视觉 (即上方 svgContent)
+    levelVisuals: [
+      {
+        level: 5,
+        visualType: 'svg',
+        svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="lv5-body" cx="50%" cy="40%" r="65%">
+              <stop offset="0%" stop-color="#FFE7BA"/>
+              <stop offset="100%" stop-color="#FA8C16"/>
+            </radialGradient>
+            <style>
+              .lv5-breathe { transform-origin: 50px 60px; animation: lv5-b 2.5s ease-in-out infinite; }
+              @keyframes lv5-b { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+            </style>
+          </defs>
+          <g class="lv5-breathe">
+            <ellipse cx="50" cy="60" rx="38" ry="30" fill="url(#lv5-body)"/>
+            <circle cx="50" cy="48" r="28" fill="url(#lv5-body)"/>
+            <!-- 王冠 (Lv.5 进化标志) -->
+            <path d="M 36 28 L 38 18 L 42 26 L 50 14 L 58 26 L 62 18 L 64 28 Z" fill="#FFD700" stroke="#D4A017" stroke-width="1"/>
+            <circle cx="50" cy="20" r="2" fill="#FF4D4F"/>
+            <ellipse cx="42" cy="52" rx="3" ry="4" fill="#262626"/>
+            <ellipse cx="58" cy="52" rx="3" ry="4" fill="#262626"/>
+            <path d="M 48 58 L 52 58 L 50 61 Z" fill="#FF6B6B"/>
+            <circle cx="36" cy="58" r="3" fill="#FFADD2" opacity="0.6"/>
+            <circle cx="64" cy="58" r="3" fill="#FFADD2" opacity="0.6"/>
+          </g>
+        </svg>`,
+        // 升级特效 = 一次性闪光 + 旋转星芒 (uni-app SVG 内嵌 SMIL 动画, 前端 1.8s 兜底)
+        levelUpEffect: {
+          visualType: 'svg',
+          svgContent: `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="lv5-ef-glow" cx="50%" cy="50%" r="60%">
+                <stop offset="0%" stop-color="#FFE7BA" stop-opacity="1"/>
+                <stop offset="50%" stop-color="#FFD700" stop-opacity="0.6"/>
+                <stop offset="100%" stop-color="#FA8C16" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <!-- 中心扩散光环 -->
+            <circle cx="50" cy="50" r="20" fill="url(#lv5-ef-glow)">
+              <animate attributeName="r" values="10;55;65" dur="1.2s" repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="0;1;0" dur="1.2s" repeatCount="indefinite"/>
+            </circle>
+            <!-- 8 向星芒 -->
+            <g transform-origin="50 50">
+              <animateTransform attributeName="transform" type="rotate" values="0;360" dur="1.2s" repeatCount="indefinite"/>
+              <path d="M 50 18 L 52 50 L 50 82 L 48 50 Z" fill="#FFD700" opacity="0.85"/>
+              <path d="M 18 50 L 50 52 L 82 50 L 50 48 Z" fill="#FFD700" opacity="0.85"/>
+              <path d="M 26 26 L 50 50 L 74 74 L 50 50 Z" fill="#FFE7BA" opacity="0.6"/>
+              <path d="M 74 26 L 50 50 L 26 74 L 50 50 Z" fill="#FFE7BA" opacity="0.6"/>
+            </g>
+            <!-- 中心加冕符号 "Lv.5" -->
+            <text x="50" y="56" text-anchor="middle" font-size="14" font-weight="bold" fill="#FF4D4F">Lv.5</text>
+          </svg>`
+        }
+      }
+    ]
   },
 
   /* ───── 2. 小奶狗 — 垂耳奶狗（垂耳摇 + 舌头伸缩 + 摇尾巴） ───── */

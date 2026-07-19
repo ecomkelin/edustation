@@ -30,6 +30,17 @@
  *   - 每级形象列表本身已描述支持到多少级 → 单独 maxLevel 字段冗余
  *   - resolveMaxLevel(species) 改成从 levelVisuals 派生；调用方零改动
  *
+ * 2026-07-18 第四期：升级特效 (levelUpEffect)
+ *   - 在 levelVisuals[] 每条子文档里嵌可选的 levelUpEffect {visualType, svgContent, videoFile}
+ *   - 跟 resolveVisualAtLevel 对称：resolveLevelUpEffectAtLevel(species, level) → 当前等级升级时播放的特效
+ *   - 语义区别：形象 = 持续循环状态 (有 fallback 链)，特效 = 瞬时事件 (无 fallback；未配 = 无特效)
+ *
+ * 2026-07-18 第五期：蛋态视觉复用物种本体
+ *   - 蛋态不再用纯 emoji (🥚) 占位，改用 species 自身视觉字段作为底层
+ *   - resolveEggVisual(species) 直接取 species.{visualType, svgContent, videoFile}, 不走 fallback 链
+ *   - emoji 保留作为左上角半透明 overlay (产品决策 2026-07-18: 保留 emoji 标识)
+ *   - 破壳动画 (锤击+裂纹+金光) 保留
+ *
  * 2026-07-18 第三期：DEFAULT_SPECIES_MAX_LEVEL 从 12 改为 1
  *   - 旧: 空数组 → 12 级兜底 (用户「新建物种没配 levelVisuals 默认就有 12 级可升」不合理)
  *   - 新: 空数组 → 1 级 (物种默认就是破壳后 1 级, 不配 levelVisuals 就不能升级, 必须显式配)
@@ -230,6 +241,33 @@ function getOverrideMap(levelVisuals) {
  *   - level: 命中的等级（source='override' 时为 levelVisuals[] 的 key；source='species' 时为 0）
  *   - 找不到任何 visual（理论不可能，seed 保证 species 必有）→ 返回 video+null 占位
  */
+/**
+ * 解析「蛋态」底层视觉 (2026-07-18 第五期: 蛋态复用物种本体视觉)
+ *
+ * 与 resolveVisualAtLevel 的关键区别:
+ *   - 蛋态不走 fallback 链, 直接取 species 自身视觉字段 ({visualType, svgContent, videoFile})
+ *   - 即便 Lv.1 配了 override, 蛋态**不**用 — 蛋没"等级"概念, 一直展示物种本体风格
+ *
+ * 设计动机 (2026-07-18):
+ *   - 原蛋态用 🥚 emoji 占位, 视觉风格与破壳后完全割裂
+ *   - 改用 species 本体视频/svg → 破壳前后视觉一致, 玩家提前感受物种风格
+ *   - emoji 缩小作为左上角半透明 overlay, 保留"未破壳"状态标识
+ *   - 破壳动画 (锤击+裂纹+金光) 保留, 仪式感不变
+ *
+ * @param {Object|null} speciesRecord - PetSpecies 记录 (含 visualType/svgContent/videoFile)
+ * @returns {{visualType: string, svgContent: string|null, videoFile: Object|string|null}|null}
+ *   - 返回 null 表示该物种无视觉配置 (前端走 fallback: emoji + 物种 emoji)
+ *   - 否则返回结构与 currentVisual 同 schema, 前端可复用同一渲染分支
+ */
+function resolveEggVisual(speciesRecord) {
+  if (!speciesRecord) return null
+  return {
+    visualType: speciesRecord.visualType || 'video',
+    svgContent: speciesRecord.svgContent || null,
+    videoFile: speciesRecord.videoFile || null
+  }
+}
+
 function resolveVisualAtLevel(speciesRecord, level) {
   const target = Math.max(1, Math.floor(Number(level) || 1))
   const overrides = (speciesRecord && speciesRecord.levelVisuals) || []
@@ -262,6 +300,45 @@ function resolveVisualAtLevel(speciesRecord, level) {
   return { visualType: 'video', svgContent: null, videoFile: null, source: 'species', level: 0 }
 }
 
+/**
+ * 解析某物种在「升级到指定 level」时应播放的升级特效（2026-07-18 第四期）。
+ *
+ * 与 resolveVisualAtLevel 的关键区别：
+ *   - 形象 (visual) 是「持续循环状态」，有 fallback 链（levelVisuals[L] → L-1 → ... → species）
+ *   - 特效 (effect) 是「瞬时事件」，**没有 fallback**：未在 levelVisuals[L].levelUpEffect 配 = 升级时不播
+ *   - 为什么不递归 fallback：升级是单次事件，从 L-1 → L 的跃迁发生在那一刻；
+ *     若 L 没配，回退到 L-1 的特效语义混乱（用户期望升到 L，但看到的是 L-1 的"上一段"动画）
+ *
+ * 触发场景：
+ *   - pet.service.feed 一次跨 N 级时：循环调用 resolveLevelUpEffectAtLevel(species, fromLevel+1)
+ *     ...species, newLevel)，把非空的 effect 按 fromLevel 升序拼成 levelUpEffects[] 返回前端串行播放
+ *   - PetAccount.decoratePet 也调一次（pet.level 当前的升级特效，用于课堂展示 / 列表预览等场景）
+ *
+ * @param {Object|null} speciesRecord - PetSpecies 记录（含 levelVisuals[].levelUpEffect）
+ * @param {Number} level - 升级到的目标等级（1-based；与 levelVisuals[].level 对应）
+ * @returns {{visualType: string, svgContent: string|null, videoFile: Object|string|null,
+ *            level: number}|null}
+ *   - 返回 null 表示该等级无升级特效（前端不播）
+ *   - 否则返回完整 effect 结构（与 currentVisual 同 schema，可直接复用渲染分支）
+ *   - level 字段返回入参 target level（即使是 species 兜底也没用，因为 effect 没有 fallback）
+ */
+function resolveLevelUpEffectAtLevel(speciesRecord, level) {
+  if (!speciesRecord) return null
+  const target = Math.max(1, Math.floor(Number(level) || 1))
+  const map = getOverrideMap(speciesRecord.levelVisuals || [])
+  const entry = map[String(target)]
+  if (!entry) return null  // 该等级没配 levelVisuals → 自然无 effect
+  const eff = entry.levelUpEffect
+  if (!eff || typeof eff !== 'object') return null  // 配了 visual 但没配 effect
+  if (eff.visualType === 'svg' && eff.svgContent) {
+    return { visualType: 'svg', svgContent: eff.svgContent, videoFile: null, level: target }
+  }
+  if (eff.visualType === 'video' && eff.videoFile) {
+    return { visualType: 'video', svgContent: null, videoFile: eff.videoFile, level: target }
+  }
+  return null  // 脏数据 visualType+内容不匹配 → 视为未配
+}
+
 // 导出 (CJS + named exports 双形式，与 shared/enums.js 一致)
 exports.MAX_HUNGER = MAX_HUNGER
 exports.INIT_HUNGER_AFTER_HATCH = INIT_HUNGER_AFTER_HATCH
@@ -279,4 +356,6 @@ exports.rowsToLevelOverrides = rowsToLevelOverrides
 exports.resolveMaxLevel = resolveMaxLevel
 exports.getOverrideMap = getOverrideMap
 exports.resolveVisualAtLevel = resolveVisualAtLevel
+exports.resolveLevelUpEffectAtLevel = resolveLevelUpEffectAtLevel
+exports.resolveEggVisual = resolveEggVisual
 module.exports = exports

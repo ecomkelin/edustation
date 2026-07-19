@@ -50,6 +50,8 @@ const LEVEL_VISUAL_FIELD_PREFIX = 'levelVisual.'
  *   - level 必须在 [1, 100] 之间（2026-07-18: 删 maxLevel 后，cap 直接写死 100；
  *     物种最高等级由数组 max 派生，理论无上限但 schema 防呆限 100）
  *   - visualType=svg 必须填 svgContent（XSS sanitize）；visualType=video 必须填 videoFile
+ *   - 2026-07-18 第四期: 每条可嵌可选 levelUpEffect（升级瞬时特效），visualType+内容规则同 visual
+ *     （未传/visualType=null = 无特效；visualType 必填时必须配齐内容）
  *   - 按 level 升序返回
  *
  * 找不到任何 visual 是允许的（= 全部等级走 species 视觉字段；fallback 兜底）。
@@ -72,6 +74,9 @@ function normalizeLevelVisuals(input) {
     if (!['svg', 'video'].includes(v.visualType)) {
       throw ApiError.badRequest(`levelVisuals[level=${lvl}] visualType 必须是 svg 或 video`)
     }
+    // 2026-07-18 第四期: 升级特效 (levelUpEffect) — 嵌套归一化
+    const normalizedEffect = normalizeLevelUpEffect(v.levelUpEffect, lvl)
+
     if (v.visualType === 'svg') {
       if (!v.svgContent) {
         throw ApiError.badRequest(`levelVisuals[level=${lvl}] visualType=svg 时必须填 svgContent`)
@@ -84,7 +89,8 @@ function normalizeLevelVisuals(input) {
         level: lvl,
         visualType: 'svg',
         svgContent: cleanSvg,
-        videoFile: null
+        videoFile: null,
+        levelUpEffect: normalizedEffect
       })
     } else {
       // video
@@ -101,7 +107,8 @@ function normalizeLevelVisuals(input) {
         level: lvl,
         visualType: 'video',
         svgContent: null,
-        videoFile: vid
+        videoFile: vid,
+        levelUpEffect: normalizedEffect
       })
     }
   }
@@ -110,8 +117,56 @@ function normalizeLevelVisuals(input) {
 }
 
 /**
+ * 归一化单条 levelUpEffect 子字段 (2026-07-18 第四期)。
+ * 接受：undefined / null / {visualType:null,...} / 完整 {visualType, svgContent|videoFile}
+ * 返回：
+ *   - undefined → 未传 = "保持原样"（由调用方区分；这里只代表"未变化"，写库时不再写入）
+ *   - null → 显式清除（写库时写入 null）
+ *   - 完整对象 → {visualType, svgContent, videoFile} 校验后归一
+ */
+function normalizeLevelUpEffect(input, parentLevel) {
+  // 区分 "字段缺省 (undefined)" vs "显式 null (清除)" vs "完整对象"
+  if (input === undefined) return undefined  // 调用方用 undefined 区分"未传，不动"
+  if (input === null) return null            // 显式清除
+  if (typeof input !== 'object') {
+    throw ApiError.badRequest(`levelVisuals[level=${parentLevel}].levelUpEffect 必须是对象或 null`)
+  }
+  const vt = input.visualType
+  if (vt === null || vt === undefined || vt === '') return null  // 空 visualType 也视为清除
+  if (!['svg', 'video'].includes(vt)) {
+    throw ApiError.badRequest(`levelVisuals[level=${parentLevel}].levelUpEffect.visualType 必须是 svg 或 video`)
+  }
+  if (vt === 'svg') {
+    if (!input.svgContent) {
+      throw ApiError.badRequest(`levelVisuals[level=${parentLevel}].levelUpEffect visualType=svg 时必须填 svgContent`)
+    }
+    const clean = sanitizeSvg(input.svgContent)
+    if (!clean) {
+      throw ApiError.badRequest(`levelVisuals[level=${parentLevel}].levelUpEffect svgContent 被清理后为空`)
+    }
+    return { visualType: 'svg', svgContent: clean, videoFile: null }
+  }
+  // video
+  if (!input.videoFile) {
+    throw ApiError.badRequest(`levelVisuals[level=${parentLevel}].levelUpEffect visualType=video 时必须填 videoFile`)
+  }
+  const vid = typeof input.videoFile === 'string'
+    ? input.videoFile
+    : (input.videoFile._id || input.videoFile.id || null)
+  if (!vid) {
+    throw ApiError.badRequest(`levelVisuals[level=${parentLevel}].levelUpEffect videoFile 缺少 id`)
+  }
+  return { visualType: 'video', svgContent: null, videoFile: vid }
+}
+
+/**
  * admin 更新 species.levelVisuals 时, per-level 粒度维护 File.refs。
  * 不用 diffArrayById 整体 diff（会触发未变更等级的 unbind/rebind churn）。
+ *
+ * 2026-07-18 第四期: 每条 levelVisual 多了可选 levelUpEffect.videoFile，filed 命名空间:
+ *   - `levelVisual.<L>`         — 形象本身的 videoFile
+ *   - `levelVisual.<L>.levelUpEffect` — 升级特效的 videoFile
+ * 两套字段分开维护，避免一处变更影响另一处。
  */
 async function maintainLevelVisualsFileRefs({ speciesId, oldLevelVisuals, newLevelVisuals }) {
   const oldMap = new Map()
@@ -127,17 +182,34 @@ async function maintainLevelVisualsFileRefs({ speciesId, oldLevelVisuals, newLev
   for (const lv of allLevels) {
     const oldV = oldMap.get(lv) || null
     const newV = newMap.get(lv) || null
+    // 1) 形象本身的 videoFile
     const oldVideoId = oldV && oldV.videoFile ? String(oldV.videoFile) : null
     const newVideoId = newV && newV.videoFile ? String(newV.videoFile) : null
-    if (oldVideoId === newVideoId) continue
-    await fileBind.diffSingleById({
-      orgId: null,
-      oldId: oldVideoId,
-      newId: newVideoId,
-      entity: REF_ENTITY.PET_SPECIES,
-      entityId: speciesId,
-      field: `${LEVEL_VISUAL_FIELD_PREFIX}${lv}`
-    })
+    if (oldVideoId !== newVideoId) {
+      await fileBind.diffSingleById({
+        orgId: null,
+        oldId: oldVideoId,
+        newId: newVideoId,
+        entity: REF_ENTITY.PET_SPECIES,
+        entityId: speciesId,
+        field: `${LEVEL_VISUAL_FIELD_PREFIX}${lv}`
+      })
+    }
+    // 2) 升级特效的 videoFile (2026-07-18 第四期)
+    const oldEffectId = oldV && oldV.levelUpEffect && oldV.levelUpEffect.videoFile
+      ? String(oldV.levelUpEffect.videoFile) : null
+    const newEffectId = newV && newV.levelUpEffect && newV.levelUpEffect.videoFile
+      ? String(newV.levelUpEffect.videoFile) : null
+    if (oldEffectId !== newEffectId) {
+      await fileBind.diffSingleById({
+        orgId: null,
+        oldId: oldEffectId,
+        newId: newEffectId,
+        entity: REF_ENTITY.PET_SPECIES,
+        entityId: speciesId,
+        field: `${LEVEL_VISUAL_FIELD_PREFIX}${lv}.levelUpEffect`
+      })
+    }
   }
 }
 
@@ -165,7 +237,8 @@ async function listSpecies({ isActive, keyword }) {
   return listMerged({
     Model: PetSpecies, type: 'species', baseFilter, keyword,
     // 2026-07-16: 加 populate levelVisuals.videoFile，让列表 / 详情都能展示已上传的视频
-    populateFields: ['videoFile', 'levelVisuals.videoFile']
+    // 2026-07-18 第四期: 加 populate levelVisuals.levelUpEffect.videoFile (升级特效 video)
+    populateFields: ['videoFile', 'levelVisuals.videoFile', 'levelVisuals.levelUpEffect.videoFile']
   })
 }
 
@@ -174,6 +247,8 @@ async function getSpecies({ id }) {
   const doc = await PetSpecies.findOne({ _id: id })
     .populate('videoFile', 'url mime originalName')
     .populate('levelVisuals.videoFile', 'url mime originalName')
+    // 2026-07-18 第四期: 升级特效 videoFile
+    .populate('levelVisuals.levelUpEffect.videoFile', 'url mime originalName')
     .lean()
   if (!doc) throw ApiError.notFound('物种不存在')
   return doc
@@ -213,7 +288,7 @@ async function createSpecies({ payload, operatorId }) {
       entity: REF_ENTITY.PET_SPECIES, entityId: created._id, field: 'videoFile'
     })
   }
-  // levelVisuals 每级一个 file ref
+  // levelVisuals 每级一个 file ref (2026-07-18 第四期: 内部已含 levelUpEffect 的 videoFile 维护)
   if (levelVisuals.length > 0) {
     await maintainLevelVisualsFileRefs({
       speciesId: created._id,
@@ -222,7 +297,9 @@ async function createSpecies({ payload, operatorId }) {
     })
   }
   // 2026-07-16: populate levelVisuals.videoFile 让 admin UI 拿到完整 url/mime
+  // 2026-07-18 第四期: 加 levelVisuals.levelUpEffect.videoFile
   await created.populate('levelVisuals.videoFile', 'url mime originalName')
+  await created.populate('levelVisuals.levelUpEffect.videoFile', 'url mime originalName')
   return created.toObject()
 }
 
@@ -272,7 +349,7 @@ async function updateSpecies({ id, payload, operatorId }) {
       entity: REF_ENTITY.PET_SPECIES, entityId: doc._id, field: 'videoFile'
     })
   }
-  // levelVisuals 维护
+  // levelVisuals 维护 (2026-07-18 第四期: 内部已含 levelUpEffect 的 videoFile 维护)
   if (normalizedLevelVisuals !== null) {
     await maintainLevelVisualsFileRefs({
       speciesId: doc._id,
@@ -281,7 +358,9 @@ async function updateSpecies({ id, payload, operatorId }) {
     })
   }
   // 2026-07-16: populate levelVisuals.videoFile 让 admin UI 拿到完整 url/mime
+  // 2026-07-18 第四期: 加 levelVisuals.levelUpEffect.videoFile
   await updated.populate('levelVisuals.videoFile', 'url mime originalName')
+  await updated.populate('levelVisuals.levelUpEffect.videoFile', 'url mime originalName')
   return updated.toObject()
 }
 

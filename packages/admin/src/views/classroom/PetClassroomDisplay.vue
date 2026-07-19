@@ -22,11 +22,24 @@
     <!-- 主体：左默认宠物大图 + 右数据 -->
     <div class="main">
       <div class="pet-display">
-        <!-- 蛋态 + 破壳特效 -->
+        <!-- 蛋态 + 破壳特效
+             2026-07-18 第五期: 蛋态底层 = eggVisual (species 本体视频/svg, server 端解析)
+             emoji 缩小到左上角半透明 overlay, 破壳动画保留 -->
         <div v-if="pet?.state === 'egg' || hatchActive" class="pet-img hatch-stage" :class="`phase-${hatchPhase}`">
           <div class="hatch-hammer" :class="{ active: hatchPhase === 'hammer' }">🔨</div>
           <div class="pet-frame egg-frame" :class="{ fading: hatchPhase === 'gold' }">
-            <div class="egg-emoji" :class="{ cracking: ['cracks','shake','gold'].includes(hatchPhase) }">🥚</div>
+            <!-- 底层: species 本体视频/svg -->
+            <div v-if="currentEggVisual && currentEggVisual.visualType === 'svg' && currentEggVisual.svgContent" class="egg-base-svg" v-html="currentEggVisual.svgContent" />
+            <video
+              v-else-if="currentEggVisual && currentEggVisual.visualType === 'video' && currentEggVisual.videoFile && currentEggVisual.videoFile.url"
+              :src="currentEggVisual.videoFile.url"
+              :key="`egg-base-${currentEggVisual.videoFile._id || currentEggVisual.videoFile.id || ''}`"
+              autoplay loop muted playsinline
+              class="egg-base-video"
+            />
+            <!-- emoji 缩到左上角半透明, 保留"未破壳"状态标识 -->
+            <div class="egg-emoji-egg-overlay" :class="{ cracking: ['cracks','shake','gold'].includes(hatchPhase) }">🥚</div>
+            <!-- 裂纹 overlay (破壳动画过程中才显示) -->
             <svg
               v-if="['cracks','shake','gold'].includes(hatchPhase)"
               class="egg-cracks"
@@ -57,6 +70,31 @@
         <div v-else class="pet-empty">
           <el-icon :size="120"><Picture /></el-icon>
           <div class="hint">{{ pet ? (pet.species || '未破壳') : '该学员暂无宠物' }}</div>
+        </div>
+
+        <!-- 2026-07-18 第四期: 升级特效遮罩 (跨级时串行播放 Lv.X→Lv.X+1→...)
+             覆盖在主图上, 跨级时暂停 currentVisual 视觉, 播完恢复 -->
+        <div v-if="levelUpActive && currentLevelUpEffect" class="levelup-overlay">
+          <div class="levelup-backdrop" :class="{ fade: levelUpFading }" />
+          <div class="levelup-content">
+            <div v-if="currentLevelUpEffect.visualType === 'svg' && currentLevelUpEffect.svgContent"
+                 class="levelup-svg" :class="{ fade: levelUpFading }"
+                 v-html="currentLevelUpEffect.svgContent" />
+            <video
+              v-else-if="currentLevelUpEffect.visualType === 'video' && currentLevelUpEffect.videoFile?.url"
+              :src="currentLevelUpEffect.videoFile.url"
+              :key="`levelup-${levelUpIndex}-${currentLevelUpEffect.videoFile._id || currentLevelUpEffect.videoFile.id || ''}`"
+              autoplay muted playsinline
+              class="levelup-video"
+              @ended="onLevelUpEffectEnded"
+            />
+            <div class="levelup-tip">
+              <span class="levelup-lv">Lv.{{ currentLevelUpEffect.level }}</span>
+              <span v-if="levelUpQueue.length > 1" class="levelup-progress">
+                {{ levelUpIndex + 1 }}/{{ levelUpQueue.length }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -190,8 +228,15 @@ import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { useUserPerms } from '@/composables/useUserPerms'
 import { handleRemoveError } from '@/utils/removable'
 import { formatDate } from '@/utils/format'
+// 2026-07-18 第四期: 升级特效解析 (per-level 一次性事件)
+//   注意: 必须从 .mjs 桥接文件 import — shared/petConfig.js 是 CJS, Vite ESM 解 named import 会失败
+//   详见 memory: shared-enums-vite-mjs-required (扩到所有 shared/*.mjs 桥接)
+import { resolveLevelUpEffectAtLevel } from '@shared/petConfig.mjs'
 
 const MAX_PETS = 5  // 2026-07-16: 与 shared/petConfig.MAX_PETS_PER_STUDENT 同步
+// 2026-07-18 第四期: 升级特效播放常量 (与 C 端 pages/pet/detail.vue 同步)
+const LEVEL_UP_SVG_DEFAULT_MS = 1800
+const LEVEL_UP_FADE_MS = 250
 
 const SPECIES_EMOJI_FALLBACK = {
   cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
@@ -218,6 +263,25 @@ export default {
     const hatchPhase = ref('idle')
     const hatchActive = ref(false)
     let hatchTimers = []
+
+    // 2026-07-18 第四期: 升级特效队列
+    // - 轮询 fetchOnce 后比较 prevPetLevel 与当前 pet.level, 若提升则触发播放
+    // - 这样不依赖 onBuyConsumable 主动提供 levelUpEffects (兼容任何客户端升级来源)
+    // 2026-07-19: 加 prevInitialized 标记 + prevPetId, 首次加载/切换默认宠物同步基线不触发
+    const prevPetLevel = ref(1)  // 上次轮询到的 level, 用于检测升级
+    const prevPetId = ref(null)  // 上次轮询到的 petId, 切换宠物时同步基线
+    const prevInitialized = ref(false)  // 是否已完成首次基线同步
+    const levelUpQueue = ref([])
+    const levelUpIndex = ref(0)
+    const levelUpActive = ref(false)
+    const levelUpFading = ref(false)
+    let levelUpTimers = []
+
+    const currentLevelUpEffect = computed(() =>
+      levelUpActive.value ? (levelUpQueue.value[levelUpIndex.value] || null) : null
+    )
+    // 2026-07-18 第五期: 蛋态底层视觉 (species 本体视频/svg, 不走 fallback 链)
+    const currentEggVisual = computed(() => pet.value?.eggVisual || null)
 
     const otherPets = computed(() => pets.value.filter(p => !pet.value || String(p._id) !== String(pet.value._id)))
     // 2026-07-17: 「其他领养的宠物」改为展示全部（含默认），原 otherPets 仅保留供旧逻辑/调试用，模板循环改用 pets
@@ -252,10 +316,16 @@ export default {
       }
       try {
         const r = await petAdminApi.getByStudent(studentId)
-        pet.value = r.data?.pet || null
-        pets.value = r.data?.pets || (r.data?.pet ? [r.data.pet] : [])
+        const newPet = r?.data?.pet || null
+        const newPets = r?.data?.pets || (r?.data?.pet ? [r.data.pet] : [])
+        // 2026-07-18 第四期: 检测升级 → 客户端组装 levelUpEffects 队列
+        // 不依赖 API 返 levelUpEffects (兼容任何客户端升级来源, 例如家长在其他端喂食)
+        detectAndPlayLevelUp(newPet, newPets)
+        pet.value = newPet
+        pets.value = newPets
       } catch (e) {
-        // ignore（轮询失败不阻塞）
+        // 课堂展示是 polling, 单次失败不弹错 (避免 3s 一次刷屏), 仅 console.warn 排查
+        console.warn('[classroom.fetchOnce] error:', e?.response?.data || e?.message || e)
       }
       try {
         const { data } = await pointsAdminApi.getAccount(studentId)
@@ -263,6 +333,87 @@ export default {
       } catch (_) {
         // ignore
       }
+    }
+
+    // 2026-07-18 第四期: 检测升级 → 客户端组装 levelUpEffects 队列
+    // - 比较 prevPetLevel vs newPet.level, 仅在 state=alive + level 提升时触发
+    // - 从 newPet.speciesRecord.levelVisuals[fromLevel+1..newLevel] 提取非空 effect
+    // - 若用户主动在 admin 端点击代买, onBuyConsumable 已走 result.levelUpEffects (见下方)
+    //   此时 prevPetLevel 还没更新 (在 fetchOnce 内同步), 所以轮询这次也会再检测一次;
+    //   防护: if levelUpActive.value 已经在播放, 跳过本次轮询触发 (避免双重播放)
+    // 2026-07-19: 加 prevInitialized + prevPetId 防误判 — 首次加载/切换默认宠物
+    //   都不应触发升级特效 (避免「刷新就播」「设默认就播」)
+    function detectAndPlayLevelUp(newPet, _newPets) {
+      if (!newPet || newPet.state !== 'alive') {
+        prevPetLevel.value = newPet?.level || prevPetLevel.value
+        prevPetId.value = newPet?._id ? String(newPet._id) : prevPetId.value
+        prevInitialized.value = true
+        return
+      }
+      // 首次加载 / 切换了不同的宠物 → 同步基线不触发, 等下次真正跨级
+      const newPetId = newPet._id ? String(newPet._id) : null
+      if (!prevInitialized.value || prevPetId.value !== newPetId) {
+        prevPetLevel.value = newPet.level || 1
+        prevPetId.value = newPetId
+        prevInitialized.value = true
+        return
+      }
+      const fromLevel = prevPetLevel.value
+      const toLevel = newPet.level || 1
+      if (toLevel > fromLevel && fromLevel >= 1) {
+        const queue = []
+        for (let lv = fromLevel + 1; lv <= toLevel; lv++) {
+          const eff = resolveLevelUpEffectAtLevel(newPet.speciesRecord, lv)
+          if (eff) queue.push(eff)
+        }
+        if (queue.length > 0 && !levelUpActive.value) {
+          playLevelUpEffects(queue)
+        }
+      }
+      prevPetLevel.value = toLevel
+    }
+
+    // 2026-07-18 第四期: 串行播放升级特效 (与 C 端 pages/pet/detail.vue 同范式)
+    // - 视频: @ended 自然结束
+    // - SVG: 固定 LEVEL_UP_SVG_DEFAULT_MS 兜底
+    // - 队列衔接: 单个 effect 结束后淡出 LEVEL_UP_FADE_MS 再推进
+    function playLevelUpEffects(effects) {
+      if (!effects || effects.length === 0) return
+      clearLevelUpTimers()
+      levelUpQueue.value = effects
+      levelUpIndex.value = 0
+      levelUpActive.value = true
+      levelUpFading.value = false
+      // svg effect 启动兜底定时器 (video 走 @ended)
+      scheduleSvgLevelUpFallback(0)
+    }
+    function scheduleSvgLevelUpFallback(idx) {
+      const e = levelUpQueue.value[idx]
+      if (e && e.visualType === 'svg') {
+        levelUpTimers.push(setTimeout(() => onLevelUpEffectEnded(), LEVEL_UP_SVG_DEFAULT_MS))
+      }
+    }
+    function onLevelUpEffectEnded() {
+      if (!levelUpActive.value) return
+      clearLevelUpTimers()  // 清掉 svg 兜底定时器
+      levelUpFading.value = true
+      levelUpTimers.push(setTimeout(() => {
+        const next = levelUpIndex.value + 1
+        if (next < levelUpQueue.value.length) {
+          levelUpIndex.value = next
+          levelUpFading.value = false
+          scheduleSvgLevelUpFallback(next)
+        } else {
+          levelUpActive.value = false
+          levelUpQueue.value = []
+          levelUpIndex.value = 0
+          levelUpFading.value = false
+        }
+      }, LEVEL_UP_FADE_MS))
+    }
+    function clearLevelUpTimers() {
+      levelUpTimers.forEach(clearTimeout)
+      levelUpTimers = []
     }
 
     // 食物 chip（扁平数值，无 tier）
@@ -323,7 +474,28 @@ export default {
         await ElMessageBox.confirm(`确认代买 ${itemName}（扣 ${cost} 积分）并立即喂食？`, '代买食物', { type: 'warning' })
       } catch (_) { return }
       try {
-        await petAdminApi.grantConsumable(pet.value._id, { consumableKey: key })
+        // 2026-07-18 第四期: grantConsumable (委托 petService.feed) 现在会返 levelUpEffects,
+        // 若有跨级, 提前播放队列再 fetchOnce (避免轮询检测后再播一次的竞态)
+        const result = await petAdminApi.grantConsumable(pet.value._id, { consumableKey: key })
+        const effects = result?.data?.levelUpEffects || result?.levelUpEffects || []
+        const filtered = (Array.isArray(effects) ? effects : []).filter(Boolean).filter((e) =>
+          (e.visualType === 'svg' && e.svgContent) ||
+          // 2026-07-19: 同时接受 populate 后的对象 (有 .url) 和 ObjectId 字符串 (兜底,
+          // 万一 server populate 漏了仍能让 UI 至少进入播放分支 — videoFile 字符串
+          // 会让 <video :src> 失败但不影响其他 effect 串行播放)
+          (e.visualType === 'video' && e.videoFile && (e.videoFile.url || e.videoFile._id || typeof e.videoFile === 'string'))
+        )
+        // 更新 prevPetLevel 跳过轮询检测 (避免双重播放)
+        if (result?.data?.petAccount?.level) {
+          prevPetLevel.value = result.data.petAccount.level
+        } else if (result?.petAccount?.level) {
+          prevPetLevel.value = result.petAccount.level
+        } else if (result?.levelUpToLevel) {
+          prevPetLevel.value = result.levelUpToLevel
+        }
+        if (result?.data?.levelUp && filtered.length > 0) {
+          playLevelUpEffects(filtered)
+        }
         ElMessage.success(`已代买并喂食 ${itemName}`)
         await fetchOnce()
       } catch (e) {
@@ -352,9 +524,26 @@ export default {
       setP('cracks', 400)
       setP('shake', 1000)
       setP('gold', 2000)
-      petAdminApi.hatchOnBehalf(target._id).catch(e => {
-        ElMessage.error(e?.response?.data?.message || '破壳失败')
-      })
+      // 2026-07-19: 破壳 = 升到 Lv.1, server hatch 现在返回 levelUpEffects (Lv.1 特效);
+      // 提前 fetchOnce 拿到 speciesRecord 才能在破壳动画后播升级特效.
+      // 节奏: 锤击 0ms → 裂纹 400ms → 摇 1000ms → 金光 2000ms → 总 3000ms 后破壳动画结束
+      // 升级特效覆盖在主图区 (与升级特效同源), 用 onLevelUpEffectEnded 串行播放
+      hatchTimers.push(setTimeout(async () => {
+        try {
+          // 先取最新 pet (破壳后的 speciesRecord), 再调 hatch
+          // (hatchOnBehalf 内部已做状态守卫, 必须从 egg→alive)
+          const r = await petAdminApi.hatchOnBehalf(target._id)
+          const effects = (r?.data?.levelUpEffects || r?.levelUpEffects || []).filter(Boolean).filter((e) =>
+            (e.visualType === 'svg' && e.svgContent) ||
+            (e.visualType === 'video' && e.videoFile && (e.videoFile.url || e.videoFile._id || typeof e.videoFile === 'string'))
+          )
+          if (effects.length > 0 && !levelUpActive.value) {
+            playLevelUpEffects(effects)
+          }
+        } catch (e) {
+          ElMessage.error(e?.response?.data?.message || '破壳失败')
+        }
+      }, 2000))  // 金光阶段开始时调 (有 ~1s 时间播升级特效 + 收尾 fade)
       hatchTimers.push(setTimeout(async () => {
         await fetchOnce()
         hatchPhase.value = 'idle'
@@ -495,11 +684,17 @@ export default {
     onUnmounted(() => {
       stopPolling()
       clearHatchTimers()
+      clearLevelUpTimers()
     })
 
     return {
       pet, pets, otherPets, pollTimer, actioning, canWrite, MAX_PETS,
       hatchPhase, hatchActive,
+      // 2026-07-18 第五期: 蛋态底层视觉
+      currentEggVisual,
+      // 2026-07-18 第四期: 升级特效
+      levelUpActive, levelUpFading, levelUpIndex, levelUpQueue, currentLevelUpEffect,
+      onLevelUpEffectEnded,
       consumableEntries, studentPoints,
       expPercent, hungerPercent, speciesEmoji,
       Picture, Coin,
@@ -596,6 +791,9 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 2026-07-18 fix: 显式 width 让 aspect-ratio 算出 height (原版只 aspect-ratio 在 flex column 里撑不开) */
+  width: 100%;
+  max-width: min(60vh, 600px);
   aspect-ratio: 1 / 1;
   max-height: 60vh;
   background: radial-gradient(circle at 50% 40%, rgba(255, 240, 200, 0.10), transparent 70%);
@@ -848,6 +1046,122 @@ export default {
 .pet-bottom-btn {
   margin-top: 16px;
   min-width: 160px;
+}
+
+/* 2026-07-18 第五期: 蛋态底层视觉 (species 本体视频/svg 渲染, 9:16 裁 1:1 范式) */
+.egg-base-svg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.egg-base-svg :deep(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.egg-base-video {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 177.78%;
+  transform: translateY(-50%);
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+}
+/* 2026-07-18 第五期: 蛋 emoji 缩到左上角半透明 overlay */
+.egg-emoji-egg-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  font-size: 48px;
+  line-height: 1;
+  opacity: 0.78;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+  z-index: 2;
+  pointer-events: none;
+}
+.egg-emoji-egg-overlay.cracking { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)) brightness(1.05); }
+
+/* 2026-07-18 第四期: 升级特效全屏遮罩 (跨级时串行播放 Lv.X→Lv.X+1→...)
+   覆盖在主图区, 暂停 currentVisual 视觉, 播完恢复 */
+.levelup-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 16px;
+}
+.levelup-backdrop {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(255, 240, 130, 0.85) 0%,
+    rgba(255, 200, 60, 0.5) 30%,
+    rgba(255, 180, 40, 0.25) 60%,
+    transparent 85%);
+  opacity: 1;
+  transition: opacity 0.25s ease-out;
+}
+.levelup-backdrop.fade { opacity: 0; }
+.levelup-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.levelup-svg {
+  width: 90%;
+  height: 90%;
+  transition: opacity 0.25s ease-out;
+}
+.levelup-svg.fade { opacity: 0; }
+.levelup-svg :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; }
+.levelup-video {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 177.78%;
+  transform: translateY(-50%);
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+}
+.levelup-tip {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 2;
+  pointer-events: none;
+}
+.levelup-lv {
+  font-size: 36px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(255, 138, 101, 0.8);
+}
+.levelup-progress {
+  font-size: 14px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 4px 14px;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
 }
 
 /* 2026-07-17: 课堂展示页 — ElMessageBox 弹窗的种类选择器 (HTML 字符串注入, 不受 scoped 影响) */

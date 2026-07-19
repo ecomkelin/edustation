@@ -39,5 +39,11 @@ export const rowsToLevelOverrides = cfg.rowsToLevelOverrides
 export const resolveMaxLevel = cfg.resolveMaxLevel
 export const getOverrideMap = cfg.getOverrideMap
 export const resolveVisualAtLevel = cfg.resolveVisualAtLevel
+// 2026-07-18 第四期: 升级特效 (per-level 一次性事件, 无 fallback; 未配返 null)
+//   同步 shared/petConfig.js 的 named export; .mjs 桥接漏了会导致前端 `import { resolveLevelUpEffectAtLevel } from '@shared/petConfig'`
+//   抛 "does not provide an export named" (esbuild CJS→ESM 静态分析不一定能正确推断新加的 named export).
+export const resolveLevelUpEffectAtLevel = cfg.resolveLevelUpEffectAtLevel
+// 2026-07-18 第五期: 蛋态视觉复用物种本体 (无 fallback, 直接取 species 自身视觉字段)
+export const resolveEggVisual = cfg.resolveEggVisual
 
 export default cfg

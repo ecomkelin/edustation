@@ -54,10 +54,26 @@
 
       <!-- 主图区（默认宠物） -->
       <view class="pet-detail__stage">
-        <!-- 蛋态 + 破壳特效 -->
+        <!-- 蛋态 + 破壳特效
+             2026-07-18 第五期: 蛋态底层 = eggVisual (species 本体视频/svg, server 端解析)
+             emoji 缩小到左上角半透明 overlay, 破壳动画保留 -->
         <view v-if="pet.state === 'egg' || hatchActive" class="pet-detail__egg-stage" :class="`hatch-${hatchPhase}`">
           <view class="pet-detail__egg-frame" :class="{ fading: hatchPhase === 'gold' }" @tap="onHatch">
-            <text class="pet-detail__egg-emoji">🥚</text>
+            <!-- 底层: species 本体视频/svg (egG 不用 levelVisuals fallback) -->
+            <view v-if="currentEggVisual && currentEggVisual.visualType === 'svg' && currentEggVisual.svgContent" class="pet-detail__svg-wrap pet-detail__egg-base" v-html="currentEggVisual.svgContent" />
+            <video
+              v-else-if="currentEggVisual && currentEggVisual.visualType === 'video' && currentEggVisual.videoFile && currentEggVisual.videoFile.url"
+              :src="currentEggVisual.videoFile.url"
+              :key="`egg-base-${currentEggVisual.videoFile._id || currentEggVisual.videoFile.id || ''}`"
+              autoplay loop muted playsinline
+              :controls="false"
+              :show-play-btn="false"
+              :show-fullscreen-btn="false"
+              class="pet-detail__pet-video pet-detail__egg-base"
+            />
+            <!-- emoji 缩到左上角半透明, 保留"未破壳"状态标识 -->
+            <text class="pet-detail__egg-emoji pet-detail__egg-emoji--overlay">🥚</text>
+            <!-- 裂纹 overlay (破壳动画过程中才显示) -->
             <svg
               v-if="['cracks','shake','gold'].includes(hatchPhase)"
               class="pet-detail__egg-cracks"
@@ -91,6 +107,35 @@
             class="pet-detail__pet-video"
           />
           <text v-else class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
+        </view>
+
+        <!-- 2026-07-18 第四期: 升级特效全屏遮罩 (一次性, 跨级时串行播放 Lv.X→Lv.X+1→...)
+             暂停主图 currentVisual, 避免动画/视频互相抢声画 -->
+        <view v-if="levelUpActive && currentLevelUpEffect" class="pet-detail__levelup" @tap.stop>
+          <view class="pet-detail__levelup-backdrop" :class="{ fade: levelUpFading }" />
+          <view class="pet-detail__levelup-content">
+            <view v-if="currentLevelUpEffect.visualType === 'svg' && currentLevelUpEffect.svgContent"
+                  class="pet-detail__levelup-svg"
+                  :class="{ fade: levelUpFading }"
+                  v-html="currentLevelUpEffect.svgContent" />
+            <video
+              v-else-if="currentLevelUpEffect.visualType === 'video' && currentLevelUpEffect.videoFile && currentLevelUpEffect.videoFile.url"
+              :src="currentLevelUpEffect.videoFile.url"
+              :key="`levelup-${levelUpIndex}-${currentLevelUpEffect.videoFile._id || currentLevelUpEffect.videoFile.id || ''}`"
+              autoplay muted playsinline
+              :controls="false"
+              :show-play-btn="false"
+              :show-fullscreen-btn="false"
+              class="pet-detail__levelup-video"
+              @ended="onLevelUpEffectEnded"
+            />
+            <view class="pet-detail__levelup-tip">
+              <text class="pet-detail__levelup-lv">Lv.{{ currentLevelUpEffect.level }}</text>
+              <text v-if="levelUpQueue.length > 1" class="pet-detail__levelup-progress">
+                {{ levelUpIndex + 1 }}/{{ levelUpQueue.length }}
+              </text>
+            </view>
+          </view>
         </view>
       </view>
 
@@ -201,6 +246,11 @@ import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
 
 const MAX_PETS = 5  // 2026-07-16: 与 shared/petConfig.MAX_PETS_PER_STUDENT 同步
+// 2026-07-18 第四期: 升级特效播放常量
+// - SVG 无 @ended, 用固定时长兜底 (实际生产 SVG 内可内嵌 SMIL/CSS 动画, 时长由 admin 控制)
+// - FADE_MS: 单个 effect 离场淡出, 接下一个或关闭
+const LEVEL_UP_SVG_DEFAULT_MS = 1800
+const LEVEL_UP_FADE_MS = 250
 const SPECIES_EMOJI = {
   cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
   fox_red: '🦊', panda_baby: '🐼', penguin_baby: '🐧', owl_horned: '🦉',
@@ -220,13 +270,30 @@ export default {
       adopting: false,
       hatchPhase: 'idle',
       hatchActive: false,
-      hatchTimers: []
+      hatchTimers: [],
+      // 2026-07-18 第四期: 升级特效队列
+      // - levelUpActive: 是否处于升级播放状态 (暂停 currentVisual)
+      // - levelUpQueue: server 返回的 levelUpEffects[] (按 fromLevel 升序, 已过滤 null)
+      // - levelUpIndex: 当前播放的 effect 在队列中的位置
+      // - levelUpFading: 离场淡出 (视频 ended / svg 定时器 到期后短暂淡出再切下一个或关闭)
+      levelUpActive: false,
+      levelUpQueue: [],
+      levelUpIndex: 0,
+      levelUpFading: false,
+      levelUpTimers: []  // setTimeout 列表 (svg 兜底时长 + 队列衔接淡出)
     }
   },
   computed: {
     species() { return this.pet?.speciesRecord || null },
     // 2026-07-16: 当前等级形象（per-level override 命中或 species fallback），server 端 decoratePet 解析
     currentVisual() { return this.pet?.currentVisual || null },
+    // 2026-07-18 第五期: 蛋态底层视觉 (species 本体视频/svg, 不走 fallback 链)
+    currentEggVisual() { return this.pet?.eggVisual || null },
+    // 2026-07-18 第四期: 当前正在播放的升级特效
+    currentLevelUpEffect() {
+      if (!this.levelUpActive) return null
+      return this.levelUpQueue[this.levelUpIndex] || null
+    },
     speciesEmoji() { return SPECIES_EMOJI[this.pet?.species] || '🐾' },
     speciesName() { return this.pet?.speciesRecord?.name || '' },
     otherPets() {
@@ -273,6 +340,7 @@ export default {
   },
   onUnload() {
     this.clearHatchTimers()
+    this.clearLevelUpTimers()
   },
   methods: {
     formatTimeLeft(minutes) {
@@ -338,16 +406,27 @@ export default {
       setP('cracks', 400)
       setP('shake', 1000)
       setP('gold', 2000)
-      try {
-        await petApi.hatch(this.pet._id)
-      } catch (e) {
-        toast.error(e?.message || '破壳失败,请重试')
-        this.clearHatchTimers()
-        this.hatchPhase = 'idle'
-        this.hatchActive = false
-        if (e && (e.statusCode === 422 || /未报班/.test(e?.message || ''))) this.load()
-        return
-      }
+      // 2026-07-19: 破壳 = 升到 Lv.1, server hatch 现在返回 levelUpEffects (Lv.1 特效)
+      // 金光阶段(2000ms)调 hatch API + 播升级特效, 让 Lv.1 特效覆盖在破壳金光上
+      this.hatchTimers.push(setTimeout(async () => {
+        try {
+          const r = await petApi.hatch(this.pet._id)
+          const effects = (Array.isArray(r?.levelUpEffects) ? r.levelUpEffects : []).filter(Boolean).filter((e) =>
+            (e.visualType === 'svg' && e.svgContent) ||
+            (e.visualType === 'video' && e.videoFile && (e.videoFile.url || e.videoFile._id || typeof e.videoFile === 'string'))
+          )
+          if (effects.length > 0 && !this.levelUpActive) {
+            // 不 await, 让升级特效和破壳收尾动画并行
+            this.playLevelUpEffects(effects)
+          }
+        } catch (e) {
+          toast.error(e?.message || '破壳失败,请重试')
+          this.clearHatchTimers()
+          this.hatchPhase = 'idle'
+          this.hatchActive = false
+          if (e && (e.statusCode === 422 || /未报班/.test(e?.message || ''))) this.load()
+        }
+      }, 2000))
       this.hatchTimers.push(setTimeout(() => {
         this.load()
         this.hatchPhase = 'idle'
@@ -369,13 +448,83 @@ export default {
         return
       }
       haptic.tap()
+      let result
       try {
-        await petApi.feed(this.pet._id, { consumableKey: key })
-        toast.success('喂食成功')
-        await this.load()
+        result = await petApi.feed(this.pet._id, { consumableKey: key })
       } catch (e) {
         toast.error(e?.message || '喂食失败')
+        return
       }
+      // 喂食成功 → 如有升级特效队列则播放; 否则直接 load + toast
+      // 2026-07-18 第四期: 跨级按 fromLevel 升序串行播放 (server 端已排序, 空数组 = 无特效)
+      const effects = Array.isArray(result?.levelUpEffects) ? result.levelUpEffects : []
+      const filtered = effects.filter(Boolean).filter((e) =>
+        (e.visualType === 'svg' && e.svgContent) ||
+        // 2026-07-19: 兼容 ObjectId 字符串 (server populate 漏了的兜底, 同 admin)
+        (e.visualType === 'video' && e.videoFile && (e.videoFile.url || e.videoFile._id || typeof e.videoFile === 'string'))
+      )
+      if (result?.levelUp && filtered.length > 0) {
+        await this.playLevelUpEffects(filtered)
+      } else {
+        toast.success('喂食成功')
+      }
+      await this.load()
+    },
+
+    // 2026-07-18 第四期: 串行播放升级特效队列
+    // - 视频: 监听 @ended 自然结束
+    // - SVG: 固定 LEVEL_UP_SVG_DEFAULT_MS 后推进 (uni-app SVG 无 ended 事件)
+    // - 每个 effect 结束淡出 250ms 后进入下一个; 最后一个结束后关遮罩
+    async playLevelUpEffects(effects) {
+      if (!effects || effects.length === 0) return
+      this.clearLevelUpTimers()
+      this.levelUpQueue = effects
+      this.levelUpIndex = 0
+      this.levelUpActive = true
+      this.levelUpFading = false
+      // 给每个 svg effect 兜底定时器 (避免某些 SVG 无动画导致不结束)
+      for (let i = 0; i < effects.length; i++) {
+        const e = effects[i]
+        if (e && e.visualType === 'svg') {
+          this.levelUpTimers.push(setTimeout(() => this.onLevelUpEffectEnded(), LEVEL_UP_SVG_DEFAULT_MS))
+        }
+      }
+      // resolve 当所有 effect 播放完毕 (最后一个 effect ended + 淡出时长)
+      return new Promise((resolve) => {
+        this._levelUpResolve = resolve
+      })
+    },
+    onLevelUpEffectEnded() {
+      if (!this.levelUpActive) return
+      this.clearLevelUpTimers()  // 清掉 svg 兜底定时器 (防止重复推进)
+      this.levelUpFading = true
+      // 淡出 250ms 后: 推进 index 或关闭遮罩
+      this.levelUpTimers.push(setTimeout(() => {
+        const next = this.levelUpIndex + 1
+        if (next < this.levelUpQueue.length) {
+          this.levelUpIndex = next
+          this.levelUpFading = false
+          // 下一个 effect 是 svg 时启动兜底定时器
+          const e = this.levelUpQueue[next]
+          if (e && e.visualType === 'svg') {
+            this.levelUpTimers.push(setTimeout(() => this.onLevelUpEffectEnded(), LEVEL_UP_SVG_DEFAULT_MS))
+          }
+        } else {
+          // 队列全部播放完毕
+          this.levelUpActive = false
+          this.levelUpQueue = []
+          this.levelUpIndex = 0
+          this.levelUpFading = false
+          toast.success('升级成功')
+          const r = this._levelUpResolve
+          this._levelUpResolve = null
+          if (r) r()
+        }
+      }, LEVEL_UP_FADE_MS))
+    },
+    clearLevelUpTimers() {
+      this.levelUpTimers.forEach((t) => clearTimeout(t))
+      this.levelUpTimers = []
     },
 
     async onSetDefault(p) {
@@ -554,6 +703,31 @@ export default {
     font-size: 240rpx;
     filter: drop-shadow(0 12rpx 24rpx rgba(255, 138, 101, 0.25));
   }
+  // 2026-07-18 第五期: emoji 缩到左上角半透明 overlay (蛋态视觉与物种视觉融合)
+  &__egg-emoji--overlay {
+    position: absolute;
+    top: $spacing-sm;
+    left: $spacing-sm;
+    font-size: 96rpx;
+    opacity: 0.75;
+    filter: drop-shadow(0 2rpx 4rpx rgba(0, 0, 0, 0.35));
+    z-index: 2;
+    pointer-events: none;
+  }
+  // 2026-07-18 第五期: 蛋态底层视频/svg 渲染 (与存活态 currentVisual 共用 9:16 裁 1:1 范式)
+  &__egg-base {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    position: relative;
+    overflow: hidden;
+    border-radius: $radius-md;
+  }
+  &__egg-base :deep(svg) {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+  }
   &__egg-cta {
     color: $primary;
     font-size: $font-base;
@@ -665,6 +839,77 @@ export default {
     z-index: 1;
   }
   &__pet-emoji { font-size: 240rpx; }
+
+  // 2026-07-18 第四期: 升级特效全屏遮罩
+  // 覆盖在 __stage 之上 (不走全屏, 沿用主区 520rpx 高度) — 与课堂展示主图一致
+  &__levelup {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    @include flex-center;
+    overflow: hidden;
+  }
+  &__levelup-backdrop {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 50%,
+      rgba(255, 240, 130, 0.85) 0%,
+      rgba(255, 200, 60, 0.5) 30%,
+      rgba(255, 180, 40, 0.25) 60%,
+      transparent 85%);
+    opacity: 1;
+    transition: opacity $transition-base;
+  }
+  &__levelup-backdrop.fade { opacity: 0; }
+  &__levelup-content {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    @include flex-center;
+  }
+  &__levelup-svg {
+    width: 90%;
+    height: 90%;
+    transition: opacity $transition-base;
+    & :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; }
+  }
+  &__levelup-svg.fade { opacity: 0; }
+  &__levelup-video {
+    position: absolute !important;
+    top: 50% !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 177.78% !important;
+    display: block !important;
+    transform: translateY(-50%) !important;
+    object-fit: fill !important;
+    z-index: 1;
+  }
+  &__levelup-tip {
+    position: absolute;
+    bottom: $spacing-md;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    z-index: 2;
+    pointer-events: none;
+  }
+  &__levelup-lv {
+    font-size: $font-xl;
+    font-weight: $font-weight-bold;
+    color: #fff;
+    text-shadow: 0 2rpx 8rpx rgba(255, 138, 101, 0.8);
+  }
+  &__levelup-progress {
+    font-size: $font-sm;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 4rpx 14rpx;
+    border-radius: $radius-pill;
+    backdrop-filter: blur(4rpx);
+  }
 
   &__svg-wrap { width: 100%; height: 100%; display: block; }
   &__svg-wrap :deep(svg) { width: 100%; height: 100%; display: block; object-fit: contain; }

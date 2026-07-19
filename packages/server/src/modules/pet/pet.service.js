@@ -35,7 +35,9 @@ const {
   DEFAULT_DEATH_THRESHOLD_DAYS,
   expToNext,
   resolveMaxLevel,
-  resolveVisualAtLevel
+  resolveVisualAtLevel,
+  resolveLevelUpEffectAtLevel,
+  resolveEggVisual
 } = require('@shared/petConfig')
 const Student = require('@models/Student.model')
 
@@ -290,7 +292,20 @@ async function hatch({ orgId, studentId, petId, by = 'parent' }) {
     payload: mergeSnapshot({ species, level: 1 }, { ...petSnap, ...stuSnap })
   })
 
-  return { petAccount: await decoratePet(updated, orgId), event, leveledUp: false }
+  // 2026-07-19: 破壳 = 升到 Lv.1 的虚拟升级, 返回 Lv.1 升级特效让前端播放
+  // (用户决策: 蛋破壳后立即播 1 级升级特效, 与喂食跨级升级语义一致)
+  const speciesRec = await petCatalog.getSpecies({ key: species })
+  const lv1Effect = resolveLevelUpEffectAtLevel(speciesRec, 1)
+  const levelUpEffects = lv1Effect ? [lv1Effect] : []
+
+  return {
+    petAccount: await decoratePet(updated, orgId),
+    event,
+    levelUp: lv1Effect != null,         // 等价于 "本次破壳有 Lv.1 特效"
+    levelUpEffects,
+    levelUpToLevel: 1,
+    levelUpCount: lv1Effect ? 1 : 0
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -325,12 +340,19 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   let newHunger = Math.min(pet.maxHunger, pet.currentHunger + hungerGain)
   let levelUpCount = 0
 
+  // 2026-07-18 第四期: 升级特效队列 — 一次喂食跨 N 级时按 fromLevel 升序收集
+  // (用 speciesRecord 提前在循环外查一次, 避免循环内反复 query; maxLevel 决定循环上限)
+  // 注意: speciesRec 在循环外已查 (上方)
+  const levelUpEffects = []
   while (newLevel < maxLevel) {
     const need = expToNext(newLevel, cfg)
     if (need == null || newExp < need) break
     newExp -= need
     newLevel += 1
     levelUpCount += 1
+    // 升到 newLevel → 查 levelVisuals[newLevel].levelUpEffect (无 fallback, 未配则跳过)
+    const eff = resolveLevelUpEffectAtLevel(speciesRec, newLevel)
+    if (eff) levelUpEffects.push(eff)
   }
   // 满级封顶：经验清零（进度条显示已满）
   if (newLevel >= maxLevel) newExp = 0
@@ -400,6 +422,11 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   return {
     petAccount: await decoratePet(updated, orgId, levelCfg),
     levelUp: levelUpCount > 0,
+    // 2026-07-18 第四期: 跨级时依次播放 (Lv.X → Lv.X+1 → ...) — 用户决策: 跨级按链路串行播
+    // levelUpEffects[] 已按 fromLevel 升序收集; 空数组表示本次未升级 / 无特效可播
+    levelUpCount,
+    levelUpToLevel: newLevel,  // 本次最终到达的等级 (levelUp=true 时有意义)
+    levelUpEffects,
     pointsCost: cost,
     pointsAfter: chargeResult.account.balance,
     events: events.filter(Boolean)
@@ -555,10 +582,14 @@ async function getMine({ orgId, studentId }) {
 }
 
 /**
- * 给 pet 文档补派生字段（nextExpToLevel / maxLevel / currentVisual / speciesRecord）。
+ * 给 pet 文档补派生字段（nextExpToLevel / maxLevel / currentVisual / levelUpEffect / eggVisual / speciesRecord）。
  * maxLevel 来自 PetSpecies（per-species，PetAccount 无 override）。
  * currentVisual 是 server 端走完 per-species fallback 链后的解析结果（species.levelVisuals[L] → species 视觉），
  *   前端拿这一个字段渲染即可，无需自己维护 lookup。
+ * levelUpEffect 是当前等级升级上来时播放的特效 (2026-07-18 第四期, 仅装饰查询时方便预览;
+ *   升级瞬时播放请直接用 feed 返回的 levelUpEffects[]).
+ * eggVisual 是蛋态底层视觉 (2026-07-18 第五期): 直接取 species 自身视觉字段, 不走 fallback 链.
+ *   蛋态用此作为底图, emoji + 破壳动画作为 overlay.
  */
 async function decoratePet(pet, orgId, levelCfg) {
   if (!pet) return null
@@ -573,6 +604,12 @@ async function decoratePet(pet, orgId, levelCfg) {
     result.maxLevel = maxLevel
     // 解析当前等级的形象（per-species levelVisuals fallback 链 → species 兜底）
     result.currentVisual = resolveVisualAtLevel(result.speciesRecord, pet.level)
+    // 2026-07-18 第四期: 当前等级的升级特效 (无 fallback; null = 该等级未配 = 无特效)
+    // 仅供"如果当前是从上一级升上来的，该播什么"查询 (课堂展示 / 列表预览等场景)
+    result.levelUpEffect = resolveLevelUpEffectAtLevel(result.speciesRecord, pet.level)
+  } else if (pet.state === 'egg') {
+    // 2026-07-18 第五期: 蛋态底层视觉 = species 自身视觉字段 (不走 fallback)
+    result.eggVisual = resolveEggVisual(result.speciesRecord)
   }
   return result
 }

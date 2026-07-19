@@ -66,9 +66,13 @@ async function getSpecies({ key }) {
   if (!key) return null
   // 2026-07-16: 必须 populate levelVisuals.videoFile，否则 pet.service.decoratePet
   // 拿到的 currentVisual.videoFile 是 ObjectId 字符串，C 端无法渲染视频
+  // 2026-07-19 fix: 补 populate levelVisuals.levelUpEffect.videoFile，否则 feed 返回的
+  // levelUpEffects[].videoFile 是 ObjectId 字符串, C 端/admin filter `e.videoFile.url`
+  // 直接剔除 → 升级特效完全不播 (详见 [[pet-levelup-effect-populate-missing-2026-07-19]])
   const doc = await PetSpecies.findOne({ key })
     .populate('videoFile', 'url mime')
     .populate('levelVisuals.videoFile', 'url mime originalName')
+    .populate('levelVisuals.levelUpEffect.videoFile', 'url mime originalName')
     .lean()
   if (doc) return doc
   const shared = sharedPetSpecies.getSpecies(key)
