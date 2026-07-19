@@ -125,10 +125,14 @@ const PetSpeciesSchema = new Schema(
 // isActive 已在字段上 index: true；无需额外复合索引（去 tier 后列表仅按 isActive/keyword）
 
 // 2026-07-16: per-species levelVisuals 同 level 必须唯一
-// partialFilterExpression 让 levelVisuals=[] 的文档不参与索引，省空间
+// 2026-07-19: 索引改成普通 (非 unique) — 跨文档全局唯一是错误的
+// 旧设计 { 'levelVisuals.level': 1 } unique 是**跨文档全局唯一**, 不同物种不能同时有 Lv.1 覆盖
+// mongo 的复合 { _id + levelVisuals.level } unique 对数组元素不生效, 仍允许同 species dup level
+// 唯一性完全交给 service 层 normalizeLevelVisuals (seenLevels 去重) + update 路径预检
+// 保留普通索引加速 "按 level 查物种" 类查询
 PetSpeciesSchema.index(
   { 'levelVisuals.level': 1 },
-  { unique: true, partialFilterExpression: { 'levelVisuals.0': { $exists: true } } }
+  { partialFilterExpression: { 'levelVisuals.0': { $exists: true } } }
 )
 
 module.exports = model('PetSpecies', PetSpeciesSchema)

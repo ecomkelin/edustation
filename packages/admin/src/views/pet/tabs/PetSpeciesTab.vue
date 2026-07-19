@@ -469,7 +469,11 @@ export default {
         name: fullRow.name,
         visualType: fullRow.visualType,
         svgContent: fullRow.svgContent || '',
-        videoFile: fullRow.videoFile || null,
+        // 2026-07-19: 统一 id 字段命名 (populate 返 _id, level 行用 id — 这里跟 level 行一致转 id)
+        // 否则 submit payload.videoFile = form.videoFile?.id = undefined → 后端 species 视频被清空
+        videoFile: fullRow.videoFile && typeof fullRow.videoFile === 'object'
+          ? { id: fullRow.videoFile._id || fullRow.videoFile.id, url: fullRow.videoFile.url, mime: fullRow.videoFile.mime }
+          : (fullRow.videoFile ? { id: String(fullRow.videoFile), url: null } : null),
         // 2026-07-18: 删 form.maxLevel — 后端字段已删
         levelVisuals,
         weight: fullRow.weight,

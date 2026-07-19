@@ -599,19 +599,21 @@ export default {
         }
 
         // 用 ElMessageBox 弹窗, 自定义 HTML 让用户点击选择 — 2026-07-17 简化: 纯文本 + radio, 不要 SVG
+        // 2026-07-19: 一行一格 + 大字, 不要 emoji/缩略图 (用户反馈: emoji 选择不方便)
         const html = `
           <div class="cd-adopt-picker">
-            <div class="cd-adopt-picker__hint">不选则随机破壳</div>
-            <div class="cd-adopt-picker__grid">
+            <div class="cd-adopt-picker__hint">请选择破壳种类 <span class="cd-adopt-picker__hint-sub">(不选则随机)</span></div>
+            <div class="cd-adopt-picker__list">
+              <label class="cd-adopt-row cd-adopt-row--random" data-key="">
+                <input type="radio" name="species" value="" checked />
+                <span class="cd-adopt-row__name">随机破壳</span>
+              </label>
               ${available.map((sp) => `
-                <label class="cd-adopt-cell" data-key="${sp.key}">
+                <label class="cd-adopt-row" data-key="${sp.key}">
                   <input type="radio" name="species" value="${sp.key}" />
-                  <div class="cd-adopt-cell__name">${sp.name}</div>
+                  <span class="cd-adopt-row__name">${sp.name}</span>
                 </label>
               `).join('')}
-            </div>
-            <div class="cd-adopt-picker__foot">
-              <label class="cd-adopt-random"><input type="radio" name="species" value="" checked /> 随机破壳</label>
             </div>
           </div>
         `
@@ -1167,90 +1169,76 @@ export default {
 /* 2026-07-17: 课堂展示页 — ElMessageBox 弹窗的种类选择器 (HTML 字符串注入, 不受 scoped 影响) */
 :deep(.cd-adopt-picker) {
   text-align: left;
+  min-width: 320px;
 }
 :deep(.cd-adopt-picker__hint) {
+  color: #303133;
+  font-size: 15px;
+  font-weight: 500;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+:deep(.cd-adopt-picker__hint-sub) {
   color: #909399;
-  font-size: 12px;
-  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 400;
 }
-:deep(.cd-adopt-picker__grid) {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+:deep(.cd-adopt-picker__list) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+:deep(.cd-adopt-row) {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
-}
-:deep(.cd-adopt-cell) {
-  display: block;
   position: relative;
   border: 1.5px solid #e4e7ed;
   border-radius: 8px;
-  padding: 10px 6px;
-  text-align: center;
+  padding: 12px 14px;
   cursor: pointer;
   background: #fff;
   transition: all 0.15s ease;
   user-select: none;
+  font-size: 16px;
+  color: #303133;
 }
-:deep(.cd-adopt-cell input[type="radio"]) {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
+:deep(.cd-adopt-row input[type="radio"]) {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #67c23a;
+  flex-shrink: 0;
 }
-:deep(.cd-adopt-cell:hover:not(.is-disabled)) {
+:deep(.cd-adopt-row:hover:not(.is-disabled)) {
   border-color: #409eff;
   background: #ecf5ff;
 }
-:deep(.cd-adopt-cell:has(input:checked)) {
+:deep(.cd-adopt-row:has(input:checked)) {
   border-color: #67c23a;
   background: #f0f9eb;
   box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.2);
 }
-:deep(.cd-adopt-cell.is-disabled) {
+:deep(.cd-adopt-row--random) {
+  background: #fafbfc;
+  border-style: dashed;
+}
+:deep(.cd-adopt-row--random:has(input:checked)) {
+  background: #fdf6ec;
+  border-style: solid;
+  border-color: #e6a23c;
+  box-shadow: 0 0 0 2px rgba(230, 162, 60, 0.2);
+}
+:deep(.cd-adopt-row.is-disabled) {
   cursor: not-allowed;
   opacity: 0.45;
   background: #fafafa;
 }
-:deep(.cd-adopt-cell.is-disabled .cd-adopt-cell__thumb) {
-  filter: grayscale(0.8);
-}
-:deep(.cd-adopt-cell__thumb) {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-:deep(.cd-adopt-cell__thumb svg) {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-:deep(.cd-adopt-cell__name) {
-  font-size: 13px;
-  color: #303133;
+:deep(.cd-adopt-row__name) {
   font-weight: 500;
-}
-:deep(.cd-adopt-cell__tag) {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  background: #909399;
-  color: #fff;
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-:deep(.cd-adopt-random) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #606266;
-  cursor: pointer;
-}
-:deep(.cd-adopt-picker__foot) {
-  border-top: 1px dashed #e4e7ed;
-  padding-top: 10px;
+  flex: 1;
 }
 </style>
