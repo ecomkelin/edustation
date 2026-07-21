@@ -5,6 +5,16 @@ const JwtUtil = require('@utils/JwtUtil')
 const User = require('@models/User.model')
 const { DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
 
+/** 从 header 或 query 抽 Bearer token (供 stream 这类 iframe 端点用) */
+function extractToken(req) {
+  const header = req.headers.authorization || ''
+  const [scheme, headerToken] = header.split(' ')
+  if (scheme === 'Bearer' && headerToken) return { token: headerToken, via: 'header' }
+  const queryToken = (req.query && req.query.access_token) || ''
+  if (queryToken) return { token: queryToken, via: 'query' }
+  return { token: '', via: '' }
+}
+
 /**
  * 解析 Bearer Token，校验后挂载 req.user。
  *
@@ -12,9 +22,8 @@ const { DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
  */
 module.exports = async function authenticate(req, res, next) {
   try {
-    const header = req.headers.authorization || ''
-    const [scheme, token] = header.split(' ')
-    if (scheme !== 'Bearer' || !token) {
+    const { token, via } = extractToken(req)
+    if (!token) {
       throw ApiError.unauthorized('请先登录')
     }
 
@@ -42,6 +51,11 @@ module.exports = async function authenticate(req, res, next) {
       realName: user.realName,
       avatarSvgKey: user.avatarSvgKey || DEFAULT_USER_AVATAR_KEY,
       isPlatformAdmin: !!user.isPlatformAdmin
+    }
+    // iframe 端点可能通过 query 传 token —— 一次性提示运维存在「token in URL」风险
+    if (via === 'query') {
+      // eslint-disable-next-line no-console
+      console.warn('[auth] access_token via query (iframe/stream path). Consider short-lived signed URLs in production.')
     }
     next()
   } catch (e) {

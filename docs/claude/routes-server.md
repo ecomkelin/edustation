@@ -604,6 +604,7 @@ Auth 列简写:
 | R-3005 | POST | /storage/files/:id/unbind | PERM | storage.write | 显式解绑引用 | |
 | R-3006 | GET | /storage/files/:id/removable-check | PERM | storage.read | 删除预检 | 任意已认证 |
 | R-3007 | DELETE | /storage/files/:id | PERM | storage.write | 物理删除 | refCount=0 才让删 |
+| R-3010 | GET | /storage/files/:id/stream | PERM | storage.read | 文件流式读取 (inline) | 2026-07-20 加，课件 PDF 预览用；`?disposition=inline\|attachment` 默认 inline |
 
 ### MM=31 legal (URL: /legal)
 

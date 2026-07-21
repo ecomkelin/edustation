@@ -296,6 +296,60 @@ async function remove({ id, orgId, isPlatformAdmin }) {
   return { success: true }
 }
 
+/**
+ * 流式读取文件（用于前端 inline 预览，2026-07-20 加）
+ *
+ * 设计目标：
+ *   - 必须经过认证（routes 层 mws.authenticate 守卫）
+ *   - iframe 不能设 Authorization / x-org-id，所以「组织隔离」在本函数里通过
+ *     file.org + req.user.id 查 user-org-rel 自己实现 —— 不依赖 requireOrg
+ *   - 默认 `Content-Disposition: inline` + `Cache-Control: no-store, private`
+ *     → 浏览器对 PDF 等"内联友好类型"展示而非另存
+ *
+ * 注意：
+ *   - 这是"软下载保护"，前端 iframe 内嵌基本能阻断一键下载，但浏览器内置 PDF
+ *     viewer 仍自带下载按钮 —— 不能彻底防。请配合业务宣导与水印使用。
+ *   - 如果未来要切 S3 驱动，建议改成生成 presigned GET（短期 URL）或 stream proxy
+ *     + 短期签名 URL，禁止直接拼 S3 key。
+ *   - 当前阶段 1 仅支持 local driver；s3 driver 走通用 read 接口
+ *     （driver.readObject({ key }) → Buffer），driver 层各自实现。
+ *
+ * @param {Object} args
+ * @param {string} args.id File id
+ * @param {string} args.userId 当前登录用户 id (从 req.user.id)
+ * @param {boolean} args.isPlatformAdmin 是否平台超管
+ * @param {'inline'|'attachment'} [args.disposition]
+ * @returns {Promise<{ absPath: string, mime: string, originalName: string, size: number, disposition: 'inline'|'attachment' }>}
+ */
+async function stream({ id, userId, isPlatformAdmin, disposition }) {
+  if (!mongoose.isValidObjectId(id)) throw ApiError.notFound('文件不存在')
+  const doc = await File.findOne({ _id: id, deletedAt: null }).lean()
+  if (!doc) throw ApiError.notFound('文件不存在')
+
+  // 跨租户隔离：超管可看全部；普通用户必须有 user-org-rel
+  if (!isPlatformAdmin) {
+    if (!doc.org) throw ApiError.notFound('文件不存在')
+    const UserOrgRel = require('@models/UserOrgRel.model')
+    const rel = await UserOrgRel.findOne({ user: userId, org: doc.org })
+      .select('_id')
+      .lean()
+    if (!rel) throw ApiError.notFound('文件不存在') // 跨租户 / 已离职 — 一律 404 隐藏
+  }
+
+  const driver = getDriver()
+  if (driver.name !== 'local') {
+    throw ApiError.unprocessable(`当前驱动(${driver.name})暂未实现流式接口`)
+  }
+  const absPath = driver.getAbsolutePath(doc.key)
+  return {
+    absPath,
+    mime: doc.mime,
+    originalName: doc.originalName || doc.key.split('/').pop(),
+    size: doc.size,
+    disposition: disposition === 'attachment' ? 'attachment' : 'inline'
+  }
+}
+
 module.exports = {
   uploadOne,
   uploadMany,
@@ -305,5 +359,6 @@ module.exports = {
   unbind,
   remove,
   removableCheck,
+  stream,
   REF_ENTITY_LABELS
 }

@@ -46,6 +46,14 @@ class LocalDriver {
   getPublicUrl(key) {
     return `${this.baseUrl}/${key}`.replace(/\\+/g, '/')
   }
+
+  /**
+   * 返回文件在磁盘上的绝对路径（用于流式读取 / 安全检查）。
+   * 不暴露在 driver 公共接口外面时调用方需自行限流(认证 + org 隔离)。
+   */
+  getAbsolutePath(key) {
+    return path.join(this.dir, key)
+  }
 }
 
 module.exports = LocalDriver

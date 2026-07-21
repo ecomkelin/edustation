@@ -16,6 +16,20 @@ const upload = multer({
   limits: { fileSize: config.storage.maxFileSize }
 })
 
+// ─────────────────────────────────────────────────────────────────────────
+// 1) iframe 端点专用的「只认证不 requireOrg」子路由
+//    原因：iframe <iframe src> 无法设 Authorization header 和 x-org-id header，
+//    这两个 header 都是写操作的强制约束 —— 但 R-3010 /stream 是只读流式读取。
+//    组织隔离在 service.stream() 内部用 `file.org + req.user.id` 查 user-org-rel 自己实现。
+// ─────────────────────────────────────────────────────────────────────────
+const streamRouter = require('express').Router()
+streamRouter.use(mws.authenticate)
+streamRouter.get('/files/:id/stream', asyncHandler(c.stream))
+router.use(streamRouter)
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2) 常规路由：authenticate + requireOrg（写操作依赖 x-org-id 取 req.orgId）
+// ─────────────────────────────────────────────────────────────────────────
 router.use(mws.authenticate, mws.requireOrg)
 
 // 上传（单 / 多）

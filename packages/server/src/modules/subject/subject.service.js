@@ -23,6 +23,38 @@ function flattenLessonMaterials(items) {
 }
 
 /**
+ * 把 lessonMaterials.items[] 里的 fileIds 由 ObjectId 替换为带文件的轻量对象,
+ * 便于前端直接显示 { _id, originalName, url, mime } 而不用再查 /storage/files/:id。
+ *
+ * 为什么不在 mongoose populate 里做: `lessonMaterials.items.fileIds` 这种
+ * 嵌套数组里的 ObjectId 数组在 mongoose v8 populate 行为不稳, 单独 find 一次更清晰。
+ */
+async function enrichLessonMaterials(items) {
+  const flat = flattenLessonMaterials(items)
+  if (!flat.length) return items
+  const File = require('@models/File.model').File
+  const files = await File.find({ _id: { $in: flat }, deletedAt: null })
+    .select('_id originalName url mime size')
+    .lean()
+  const map = new Map(files.map((f) => [String(f._id), f]))
+  return (items || []).map((it) => ({
+    ...it,
+    fileIds: (it.fileIds || []).map((fid) => {
+      const f = map.get(String(fid))
+      return f
+        ? {
+            _id: String(f._id),
+            originalName: f.originalName || '',
+            url: f.url,
+            mime: f.mime,
+            size: f.size
+          }
+        : String(fid) // 文件已被删, 保留 id 让 UI 显示「已丢失」
+    })
+  }))
+}
+
+/**
  * 规范化 syllabus 输入: lessons 数组里每项的 lessonNo/topic/description/objectives/durationMinutes
  * 缺失/非法时静默丢弃非法项; 数字字段强转。
  */
@@ -70,12 +102,14 @@ function normalizeLessonMaterialsItems(raw) {
 async function list({ orgId, keyword }) {
   const filter = { org: orgId }
   if (keyword) filter.name = { $regex: keyword, $options: 'i' }
-  return Subject.find(filter)
+  const items = await Subject.find(filter)
     .populate('category', 'name code level')
     .populate('posterFileId', 'url originalName mime')
     .populate('videoFileId', 'url originalName mime')
     .sort({ createdAt: -1 })
     .lean()
+  // 列表只需要"课件组数 / 大纲节数"，明细在 detail 走
+  return items
 }
 
 async function detail(id, orgId) {
@@ -85,6 +119,10 @@ async function detail(id, orgId) {
     .populate('videoFileId', 'url originalName mime')
     .lean()
   if (!s) throw ApiError.notFound('学科不存在')
+  // 课件 fileId → 文件对象 (前端点击可看 inline / 不必再请求 /storage/files)
+  if (s.lessonMaterials && Array.isArray(s.lessonMaterials.items)) {
+    s.lessonMaterials.items = await enrichLessonMaterials(s.lessonMaterials.items)
+  }
   return s
 }
 

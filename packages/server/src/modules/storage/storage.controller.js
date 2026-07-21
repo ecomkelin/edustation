@@ -104,3 +104,36 @@ exports.removableCheck = async (req, res) => {
   })
   res.json(ApiResponse.ok(data))
 }
+
+/**
+ * R-3010 GET /storage/files/:id/stream?disposition=inline|attachment&access_token=xxx
+ * 2026-07-20: 给前端预览 PDF/视频/课件用 —— 默认 inline (浏览器内嵌展示而非下载)
+ *
+ * 注意：本端点不依赖 x-org-id header (iframe 端没法设) —— 租户隔离在 service.stream 里
+ * 通过 file.org + req.user.id 查 user-org-rel 自己实现。
+ */
+exports.stream = async (req, res) => {
+  const data = await s.stream({
+    id: req.params.id,
+    userId: req.user.id,
+    isPlatformAdmin: req.user.isPlatformAdmin,
+    disposition: req.query.disposition
+  })
+  const fs = require('fs')
+  if (!fs.existsSync(data.absPath)) {
+    return res.status(404).json(ApiResponse.fail('文件实体已丢失', 404))
+  }
+  // RFC 5987: 中文文件名用 UTF-8 + percent-encoded
+  const asciiName = String(data.originalName).replace(/[^\x20-\x7E]/g, '_')
+  const encodedName = encodeURIComponent(data.originalName)
+  const disposition =
+    data.disposition === 'attachment'
+      ? `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`
+      : `inline; filename="${asciiName}"; filename*=UTF-8''${encodedName}`
+  res.setHeader('Content-Type', data.mime)
+  res.setHeader('Content-Length', data.size)
+  res.setHeader('Content-Disposition', disposition)
+  res.setHeader('Cache-Control', 'no-store, private, max-age=0')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  fs.createReadStream(data.absPath).pipe(res)
+}

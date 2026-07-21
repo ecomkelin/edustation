@@ -80,9 +80,10 @@
           <span v-else class="muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openEdit(row)">编辑</el-button>
+          <!-- 详情页: 基本信息只读 + 「编辑基础信息」按钮(内嵌) + 教学大纲内嵌编辑 + 课件内嵌编辑 -->
+          <el-button size="small" type="primary" plain @click="goDetail(row)">详情</el-button>
           <!-- 「误操删除」:仅平台超管可见;走二次确认 + 输密码;无 CourseProduct/CourseInstance 引用才能删 -->
           <DestructiveConfirm
             v-if="isPlatformAdmin"
@@ -98,13 +99,22 @@
       </el-table-column>
     </el-table>
 
+    <!-- 基础信息弹窗（2026-07-20: 仅用于新建, 不再含大纲与课件; 两者在详情页编辑） -->
     <el-dialog
       v-model="dialog"
-      :title="form.id ? '编辑学科' : '新建学科'"
-      width="1100px"
+      title="新建学科"
+      width="900px"
       :before-close="onSubjectDialogBeforeClose"
       @closed="resetForm"
     >
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="新建学科只填基本信息"
+        description="课纲（教学大纲）和课件 在「详情」页单独维护 —— 此处内容较多，避免在弹窗里挤"
+        style="margin-bottom: 16px"
+      />
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <!-- 基本信息 -->
         <el-form-item label="名称" prop="name">
@@ -203,180 +213,11 @@
             placeholder="富文本内容（当前使用纯文本，后续可接编辑器）"
           />
         </el-form-item>
-
-        <!-- ── 教学大纲(2026-06 拆出来) ── -->
-        <el-divider content-position="left">
-          <span style="font-weight: 600">教学大纲</span>
-          <span style="color: #909399; font-weight: normal; margin-left: 6px">
-            ({{ syllabusLessons.length }} 节)
-          </span>
-        </el-divider>
-        <el-form-item label="">
-          <div style="width: 100%">
-            <div class="tab-toolbar">
-              <el-button :icon="Plus" size="small" type="primary" @click="openSyllabusLessonDialog()">添加课时</el-button>
-              <span class="form-tip">按 lessonNo 1..N 描述每节课；同一学科的 lessonNo 唯一</span>
-            </div>
-            <el-table v-if="syllabusLessons.length" :data="syllabusLessons" border size="small">
-              <el-table-column prop="lessonNo" label="课次" width="70" />
-              <el-table-column prop="topic" label="主题" min-width="160" show-overflow-tooltip />
-              <el-table-column label="内容" min-width="220" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span style="color: #606266; font-size: 12px">{{ row.description || '-' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="目标" min-width="140" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <template v-if="row.objectives && row.objectives.length">
-                    <el-tag v-for="(o, i) in row.objectives.slice(0, 2)" :key="i" size="small" style="margin-right: 4px">{{ o }}</el-tag>
-                    <el-tag v-if="row.objectives.length > 2" type="info" size="small">+{{ row.objectives.length - 2 }}</el-tag>
-                  </template>
-                  <span v-else class="muted">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="durationMinutes" label="时长(分)" width="90">
-                <template #default="{ row }">
-                  <span>{{ row.durationMinutes || '-' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row, $index }">
-                  <el-button size="small" link type="primary" @click="openSyllabusLessonDialog($index)">编辑</el-button>
-                  <el-button size="small" link type="danger" @click="removeSyllabusLesson($index)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else description="暂无教学大纲，点击「添加课时」开始配置" :image-size="60" />
-          </div>
-        </el-form-item>
-
-        <!-- ── 每堂课课件 ── -->
-        <el-divider content-position="left">
-          <span style="font-weight: 600">每堂课课件</span>
-          <span style="color: #909399; font-weight: normal; margin-left: 6px">
-            ({{ lessonMaterialItems.length }} 组)
-          </span>
-        </el-divider>
-        <el-form-item label="">
-          <div style="width: 100%">
-            <div class="tab-toolbar">
-              <el-button :icon="Plus" size="small" type="primary" @click="openMaterialItemDialog()">添加课件组</el-button>
-              <span class="form-tip">按 lessonNo 归类本节课的课件；lessonNo 需与教学大纲对应</span>
-            </div>
-            <el-table v-if="lessonMaterialItems.length" :data="lessonMaterialItems" border size="small">
-              <el-table-column prop="lessonNo" label="课次" width="70" />
-              <el-table-column label="课件数" width="80">
-                <template #default="{ row }">
-                  <span style="color: #606266">{{ (row.fileIds || []).length }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="文件" min-width="320">
-                <template #default="{ row }">
-                  <template v-if="row.fileIds && row.fileIds.length">
-                    <el-tag
-                      v-for="(fid, i) in row.fileIds.slice(0, 3)"
-                      :key="fid"
-                      size="small"
-                      style="margin-right: 4px; margin-bottom: 4px"
-                    >{{ materialName(fid) }}</el-tag>
-                    <el-tag v-if="row.fileIds.length > 3" type="info" size="small">+{{ row.fileIds.length - 3 }}</el-tag>
-                  </template>
-                  <span v-else class="muted">未上传</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row, $index }">
-                  <el-button size="small" link type="primary" @click="openMaterialItemDialog($index)">编辑</el-button>
-                  <el-button size="small" link type="danger" @click="removeMaterialItem($index)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else description="暂无课件，点击「添加课件组」上传" :image-size="60" />
-          </div>
-        </el-form-item>
       </el-form>
 
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 教学大纲单节编辑弹窗 -->
-    <el-dialog
-      v-model="syllabusLessonDialog"
-      :title="syllabusLessonDraft.idx === null ? '新增课时' : '编辑课时'"
-      width="640px"
-      :close-on-click-modal="false"
-      :before-close="onSyllabusLessonBeforeClose"
-      append-to-body
-    >
-      <el-form :model="syllabusLessonDraft.data" label-width="100px">
-        <el-form-item label="课次" required>
-          <el-input-number v-model="syllabusLessonDraft.data.lessonNo" :min="1" :max="999" :step="1" />
-        </el-form-item>
-        <el-form-item label="主题">
-          <el-input v-model="syllabusLessonDraft.data.topic" maxlength="100" />
-        </el-form-item>
-        <el-form-item label="时长(分)">
-          <el-input-number v-model="syllabusLessonDraft.data.durationMinutes" :min="1" :max="600" />
-        </el-form-item>
-        <el-form-item label="内容">
-          <el-input v-model="syllabusLessonDraft.data.description" type="textarea" :rows="4" />
-        </el-form-item>
-        <el-form-item label="目标">
-          <div class="obj-list">
-            <div v-for="(o, i) in syllabusLessonDraft.data.objectives" :key="i" class="obj-row">
-              <el-input v-model="syllabusLessonDraft.data.objectives[i]" maxlength="200" />
-              <el-button link type="danger" :icon="Delete" @click="syllabusLessonDraft.data.objectives.splice(i, 1)" />
-            </div>
-            <el-button :icon="Plus" size="small" @click="syllabusLessonDraft.data.objectives.push('')">添加目标</el-button>
-          </div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="syllabusLessonDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmSyllabusLesson">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 课件组编辑弹窗 -->
-    <el-dialog
-      v-model="materialItemDialog"
-      :title="materialItemDraft.idx === null ? '新增课件组' : '编辑课件组'"
-      width="640px"
-      :close-on-click-modal="false"
-      :before-close="onMaterialItemBeforeClose"
-      append-to-body
-    >
-      <el-form :model="materialItemDraft.data" label-width="100px">
-        <el-form-item label="课次" required>
-          <el-input-number v-model="materialItemDraft.data.lessonNo" :min="1" :max="999" :step="1" />
-        </el-form-item>
-        <el-form-item label="课件文件">
-          <div class="materials">
-            <div v-for="(fid, i) in materialItemDraft.data.fileIds" :key="fid" class="material-chip">
-              <el-icon style="margin-right: 4px"><Document /></el-icon>
-              <span class="text-12">{{ materialName(fid) }}</span>
-              <el-button link size="small" type="danger" @click="materialItemDraft.data.fileIds.splice(i, 1)">移除</el-button>
-            </div>
-            <el-upload
-              :show-file-list="false"
-              :auto-upload="true"
-              :http-request="uploadMaterialInDialog"
-              :before-upload="beforeMaterialUpload"
-              accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
-            >
-              <el-button :icon="Upload" size="small">上传新课件</el-button>
-            </el-upload>
-            <el-button :icon="Folder" size="small" link @click="materialPicker = true">从文件库选</el-button>
-          </div>
-          <div class="form-tip">支持图片 / 视频 / 音频 / PDF / Office 文件</div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="materialItemDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmMaterialItem">确定</el-button>
       </template>
     </el-dialog>
 
@@ -505,15 +346,6 @@
       </template>
     </el-dialog>
 
-    <!-- 课件文件选择器(从文件库选) -->
-    <FilePicker
-      v-model="materialPicker"
-      multiple
-      scope="subjectLessonMaterial"
-      title="选择课件文件"
-      @select="onPickMaterials"
-    />
-
     <!-- 海报 / 视频文件选择器(单选) -->
     <FilePicker
       v-model="mediaPicker"
@@ -526,9 +358,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, Document, Folder, Upload, Picture, VideoCamera } from '@element-plus/icons-vue'
+import { Delete, Plus, Folder, Upload, Picture, VideoCamera } from '@element-plus/icons-vue'
 import { subjectApi } from '@/api/subject'
 import { storageApi } from '@/api/storage'
 import { handleRemoveError } from '@/utils/removable'
@@ -537,6 +370,7 @@ import { useAuthStore } from '@/stores/auth'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import FilePicker from '@/components/FilePicker.vue'
 
+const router = useRouter()
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
 
@@ -552,16 +386,12 @@ const form = reactive(emptyForm())
 
 function emptyForm() {
   return {
-    id: '',
     name: '',
     category: null,
     objectives: [],
     posterFileId: null,
     videoFileId: null,
-    description: '',
-    // 2026-06: 教学体系(教学大纲 + 课件)
-    syllabus: { totalLessons: 0, lessons: [] },
-    lessonMaterials: { items: [] }
+    description: ''
   }
 }
 
@@ -569,16 +399,12 @@ const rules = {
   name: [{ required: true, message: '请填写名称', trigger: 'blur' }]
 }
 
-const syllabusLessons = computed(() => (form.syllabus && form.syllabus.lessons) || [])
-const lessonMaterialItems = computed(() => (form.lessonMaterials && form.lessonMaterials.items) || [])
-
 async function load() {
   loading.value = true
   try {
     const r = await subjectApi.list({ keyword: keyword.value })
     list.value = (r.data || []).map((s) => ({ ...s, id: s.id || s._id }))
   } catch (e) {
-    // 拦截器已 toast 业务错误, 这里只在 console 留底方便排查
     // eslint-disable-next-line no-console
     console.error('[subjects.load] failed:', e?.response?.data || e)
     list.value = []
@@ -595,47 +421,44 @@ async function loadCategoryTree() {
 function resetForm() {
   Object.assign(form, emptyForm())
   formRef.value?.clearValidate()
-  // 清理课件名称缓存
-  materialNames.clear()
 }
 
 function openCreate() {
   resetForm()
   dialog.value = true
   loadCategoryTree()
+  // 「原始值」快照:为 beforeClose 提示提供脏比对基线
   takeSnapshot()
 }
 
-// 「原始值」快照:在 openCreate / openEdit 时记录;对比 form 当前值判断是否脏
+function goDetail(row) {
+  const id = row.id || row._id
+  router.push({ path: `/subjects/${id}` })
+}
+
+// 「原始值」快照:在 openCreate 时记录;对比 form 当前值判断是否脏
 const initialSnapshot = ref('')
 
 function takeSnapshot() {
-  // 拍扁 form 所有字段,作为「未修改」基线
   initialSnapshot.value = JSON.stringify({
-    id: form.id,
     name: form.name,
     category: form.category,
     objectives: form.objectives,
     posterFileId: form.posterFileId,
     videoFileId: form.videoFileId,
-    description: form.description,
-    syllabus: form.syllabus,
-    lessonMaterials: form.lessonMaterials
+    description: form.description
   })
 }
 
 function isSubjectDirty() {
   if (!initialSnapshot.value) return false
   const current = JSON.stringify({
-    id: form.id,
     name: form.name,
     category: form.category,
     objectives: form.objectives,
     posterFileId: form.posterFileId,
     videoFileId: form.videoFileId,
-    description: form.description,
-    syllabus: form.syllabus,
-    lessonMaterials: form.lessonMaterials
+    description: form.description
   })
   return current !== initialSnapshot.value
 }
@@ -647,48 +470,14 @@ async function onSubjectDialogBeforeClose(done) {
   }
   try {
     await ElMessageBox.confirm(
-      '当前编辑的学科有未保存的修改(名称 / 大纲 / 课件等),关闭后不会保存。确定要关闭吗?',
-      '有未保存的修改',
-      { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }
+      '当前新建的学科有未保存的基础信息,关闭后不会保存。确定要关闭吗?',
+      '有未保存的内容',
+      { type: 'warning', confirmButtonText: '放弃', cancelButtonText: '继续填写' }
     )
     done()
   } catch {
-    // 选「继续编辑」,不关
+    // 选「继续填写」,不关
   }
-}
-
-function openEdit(row) {
-  resetForm()
-  Object.assign(form, {
-    id: row.id || row._id,
-    name: row.name,
-    category: row.category ? row.category.id || row.category._id : null,
-    objectives: Array.isArray(row.objectives) ? [...row.objectives] : [],
-    // 后端 populate 出来可能是 { _id, url, originalName, mime } 或 null
-    posterFileId: row.posterFileId
-      ? { _id: String(row.posterFileId._id || row.posterFileId), url: row.posterFileId.url, originalName: row.posterFileId.originalName }
-      : null,
-    videoFileId: row.videoFileId
-      ? { _id: String(row.videoFileId._id || row.videoFileId), url: row.videoFileId.url, originalName: row.videoFileId.originalName }
-      : null,
-    description: row.description || '',
-    syllabus: row.syllabus && row.syllabus.lessons
-      ? { totalLessons: row.syllabus.totalLessons || row.syllabus.lessons.length, lessons: row.syllabus.lessons.map((l) => ({ ...l, objectives: Array.isArray(l.objectives) ? [...l.objectives] : [] })) }
-      : { totalLessons: 0, lessons: [] },
-    lessonMaterials: row.lessonMaterials && row.lessonMaterials.items
-      ? { items: row.lessonMaterials.items.map((it) => ({ lessonNo: it.lessonNo, fileIds: (it.fileIds || []).map(String) })) }
-      : { items: [] }
-  })
-  // 预热课件名称缓存
-  for (const it of form.lessonMaterials.items) {
-    for (const fid of it.fileIds) {
-      // 名称会在后端 detail 中通过 populate 给出,这里给个占位
-      materialNames.set(String(fid), String(fid).slice(-6))
-    }
-  }
-  dialog.value = true
-  loadCategoryTree()
-  takeSnapshot()
 }
 
 async function submit() {
@@ -702,42 +491,17 @@ async function submit() {
   try {
     // 过滤空目标
     const objectives = (form.objectives || []).map((o) => (o || '').trim()).filter(Boolean)
-    // 清理 syllabus 内的空字段 + lessonNo 校验
-    const lessons = (form.syllabus.lessons || [])
-      .filter((l) => l && Number.isInteger(l.lessonNo) && l.lessonNo >= 1)
-      .map((l) => ({
-        lessonNo: l.lessonNo,
-        topic: (l.topic || '').trim(),
-        description: l.description || '',
-        objectives: (l.objectives || []).map((o) => (o || '').trim()).filter(Boolean),
-        durationMinutes: l.durationMinutes != null && l.durationMinutes > 0 ? Number(l.durationMinutes) : null
-      }))
-      .sort((a, b) => a.lessonNo - b.lessonNo)
-    // 课件项: lessonNo 必填, fileIds 数组可能为空
-    const items = (form.lessonMaterials.items || [])
-      .filter((it) => it && Number.isInteger(it.lessonNo) && it.lessonNo >= 1)
-      .map((it) => ({
-        lessonNo: it.lessonNo,
-        fileIds: (it.fileIds || []).filter((x) => x != null).map((x) => String(x))
-      }))
-      .sort((a, b) => a.lessonNo - b.lessonNo)
     const payload = {
       name: form.name,
       category: form.category || null,
       objectives,
       posterFileId: form.posterFileId ? (form.posterFileId._id || form.posterFileId) : null,
       videoFileId: form.videoFileId ? (form.videoFileId._id || form.videoFileId) : null,
-      description: form.description || '',
-      syllabus: { totalLessons: lessons.length, lessons },
-      lessonMaterials: { items }
+      description: form.description || ''
     }
-    if (form.id) {
-      await subjectApi.update(form.id, payload)
-      ElMessage.success('已更新')
-    } else {
-      await subjectApi.create(payload)
-      ElMessage.success('已创建')
-    }
+    // 弹窗现在仅用于「新建」; 编辑基础信息已搬到 /subjects/:id 详情页内
+    await subjectApi.create(payload)
+    ElMessage.success('已创建')
     dialog.value = false
     load()
   } finally {
@@ -752,192 +516,6 @@ async function onRemoveConfirm(row, { password }) {
     load()
   } catch (e) {
     await handleRemoveError(e, '无法删除 · 中风险', `学科 ${row.name}`)
-  }
-}
-
-/* ----- 教学大纲单节编辑 ----- */
-const syllabusLessonDialog = ref(false)
-const syllabusLessonDraft = reactive({ idx: null, data: { lessonNo: 1, topic: '', description: '', objectives: [], durationMinutes: null } })
-const syllabusLessonSnapshot = ref('') // 「未修改」基线,关闭弹窗时比对
-
-function emptySyllabusLessonDraft() {
-  return { lessonNo: 1, topic: '', description: '', objectives: [], durationMinutes: null }
-}
-
-function openSyllabusLessonDialog(idx) {
-  if (idx == null) {
-    syllabusLessonDraft.idx = null
-    Object.assign(syllabusLessonDraft.data, emptySyllabusLessonDraft())
-  } else {
-    const src = form.syllabus.lessons[idx]
-    syllabusLessonDraft.idx = idx
-    Object.assign(syllabusLessonDraft.data, {
-      lessonNo: src.lessonNo,
-      topic: src.topic || '',
-      description: src.description || '',
-      objectives: Array.isArray(src.objectives) ? [...src.objectives] : [],
-      durationMinutes: src.durationMinutes != null ? Number(src.durationMinutes) : null
-    })
-  }
-  syllabusLessonSnapshot.value = JSON.stringify(syllabusLessonDraft.data)
-  syllabusLessonDialog.value = true
-}
-
-function confirmSyllabusLesson() {
-  const draft = syllabusLessonDraft.data
-  const cleaned = {
-    lessonNo: Number(draft.lessonNo),
-    topic: (draft.topic || '').trim(),
-    description: draft.description || '',
-    objectives: (draft.objectives || []).map((o) => (o || '').trim()).filter(Boolean),
-    durationMinutes: draft.durationMinutes != null && draft.durationMinutes > 0 ? Number(draft.durationMinutes) : null
-  }
-  if (syllabusLessonDraft.idx == null) {
-    // 新增: 防 lessonNo 重复
-    if (form.syllabus.lessons.some((l) => l.lessonNo === cleaned.lessonNo)) {
-      return ElMessage.error(`第 ${cleaned.lessonNo} 课已存在，请修改课次`)
-    }
-    form.syllabus.lessons.push(cleaned)
-  } else {
-    // 编辑: 允许保持原 lessonNo; 若改了, 防与别的 lessonNo 撞
-    const oldNo = form.syllabus.lessons[syllabusLessonDraft.idx].lessonNo
-    if (oldNo !== cleaned.lessonNo && form.syllabus.lessons.some((l) => l.lessonNo === cleaned.lessonNo)) {
-      return ElMessage.error(`第 ${cleaned.lessonNo} 课已存在，请修改课次`)
-    }
-    form.syllabus.lessons.splice(syllabusLessonDraft.idx, 1, cleaned)
-  }
-  form.syllabus.lessons.sort((a, b) => a.lessonNo - b.lessonNo)
-  syllabusLessonSnapshot.value = '' // 已确认,清掉基线
-  syllabusLessonDialog.value = false
-}
-
-async function onSyllabusLessonBeforeClose(done) {
-  if (!syllabusLessonSnapshot.value) {
-    done()
-    return
-  }
-  const cur = JSON.stringify(syllabusLessonDraft.data)
-  if (cur === syllabusLessonSnapshot.value) {
-    // 无改动
-    syllabusLessonSnapshot.value = ''
-    done()
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      '当前课时有未保存的修改,关闭后不会保存。确定要关闭吗?',
-      '有未保存的修改',
-      { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }
-    )
-    syllabusLessonSnapshot.value = ''
-    done()
-  } catch {
-    // 继续编辑
-  }
-}
-
-function removeSyllabusLesson(idx) {
-  form.syllabus.lessons.splice(idx, 1)
-}
-
-/* ----- 课件组编辑 ----- */
-const materialItemDialog = ref(false)
-const materialItemDraft = reactive({ idx: null, data: { lessonNo: 1, fileIds: [] } })
-const materialItemSnapshot = ref('') // 「未修改」基线
-const materialPicker = ref(false)
-const materialNames = reactive(new Map())
-function materialName(id) {
-  return materialNames.get(String(id)) || String(id).slice(-6)
-}
-
-function emptyMaterialItemDraft() {
-  return { lessonNo: 1, fileIds: [] }
-}
-
-function openMaterialItemDialog(idx) {
-  if (idx == null) {
-    materialItemDraft.idx = null
-    Object.assign(materialItemDraft.data, emptyMaterialItemDraft())
-  } else {
-    const src = form.lessonMaterials.items[idx]
-    materialItemDraft.idx = idx
-    Object.assign(materialItemDraft.data, {
-      lessonNo: src.lessonNo,
-      fileIds: (src.fileIds || []).map(String)
-    })
-  }
-  materialItemSnapshot.value = JSON.stringify(materialItemDraft.data)
-  materialItemDialog.value = true
-}
-
-function confirmMaterialItem() {
-  const draft = materialItemDraft.data
-  const cleaned = {
-    lessonNo: Number(draft.lessonNo),
-    fileIds: (draft.fileIds || []).filter((x) => x != null).map((x) => String(x))
-  }
-  if (materialItemDraft.idx == null) {
-    if (form.lessonMaterials.items.some((it) => it.lessonNo === cleaned.lessonNo)) {
-      return ElMessage.error(`第 ${cleaned.lessonNo} 课的课件组已存在，请修改课次`)
-    }
-    form.lessonMaterials.items.push(cleaned)
-  } else {
-    const oldNo = form.lessonMaterials.items[materialItemDraft.idx].lessonNo
-    if (oldNo !== cleaned.lessonNo && form.lessonMaterials.items.some((it) => it.lessonNo === cleaned.lessonNo)) {
-      return ElMessage.error(`第 ${cleaned.lessonNo} 课的课件组已存在，请修改课次`)
-    }
-    form.lessonMaterials.items.splice(materialItemDraft.idx, 1, cleaned)
-  }
-  form.lessonMaterials.items.sort((a, b) => a.lessonNo - b.lessonNo)
-  materialItemSnapshot.value = '' // 已确认,清掉基线
-  materialItemDialog.value = false
-}
-
-async function onMaterialItemBeforeClose(done) {
-  if (!materialItemSnapshot.value) {
-    done()
-    return
-  }
-  const cur = JSON.stringify(materialItemDraft.data)
-  if (cur === materialItemSnapshot.value) {
-    materialItemSnapshot.value = ''
-    done()
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      '当前课件组有未保存的修改(包括刚上传的课件),关闭后不会保存。确定要关闭吗?',
-      '有未保存的修改',
-      { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }
-    )
-    materialItemSnapshot.value = ''
-    done()
-  } catch {
-    // 继续编辑
-  }
-}
-
-function removeMaterialItem(idx) {
-  form.lessonMaterials.items.splice(idx, 1)
-}
-
-function beforeMaterialUpload(file) {
-  if (file.size > 20 * 1024 * 1024) {
-    ElMessage.error('课件超过 20MB 限制')
-    return false
-  }
-  return true
-}
-
-async function uploadMaterialInDialog(req) {
-  try {
-    const { data } = await storageApi.upload({ file: req.file, scope: 'subjectLessonMaterial' })
-    if (!Array.isArray(materialItemDraft.data.fileIds)) materialItemDraft.data.fileIds = []
-    materialItemDraft.data.fileIds.push(data.id)
-    materialNames.set(String(data.id), data.originalName || data.id)
-    ElMessage.success('课件已上传,点"确定"生效')
-  } catch (e) {
-    // axios 拦截器已 toast
   }
 }
 
@@ -997,19 +575,6 @@ function onPickMedia(files) {
   else form.videoFileId = v
 }
 
-function onPickMaterials(files) {
-  if (!Array.isArray(materialItemDraft.data.fileIds)) materialItemDraft.data.fileIds = []
-  const existing = new Set(materialItemDraft.data.fileIds.map(String))
-  for (const f of files) {
-    const id = String(f._id)
-    if (!existing.has(id)) {
-      materialItemDraft.data.fileIds.push(id)
-      materialNames.set(id, f.originalName || id)
-      existing.add(id)
-    }
-  }
-}
-
 /* ----- 跨机构同步（仅平台超管） ----- */
 
 // 当前目标机构名称（从 auth.orgs / auth.currentOrgId 推导）
@@ -1029,7 +594,6 @@ const sourceSubjectsLoading = ref(false)
 const existingNamesInCurrentOrg = ref(new Set())
 const selectedSubjectIds = ref([])
 const syncing = ref(false)
-const syncTableRef = ref(null)
 
 async function openSync() {
   // 防御性: 非超管即便绕开 v-if 触发到这里, 也不发同步 API
@@ -1075,13 +639,6 @@ async function onSourceOrgChange(orgId) {
       ...s,
       existsInCurrent: existingNamesInCurrentOrg.value.has(s.name)
     }))
-    // 预选所有「可同步」行
-    await nextTick()
-    if (syncTableRef.value) {
-      sourceSubjects.value
-        .filter((s) => !s.existsInCurrent)
-        .forEach((row) => syncTableRef.value.toggleRowSelection(row, true))
-    }
   } finally {
     sourceSubjectsLoading.value = false
   }
@@ -1165,19 +722,6 @@ onMounted(load)
 }
 .target-org-bar .label { color: #909399; font-size: 13px; }
 .target-org-bar .value { color: #303133; font-weight: 600; font-size: 14px; }
-.tab-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.materials {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 200px;
-  overflow-y: auto;
-}
 .media-row {
   display: flex;
   align-items: center;
@@ -1211,15 +755,6 @@ onMounted(load)
   display: flex;
   gap: 8px;
   align-items: center;
-}
-.material-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  background: #fafbfc;
 }
 .text-12 { font-size: 12px; color: #606266; }
 </style>

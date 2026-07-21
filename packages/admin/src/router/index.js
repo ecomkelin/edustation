@@ -21,6 +21,8 @@ const routes = [
       { path: 'positions', component: () => import('@/views/positions/Positions.vue') },
       { path: 'students', component: () => import('@/views/students/Students.vue') },
       { path: 'subjects', component: () => import('@/views/subjects/Subjects.vue') },
+      // 2026-07-20: 学科详情页 - 基本信息只读 + 教学大纲 + 课件 + 误操删除
+      { path: 'subjects/:id', component: () => import('@/views/subjects/SubjectDetail.vue') },
       { path: 'course-products', component: () => import('@/views/courseProducts/CourseProducts.vue') },
       // 课程 (2026-06-26): 合并开班 + 课程报名到单页双标签, 默认开课 tab
       { path: 'course', component: () => import('@/views/course/Course.vue') },
