@@ -159,6 +159,16 @@
     />
 
     <el-dialog v-model="dialog" :title="dialogTitle" width="560px" @close="resetCreate">
+      <!-- 2026-07-22: 说明「创建/加入机构」不能添加平台超管, 避免用户疑惑 "为什么这里不能升级成超管" -->
+      <el-alert
+        v-if="!form.id"
+        type="info"
+        :closable="false"
+        show-icon
+        title="仅机构员工"
+        description="本入口只能添加本机构员工 / 家长。平台超管不能加入任何机构, 由上级超管在「系统管理 → 游离用户」中专门设置。"
+        style="margin-bottom: 12px"
+      />
       <!-- 编辑分支 (form.id 已存在): 原编辑表单不变 -->
       <template v-if="form.id">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
@@ -305,6 +315,17 @@
                 description="如需调整职位，请关闭弹窗到列表中点击「编辑」修改。"
               />
             </template>
+
+            <!-- D. 用户是平台超管 → 不能加入任何机构 (2026-07-22 加) -->
+            <template v-else-if="lookupState === 'found_platform_admin'">
+              <el-alert
+                type="error"
+                show-icon
+                :closable="false"
+                :title="`该账号 (${form.realName || form.mobile}) 是平台超管`"
+                description="平台超管天然跨机构, 无需也不能加入任何机构。如需调整其超管身份, 请联系上级超管在「系统管理 → 游离用户」中处理。"
+              />
+            </template>
           </template>
         </el-form>
       </template>
@@ -314,7 +335,7 @@
         <el-button
           type="primary"
           :loading="saving"
-          :disabled="lookupState === 'found_same_org' || (!form.id && lookupState === 'idle')"
+          :disabled="lookupState === 'found_same_org' || lookupState === 'found_platform_admin' || (!form.id && lookupState === 'idle')"
           @click="submit"
         >
           {{ submitText }}
@@ -375,7 +396,9 @@ const form = reactive({
   isActive: true,
   isMain: false,
   // 查找时拿到的 user._id (用于 attach)
-  existingUserId: null
+  existingUserId: null,
+  // 2026-07-22: 标记查找到的 user 是平台超管, 不能加入任何机构
+  isPlatformAdminFlag: false
 })
 const formRegion = ref(null)
 const newPassword = ref('')
@@ -494,7 +517,8 @@ function resetCreate() {
     positions: [],
     isActive: true,
     isMain: false,
-    existingUserId: null
+    existingUserId: null,
+    isPlatformAdminFlag: false
   })
   formRegion.value = null
   lookupState.value = 'idle'
@@ -539,8 +563,11 @@ const submitText = computed(() => {
 /**
  * 查找手机号:
  *   - 用户不存在 → lookupState='not_found', 显示新建表单
+ *   - 用户存在且 isPlatformAdmin=true → lookupState='found_platform_admin', 提示该账号是平台超管不能加入机构
  *   - 用户存在且 currentOrgRel 非空 → lookupState='found_same_org', 提示
  *   - 用户存在但 currentOrgRel 为空 → lookupState='found_other_org', 显示分配职位表单
+ * 2026-07-22 加: 把"用户是平台超管"从 found_other_org 流里拆出来 — 超管天然不能加入机构, 应直接展示原因
+ *   (后端 service.attachToOrg 也会兜底 throw 400, 前端预判减少一次网络往返 + 更友好)
  */
 async function doLookup() {
   const m = (form.mobile || '').trim()
@@ -551,7 +578,19 @@ async function doLookup() {
   try {
     const r = await userApi.lookup({ mobile: m })
     const u = r.data
-    if (u && u.currentOrgRel) {
+    // 平台超管 → 无论是否已在某机构都阻断
+    if (u && u.isPlatformAdmin) {
+      Object.assign(form, {
+        realName: u.realName || '',
+        idCard: u.idCard || '',
+        regionName: u.region?.name || '',
+        isActive: !!u.isActive,
+        existingUserId: u.id,
+        positions: [],
+        isPlatformAdminFlag: true
+      })
+      lookupState.value = 'found_platform_admin'
+    } else if (u && u.currentOrgRel) {
       // 已在当前机构
       Object.assign(form, {
         realName: u.realName || '',
@@ -624,6 +663,10 @@ async function submit() {
   }
   if (lookupState.value === 'found_same_org') {
     return ElMessage.warning('该用户已在当前机构，请关闭弹窗到列表中编辑')
+  }
+  // 2026-07-22: 平台超管不能加入任何机构 — UI 已禁用提交按钮 + 阻断表单, 这里再保底拦截
+  if (lookupState.value === 'found_platform_admin') {
+    return ElMessage.warning('该账号是平台超管, 无需也不能加入任何机构')
   }
 
   saving.value = true

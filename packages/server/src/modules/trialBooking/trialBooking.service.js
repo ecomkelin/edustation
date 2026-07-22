@@ -730,13 +730,19 @@ async function convert({ id, orgId, currentUser }) {
   // Step 3: User upsert (findOneAndUpdate + $setOnInsert)
   //   - 同 phone 下首孩转化时建; 次孩复用 parent.user
   //   - $setOnInsert 避免覆盖已存在用户的姓名/密码
+  //   - 2026-07-22: 加固 — 如果复用的 user 已是平台超管, 拒绝 (超管不应该被加入机构)
   let user = null
   if (parent.user) {
-    user = await User.findOne({ _id: parent.user }).select('_id mobile realName requirePasswordChange').lean()
+    user = await User.findOne({ _id: parent.user }).select('_id mobile realName requirePasswordChange isPlatformAdmin').lean()
+    if (user && user.isPlatformAdmin) {
+      throw ApiError.badRequest(
+        `账号「${user.realName || user.mobile}」是平台超管, 无法作为家长加入机构; 请先在超管后台解除超管身份`
+      )
+    }
   }
   if (!user) {
     const passwordHash = await password.hash(parent.phone.slice(-6))
-    user = await User.findOneAndUpdate(
+    const newUser = await User.findOneAndUpdate(
       { mobile: parent.phone },
       {
         $setOnInsert: {
@@ -753,6 +759,15 @@ async function convert({ id, orgId, currentUser }) {
       },
       { upsert: true, new: true }
     )
+    // 2026-07-22: 防御 — 该 mobile 已注册为游离超管的情况下, 转化流自动 upsert 会把超管 silently 套上家长身份.
+    //   实际 upsert 不会覆盖 isPlatformAdmin (mongoose $setOnInsert 不在已存在文档上写), 但显式查一次更稳妥.
+    if (newUser && newUser.isPlatformAdmin) {
+      // 回到原始状态: 删掉刚 upsert 的 rel 失败 undo, 直接 throw 让人工介入
+      throw ApiError.badRequest(
+        `手机号 ${parent.phone} 已绑定到平台超管账号, 无法用于家长转化`
+      )
+    }
+    user = newUser
   }
 
   // Step 4: UserOrgRel upsert (找 家长 position)

@@ -220,7 +220,13 @@ async function detail(userId, orgId) {
 /**
  * 创建用户并关联到当前 org
  */
-async function create({ orgId, mobile, password: pwd, realName, avatarSvgKey, idCard, region, positions = [], isMain = false }) {
+async function create({ orgId, mobile, password: pwd, realName, avatarSvgKey, idCard, region, positions = [], isMain = false, isPlatformAdmin }) {
+  // 2026-07-22: 业务硬约束 — 机构管理员不能添加平台超管
+  // 超管身份必须由超管本人/上级超管在游离用户管理页专门设置, 不在 /users 创建流里
+  if (isPlatformAdmin === true) {
+    throw ApiError.badRequest('机构管理员不能添加平台超管; 超管身份请在「游离用户」管理页设置')
+  }
+
   const exist = await User.findOne({ mobile })
   if (exist) throw ApiError.conflict('手机号已注册')
 
@@ -251,17 +257,33 @@ async function create({ orgId, mobile, password: pwd, realName, avatarSvgKey, id
 }
 
 async function update(userId, payload) {
+  // 2026-07-22: 业务硬约束 — /users/:id 编辑是「机构员工视图」的修改入口,
+  //   不允许改 mobile / isPlatformAdmin / isBlocked / avatarSvgKey / passwordHash 等关键字段
+  //   走显式 allowlist, 不再透传 payload (之前透传导致前端易误改后端关键字段)
+  const allowed = ['realName', 'idCard', 'region', 'isActive']
+  const update = {}
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(payload, k)) update[k] = payload[k]
+  }
+  // 明确拒绝 isPlatformAdmin / isBlocked / mobile 等保护字段
+  // 即便请求里传也直接忽略, 不入 update, 不抛错(前端老版本可能传)
+  for (const k of ['isPlatformAdmin', 'isBlocked', 'mobile', 'passwordHash']) {
+    if (Object.prototype.hasOwnProperty.call(payload, k)) {
+      delete payload[k]
+    }
+  }
+
   // 身份证号唯一性手动校验（避免 partial index 的去重异常回包不友好）
-  if (payload.idCard) {
-    const dup = await User.findOne({ idCard: payload.idCard, _id: { $ne: userId } })
+  if (update.idCard) {
+    const dup = await User.findOne({ idCard: update.idCard, _id: { $ne: userId } })
       .select('_id')
       .lean()
     if (dup) throw ApiError.conflict('身份证号已存在')
   }
 
   // 2026-07-05: avatar → avatarSvgKey 校验, 不再走 fileBind (SVG 是预制,不入 File 体系)
-  if (payload.avatarSvgKey !== undefined && payload.avatarSvgKey !== null && !isValidUserKey(payload.avatarSvgKey)) {
-    throw ApiError.badRequest(`无效的头像类型: ${payload.avatarSvgKey}`)
+  if (update.avatarSvgKey !== undefined && update.avatarSvgKey !== null && !isValidUserKey(update.avatarSvgKey)) {
+    throw ApiError.badRequest(`无效的头像类型: ${update.avatarSvgKey}`)
   }
 
   // 适配 payload 里旧的 'avatar' 键 (老前端兼容): 自动转写到 avatarSvgKey, 默认 mom
@@ -269,7 +291,7 @@ async function update(userId, payload) {
     delete payload.avatar // 旧字段直接丢弃, 不再持久化
   }
 
-  const user = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
+  const user = await User.findByIdAndUpdate(userId, update, { new: true, runValidators: true })
     .populate('region', 'name level code')
     .select('mobile realName avatarSvgKey idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
     .lean()
@@ -439,10 +461,19 @@ async function lookupByMobile(mobile, orgId) {
  * - positions 留空 = 仅入机构，暂不分配职位
  * - 已存在 rel → 409（先解绑再加入）
  * - isMain 透传，前端不传则默认 false
+ * - 2026-07-22: 业务硬约束 — 超管 (isPlatformAdmin=true) 不允许加入任何机构
+ *   超管天然跨机构, 不需要 (也不应该) 拥有 UserOrgRel, 否则权限模型混乱 (超管机构视角会引入"主属机构"歧义)
  */
 async function attachToOrg(userId, orgId, positions = [], isMain = false) {
-  const user = await User.findById(userId).select('_id').lean()
+  const user = await User.findById(userId).select('_id isPlatformAdmin realName mobile').lean()
   if (!user) throw ApiError.notFound('用户不存在')
+
+  // 2026-07-22: 平台超管不加入任何机构
+  if (user.isPlatformAdmin) {
+    throw ApiError.badRequest(
+      `该账号「${user.realName || user.mobile}」是平台超管, 无需也不能加入任何机构`
+    )
+  }
 
   const dup = await UserOrgRel.findOne({ user: userId, org: orgId }).lean()
   if (dup) throw ApiError.conflict('该用户已在当前机构')
