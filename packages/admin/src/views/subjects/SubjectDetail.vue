@@ -142,12 +142,42 @@
           <el-table-column prop="lessonNo" label="课次" width="70" />
           <el-table-column label="课件数" width="80">
             <template #default="{ row }">
-              <span style="color: #606266">{{ (row.fileIds || []).length }}</span>
+              <!-- 2026-07-28: materials 数组长度 (file + html 混合) -->
+              <span style="color: #606266">{{ (row.materials || []).length }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="文件" min-width="320">
+          <el-table-column label="内容" min-width="320">
             <template #default="{ row }">
-              <template v-if="row.fileIds && row.fileIds.length">
+              <!-- 2026-07-28: 优先读 server enrich 过的 materials; 旧数据只有 fileIds 时降级展示 -->
+              <template v-if="row.materials && row.materials.length">
+                <template v-for="(m, idx) in row.materials.slice(0, 3)" :key="`${row.lessonNo}-${idx}-${m.kind}`">
+                  <!-- file 类型 chip -->
+                  <el-tag
+                    v-if="m.kind === 'file'"
+                    size="small"
+                    :type="m.file ? undefined : 'info'"
+                    style="margin-right: 4px; margin-bottom: 4px; cursor: pointer"
+                    @click="openFilePreview(fileOf(m.file || { _id: m.fileId, originalName: m.title || '已删除' }))"
+                  >
+                    <el-icon v-if="!m.file" style="margin-right: 2px"><Document /></el-icon>
+                    {{ m.file?.originalName || m.title || (m.fileId || '').slice(-6) || '文件' }}
+                  </el-tag>
+                  <!-- html 类型 chip -->
+                  <el-tag
+                    v-else-if="m.kind === 'html'"
+                    size="small"
+                    type="warning"
+                    style="margin-right: 4px; margin-bottom: 4px; cursor: pointer"
+                    @click="openHtmlPreview(m)"
+                  >
+                    <el-icon style="margin-right: 2px"><Memo /></el-icon>
+                    {{ m.title || '富文本' }}
+                  </el-tag>
+                </template>
+                <el-tag v-if="row.materials.length > 3" type="info" size="small">+{{ row.materials.length - 3 }}</el-tag>
+              </template>
+              <!-- 兼容: 老数据 (没 materials 字段) 仅 fileIds -->
+              <template v-else-if="row.fileIds && row.fileIds.length">
                 <el-tag
                   v-for="f in row.fileIds.slice(0, 3)"
                   :key="fileKey(f)"
@@ -360,35 +390,103 @@
     <el-dialog
       v-model="materialItemDialog"
       :title="materialItemDraft.idx === null ? '新增课件组' : '编辑课件组'"
-      width="640px"
+      width="800px"
       :close-on-click-modal="false"
       :before-close="onMaterialItemBeforeClose"
       append-to-body
+      @closed="resetMaterialDraft"
     >
       <el-form :model="materialItemDraft.data" label-width="100px">
         <el-form-item label="课次" required>
           <el-input-number v-model="materialItemDraft.data.lessonNo" :min="1" :max="999" :step="1" />
         </el-form-item>
-        <el-form-item label="课件文件">
+        <el-form-item label="课件内容">
           <div class="materials">
-            <div v-for="(f, i) in materialItemDraft.data.fileIds" :key="fileKey(f)" class="material-chip">
-              <el-icon style="margin-right: 4px"><Document /></el-icon>
-              <span class="text-12 clickable-name" @click="openFilePreview(fileOf(f))">{{ materialName(f) }}</span>
-              <el-button link size="small" type="primary" @click="openFilePreview(fileOf(f))">预览</el-button>
-              <el-button link size="small" type="danger" @click="materialItemDraft.data.fileIds.splice(i, 1)">移除</el-button>
-            </div>
-            <el-upload
-              :show-file-list="false"
-              :auto-upload="true"
-              :http-request="uploadMaterialInDialog"
-              :before-upload="beforeMaterialUpload"
-              accept="application/pdf,.pdf,video/*"
+            <!-- 已添加的课件 (file + html 混合显示) -->
+            <div
+              v-for="(m, i) in materialItemDraft.data.materials"
+              :key="materialKey(m, i)"
+              class="material-chip"
             >
-              <el-button :icon="Upload" size="small">上传新课件</el-button>
-            </el-upload>
-            <el-button :icon="Folder" size="small" link @click="materialPicker = true">从文件库选</el-button>
+              <!-- file 类 -->
+              <template v-if="m.kind === 'file'">
+                <el-icon style="margin-right: 4px"><Document /></el-icon>
+                <span class="text-12 clickable-name" @click="openFilePreview(fileOf(m.file || { _id: m.fileId, originalName: m.originalName }))">
+                  {{ m.originalName || m.fileId?.slice(-6) || '文件' }}
+                </span>
+                <el-button link size="small" type="primary" @click="openFilePreview(fileOf(m.file || { _id: m.fileId, originalName: m.originalName }))">预览</el-button>
+              </template>
+              <!-- html 类 -->
+              <template v-else-if="m.kind === 'html'">
+                <el-icon style="margin-right: 4px" color="#409eff"><Memo /></el-icon>
+                <span class="text-12" style="color:#409eff">富文本</span>
+                <span v-if="m.title" class="text-12 muted" style="margin-left:4px">《{{ m.title }}》</span>
+              </template>
+              <el-button link size="small" type="danger" @click="materialItemDraft.data.materials.splice(i, 1)">移除</el-button>
+            </div>
+
+            <!-- 两 tab 添加: 文件 / 富文本 -->
+            <el-tabs v-model="materialActiveTab" class="material-add-tabs">
+              <el-tab-pane label="📁 文件" name="file">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                  <el-upload
+                    :show-file-list="false"
+                    :auto-upload="true"
+                    :http-request="uploadMaterialInDialog"
+                    :before-upload="beforeMaterialUpload"
+                    accept="application/pdf,.pdf,video/*"
+                  >
+                    <el-button :icon="Upload" size="small">上传新课件</el-button>
+                  </el-upload>
+                  <el-button :icon="Folder" size="small" link @click="materialPicker = true">从文件库选</el-button>
+                </div>
+                <div class="form-tip">支持 PDF、视频 (mp4 / mov / webm / avi / mkv 等)</div>
+              </el-tab-pane>
+              <el-tab-pane label="📝 富文本 (HTML)" name="html">
+                <!-- HTML 编辑器 (2026-07-28): 工具栏 (B/I/U/link/list) + textarea
+                     - 不引入第三方富文本库 (项目无 Tinymce/Wangeditor),
+                       工具栏辅助插入常见标签, 教师可手写/粘贴 HTML
+                     - title 仅展示用, 列表 chip 会显示 -->
+                <div class="html-editor">
+                  <div class="html-editor-toolbar">
+                    <el-button-group>
+                      <el-button size="small" @click="wrapHtmlSelection(materialNewHtml, '<b>', '</b>')"><b>B</b></el-button>
+                      <el-button size="small" @click="wrapHtmlSelection(materialNewHtml, '<i>', '</i>')"><i>I</i></el-button>
+                      <el-button size="small" @click="wrapHtmlSelection(materialNewHtml, '<u>', '</u>')"><u>U</u></el-button>
+                    </el-button-group>
+                    <el-button-group>
+                      <el-button size="small" @click="wrapHtmlSelection(materialNewHtml, `<a href='https://' target='_blank'>`, '</a>')">🔗 链接</el-button>
+                      <el-button size="small" @click="insertHtmlAtCursor(materialNewHtml, '\n<ul>\n  <li>...</li>\n</ul>\n')">• 列表</el-button>
+                      <el-button size="small" @click="insertHtmlAtCursor(materialNewHtml, '\n<p>...</p>\n')">¶ 段落</el-button>
+                      <el-button size="small" @click="insertHtmlAtCursor(materialNewHtml, '\n<h3>小节标题</h3>\n')">H3</el-button>
+                    </el-button-group>
+                    <el-input
+                      v-model="materialNewHtmlTitle"
+                      size="small"
+                      placeholder="标题（可选）"
+                      style="width: 180px; margin-left: auto"
+                      maxlength="200"
+                      show-word-limit
+                    />
+                  </div>
+                  <el-input
+                    ref="materialNewHtmlInput"
+                    v-model="materialNewHtml"
+                    type="textarea"
+                    :rows="6"
+                    placeholder='支持 HTML: <p>, <a href="">, <ul><li>, <h3>, <strong>, <em>, <img src="https://..."/>, ...'
+                    maxlength="204800"
+                    show-word-limit
+                  />
+                  <div style="display:flex; justify-content:flex-end; margin-top:6px">
+                    <el-button size="small" type="primary" :disabled="!materialNewHtml.trim()" @click="addHtmlMaterial">
+                      添加到课件
+                    </el-button>
+                  </div>
+                </div>
+              </el-tab-pane>
+            </el-tabs>
           </div>
-          <div class="form-tip">支持 PDF、视频 (mp4 / mov / webm / avi / mkv 等)</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -414,6 +512,21 @@
       title="选择课件文件"
       @select="onPickMaterials"
     />
+
+    <!-- 富文本课件预览 (2026-07-28): 列表 chip 点击触发, 走 v-html 渲染 -->
+    <el-dialog
+      v-model="htmlPreviewDialog"
+      :title="htmlPreviewTitle"
+      width="720px"
+      top="6vh"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div v-if="htmlPreviewContent" class="html-preview-body" v-html="htmlPreviewContent" />
+      <template #footer>
+        <el-button @click="htmlPreviewDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 课件文件预览 (R-3010 inline, 走浏览器原生 PDF viewer / 图片 / 视频) -->
     <!--
@@ -464,7 +577,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Edit, Delete, Plus, Document, Folder, Upload, Picture, VideoCamera
+  ArrowLeft, Edit, Delete, Plus, Document, Folder, Upload, Picture, VideoCamera, Memo
 } from '@element-plus/icons-vue'
 import { subjectApi } from '@/api/subject'
 import { storageApi } from '@/api/storage'
@@ -785,21 +898,136 @@ function materialName(f) {
 }
 
 const materialItemDialog = ref(false)
-const materialItemDraft = reactive({ idx: null, data: { lessonNo: 1, fileIds: [] } })
+// 2026-07-28: draft 改为 { lessonNo, materials: [{ kind, ... }] }, 后端 normalize 派生 fileIds
+const materialItemDraft = reactive({ idx: null, data: { lessonNo: 1, materials: [] } })
 const materialItemSnapshot = ref('')
 const materialPicker = ref(false)
+// 弹窗里"当前激活的 tab" ('file' | 'html'); 切换 tab 时只刷新提示,不动 materials
+const materialActiveTab = ref('file')
 
-/** 把 fileIds 数组里的 string 元素"对象化"为 { _id, originalName } — 编辑时也保持统一 shape */
-function normalizeFileIds(arr) {
+// 富文本编辑器临时状态 (2026-07-28):
+// - materialNewHtml: textarea 双向绑定; 不直接进 materials, 等用户点"添加到课件"才入数组
+// - materialNewHtmlTitle: 列表 chip 上展示用的标题 (≤200字)
+// - 切换 file ↔ html tab 不丢草稿, 关弹窗时统一清空 (在 resetMaterialDraft 里)
+const materialNewHtml = ref('')
+const materialNewHtmlTitle = ref('')
+const materialNewHtmlInput = ref(null)
+
+/** 把当前 textarea 内容追加成一条 html material,清空草稿 */
+function addHtmlMaterial() {
+  const html = (materialNewHtml.value || '').trim()
+  if (!html) return
+  if (!Array.isArray(materialItemDraft.data.materials)) materialItemDraft.data.materials = []
+  materialItemDraft.data.materials.push({
+    kind: 'html',
+    fileId: null,
+    htmlContent: html,
+    title: (materialNewHtmlTitle.value || '').trim().slice(0, 200)
+  })
+  materialNewHtml.value = ''
+  materialNewHtmlTitle.value = ''
+  ElMessage.success('已添加富文本课件,点"确定"生效')
+}
+
+/** v-for 用 key (file 用 id, html 用入数组的顺序索引) */
+function materialKey(m, i) {
+  if (m.kind === 'file') return `f:${m.fileId || 'lost'}:${i}`
+  return `h:${i}:${(m.htmlContent || '').length}`
+}
+
+/**
+ * 在 textarea 当前选区两端插入 left/right 标签; 没选区就把整行包起来.
+ * 简化: 不依赖 selectionStart 完美还原, 走"插入字符串"路线 — 末尾追加或包裹全文.
+ */
+function wrapHtmlSelection(textareaRef, left, right) {
+  const ta = textareaRef?.value?.$el?.querySelector?.('textarea') || textareaRef?.$el?.querySelector?.('textarea')
+  // Element Plus el-input type=textarea 在内部包了 textarea; 走 ref 可能拿到组件实例
+  // 走 dom 直接拿 (兼容):
+  const el = ta || document.activeElement
+  if (!el || el.tagName !== 'TEXTAREA') {
+    // 兜底: 全文包
+    materialNewHtml.value = `${left}${materialNewHtml.value}${right}`
+    return
+  }
+  const start = el.selectionStart || 0
+  const end = el.selectionEnd || 0
+  const val = materialNewHtml.value
+  materialNewHtml.value = val.slice(0, start) + left + val.slice(start, end) + right + val.slice(end)
+  // 选中包起来的部分, 方便继续编辑
+  // nextTick 让 v-model 更新后再设 selection
+  setTimeout(() => {
+    el.focus()
+    el.setSelectionRange(start + left.length, end + left.length)
+  }, 0)
+}
+
+function insertHtmlAtCursor(textareaRef, snippet) {
+  const ta = textareaRef?.value?.$el?.querySelector?.('textarea') || textareaRef?.$el?.querySelector?.('textarea')
+  const el = ta || document.activeElement
+  if (!el || el.tagName !== 'TEXTAREA') {
+    materialNewHtml.value = `${materialNewHtml.value}${snippet}`
+    return
+  }
+  const start = el.selectionStart || materialNewHtml.value.length
+  const end = el.selectionEnd || start
+  const val = materialNewHtml.value
+  materialNewHtml.value = val.slice(0, start) + snippet + val.slice(end)
+  setTimeout(() => {
+    el.focus()
+    el.setSelectionRange(start + snippet.length, start + snippet.length)
+  }, 0)
+}
+
+/** 弹窗关闭时清空富文本草稿 */
+function resetMaterialDraft() {
+  materialNewHtml.value = ''
+  materialNewHtmlTitle.value = ''
+  materialActiveTab.value = 'file'
+}
+
+/** 把 server 给的 fileIds 数组 (string | { _id, originalName }) 统一成 { kind, fileId, file, title } 形态 */
+function fileIdsToMaterials(arr) {
   return (arr || []).filter((x) => x != null).map((x) => {
     if (typeof x === 'string') {
-      // 历史数据 / 上传但还没 enrich 时: 仅 id 但没有 originalName, 用兜底名
       return {
-        _id: x,
+        kind: 'file',
+        fileId: x,
+        file: null,
+        title: '',
+        // 标记: 还没 populate (弹窗里展示用)
+        _lost: true,
         originalName: materialNames.get(x) || x.slice(-6)
       }
     }
-    return x
+    return {
+      kind: 'file',
+      fileId: x._id,
+      file: x,
+      title: '',
+      originalName: x.originalName || x._id?.slice(-6) || '文件'
+    }
+  })
+}
+
+/** 从 server 给的 materials 数组 (populated 过) 复原成 draft 形态 */
+function serverMaterialsToDraft(serverMaterials) {
+  return (serverMaterials || []).map((m) => {
+    if (m.kind === 'file') {
+      return {
+        kind: 'file',
+        fileId: m.fileId,
+        file: m.file, // populated 后的 { _id, originalName, url, mime, size } 或 null
+        title: m.title || '',
+        originalName: m.file?.originalName || m.fileId?.slice(-6) || '文件'
+      }
+    }
+    // kind === 'html'
+    return {
+      kind: 'html',
+      fileId: null,
+      htmlContent: m.htmlContent || '',
+      title: m.title || ''
+    }
   })
 }
 
@@ -813,16 +1041,21 @@ function learnMaterialNames(arr) {
 }
 
 function openMaterialItemDialog(idx) {
+  materialActiveTab.value = 'file'
   if (idx == null) {
     materialItemDraft.idx = null
-    Object.assign(materialItemDraft.data, { lessonNo: 1, fileIds: [] })
+    Object.assign(materialItemDraft.data, { lessonNo: 1, materials: [] })
   } else {
     const src = lessonMaterialItems.value[idx]
     materialItemDraft.idx = idx
+    // 历史数据兼容: 优先读 materials, 否则从 fileIds 派生
+    const mats = Array.isArray(src.materials) && src.materials.length
+      ? serverMaterialsToDraft(src.materials)
+      : fileIdsToMaterials(src.fileIds)
     learnMaterialNames(src.fileIds)
     Object.assign(materialItemDraft.data, {
       lessonNo: src.lessonNo,
-      fileIds: normalizeFileIds(src.fileIds)
+      materials: mats
     })
   }
   materialItemSnapshot.value = JSON.stringify(materialItemDraft.data)
@@ -831,13 +1064,27 @@ function openMaterialItemDialog(idx) {
 
 async function confirmMaterialItem() {
   const draft = materialItemDraft.data
-  // 走 PUT 时只发 id 字符串（后端 fileIds 仍接收 string[]）
-  const cleanedIds = (draft.fileIds || [])
-    .filter((x) => x && x._id)
-    .map((x) => String(x._id))
+  // 把 draft.materials 清理成后端期待的形态 (id 字符串 + htmlContent + title)
+  const cleanedMaterials = (draft.materials || [])
+    .filter((m) => {
+      if (!m) return false
+      if (m.kind === 'file') return m.fileId
+      if (m.kind === 'html') return m.htmlContent && m.htmlContent.trim()
+      return false
+    })
+    .map((m) => {
+      if (m.kind === 'file') {
+        return { kind: 'file', fileId: String(m.fileId), title: (m.title || '').trim().slice(0, 200) }
+      }
+      return {
+        kind: 'html',
+        htmlContent: (m.htmlContent || '').slice(0, 200 * 1024),
+        title: (m.title || '').trim().slice(0, 200)
+      }
+    })
   const cleaned = {
     lessonNo: Number(draft.lessonNo),
-    fileIds: cleanedIds
+    materials: cleanedMaterials
   }
   if (materialItemDraft.idx == null) {
     if (lessonMaterialItems.value.some((it) => it.lessonNo === cleaned.lessonNo)) {
@@ -867,9 +1114,11 @@ async function confirmMaterialItem() {
 }
 
 async function removeMaterialItem(idx) {
+  const item = lessonMaterialItems.value[idx]
+  const count = (item.materials || item.fileIds || []).length
   try {
     await ElMessageBox.confirm(
-      `删除第 ${lessonMaterialItems.value[idx].lessonNo} 课的课件组 (共 ${(lessonMaterialItems.value[idx].fileIds || []).length} 个文件)?`,
+      `删除第 ${item.lessonNo} 课的课件组 (共 ${count} 项)?`,
       '确认删除课件组',
       { type: 'warning' }
     )
@@ -959,14 +1208,14 @@ function beforeMaterialUpload(file) {
 async function uploadMaterialInDialog(req) {
   try {
     const { data } = await storageApi.upload({ file: req.file, scope: 'subjectLessonMaterial' })
-    if (!Array.isArray(materialItemDraft.data.fileIds)) materialItemDraft.data.fileIds = []
+    if (!Array.isArray(materialItemDraft.data.materials)) materialItemDraft.data.materials = []
     const id = String(data.id)
-    materialItemDraft.data.fileIds.push({
-      _id: id,
-      originalName: data.originalName || id,
-      url: data.url,
-      mime: data.mime,
-      size: data.size
+    materialItemDraft.data.materials.push({
+      kind: 'file',
+      fileId: id,
+      file: data, // 含 url/originalName/mime/size
+      title: '',
+      originalName: data.originalName || id
     })
     materialNames.set(id, data.originalName || id)
     ElMessage.success('课件已上传,点"确定"生效')
@@ -976,8 +1225,12 @@ async function uploadMaterialInDialog(req) {
 }
 
 function onPickMaterials(files) {
-  if (!Array.isArray(materialItemDraft.data.fileIds)) materialItemDraft.data.fileIds = []
-  const existing = new Set(materialItemDraft.data.fileIds.map((f) => String(f._id)))
+  if (!Array.isArray(materialItemDraft.data.materials)) materialItemDraft.data.materials = []
+  const existing = new Set(
+    materialItemDraft.data.materials
+      .filter((m) => m.kind === 'file')
+      .map((m) => String(m.fileId))
+  )
   // 2026-07-20: 课件限定 PDF + 视频. 文件库选的非允许文件被静默丢弃并 toast.
   let dropped = 0
   for (const f of files) {
@@ -986,12 +1239,12 @@ function onPickMaterials(files) {
     if (!isAllowedMaterial({ mime: f.mime, originalName: f.originalName || '' })) {
       dropped++; continue
     }
-    materialItemDraft.data.fileIds.push({
-      _id: id,
-      originalName: f.originalName || id,
-      url: f.url,
-      mime: f.mime,
-      size: f.size
+    materialItemDraft.data.materials.push({
+      kind: 'file',
+      fileId: id,
+      file: f,
+      title: '',
+      originalName: f.originalName || id
     })
     materialNames.set(id, f.originalName || id)
     existing.add(id)
@@ -1033,6 +1286,23 @@ function openFilePreview(f) {
 function openInNewTab() {
   if (!previewFile.value || !previewFile.value._id) return
   window.open(previewSrc.value, '_blank', 'noopener,noreferrer')
+}
+
+/* ─────────────────────────────────────────────────────────
+  4c. 富文本课件预览 (2026-07-28)
+  - 列表 chip 点击触发; v-html 直接渲染 htmlContent
+  - 内部不接 fileBind (HTML 是纯文本, 不计 file 引用)
+  - 由 ElMessageBox 等同级别的"仅查看"弹窗
+───────────────────────────────────────────────────────── */
+const htmlPreviewDialog = ref(false)
+const htmlPreviewTitle = ref('课件富文本')
+const htmlPreviewContent = ref('')
+
+function openHtmlPreview(m) {
+  if (!m || m.kind !== 'html') return
+  htmlPreviewTitle.value = m.title ? `富文本 · ${m.title}` : '富文本课件'
+  htmlPreviewContent.value = m.htmlContent || ''
+  htmlPreviewDialog.value = true
 }
 
 function onPreviewClosed() {
@@ -1204,9 +1474,48 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 200px;
+  max-height: 480px;  /* 2026-07-28: 加富文本后需要更高滚动区,容纳 el-tabs + textarea */
   overflow-y: auto;
 }
+/* 2026-07-28: 富文本编辑器 (弹窗内) */
+.material-add-tabs { margin-top: 4px; }
+.material-add-tabs :deep(.el-tabs__header) { margin-bottom: 6px; }
+.material-add-tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; }
+.html-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  background: #fafafa;
+}
+.html-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.html-editor-toolbar :deep(.el-button-group) { display: inline-flex; }
+/* 富文本预览 (列表 chip → 弹窗) */
+.html-preview-body {
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  max-height: 65vh;
+  overflow-y: auto;
+  line-height: 1.6;
+  color: #303133;
+}
+.html-preview-body :deep(h1),
+.html-preview-body :deep(h2),
+.html-preview-body :deep(h3) { margin: 12px 0 6px; }
+.html-preview-body :deep(p) { margin: 6px 0; }
+.html-preview-body :deep(ul),
+.html-preview-body :deep(ol) { padding-left: 24px; margin: 6px 0; }
+.html-preview-body :deep(a) { color: #409eff; }
+.html-preview-body :deep(img) { max-width: 100%; height: auto; }
 .text-12 {
   font-size: 12px;
   color: #606266;

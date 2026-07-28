@@ -243,24 +243,41 @@
                 <template #title>
                   <div class="group-title">
                     <span class="group-label">{{ g.label }}</span>
+                    <!-- 2026-07-22: 跨机构资源敏感组 顶部 🔒 标识 -->
+                    <el-tooltip
+                      v-if="g.isSensitive"
+                      :content="isPlatformAdmin ? '敏感权限: 你可勾选并保存' : '敏感权限: 仅平台超管可授权, 请联系超管'"
+                      placement="top"
+                    >
+                      <el-icon class="group-lock" :size="14">
+                        <Lock />
+                      </el-icon>
+                    </el-tooltip>
                     <span class="group-count">({{ g.permissions.length }})</span>
                     <div class="group-actions">
-                      <el-button
-                        type="primary"
-                        link
-                        size="small"
-                        @click.stop="selectAllInGroup(g, true)"
-                      >全选</el-button>
-                      <el-button
-                        type="primary"
-                        link
-                        size="small"
-                        @click.stop="selectAllInGroup(g, false)"
-                      >全不选</el-button>
+                      <!-- 非超管 + 敏感组: 隐藏 "全选/全不选" 按钮, 避免误以为能改 -->
+                      <template v-if="!isGroupDisabled(g)">
+                        <el-button
+                          type="primary"
+                          link
+                          size="small"
+                          @click.stop="selectAllInGroup(g, true)"
+                        >全选</el-button>
+                        <el-button
+                          type="primary"
+                          link
+                          size="small"
+                          @click.stop="selectAllInGroup(g, false)"
+                        >全不选</el-button>
+                      </template>
                     </div>
                   </div>
                 </template>
                 <div v-if="g.description" class="group-desc">{{ g.description }}</div>
+                <!-- 敏感组非超管: 顶部一行灰色提示 -->
+                <div v-if="isGroupDisabled(g)" class="group-locked-hint">
+                  🔒 此组权限仅平台超管可授权. 如需给员工开通, 请联系超管通过「编辑职位」或脚本授权.
+                </div>
                 <el-checkbox-group v-model="form.permissions" class="perm-list">
                   <el-tooltip
                     v-for="p in g.permissions"
@@ -269,7 +286,11 @@
                     placement="top"
                     :show-after="200"
                   >
-                    <el-checkbox :value="p" class="perm-checkbox">
+                    <el-checkbox
+                      :value="p"
+                      :disabled="isGroupDisabled(g)"
+                      class="perm-checkbox"
+                    >
                       <span class="perm-code">{{ p }}</span>
                       <span class="perm-label">{{ getPermissionMeta(p)?.label || '' }}</span>
                     </el-checkbox>
@@ -403,6 +424,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Lock } from '@element-plus/icons-vue'
 import { positionApi } from '@/api/position'
 import { handleRemoveError } from '@/utils/removable'
 import { useAuthStore } from '@/stores/auth'
@@ -443,12 +465,33 @@ const catalog = ref([]) // [{ key, label, description, permissionLabels, permiss
 //   - 自定义职位永远不显示 (服务端 assertNoPositionAdminPerms 兜底)
 //   - 系统职位 + 非超管不显示 (服务端 update/setPermissions 拒绝改 permissions, 防止员工自降权)
 //   - 系统职位 + 超管可见可改 (默认管理员的「是否能管机构权限」由超管决定)
+//
+// 2026-07-22: 跨机构资源敏感权限组 (pet.write / article.write / video.write) 排到 catalog 顶部,
+//   非平台超管可见但灰显 + 🔒 标记 + 不可勾 —— 让他们知道这组权限的存在 (以便申请),
+//   但服务端 assertNoSensitivePermissionsEscalation 兜底仍有效 (即便前端绕过, 422 拒).
 const visibleCatalog = computed(() => {
-  return catalog.value.filter((g) => {
+  const sensitiveSet = new Set(['pet.write', 'article.write', 'video.write'])
+  // 1) 给每个 group 打 sensitive 标: 只要包含任意敏感 perm 即为敏感
+  const enriched = catalog.value.map((g) => ({
+    ...g,
+    isSensitive: (g.permissions || []).some((p) => sensitiveSet.has(p))
+  }))
+  // 2) 排序: 敏感组在顶, 其余保持原顺序
+  const sorted = [
+    ...enriched.filter((g) => g.isSensitive),
+    ...enriched.filter((g) => !g.isSensitive)
+  ]
+  // 3) 过滤: 仅隐藏 position 组 (历史规则)
+  return sorted.filter((g) => {
     if (g.key !== 'position') return true
     return form._isSystem && isPlatformAdmin.value
   })
 })
+
+/** 敏感组 + 非超管: checkbox 应禁用 (前端阻止, 服务端再校验) */
+function isGroupDisabled (g) {
+  return g.isSensitive && !isPlatformAdmin.value
+}
 const loading = ref(false)
 const dialog = ref(false)
 const saving = ref(false)
@@ -810,8 +853,25 @@ onMounted(() => {
   width: 100%;
 }
 .group-label { font-weight: 600; font-size: 14px; }
+/* 2026-07-22: 跨机构资源敏感组 (pet / article / video) 🔒 标识, 视觉提示 */
+.group-lock {
+  margin: 0 4px 0 2px;
+  color: #e6a23c;
+  vertical-align: -2px;
+}
 .group-count { color: #909399; font-size: 12px; }
 .group-actions { margin-left: auto; display: flex; gap: 4px; }
+
+/* 2026-07-22: 敏感组 + 非超管时的顶部灰色提示行 */
+.group-locked-hint {
+  margin: 4px 0 8px 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #909399;
+  background: #fafafa;
+  border-left: 3px solid #e6a23c;
+  border-radius: 2px;
+}
 .group-desc {
   color: #606266;
   font-size: 12px;

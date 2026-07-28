@@ -6,7 +6,7 @@ const Org = require('@models/Org.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
 const ApiError = require('@utils/ApiError')
 const { normalizePagination } = require('@utils/pagination')
-const { visibleGroups, visibleAllPermissions, isAssignablePermission } = require('@shared/permissions')
+const { visibleGroups, visibleAllPermissions, isAssignablePermission, isSensitivePermission } = require('@shared/permissions')
 const { CLIENT_LEVEL } = require('@shared/enums')
 
 /**
@@ -206,9 +206,31 @@ function assertNoPositionAdminPerms(pos, incomingPerms) {
   }
 }
 
+/**
+ * (2026-07-22) 跨机构资源敏感权限 grant 拦截 ——
+ * pet.write / article.write / video.write 控制 platform-level catalog,
+ * 数据无 org 字段. 普通机构管理员 / 教务不应能在自己机构内「编辑职位」时
+ * 把这些权限塞给员工 —— 这相当于让单机构内部的人能跨机构操作 platform catalog.
+ *
+ * 唯一允许放行: isPlatformAdmin (跨机构的「做内容」主管账号授权).
+ * Position 的「平台 · 内容主编」这种纯平台身份走 platform-admin grant,
+ * 任何机构内的 user-org-rel 持有此 position 不需要走机构 grant.
+ */
+function assertNoSensitivePermissionsEscalation(actor, perms, positionName = '该职位') {
+  if (!actor || actor.isPlatformAdmin) return
+  const bad = (perms || []).filter(isSensitivePermission)
+  if (bad.length) {
+    throw ApiError.forbidden(
+      `${positionName}不允许持有 ${bad.join(', ')} —— 这类跨机构(platform-level)权限只能由平台超管赋予`
+    )
+  }
+}
+
 async function create({ orgId, name, permissions = [], clientLevel = 0 }) {
   // 2026-07-11: 新建的自定义职位不允许带 position.* (仅系统默认管理员能管职位)
   assertNoPositionAdminPerms({ isSystem: false, name }, permissions)
+  // 2026-07-22: pet.write / article.write / video.write 仅平台超管能赋予
+  assertNoSensitivePermissionsEscalation({ isPlatformAdmin: false }, permissions, `新建职位「${name}」`)
   try {
     const pos = await Position.create({ org: orgId, name, permissions, clientLevel })
     return pos.toObject()
@@ -238,6 +260,8 @@ async function update(id, orgId, payload, actor) {
   // 2026-07-11: 非系统职位不允许塞 position.* (前端 UI 已隐藏, 服务端兜底)
   if (Array.isArray(payload.permissions)) {
     assertNoPositionAdminPerms(pos, payload.permissions)
+    // 2026-07-22: pet.write / article.write / video.write 仅平台超管能赋予
+    assertNoSensitivePermissionsEscalation(actor, payload.permissions, `职位「${pos.name}」`)
     // 系统职位的 permissions 仅平台超管可改; 普通员工 (即使持有 position.write)
     // 编辑系统职位时只能改 name 等非权限字段, 防止管理员给自己减权后失控
     if (pos.isSystem && !actor?.isPlatformAdmin) {
@@ -317,6 +341,8 @@ async function setPermissions(id, orgId, permissions, actor) {
   const target = await Position.findOne({ _id: id, org: orgId }).select('_id isSystem name').lean()
   if (!target) throw ApiError.notFound('职位不存在')
   assertNoPositionAdminPerms(target, cleaned)
+  // 2026-07-22: pet.write / article.write / video.write 仅平台超管能赋予
+  assertNoSensitivePermissionsEscalation(actor, cleaned, `职位「${target.name}」`)
   // 系统职位的 permissions 仅平台超管可改 (与 update 接口语义一致)
   if (target.isSystem && !actor?.isPlatformAdmin) {
     throw ApiError.forbidden('系统职位的权限仅平台超管可编辑')

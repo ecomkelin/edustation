@@ -22,7 +22,8 @@
       <el-switch v-model="filter.isActive" active-text="仅启用" @change="load" />
       <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable autocomplete="off" style="width:240px" @keyup.enter="load" @clear="load" />
       <el-button type="primary" @click="load">查询</el-button>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建物种</el-button>
+      <!-- 2026-07-22: pet.write 控制 (平台超管默认可, 「平台 · 内容主编」也可, 普通用户看不到) -->
+      <el-button v-if="canPetWrite" type="primary" :icon="Plus" @click="openCreate">新建物种</el-button>
     </div>
 
     <el-table :data="items" v-loading="loading" stripe>
@@ -269,13 +270,14 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Upload, Picture, VideoPlay } from '@element-plus/icons-vue'
 import { petCatalogApi } from '@/api/petCatalog'
 import { storageApi } from '@/api/storage'
 import FilePicker from '@/components/FilePicker.vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import { useUserPerms } from '@/composables/useUserPerms'
 import { handleRemoveError } from '@/utils/removable'
 import { formatDate } from '@/utils/format'
 import { PET_VISUAL_TYPE_LABELS } from '@/utils/constants'
@@ -286,6 +288,9 @@ export default {
   name: 'PetSpeciesTab',
   components: { FilePicker, DestructiveConfirm },
   setup() {
+    const { can: canPerm } = useUserPerms()
+    const canPetWrite = canPerm('pet.write')
+
     const filter = reactive({ isActive: true, keyword: '' })
 
     const items = ref([])
@@ -612,6 +617,8 @@ export default {
     onMounted(load)
 
     return {
+      // 2026-07-22: pet.write 权限
+      canPetWrite,
       filter, items, loading, dialog, saving, form, formRef, rules,
       videoPicker, previewOpen, previewRow, previewVideoRef,
       VISUAL_LABELS,

@@ -11,7 +11,8 @@
       <el-switch v-model="filter.isActive" active-text="仅启用" @change="load" />
       <el-input v-model="filter.keyword" placeholder="按名称搜索" clearable autocomplete="off" style="width:240px" @keyup.enter="load" @clear="load" />
       <el-button type="primary" @click="load">查询</el-button>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建消耗品</el-button>
+      <!-- 2026-07-22: pet.write 控制 (平台超管默认可, 「平台 · 内容主编」也可, 普通用户看不到) -->
+      <el-button v-if="canPetWrite" type="primary" :icon="Plus" @click="openCreate">新建消耗品</el-button>
     </div>
 
     <el-table :data="items" v-loading="loading" stripe>
@@ -43,17 +44,20 @@
       </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-          <DestructiveConfirm
-            :target="`消耗品 ${row.name}`"
-            warning="中风险"
-            reason="该操作会从数据库物理删除消耗品记录。"
-            :precheck-notes="['无业务引用']"
-            :precheck="() => petCatalogApi.removableCheckConsumable(row._id).then((r) => r.data || r)"
-            @confirm="(p) => onRemoveConfirm(row, p)"
-          >
-            <el-button link type="danger" size="small">删除</el-button>
-          </DestructiveConfirm>
+          <!-- 2026-07-22: pet.write 控制; 物理删除 (DestructiveConfirm) 额外 requirePlatformAdmin + 密码, 即便按钮可见普通用户也 403 -->
+          <template v-if="canPetWrite">
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <DestructiveConfirm
+              :target="`消耗品 ${row.name}`"
+              warning="中风险"
+              reason="该操作会从数据库物理删除消耗品记录。"
+              :precheck-notes="['无业务引用']"
+              :precheck="() => petCatalogApi.removableCheckConsumable(row._id).then((r) => r.data || r)"
+              @confirm="(p) => onRemoveConfirm(row, p)"
+            >
+              <el-button link type="danger" size="small">删除</el-button>
+            </DestructiveConfirm>
+          </template>
         </template>
       </el-table-column>
     </el-table>
@@ -139,12 +143,17 @@ import FilePicker from '@/components/FilePicker.vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { handleRemoveError } from '@/utils/removable'
 import { PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS } from '@/utils/constants'
+import { useUserPerms } from '@/composables/useUserPerms'
 
 export default {
   // 2026-07-15: 从 PetConsumableAdmin 改为 PetConsumableTab (作为 PetCatalogAdmin 的子 tab 渲染)
   name: 'PetConsumableTab',
   components: { FilePicker, DestructiveConfirm },
   setup() {
+    // 2026-07-22: pet.write 权限 (平台超管默认可, 「平台 · 内容主编」也可, 普通用户看不到)
+    const { can: canPerm } = useUserPerms()
+    const canPetWrite = canPerm('pet.write')
+
     const filter = reactive({ kind: '', isActive: true, keyword: '' })
     const items = ref([])
     const loading = ref(false)
@@ -279,6 +288,7 @@ export default {
     onMounted(load)
 
     return {
+      canPetWrite,
       filter, items, loading, dialog, saving, form, formRef, rules,
       videoPicker, previewOpen, previewRow,
       PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS,

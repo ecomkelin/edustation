@@ -45,9 +45,12 @@
           </el-tooltip>
         </span>
         <div class="toolbar-actions">
-          <el-button size="small" @click="prefillByFormula">用公式补齐到 Lv.{{ suggestedMaxLevel }}</el-button>
-          <el-button size="small" type="primary" :icon="Plus" @click="addRow">新增一级</el-button>
-          <el-button size="small" @click="clearAll" :disabled="form.levelExpOverrides.length === 0">清空覆盖</el-button>
+          <!-- 2026-07-22: pet.write 控制 (平台超管默认可, 「平台 · 内容主编」也可, 普通用户看不到) -->
+          <template v-if="canPetWrite">
+            <el-button size="small" @click="prefillByFormula">用公式补齐到 Lv.{{ suggestedMaxLevel }}</el-button>
+            <el-button size="small" type="primary" :icon="Plus" @click="addRow">新增一级</el-button>
+            <el-button size="small" @click="clearAll" :disabled="form.levelExpOverrides.length === 0">清空覆盖</el-button>
+          </template>
         </div>
       </div>
 
@@ -80,29 +83,35 @@
         </el-table-column>
         <el-table-column label="操作" width="100" fixed="right" align="center">
           <template #default="{ $index, row }">
-            <!-- 严格规则: 只能删最大覆盖级 (避免与更高等级脱节) -->
-            <el-tooltip
-              v-if="!canRemoveRow(row)"
-              content="仅最大覆盖级可删；如需移除此条，请先调整等级或删除更高一级"
-              placement="top"
-            >
-              <el-button size="small" type="danger" link disabled>删除</el-button>
-            </el-tooltip>
-            <el-button
-              v-else
-              size="small"
-              type="danger"
-              link
-              @click="removeRow($index)"
-            >删除</el-button>
+            <!-- 2026-07-22: pet.write 控制; 普通用户看不到删除按钮 -->
+            <template v-if="canPetWrite">
+              <!-- 严格规则: 只能删最大覆盖级 (避免与更高等级脱节) -->
+              <el-tooltip
+                v-if="!canRemoveRow(row)"
+                content="仅最大覆盖级可删；如需移除此条，请先调整等级或删除更高一级"
+                placement="top"
+              >
+                <el-button size="small" type="danger" link disabled>删除</el-button>
+              </el-tooltip>
+              <el-button
+                v-else
+                size="small"
+                type="danger"
+                link
+                @click="removeRow($index)"
+              >删除</el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
 
       <div class="save-bar">
-        <el-button type="primary" :loading="saving" :disabled="!canSave" @click="save">保存</el-button>
-        <el-button @click="load" :disabled="saving">重置</el-button>
-        <span v-if="dirty" class="dirty-tip">有未保存的改动</span>
+        <!-- 2026-07-22: pet.write 控制; 保存/重置都属写操作, 普通用户都看不到 -->
+        <template v-if="canPetWrite">
+          <el-button type="primary" :loading="saving" :disabled="!canSave" @click="save">保存</el-button>
+          <el-button @click="load" :disabled="saving">重置</el-button>
+        </template>
+        <span v-if="dirty && canPetWrite" class="dirty-tip">有未保存的改动</span>
       </div>
 
       <!--
@@ -126,6 +135,11 @@ import { petCatalogApi } from '@/api/petCatalog'
 // shared/petConfig.js 是 CJS；走 .mjs 桥接避免 Vite/esbuild 把 CJS 转 ESM 后
 // 顶层 named import 拿到 { default: ... } 而没有真实 named exports (2026-07-16)。
 import { LOCKED_EXP_INCREMENT } from '@shared/petConfig.mjs'
+// 2026-07-22: pet.write 权限 (平台超管默认可, 「平台 · 内容主编」也可, 普通用户看不到)
+import { useUserPerms } from '@/composables/useUserPerms'
+
+const { can: canPerm } = useUserPerms()
+const canPetWrite = canPerm('pet.write')
 
 const loading = ref(false)
 const saving = ref(false)

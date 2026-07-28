@@ -52,12 +52,39 @@ const SyllabusSchema = new Schema(
   { _id: false }
 )
 
+/**
+ * 单条课件子文档 (2026-07-28 加富文本支持)
+ *
+ *  - kind='file' : 仅 fileId；走 fileBind（field='lessonMaterials'）维护引用追踪，
+ *                  PDF/视频课件
+ *  - kind='html' : 仅 htmlContent；纯文本不入 fileBind (不走引用追踪,也不计存储配额),
+ *                  用于教师直接贴富文本(标签/段落/列表/链接/图片)
+ *
+ * fileIds 字段保留 (向后兼容旧接口 + 前端某些 fallback)，
+ * 实际写入时由 service normalize 派生自 materials[kind=file].fileId。
+ */
+const LessonMaterialSubMaterialSchema = new Schema(
+  {
+    kind: { type: String, enum: ['file', 'html'], required: true },
+    // kind='file' 时必填
+    fileId: { type: Schema.Types.ObjectId, ref: 'File', default: null },
+    // kind='html' 时必填
+    htmlContent: { type: String, default: '' },
+    // 可选标题/简介 (前端列表 chip 显示用)
+    title: { type: String, trim: true, default: '' }
+  },
+  { _id: false }
+)
+
 /** 课件分组（按 lessonNo） */
 const LessonMaterialItemSchema = new Schema(
   {
     lessonNo: { type: Number, required: true, min: 1 },
     // 课件 fileId 列表；走 fileBind（field='lessonMaterials'）维护引用追踪
-    fileIds: { type: [Schema.Types.ObjectId], ref: 'File', default: [] }
+    // 由 service.normalizeLessonMaterialsItems 从 materials[kind=file].fileId 派生同步
+    fileIds: { type: [Schema.Types.ObjectId], ref: 'File', default: [] },
+    // 课件条目数组 (2026-07-28): 支持 file (PDF/视频) + html (富文本) 两种
+    materials: { type: [LessonMaterialSubMaterialSchema], default: [] }
   },
   { _id: false }
 )

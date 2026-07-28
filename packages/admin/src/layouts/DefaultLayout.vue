@@ -182,9 +182,12 @@ const menuGroups = [
       { path: '/system/ai', label: 'AI 管理', icon: MagicStick, requirePlatform: true },
       // D 方案 (2026-06-22) → 重构 (2026-06-22 用户决策) → 合并 (2026-07-15):
       // 物种/消耗品/等级配置合并到单页 3 标签 /pet/catalog (图鉴 / 食物玩具 / 等级配置)
-      // requirePlatform: true，仅平台超管可见菜单入口；机构 admin 看不到菜单但 URL 直链可进 level-config tab
-      // (level-config 后端是 per-org 兜底, 图鉴/食物玩具写操作后端 requirePlatformAdmin 兜底)
-      { path: '/pet/catalog', label: '宠物管理', icon: Notebook, perm: 'pet.write', requirePlatform: true },
+      // 2026-07-22 改造: 「写」权限从硬门 requirePlatformAdmin 改为 requirePermission(pet.write),
+      //   允许平台超管将该权限委托给「平台 · 内容主编」职位 (position.service.addPosition.positions 校验).
+      //   菜单的可见条件: 拥有 pet.write OR pet.read.
+      //   - pet.write: 平台超管 / 被授予内容主编的子账号
+      //   - pet.read (默认管理员): 可 URL 直链进入 (后端 read 不卡权限, 写按钮自动隐藏)
+      { path: '/pet/catalog', label: '宠物管理', icon: Notebook, perm: 'pet.read' },
       // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典
       { path: '/regions', label: '地区管理', icon: Box, requirePlatform: true },
       // 平台配置 (2026-06-22): 4 个平台级配置项合并子组
@@ -199,10 +202,12 @@ const menuGroups = [
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读
           { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
-          // 2026-07-14 内容回退 platform-only: 科普文章 + 科普视频仅平台超管可管; 归到平台配置下
-          //   (2026-07-03 期间曾下放 per-org 在「机构管理 → 科普内容」, 7-14 回退后归位)
-          { path: '/content/articles', label: '科普文章', icon: Reading, requirePlatform: true },
-          { path: '/content/videos', label: '科普视频', icon: Picture, requirePlatform: true },
+          // 2026-07-22 改造: 文章 + 视频 不再硬门 requirePlatformAdmin, 改 requirePermission.
+          //   科普文章 - perm  article.read (菜单可见), 内页 write button 由 article.write 控制
+          //   科普视频 - perm  video.read (菜单可见), 内页 write button 由 video.write 控制
+          //   谁持这些码? 平台超管默认可, 「平台 · 内容主编」职位也可 (超管在 position 编辑 grant)
+          { path: '/content/articles', label: '科普文章', icon: Reading, perm: 'article.read' },
+          { path: '/content/videos', label: '科普视频', icon: Picture, perm: 'video.read' },
           // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
           { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看

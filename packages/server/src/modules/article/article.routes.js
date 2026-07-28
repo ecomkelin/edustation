@@ -1,20 +1,22 @@
 'use strict'
 
 /**
- * 平台科普文章 (Article) 路由 — 2026-07-14 内容回退 platform-only
+ * 平台科普文章 (Article) 路由 — 2026-07-22 改造: platform-level catalog,
+ * 但「写」权限可委托给平台内容运营 (普通机构管理员不能自助 grant pet.write/article.write/video.write, 见 position.service)
  *
  * 路径: /api/v1/articles
  *
  * 设计:
  *   - 平台级 (org=null): 跨机构对所有家长可见
  *   - 公开端点无需任何中间件 (C 端首页直接调)
- *   - admin CRUD 端点要求 isPlatformAdmin (requirePlatformAdmin)
- *   - 物理删除 (R-3608) 走 requirePlatformPassword 中间件 + assertUnused 互锁
- *   - 物理删除预检 (R-3609) 保留 article.read 权限码 (普通机构员工可见; 但实际上权限码已从 DEFAULT_POSITIONS 撤销, 当前仅平台超管触发, DestructiveConfirm precheck 仍按 requirePermission 模式保留)
+ *   - admin 端点改 requirePermission('article.write' | 'article.read')
+ *     —— 拥有这些 perm 的账号 (平台超管 / 平台 · 内容主编) 才能进
+ *   - 物理删除 (R-3608) 仍走 requirePlatformAdmin + requirePlatformPassword 双重硬门 (CLAUDE.md §8.1)
  *
  * 路由顺序:
- *   /admin -> C 端先注册 (无权限码)
- *   /admin/* -> admin 端 CRUD (requirePlatformAdmin)
+ *   /                 -> C 端公开
+ *   /admin/*          -> 后台管理 (article.read / article.write)
+ *   /admin/:id/purge  -> 平台超管专属 + 密码 (物理删除)
  */
 const router = require('express').Router()
 const c = require('./article.controller')
@@ -28,13 +30,14 @@ router.get('/', v.list, mws.validateRequest, asyncHandler(c.list))
 // R-3601 GET /articles/:id — C 端公开详情 (+1 viewCount)
 router.get('/:id', v.idParam, mws.validateRequest, asyncHandler(c.detail))
 
-// admin 端 CRUD (requirePlatformAdmin 中间件 — 仅平台超管可管科普内容)
+// ─────── admin CRUD (2026-07-22: requirePermission 取代硬门 requirePlatformAdmin) ───────
+// 拥有 article.write 权限码即可 —— 来源可以是平台超管, 也可以是平台 · 内容主编
 
 // R-3602 admin GET /articles/admin/list — 后台列表 (含草稿)
 router.get(
   '/admin/list',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.read'),
   v.adminList,
   mws.validateRequest,
   asyncHandler(c.adminList)
@@ -44,7 +47,7 @@ router.get(
 router.post(
   '/admin',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.write'),
   v.create,
   mws.validateRequest,
   asyncHandler(c.create)
@@ -54,7 +57,7 @@ router.post(
 router.put(
   '/admin/:id',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.write'),
   v.idParam,
   v.update,
   mws.validateRequest,
@@ -65,19 +68,18 @@ router.put(
 router.delete(
   '/admin/:id',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.write'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)
 )
 
-// ────── 运营分析 (2026-07-04) ──────
+// ─────── 运营分析 (2026-07-04) ───────
 // R-3606 GET /articles/admin/stats — 顶部 KPI 4 张卡
-// 2026-07-14 改造: requirePlatformAdmin (内容 platform-only, 不再 per-org 校验)
 router.get(
   '/admin/stats',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.read'),
   mws.validateRequest,
   asyncHandler(c.adminStats)
 )
@@ -86,18 +88,21 @@ router.get(
 router.get(
   '/admin/row-stats',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.read'),
   mws.validateRequest,
   asyncHandler(c.adminRowStats)
 )
 
-// ────── 物理删除 (2026-07-04 立项, CLAUDE.md §8.1 三重防护) ──────
+// ─────── 物理删除 (2026-07-04 立项, CLAUDE.md §8.1 三重防护) ───────
 // R-3608 POST /articles/admin/:id/purge — 平台超管物理删除 (requirePlatformPassword 中间件)
 //   互锁: ContentEngagement.contentId 引用存在则挡 (assertUnused 422)
 //   业务: 不 cascade 删 ContentEngagement, 挡板提示先评估影响
+//   (2026-07-22) 即便 article.write 可委托, 物理删除仍只走超管 —
+//   因为这是 §8.1 框架的 D 级操作 (高风险, 不可逆)
 router.post(
   '/admin/:id/purge',
   mws.authenticate,
+  mws.requirePlatformAdmin,
   mws.requirePlatformPassword,
   v.idParam,
   mws.validateRequest,
@@ -105,11 +110,10 @@ router.post(
 )
 
 // R-3609 GET /articles/admin/:id/removable-check — 预检
-//   2026-07-14 改造: requirePlatformAdmin (article.read 权限码已从普通 Position 撤销持有, 留作 catalog 占位)
 router.get(
   '/admin/:id/removable-check',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.read'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.removableCheck)
@@ -121,7 +125,7 @@ router.get(
 router.get(
   '/admin/:id',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('article.read'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.adminDetail)

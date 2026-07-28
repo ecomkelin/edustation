@@ -11,12 +11,22 @@ const ApiError = require('@utils/ApiError')
 /**
  * 把 lessonMaterials.items (按 lessonNo 分组的 fileId[]) 扁平化为一维 fileId 数组。
  * 与 CourseInstance.service.flattenLessonMaterials 同样语义, 复制过来避免跨模块循环依赖。
+ *
+ * 2026-07-28: 支持混合 materials 结构 (kind='file' 时取 fileId; kind='html' 跳过);
+ * 旧结构 items[].fileIds 仍兼容 (作为兜底).
  */
 function flattenLessonMaterials(items) {
   const out = []
   for (const it of items || []) {
+    // 优先: 新结构 materials[kind='file'].fileId
+    const mats = Array.isArray(it.materials) ? it.materials : []
+    for (const m of mats) {
+      if (m && m.kind === 'file' && m.fileId) out.push(String(m.fileId))
+    }
+    // 兜底: 旧结构 fileIds (兼容 normalize 后残留或历史数据)
     for (const fid of it.fileIds || []) {
-      if (fid) out.push(String(fid))
+      const sid = fid ? String(fid) : null
+      if (sid && !out.includes(sid)) out.push(sid)
     }
   }
   return out
@@ -26,32 +36,63 @@ function flattenLessonMaterials(items) {
  * 把 lessonMaterials.items[] 里的 fileIds 由 ObjectId 替换为带文件的轻量对象,
  * 便于前端直接显示 { _id, originalName, url, mime } 而不用再查 /storage/files/:id。
  *
+ * 2026-07-28: 同步 enrich materials[kind='file'].fileId → 嵌入完整 file;
+ * html 类原样保留 (只展示 htmlContent, 无 file 依赖)。
+ *
  * 为什么不在 mongoose populate 里做: `lessonMaterials.items.fileIds` 这种
  * 嵌套数组里的 ObjectId 数组在 mongoose v8 populate 行为不稳, 单独 find 一次更清晰。
  */
 async function enrichLessonMaterials(items) {
   const flat = flattenLessonMaterials(items)
-  if (!flat.length) return items
+  const list = items || []
+  if (!flat.length) {
+    // 全部为 html 或空, 直接返回 (但要保证 materials 至少是数组)
+    return list.map((it) => ({ ...it, materials: Array.isArray(it.materials) ? it.materials : [] }))
+  }
   const File = require('@models/File.model').File
   const files = await File.find({ _id: { $in: flat }, deletedAt: null })
     .select('_id originalName url mime size')
     .lean()
   const map = new Map(files.map((f) => [String(f._id), f]))
-  return (items || []).map((it) => ({
-    ...it,
-    fileIds: (it.fileIds || []).map((fid) => {
-      const f = map.get(String(fid))
-      return f
-        ? {
-            _id: String(f._id),
-            originalName: f.originalName || '',
-            url: f.url,
-            mime: f.mime,
-            size: f.size
-          }
-        : String(fid) // 文件已被删, 保留 id 让 UI 显示「已丢失」
+  const lookup = (fid) => {
+    const f = map.get(String(fid))
+    return f
+      ? {
+          _id: String(f._id),
+          originalName: f.originalName || '',
+          url: f.url,
+          mime: f.mime,
+          size: f.size
+        }
+      : null
+  }
+  return list.map((it) => {
+    // 1) 旧 fileIds 字段 (兼容) enrich
+    const fileIds = (it.fileIds || []).map((fid) => {
+      const obj = lookup(fid)
+      return obj || String(fid) // 文件已被删, 保留 id 让 UI 显示「已丢失」
     })
-  }))
+    // 2) 新 materials 字段: 同步 fileId 嵌入, html 保留原样
+    const materials = (Array.isArray(it.materials) ? it.materials : []).map((m) => {
+      if (!m || typeof m !== 'object') return m
+      if (m.kind === 'file') {
+        const obj = m.fileId ? lookup(m.fileId) : null
+        return {
+          kind: 'file',
+          fileId: m.fileId ? String(m.fileId) : null,
+          file: obj, // populate 过的轻量对象, 找不到为 null (前端显示「已丢失」)
+          title: typeof m.title === 'string' ? m.title : ''
+        }
+      }
+      // kind='html'
+      return {
+        kind: 'html',
+        htmlContent: typeof m.htmlContent === 'string' ? m.htmlContent : '',
+        title: typeof m.title === 'string' ? m.title : ''
+      }
+    })
+    return { ...it, fileIds, materials }
+  })
 }
 
 /**
@@ -82,7 +123,15 @@ function normalizeSyllabusLessons(raw) {
 }
 
 /**
- * 规范化 lessonMaterials.items 输入: lessonNo + fileIds 数组
+ * 规范化 lessonMaterials.items 输入 (2026-07-28: 支持 materials 混合)
+ *
+ * 兼容两种入参 shape:
+ *   - 旧: { lessonNo, fileIds: [id] }
+ *   - 新: { lessonNo, materials: [{ kind: 'file'|'html', ... }] }
+ *
+ * 内部统一派生: 写入时把 materials[kind='file'].fileId 同步给 fileIds (单源),
+ * 这样旧接口 (subject copy / admin 后台某些 fallback) 仍可读 fileIds,
+ * 新前端读 materials.
  */
 function normalizeLessonMaterialsItems(raw) {
   if (!Array.isArray(raw)) return []
@@ -90,10 +139,50 @@ function normalizeLessonMaterialsItems(raw) {
   for (const it of raw) {
     if (!it || typeof it !== 'object') continue
     if (!Number.isInteger(it.lessonNo) || it.lessonNo < 1) continue
-    const fileIds = Array.isArray(it.fileIds)
-      ? it.fileIds.filter((x) => x != null).map((x) => String(x))
-      : []
-    out.push({ lessonNo: it.lessonNo, fileIds })
+
+    // 1) 规范化 materials
+    let materials = []
+    if (Array.isArray(it.materials)) {
+      for (const m of it.materials) {
+        if (!m || typeof m !== 'object') continue
+        if (m.kind === 'file' && m.fileId) {
+          materials.push({
+            kind: 'file',
+            fileId: String(m.fileId),
+            htmlContent: '',
+            title: typeof m.title === 'string' ? m.title.trim().slice(0, 200) : ''
+          })
+        } else if (m.kind === 'html' && typeof m.htmlContent === 'string' && m.htmlContent.trim()) {
+          // 上限 200KB 防止恶意灌大文本
+          const html = m.htmlContent.slice(0, 200 * 1024)
+          materials.push({
+            kind: 'html',
+            fileId: null,
+            htmlContent: html,
+            title: typeof m.title === 'string' ? m.title.trim().slice(0, 200) : ''
+          })
+        }
+      }
+    }
+
+    // 2) 兼容旧 fileIds 入参: 转 materials[kind=file], 跟新形式合并去重
+    if (Array.isArray(it.fileIds)) {
+      const existFileIds = new Set(
+        materials.filter((m) => m.kind === 'file' && m.fileId).map((m) => m.fileId)
+      )
+      for (const fid of it.fileIds) {
+        if (fid == null) continue
+        const sid = String(fid)
+        if (!sid || existFileIds.has(sid)) continue
+        materials.push({ kind: 'file', fileId: sid, htmlContent: '', title: '' })
+        existFileIds.add(sid)
+      }
+    }
+
+    // 3) 派生 fileIds (单源 = materials[kind=file].fileId)
+    const fileIds = materials.filter((m) => m.kind === 'file' && m.fileId).map((m) => m.fileId)
+
+    out.push({ lessonNo: it.lessonNo, fileIds, materials })
   }
   out.sort((a, b) => a.lessonNo - b.lessonNo)
   return out

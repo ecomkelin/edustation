@@ -39,7 +39,8 @@
           <el-option label="本月" value="month" />
         </el-select>
         <el-button @click="loadAll">刷新</el-button>
-        <el-button type="primary" @click="openCreate">+ 新建视频</el-button>
+        <!-- 2026-07-22: 「写」按权限码 (video.write) 控制, 平台超管默认可, 「平台 · 内容主编」职位也可 -->
+        <el-button v-if="canEditVideo" type="primary" @click="openCreate">+ 新建视频</el-button>
       </div>
 
       <el-table v-loading="loading" :data="items" stripe>
@@ -100,7 +101,8 @@
         </el-table-column>
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
+            <!-- 2026-07-22: 编辑要求 video.write; 误操删除(软删)要求 video.write, 物理删除走 DestructiveConfirm 仅超管 -->
+            <el-button v-if="canEditVideo" size="small" type="primary" link @click="openEdit(row)">编辑</el-button>
             <DestructiveConfirm
               v-if="isPlatformAdmin"
               :target="`科普视频 ${row.title}`"
@@ -116,7 +118,12 @@
       </el-table>
 
       <div v-if="!items.length && !loading" class="empty">
-        还没有视频, 点右上「+ 新建视频」开始
+        <template v-if="canEditVideo">
+          还没有视频, 点右上「+ 新建视频」开始
+        </template>
+        <template v-else>
+          还没有视频
+        </template>
       </div>
     </el-card>
 
@@ -131,12 +138,16 @@ import { videoApi } from '@/api/video'
 import KpiCard from '@/components/KpiCard.vue'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useUserPerms } from '@/composables/useUserPerms'
 import { handleRemoveError } from '@/utils/removable'
 import ContentVideoEditDialog from './ContentVideoEditDialog.vue'
 import { fmtNumber, fmtMsCompact } from '@/utils/format'
 
 const auth = useAuthStore()
+const { can: canPerm } = useUserPerms()
 const isPlatformAdmin = computed(() => !!auth.user && auth.user.isPlatformAdmin)
+// 2026-07-22: video.write 是「写」的核心权限码, 平台超管默认可, 「平台 · 内容主编」也可
+const canEditVideo = canPerm('video.write')
 
 const items = ref([])
 const loading = ref(false)

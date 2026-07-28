@@ -3,6 +3,26 @@
 const raw = require('./permissions.json')
 
 /**
+ * (2026-07-22) 跨机构资源敏感权限 —— 这些权限控制的是 platform-level catalog
+ * (Pet/科普文章/科普视频), 数据层面无 org 字段, 不应被普通机构管理员 / 教务
+ * 通过「编辑职位」自助 grant 给任何员工. 只有平台超管可以在 Position 的
+ * permissions[] 里放入这些权限 (用于委托给「平台 · 内容主编」这种纯平台职位).
+ *
+ * 校验入口: position.service.js (create / update / setPermissions)
+ */
+const SENSITIVE_PERMISSIONS = Object.freeze([
+  'pet.write',
+  'article.write',
+  'video.write'
+])
+
+const SENSITIVE_PERMISSION_SET = new Set(SENSITIVE_PERMISSIONS)
+
+function isSensitivePermission(perm) {
+  return SENSITIVE_PERMISSION_SET.has(perm)
+}
+
+/**
  * 把分组的权限配置拍平为数组，并提供 group / hasPerm / getPermissionMeta 工具。
  * 前后端都通过 `@shared/permissions` (后端) 或 vite alias 引用。
  *
@@ -93,6 +113,9 @@ module.exports = {
   allByPermission,
   isValidPermission,
   isAssignablePermission,
+  isSensitivePermission,
   getPermissionMeta,
-  dedupe
+  dedupe,
+  // (2026-07-22) 跨机构资源敏感权限清单 - 见上方注释
+  SENSITIVE_PERMISSIONS
 }

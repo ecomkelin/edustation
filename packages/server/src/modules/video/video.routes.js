@@ -1,17 +1,17 @@
 'use strict'
 
 /**
- * 平台科普视频 (Video) 路由 — 2026-07-14 内容回退 platform-only
+ * 平台科普视频 (Video) 路由 — 2026-07-22 改造: 与 article 平级,
+ * platform-level catalog 「写」权限可委托给平台内容运营 (普通机构管理员不能自助 grant video.write, 见 position.service)
  *
  * 路径: /api/v1/videos
  *
  * 设计:
  *   - 平台级 (org=null): 跨机构对所有家长可见
  *   - 公开端点无需任何中间件 (C 端探索 tab 直接调)
- *   - admin CRUD 端点要求 isPlatformAdmin (requirePlatformAdmin)
- *   - 物理删除 (R-3810) 走 requirePlatformPassword 中间件 + assertUnused 互锁
- *   - /videos/:id/play 仍走 mws.authenticate (要拿 activeStudentId 记 engagement),
- *     不再 requireOrg (内容 platform-only)
+ *   - admin 端点改 requirePermission('video.write' | 'video.read')
+ *   - 物理删除 (R-3810) 走 requirePlatformAdmin + requirePlatformPassword (CLAUDE.md §8.1 高风险硬门)
+ *   - /videos/:id/play 仍走 mws.authenticate (要拿 activeStudentId 记 engagement)
  */
 const router = require('express').Router()
 const c = require('./video.controller')
@@ -38,13 +38,13 @@ router.post(
   asyncHandler(c.play)
 )
 
-// admin 端 CRUD (requirePlatformAdmin 中间件 — 仅平台超管可管科普内容)
+// ─────── admin CRUD (2026-07-22: requirePermission 取代硬门 requirePlatformAdmin) ───────
 
 // R-3804 admin GET /videos/admin/list — 后台列表
 router.get(
   '/admin/list',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.read'),
   v.adminList,
   mws.validateRequest,
   asyncHandler(c.adminList)
@@ -54,7 +54,7 @@ router.get(
 router.post(
   '/admin',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.write'),
   v.create,
   mws.validateRequest,
   asyncHandler(c.create)
@@ -64,7 +64,7 @@ router.post(
 router.put(
   '/admin/:id',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.write'),
   v.idParam,
   v.update,
   mws.validateRequest,
@@ -75,19 +75,18 @@ router.put(
 router.delete(
   '/admin/:id',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.write'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.remove)
 )
 
-// ────── 运营分析 (2026-07-04) ──────
+// ─────── 运营分析 (2026-07-04) ───────
 // R-3808 GET /videos/admin/stats — 顶部 KPI 4 张卡
-// 2026-07-14 改造: requirePlatformAdmin (内容 platform-only, 不再 per-org 校验)
 router.get(
   '/admin/stats',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.read'),
   mws.validateRequest,
   asyncHandler(c.adminStats)
 )
@@ -96,17 +95,19 @@ router.get(
 router.get(
   '/admin/row-stats',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.read'),
   mws.validateRequest,
   asyncHandler(c.adminRowStats)
 )
 
-// ────── 物理删除 (2026-07-04 立项, CLAUDE.md §8.1 三重防护) ──────
+// ─────── 物理删除 (2026-07-04 立项, CLAUDE.md §8.1 三重防护) ───────
 // R-3810 POST /videos/admin/:id/purge — 平台超管物理删除
 //   互锁: ContentEngagement.contentId 引用存在则挡 (assertUnused 422)
+//   (2026-07-22) 即便 video.write 可委托, 物理删除仍只走超管 — §8.1 框架的 D 级操作
 router.post(
   '/admin/:id/purge',
   mws.authenticate,
+  mws.requirePlatformAdmin,
   mws.requirePlatformPassword,
   v.idParam,
   mws.validateRequest,
@@ -114,11 +115,10 @@ router.post(
 )
 
 // R-3811 GET /videos/admin/:id/removable-check — 预检
-//   2026-07-14 改造: requirePlatformAdmin (video.read 权限码已从普通 Position 撤销)
 router.get(
   '/admin/:id/removable-check',
   mws.authenticate,
-  mws.requirePlatformAdmin,
+  mws.requirePermission('video.read'),
   v.idParam,
   mws.validateRequest,
   asyncHandler(c.removableCheck)
