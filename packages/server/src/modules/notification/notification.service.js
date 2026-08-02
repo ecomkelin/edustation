@@ -132,24 +132,35 @@ async function publish(input) {
     return { skipped: true, reason: 'recipient_blocked' }
   }
 
-  // 拉模板（inbox） — v4 2026-07-18: org-only 语义, 没本机构副本 = 不发
-  const tpl = await tplService.getTemplate(orgId, type, 'inbox')
-  // (a) 本机构显式禁用 (org.isActive=false) → 不发
-  if (tpl && tpl.isActive === false) {
-    return { skipped: true, reason: 'org_template_disabled' }
-  }
-  // (b) 本机构没副本 (tpl=null) → 默认未启用, 不发
-  //   跟之前 v3 的 "没副本 fallback platform 默认" 不同: 用户语义是不启用就不发,
-  //   所以这里直接 return skipped. 平台默认仍存在但只用于 UI 预览, 不参与 publish.
+  // 拉模板（inbox） — v5 2026-08-02 行为变更:
+  //   1. 本机构有 org 副本 → 用 org 副本 (不论 isActive)
+  //   2. org 副本 isActive=false (用户在管理后台显式关闭) → skipped, 尊重用户禁用
+  //   3. 本机构没 org 副本 → 降级到平台默认 (org=null) 渲染并发出去,
+  //      仅控制台 warn (不替本机构自动落 org 副本 — 那个会越权改用户"未启用"语义)
+  //   4. 平台默认也没 → skipped (上游 bug)
+  // 历史: v4 (2026-07-18) 把 getTemplate 改成 org-only, 结果"新机构 / 没启用副本"所有通知
+  //   全部静默丢, 不写 inbox 不报错. 用户实际使用 (例如发任务) 不可能期望必须先在后台
+  //   启用模板副本才发 — 退回 v3 的 platform fallback 行为, 但保留"org 副本 isActive=false
+  //   即停用"的语义 (用户在 Templates UI 明确关掉的, 我们不动).
+  const orgTpl = await tplService.getTemplate(orgId, type, 'inbox')
+  let tpl = orgTpl
   if (!tpl) {
-    return { skipped: true, reason: 'org_template_not_enabled' }
+    tpl = await tplService.getTemplate(null, type, 'inbox')
+    if (tpl) {
+      // eslint-disable-next-line no-console
+      console.warn(`[notification.publish] org=${orgId} 无 ${type} 副本, 降级用平台默认 (org=null)`)
+    }
   }
-  // (c) 正常: 渲染模板, 落库
-  let title = ''
-  let body = ''
+  if (!tpl) {
+    return { skipped: true, reason: 'template_not_found' }
+  }
+  if (tpl.isActive === false) {
+    return { skipped: true, reason: 'template_disabled' }
+  }
+  // 渲染
   const rendered = tplService.render(tpl, input.vars || {})
-  title = rendered.title
-  body = rendered.body
+  let title = rendered.title
+  let body = rendered.body
 
   // 计算可用渠道
   // - inbox 永远在；其余渠道：globalEnabled + category.enabled + channel.enabled + channel.capability
@@ -194,7 +205,7 @@ async function publish(input) {
   // 即时发送：fire-and-forget 异步 dispatch（不等外发回包，publish 立即返）
   if (!input.scheduledFor || input.scheduledFor.getTime() <= Date.now()) {
     setImmediate(() => {
-      dispatchAll(doc._id.toString(), orgId, recipient, channels, tpl, input.vars || {})
+      dispatchAll(doc._id.toString(), orgId, recipient, channels, tpl, input.vars || {}, orgTpl)
         .catch((e) => console.error('[notification.publish] dispatch error:', e))
     })
   }
@@ -204,8 +215,10 @@ async function publish(input) {
 
 /**
  * 内部：dispatch 所有渠道（异步执行）
+ * @param {Object|null} orgTplFallback — 用来标记 "是否降级到 platform" 写进日志.
+ *   如果用 org 副本, 传 orgTpl 本体; 如果是 platform fallback, 传 null 区别.
  */
-async function dispatchAll(notificationId, orgId, recipient, channels, template, vars) {
+async function dispatchAll(notificationId, orgId, recipient, channels, template, vars, orgTplFallback) {
   const results = await Promise.all(
     channels.map((ch) => dispatchChannel({ _id: notificationId }, ch, recipient, template, vars))
   )
@@ -396,7 +409,7 @@ async function dispatchScheduled() {
     const tpl = await tplService.getTemplate(d.org, d.type, 'inbox')
     const channels = (d.channels || []).filter((c) => c.status === 'pending').map((c) => c.channel)
     if (!channels.length) continue
-    dispatchAll(d._id.toString(), d.org, recipient, channels, tpl, {}).catch((e) =>
+    dispatchAll(d._id.toString(), d.org, recipient, channels, tpl, {}, tpl).catch((e) =>
       console.error('[notification.dispatchScheduled] error:', e.message)
     )
   }

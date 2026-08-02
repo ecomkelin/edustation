@@ -47,7 +47,7 @@ async function validateReason({ orgId, reasonId, type }) {
 /**
  * 校验关联员工 (2026-06-25 工资/提成场景)
  * - 必须是本机构 User (UserOrgRel.org = orgId)
- * - 必须有员工岗位 (clientLevel > 0; clientLevel=0 是纯家长)
+ * - 必须有员工岗位 (clientLevel = 0; clientLevel > 0 是客户端/家长岗)
  */
 async function validateRelatedStaff({ orgId, userId }) {
   if (!userId) return null
@@ -60,13 +60,17 @@ async function validateRelatedStaff({ orgId, userId }) {
   if (user.isActive === false) throw ApiError.badRequest('关联员工已停用')
 
   // 必须隶属本机构
-  const rel = await UserOrgRel.findOne({ user: userId, org: orgId, isActive: true }).select('_id positions').lean()
+  // 2026-08-02 修: 原来带 `isActive: true`, 但 UserOrgRel schema 没有 isActive 字段
+  //   (启停用看 User.isActive, 上面已判) → 这一查永远 0 行 → 任何关联员工都被判"不属于本机构"
+  const rel = await UserOrgRel.findOne({ user: userId, org: orgId }).select('_id positions').lean()
   if (!rel) throw ApiError.badRequest('关联员工不属于本机构')
 
-  // 必须有员工岗位 (clientLevel > 0)
+  // 必须有员工岗位
+  // 2026-08-02 修: 判据原来写反了 (clientLevel > 0 是**客户端/家长**岗, clientLevel = 0 才是员工岗,
+  //   口径见 user.service.list 的 clientPosFilter), 于是只有家长能过、真员工被拒
   const positions = await Position.find({ _id: { $in: rel.positions || [] }, org: orgId, isActive: true })
     .select('name clientLevel').lean()
-  const isStaff = positions.some((p) => (p.clientLevel || 0) > 0) || user.isPlatformAdmin
+  const isStaff = positions.some((p) => (Number(p.clientLevel) || 0) === 0) || user.isPlatformAdmin
   if (!isStaff) throw ApiError.badRequest('关联员工必须是机构内员工岗位 (如老师/教务/财务)')
 
   return user

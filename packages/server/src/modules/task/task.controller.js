@@ -128,6 +128,12 @@ exports.stats = async (req, res) => res.json(ApiResponse.ok(await s.stats({
   orgId: req.orgId, actor: req.user
 })))
 
+// ─── 可派任务员工下拉 (R-3924, 2026-08-02) ────
+// 建任务 / 编辑模板页的执行人+监督人候选; 不走 GET /users (那要 user.read, 财务岗没有)
+exports.assignableUsers = async (req, res) => res.json(ApiResponse.ok(await s.assignableUsers({
+  orgId: req.orgId
+})))
+
 // ─── 模板 ───────────────────────────────────
 
 exports.templateList = async (req, res) => res.json(ApiResponse.ok(await s.templateList({

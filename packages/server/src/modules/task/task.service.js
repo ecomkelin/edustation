@@ -29,6 +29,7 @@ const TaskTemplate = require('@models/TaskTemplate.model')
 const TaskGenerationLog = require('@models/TaskGenerationLog.model')
 const User = require('@models/User.model')
 const UserOrgRel = require('@models/UserOrgRel.model')
+const Position = require('@models/Position.model')
 const ApiError = require('@utils/ApiError')
 const removable = require('@utils/removable')
 const { normalizePagination } = require('@utils/pagination')
@@ -42,21 +43,66 @@ const {
 
 /**
  * 把一批 user 限定到本机构 (避免 admin 端传外机构 id 越权)
+ *
+ * 2026-08-02 修: 原来 rel 过滤条件带 `isActive: true`, 但 UserOrgRel schema **没有**
+ *   isActive 字段 (启停用是 User.isActive), 于是这一查永远 0 行 → 任何建任务都 400
+ *   「用户 X 不属于本机构或已停用」. 现在 rel 只判归属, 停用判 User.isActive.
  */
 async function assertUsersInOrg(orgId, userIds) {
   if (!Array.isArray(userIds) || userIds.length === 0) return
   const idSet = new Set(userIds.map((id) => String(id)))
   const rels = await UserOrgRel.find({
     org: orgId,
-    user: { $in: [...idSet] },
-    isActive: true
+    user: { $in: [...idSet] }
   }).select('user').lean()
-  const found = new Set(rels.map((r) => String(r.user)))
+  const inOrg = new Set(rels.map((r) => String(r.user)))
+  const activeUsers = await User.find({
+    _id: { $in: [...idSet] },
+    isActive: { $ne: false }
+  }).select('_id').lean()
+  const active = new Set(activeUsers.map((u) => String(u._id)))
   for (const id of userIds) {
-    if (!found.has(String(id))) {
+    if (!inOrg.has(String(id)) || !active.has(String(id))) {
       throw ApiError.badRequest(`用户 ${id} 不属于本机构或已停用`)
     }
   }
+}
+
+/**
+ * 可派任务的员工下拉 (R-3924, 2026-08-02)
+ *
+ * 为什么不复用 `GET /users` (R-0200):
+ *   - R-0200 要 `user.read` 权限, 但「财务」等岗位只有 task.write 没有 user.read,
+ *     建任务页拉不到人 → 下拉全空 → el-select 直接把 raw id 当 label 显示;
+ *   - 任务模块只需要 {id, realName} 这点信息, 不该为了它下放整个用户档案读权限.
+ *
+ * 口径: 本机构 UserOrgRel 里**至少持有一个 clientLevel=0 岗位**的 user (员工 + 混合岗),
+ *   纯家长 (只有 clientLevel>0 岗位) 排除; User.isActive=false 排除.
+ *   与 assertUsersInOrg 的放行口径保持一致, 避免"选得到但提交 400".
+ */
+async function assignableUsers({ orgId }) {
+  const staffPosIds = (await Position.find({ org: orgId, clientLevel: 0 })
+    .select('_id').lean()).map((p) => p._id)
+  if (staffPosIds.length === 0) return { items: [] }
+
+  const rels = await UserOrgRel.find({ org: orgId, positions: { $in: staffPosIds } })
+    .populate({ path: 'user', match: { isActive: { $ne: false } }, select: 'realName mobile isActive' })
+    .populate({ path: 'positions', select: 'name isSystem clientLevel' })
+    .lean()
+
+  const items = rels
+    .filter((r) => r.user)
+    .map((r) => ({
+      id: String(r.user._id),
+      realName: r.user.realName || '',
+      mobile: r.user.mobile || '',
+      positions: (r.positions || [])
+        .filter((p) => Number(p.clientLevel) === 0)
+        .map((p) => ({ id: String(p._id), name: p.name, isSystem: !!p.isSystem }))
+    }))
+    .sort((a, b) => (a.realName || '').localeCompare(b.realName || '', 'zh-CN'))
+
+  return { items }
 }
 
 /**
@@ -314,11 +360,14 @@ async function create({ orgId, title, description, type, priority, creator, assi
     })))
   }
   // 2026-07-13: 触发 task_assigned — 创建任务 = 把全部 assignees 指派给全员
-  //   fire-and-forget; 单条失败不阻塞 create
+  // 2026-08-02: 监督人也要收 (被指派监督也是 inbound event)
+  //   assignees ∪ supervisors, 用 Set 去重 (虽然 assertNoSupervisorAssigneeOverlap 已挡过,
+  //   但万一未来放宽, 这里兜一下)
+  const allRecipientIds = Array.from(new Set([...(assignees || []), ...(supervisors || [])].map(String)))
   setImmediate(() => {
     publishTaskAssigned({
       task,
-      recipientIds: assignees,
+      recipientIds: allRecipientIds,
       actor,
       orgId
     }).catch((e) => console.warn('[task.create] publishTaskAssigned error:', e.message))
@@ -355,8 +404,14 @@ async function update({ id, orgId, body, actor }) {
   if (body.startAt !== undefined) task.startAt = body.startAt
   if (body.dueAt != null) task.dueAt = body.dueAt
   if (body.tags != null) task.tags = body.tags
+  // 2026-08-02: 收集新加入的 assignees + supervisors, 一次性发 task_assigned
+  //   diff 在写库前算 (避免被前面赋值覆盖)
+  const newRecipientIds = []
   if (body.supervisors != null) {
     await assertUsersInOrg(orgId, body.supervisors)
+    const prevSupIds = new Set((task.supervisors || []).map(String))
+    const newSupIds = body.supervisors.filter((u) => !prevSupIds.has(String(u)))
+    newRecipientIds.push(...newSupIds)
     task.supervisors = body.supervisors
   }
   if (body.assignees != null) {
@@ -366,17 +421,22 @@ async function update({ id, orgId, body, actor }) {
       (task.assignees || []).map((a) => String(a.user))
     )
     const newAssigneeIds = body.assignees.filter((u) => !prevAssigneeIds.has(String(u)))
+    newRecipientIds.push(...newAssigneeIds)
     task.assignees = body.assignees.map((u) => ({ user: u, status: 'not_started', progress: 0 }))
-    if (newAssigneeIds.length) {
-      setImmediate(() => {
-        publishTaskAssigned({
-          task,
-          recipientIds: newAssigneeIds,
-          actor,
-          orgId
-        }).catch((e) => console.warn('[task.update] publishTaskAssigned error:', e.message))
-      })
-    }
+  }
+  // 一次性派发 (assignees + supervisors 都收 task_assigned)
+  if (newRecipientIds.length) {
+    // 去重 (assignees ∪ supervisors 可能有交集, 后续 assignee==supervisor 也会被
+    // assertNoSupervisorAssigneeOverlap 拒, 这里兜一下)
+    const deduped = Array.from(new Set(newRecipientIds.map(String)))
+    setImmediate(() => {
+      publishTaskAssigned({
+        task,
+        recipientIds: deduped,
+        actor,
+        orgId
+      }).catch((e) => console.warn('[task.update] publishTaskAssigned error:', e.message))
+    })
   }
   // 2026-07-09: 监督人 ≠ 执行人 — 只在两个列表都变了或其中一个变了时校验
   //   (单改 supervisors 时拿当前 assignees 比, 单改 assignees 时拿当前 supervisors 比)
@@ -1316,11 +1376,13 @@ async function generateFromTemplate(tpl, actor, isManualRun = false) {
     })
     // 2026-07-14: 模板"立即跑"生成的任务 = 同样需要给 assignees 发 task_assigned 通知
     //   跟 service.create 保持一致 (setImmediate fire-and-forget, 单条失败不阻塞)
-    if (assignees.length > 0) {
+    // 2026-08-02: 监督人也要收
+    const allRecipientIds = Array.from(new Set([...assignees, ...((task.supervisors || []).map(String))].map(String)))
+    if (allRecipientIds.length > 0) {
       setImmediate(() => {
         publishTaskAssigned({
           task,
-          recipientIds: assignees,
+          recipientIds: allRecipientIds,
           actor,
           orgId: tpl.org
         }).catch((e) => console.warn('[generateFromTemplate] publishTaskAssigned error:', e.message))
@@ -1365,6 +1427,8 @@ module.exports = {
   update,
   remove,
   removableCheck,
+  // 可派任务员工下拉 (R-3924, 2026-08-02)
+  assignableUsers,
   // 归档 (2026-07-08)
   archive,
   unarchive,

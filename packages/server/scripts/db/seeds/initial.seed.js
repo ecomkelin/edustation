@@ -186,6 +186,10 @@ module.exports = { run }
 //   - 24 位 hex 是安全判定 (含 _id + 所有 ref 字段都是这格式)
 //   - 非 hex 的字符串 (realName, mobile, passwordHash, schoolName 等) 不动
 //   - 数组 / 嵌套对象递归处理
+//   - **2026-08-02 修**: 数组里的 hex **字符串元素** 之前没被转 (只递归了数组里的对象),
+//     导致 user_org_rels.positions 落库成 ["6a2f..."] 字符串数组 →
+//     user.service.list 的 `positions: {$in: [ObjectId]}` 严格类型匹配 0 结果 →
+//     任务模块「执行人/监督人」下拉全空 + 显示 raw id. 数组元素现在就地替换.
 //   - 不在 $or/$and/$in 等查询操作符里出现 (这是 insertMany 不是 find)
 //   - Date / Number / null / undefined 都不动
 function isOidStr(s) {
@@ -195,7 +199,7 @@ function isOidStr(s) {
 function castOidsDeep(value) {
   if (value == null) return
   if (Array.isArray(value)) {
-    value.forEach((v) => castOidsDeep(v))
+    castOidsInArray(value)
     return
   }
   if (typeof value !== 'object') return
@@ -206,7 +210,22 @@ function castOidsDeep(value) {
     if (isOidStr(v)) {
       value[k] = new mongoose.Types.ObjectId(v)
     } else if (Array.isArray(v)) {
-      v.forEach((x) => castOidsDeep(x))
+      castOidsInArray(v)
+    } else if (v && typeof v === 'object' && !(v instanceof Date)) {
+      castOidsDeep(v)
+    }
+  }
+}
+
+// 数组元素必须**就地替换** (arr[i] = ObjectId), 否则 hex 字符串元素原样落库
+// (典型受害者: user_org_rels.positions / positions[].permissions 之外的所有 ref 数组)
+function castOidsInArray(arr) {
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i]
+    if (isOidStr(v)) {
+      arr[i] = new mongoose.Types.ObjectId(v)
+    } else if (Array.isArray(v)) {
+      castOidsInArray(v)
     } else if (v && typeof v === 'object' && !(v instanceof Date)) {
       castOidsDeep(v)
     }

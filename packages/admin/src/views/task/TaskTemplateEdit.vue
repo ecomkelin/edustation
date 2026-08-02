@@ -23,12 +23,18 @@
       </el-form-item>
       <el-form-item label="默认执行人" prop="defaultAssignees">
         <el-select v-model="defaultAssigneeUsers" multiple filterable style="width: 100%" placeholder="至少 1 个">
-          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+          <el-option v-for="u in userOptions" :key="u.id" :label="userLabel(u)" :value="u.id">
+            <span>{{ userLabel(u) }}</span>
+            <span class="opt-pos">{{ positionText(u) }}</span>
+          </el-option>
         </el-select>
       </el-form-item>
       <el-form-item label="默认监督人" prop="defaultSupervisors">
         <el-select v-model="form.defaultSupervisors" multiple filterable style="width: 100%" placeholder="至少 1 个">
-          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+          <el-option v-for="u in userOptions" :key="u.id" :label="userLabel(u)" :value="u.id">
+            <span>{{ userLabel(u) }}</span>
+            <span class="opt-pos">{{ positionText(u) }}</span>
+          </el-option>
         </el-select>
       </el-form-item>
       <el-form-item label="checklist">
@@ -149,10 +155,28 @@ const rules = {
   'schedule.kind': [{ required: true, message: '请选择周期类型', trigger: 'change' }]
 }
 
+function userLabel(u) {
+  // 显示名字, 没填 realName 的退到手机号, 都没有才退 id
+  return u.realName || u.mobile || u.id
+}
+
+function positionText(u) {
+  const names = (u.positions || []).map((p) => p.name).filter(Boolean)
+  return names.length ? names.join(' / ') : ''
+}
+
 async function loadUsers() {
-  // roleScope: 'staff' 排除纯家长 (2026-07-08: 任务模块暂不向家长派任务)
-  const r = await userApi.list({ page: 1, pageSize: 500, roleScope: 'staff' })
-  userOptions.value = r.data?.items || []
+  // 2026-08-02: 改用 R-3924 /tasks/assignable-users (本机构员工, 纯家长除外)
+  //   原来打 GET /users?roleScope=staff 要 user.read 权限, 财务岗只有 task.write → 403 空下拉
+  try {
+    const r = await taskApi.assignableUsers()
+    userOptions.value = r.data?.items || []
+    if (userOptions.value.length === 0) {
+      ElMessage.warning('本机构暂无可派任务的员工,请先在「用户管理」给员工分配岗位')
+    }
+  } catch (_) {
+    ElMessage.error('加载员工列表失败,请刷新重试或联系管理员')
+  }
 }
 
 /**
@@ -196,7 +220,9 @@ async function ensureUsersByIds(ids) {
     )
   )
   for (const u of results) {
-    if (u && u.id) userOptions.value.push(u)
+    // user.service.detail 返回的是 User 文档 (_id), 这里统一成下拉需要的 {id, realName, mobile}
+    const id = u && String(u.id || u._id || '')
+    if (id) userOptions.value.push({ id, realName: u.realName, mobile: u.mobile, positions: [] })
   }
 }
 
@@ -270,4 +296,6 @@ onMounted(async () => {
 .page__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .items { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .items__row { display: flex; gap: 8px; align-items: center; }
+/* 下拉里岗位名做次要信息, 右侧灰字 */
+.opt-pos { float: right; margin-left: 16px; color: #909399; font-size: 12px; }
 </style>

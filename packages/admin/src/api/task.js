@@ -42,6 +42,11 @@ export const taskApi = {
   kanban: (params) => http.get('/tasks/kanban', { params }),
   stats: () => http.get('/tasks/stats'),
 
+  // ─── 可派任务员工下拉 (R-3924, 2026-08-02) ─
+  // 建任务 / 模板编辑页的执行人+监督人候选 (本机构员工, 纯家长除外)
+  // 不用 userApi.list: 那要 user.read 权限, 财务岗只有 task.write → 403 空下拉
+  assignableUsers: () => http.get('/tasks/assignable-users'),
+
   // ─── 模板 ──────────────────────────────
   templateList: (params) => http.get('/tasks/templates', { params }),
   templateCreate: (data) => http.post('/tasks/templates', data),

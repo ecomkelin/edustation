@@ -369,26 +369,32 @@ detail.vue.onLoad/mounted
 
 **deeplink 拼装点**: `lessonSchedule.service.js` 的 `publishLessonPrepareReminder` (家长) + `publishLessonPreparingToTeacher` (员工), 改 deeplink 时同步改这里。
 
-### 3.10 模板「启用本机构」v4 范式 (2026-07-18)
+### 3.10 模板「启用本机构」v5 范式 (2026-08-02 行为变更)
 
-**用户语义 (v4)**: 「本机构开关 = 本机构要不要这条通知」。
-- 新机构**默认所有通知都不发** (必须显式启用才会发)
-- 开关 off = 通知不发 (不论有没有 platform 默认)
-- 开关 on = 通知按本机构副本文案发送 (无副本时 upsert 时以 platform 文案为初始)
+> **2026-08-02 行为变更**: v4 的 "无 org 副本 → skipped" 在实际业务里被证明是静默黑洞 — 用户发任务时没人收通知 (task 收件人 inbox 为空, 不报错不弹错)。v5 改为 "org 副本优先 → 缺失降级 platform 渲染 → isActive=false 仍禁用"。详见 [memory/task-notification-missing-2-root-causes-2026-08-02](../../../../.claude/projects/-Users-kelin-prog-rgzw-edustation/memory/task-notification-missing-2-root-causes-2026-08-02.md)。
 
-**后端 v4 改动**:
-1. `getTemplate(orgId, type, channel)` 只查 `org=orgId`, **不再 fallback 到 platform** (org=null)
+**用户语义 (v5)**: 「本机构开关 = 本机构要不要这条通知」。
+- 有 org 副本 + 开关 on → 按本机构副本发送
+- 有 org 副本 + 开关 off → 通知**不发** (显式禁用)
+- **无 org 副本 (默认状态) → 降级用平台默认 (org=null) 文案发出**, 不弹错不写 skipped log (只在控制台 warn 一次)
+  - 设计: 新机构默认不应该"零通知"，业务期望 (发任务对方收得到) > 配置摩擦 (必须先到后台启用)
+  - 仍尊重用户的"显式关闭"语义 — 在管理后台 Templates UI 显式关掉的那条类型不降级
+
+**后端 v5 改动**:
+1. `getTemplate(orgId, type, channel)` **保持**只查 `org=orgId` (org=null 入口分开)
 2. `publish` 入口:
-   - `tpl.isActive === false` → `return { skipped: true, reason: 'org_template_disabled' }`
-   - `tpl == null` → `return { skipped: true, reason: 'org_template_not_enabled' }` (默认不发)
-   - 两者都不进 publish 落库逻辑
-3. list 接口仍返 `{ type, channel, org, platform, effective }` (org + platform 都返), **仅用于 UI 预览**, 不参与 publish 路径
+   - 先 `getTemplate(orgId, ...)` 拿 org 副本
+   - 没有 → `getTemplate(null, ...)` 拿平台默认；拿到 → 控制台 `console.warn` + 继续用 platform 渲染
+   - 都没有 → `return { skipped: true, reason: 'template_not_found' }`
+   - `tpl.isActive === false` → `return { skipped: true, reason: 'template_disabled' }` (任何来源, 都尊重)
+3. list 接口仍返 `{ type, channel, org, platform, effective }` (org + platform 都返), **仅用于 UI 预览**, publish 路径已自行降级
 
-**UI v4 改造**:
+**UI v4 改造 (保留)**:
 - 启用列: 单开关, 列名「启用本机构」
 - 无 chip (开关本身就是状态)
 - tooltip 解释三种语义:
-  - 默认 (无 org 副本 + 开关 off): "本机构未启用 (通知不发送)；点击启用后将以平台默认文案为基础创建本机构副本"
+  - 默认 (无 org 副本 + 开关 off): "本机构未启用 (通知不发送)；点击启用后将以平台默认文案为基础创建本机构副本"  
+    ⚠️ v5 行为变更: 此状态下通知**仍会用平台默认文案发送**, tooltip 文案待 UI 二次更新
   - 开关 off + 有 org 副本: "本机构已停用，点击启用 (通知恢复发送)"
   - 开关 on: "本机构已启用，点击停用 (通知将彻底不发)"
 - 顶部说明: 「启用本机构 = 本机构启用该通知 (默认未启用); 停用 = 本机构该通知彻底不发; 重置 = 删除本机构自定义, 回到未启用状态」
@@ -397,11 +403,12 @@ detail.vue.onLoad/mounted
 - v1: 单开关 (UI 看着对, 但 service isActive:true 过滤 fallback 到 platform, toggle 无效)
 - v2: 双开关 (本机构 + 平台默认) → 平台默认不该暴露给机构管理员, 复杂
 - v3: 单开关 + 三态 chip → 仍然是「未启用=跟随平台默认」, 新机构没主动 toggle 也会发通知
-- **v4 (当前)**: 单开关 + 默认未启用, getTemplate 改 org-only, publish 双跳 (org_template_disabled / org_template_not_enabled)
+- v4: 单开关 + 默认未启用, getTemplate 改 org-only, publish 双跳 (org_template_disabled / org_template_not_enabled) — **被用户实际用例否决**: 静默黑洞
+- **v5 (当前)**: 保留 v4 的 "显式 isActive=false → 禁用" 语义, 但无 org 副本时降级 platform 渲染 (并在 publish 时控制台 warn)
 
-**禁止**:
-- ❌ 在 `getTemplate` 继续 fallback 到 platform —— 这是 v4 之前的行为, 必须移除
-- ❌ 在 `publish` 找不到 tpl 时兜底 title=type —— 用户没启用就不该有任何通知
+**禁止** (沿用 v4 + 新增):
+- ❌ 自动给本机构落 org 副本 — 越权改用户的 "未启用" 语义 (用户在 UI 关掉的, 我们不动)
+- ❌ 在 `publish` 找不到任何模板时兜底 title=type — 用户没启用就不该有任何通知
 - ❌ 在本 UI 暴露「平台默认」开关 —— 平台默认是 SaaS 全局配置, 机构管理员不感知
 
 ## 4. 路由（MM=40，详见 routes-server.md §40）

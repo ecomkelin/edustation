@@ -24,24 +24,30 @@
       <!-- 2026-07-08: 平台超管可选 creator (默认 = 机构管理员); 普通员工不展示, 后端 controller 兜底 creator=self -->
       <el-form-item v-if="isPlatformAdmin" label="发起人" prop="creator">
         <el-select v-model="form.creator" filterable style="width: 100%" placeholder="默认 = 机构管理员">
-          <el-option v-for="u in userOptions" :key="u.id" :label="u.realName || u.name" :value="u.id" />
+          <el-option v-for="u in userOptions" :key="u.id" :label="userLabel(u)" :value="u.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="执行人" prop="assignees">
         <el-select v-model="form.assignees" multiple filterable style="width: 100%" placeholder="至少 1 个">
           <!-- 2026-07-09: 监督人 ≠ 执行人 — 已在 supervisors 里的用户在前端就 disable, 避免选完提交才被后端 400 -->
           <el-option v-for="u in userOptions" :key="u.id"
-            :label="u.realName || u.name"
+            :label="userLabel(u)"
             :value="u.id"
-            :disabled="form.supervisors.includes(u.id)" />
+            :disabled="form.supervisors.includes(u.id)">
+            <span>{{ userLabel(u) }}</span>
+            <span class="opt-pos">{{ positionText(u) }}</span>
+          </el-option>
         </el-select>
       </el-form-item>
       <el-form-item label="监督人" prop="supervisors">
         <el-select v-model="form.supervisors" multiple filterable style="width: 100%" placeholder="默认 1 个,可多选">
           <el-option v-for="u in userOptions" :key="u.id"
-            :label="u.realName || u.name"
+            :label="userLabel(u)"
             :value="u.id"
-            :disabled="form.assignees.includes(u.id)" />
+            :disabled="form.assignees.includes(u.id)">
+            <span>{{ userLabel(u) }}</span>
+            <span class="opt-pos">{{ positionText(u) }}</span>
+          </el-option>
         </el-select>
       </el-form-item>
       <el-form-item label="开始时间" prop="startAt">
@@ -80,7 +86,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
-import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import {
   TASK_TYPES, TASK_TYPE_LABELS,
@@ -131,9 +136,19 @@ const rules = {
   dueAt: [{ required: true, message: '请选择到期时间', trigger: 'change' }]
 }
 
+function userLabel(u) {
+  // 显示名字, 没填 realName 的退到手机号, 都没有才退 id (保证不会光秃秃甩一串 ObjectId)
+  return u.realName || u.mobile || u.id
+}
+
+function positionText(u) {
+  const names = (u.positions || []).map((p) => p.name).filter(Boolean)
+  return names.length ? names.join(' / ') : ''
+}
+
 function userName(uid) {
   const u = userOptions.value.find((x) => x.id === uid)
-  return u ? (u.realName || u.name) : uid
+  return u ? userLabel(u) : uid
 }
 
 function addItem() {
@@ -154,7 +169,12 @@ async function onSubmit() {
       payload.tags = tagsInput.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
     }
     const r = await taskApi.create(payload)
-    ElMessage.success('已创建')
+    // 2026-08-02: 反馈通知数量 — 后端实际入库的 inbox 数与"assignees + supervisors 一致"是
+    //   后端的责任 (Bug A 模板缺失 fallback + Bug B 监督人也收), 但前端给用户"看得见的反馈",
+    //   下次有异常就能直接发现 (不像以前 ElMessage 只说"已创建", inbox 空了用户也不知道)
+    const aN = (payload.assignees || []).length
+    const sN = (payload.supervisors || []).length
+    ElMessage.success(`已创建, 已通知 ${aN} 名执行人 + ${sN} 名监督人`)
     router.replace(`/tasks/${r.data?._id}`)
   } finally {
     saving.value = false
@@ -162,22 +182,33 @@ async function onSubmit() {
 }
 
 onMounted(async () => {
+  // 2026-08-02: 改用 R-3924 /tasks/assignable-users (本机构员工, 纯家长除外)
+  //   原来打 GET /users?roleScope=staff, 要 user.read 权限 —— 财务岗只有 task.write → 403
+  //   且 catch 静默吞掉, 表现为"执行人下拉空 + 监督人显示 raw id"
   try {
-    // roleScope: 'staff' 排除纯家长 (2026-07-08: 任务模块暂不向家长派任务)
-    const r = await userApi.list({ page: 1, pageSize: 500, roleScope: 'staff' })
+    const r = await taskApi.assignableUsers()
     userOptions.value = r.data?.items || []
-  } catch (_) { /* ignore */ }
+    if (userOptions.value.length === 0) {
+      ElMessage.warning('本机构暂无可派任务的员工,请先在「用户管理」给员工分配岗位')
+    }
+  } catch (_) {
+    // 拉不到人时不能静默: 否则用户只看到空下拉, 无从判断是没人还是没权限
+    ElMessage.error('加载员工列表失败,请刷新重试或联系管理员')
+  }
 
   // 等下一帧让 el-select 看到新 options 后再 set 默认值
   // (避免 el-select MULTIPLE 残留 raw id chip + 单一 el-select 接不住 v-model 的边角问题)
   await nextTick()
   const firstAdminId = adminOptions.value[0]?.id
+  // 2026-08-02: 默认值只能取 userOptions 里存在的 id, 否则 el-select 找不到 option
+  //   会把 raw ObjectId 当 label 甩出来 (之前"监督人显示一串 id"就是这么来的)
+  const selfId = String(auth.user?.id || auth.user?.userId || auth.user?._id || '')
+  const selfInOptions = userOptions.value.some((u) => u.id === selfId) ? selfId : null
+  const defaultId = firstAdminId || selfInOptions || userOptions.value[0]?.id || null
   if (isPlatformAdmin.value) {
-    form.value.creator = firstAdminId || auth.user?.id || null
+    form.value.creator = defaultId
   }
-  form.value.supervisors = firstAdminId
-    ? [firstAdminId]
-    : (auth.user?.id ? [auth.user.id] : [])
+  form.value.supervisors = defaultId ? [defaultId] : []
 })
 </script>
 
@@ -187,4 +218,6 @@ onMounted(async () => {
 .items { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .items__row { display: flex; gap: 8px; align-items: center; }
 .items__hint { font-size: 12px; color: #909399; }
+/* 下拉里岗位名做次要信息, 右侧灰字 (张三  老师/教务) */
+.opt-pos { float: right; margin-left: 16px; color: #909399; font-size: 12px; }
 </style>

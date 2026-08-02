@@ -25,6 +25,13 @@ router.use(mws.authenticate, mws.requireOrg)
 // 2026-07-11: OR(task.read, task.read.own) — task.read.own 持有者 (普通员工) 也能进任务模块看自己的
 router.get('/stats', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.stats))
 
+// ─── 可派任务员工下拉 ─────────────────────────
+// R-3924 GET /tasks/assignable-users
+// 顺序要求: 必须在 /:id 之前 (单段通配会抢先命中 → CastError)
+// 2026-08-02: 建任务页原来打 GET /users (要 user.read), 「财务」岗只有 task.write → 403 空下拉;
+//   这里只返 {id, realName, positions[]}, 用 task 自己的权限码守门, 不下放用户档案读权限
+router.get('/assignable-users', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.assignableUsers))
+
 // ─── 看板 ─────────────────────────────────────
 // R-3913 GET /tasks/kanban
 // 顺序要求: 必须在 /:id 之前

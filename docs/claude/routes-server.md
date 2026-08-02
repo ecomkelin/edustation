@@ -761,6 +761,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-08-02 | 任务「执行人/监督人」下拉空 + 显示 raw id 修复 (3 层根因): ① seed `castOidsDeep` 不转**数组里的 hex 字符串元素** → `user_org_rels.positions` 落库成 string[] → `user.service.list` 的 `positions:{$in:[ObjectId]}` 0 结果 (同批受害: `course_products.subjects` / `child_leads.trialSubjects`, 已就地 cast); ② `task.service.assertUsersInOrg` 过滤 `UserOrgRel.isActive:true` 但该字段**不存在** → 建任务必 400「用户不属于本机构或已停用」, 改为 rel 只判归属 + `User.isActive` 判停用 (finance `validateRelatedStaff` 同款 bug 一并修, 且其 staff 判据 `clientLevel>0` 写反, 应为 =0); ③ 新增 R-3924 让无 user.read 的岗位 (财务) 也能拉到员工候选; admin TaskCreate/TaskTemplateEdit 改打 R-3924 + 下拉显示「姓名 + 岗位灰字」+ 加载失败不再静默吞 + 默认监督人只取 options 内存在的 id | R-3924 | add |
 | 2026-07-14 | Templates UI v0.9.2 + R-4018 + seed 拆 safe/nuke: 加「全部重置」按钮 (批量清空本机构覆盖, R-4018 一次性 deleteMany); 拆 `db:seeds` → `db:seed:safe` (idempotent 9 条, 默认) + `db:seed:nuke` (`--force` 强制, dropDatabase 不可逆); `initial.seed.run({force:true})` 守卫无 force 抛错, 防误跑 | R-4018 | add |
 | 2026-07-14 | Templates UI v0.9.1 重做 + R-4017 新增: 移除"新建模板"按钮 (防止孤儿模板), 隐藏渠道列 (MVP 仅 inbox), "覆盖"→"重置" (语义修正 + 二级 confirm), "触发时机"+"接收人 chip" 双维自然语言展示 (constants/notificationTriggers.js 字表), type 字符串改成只读灰字 (供客服/开发定位); R-4017 DELETE /templates/:type/:channel 幂等删本机构覆盖 → 回退平台默认; data-models-notification.md §3.5 加"新增 type 三处同步"硬约束 | R-4017 | add |
 | 2026-07-13 | 通知模块 MM=40 v0.9 扩展: 加 5 个员工侧触发点 (task_assigned/rejected/approved/cancelled + lesson_preparing), 拆 /me/staff 子路由 (员工不挂 activeStudent), 加 admin NotificationBell 铃铛红点 + StaffInbox 全量页; publish 入参 `recipientRole` (parent/staff/platform, 默认 parent) 解决 staff role 标错位; seed 加 5 模板 (占位符 taskTitle/actorName/comment/score/dueAt/priority); task.service notifyDueToday 修 B1 (assignee 取 a.user); 修复 routes-server.md | R-4001~R-4016 | add/modify |
@@ -882,6 +883,7 @@ Auth 列简写:
 | R-3921 | POST | /tasks/:id/unarchive | PERM | task.delete | 取消归档 | 同上; 反归档可逆, 幂等 |
 | R-3922 | DELETE | /tasks/:id/items/:itemId | PERM | task.write | 删除 checklist 条目 | 2026-07-08 立项 (堵 R-3904 挡板无入口的洞); **2026-07-08 改**: 权限扩到「条目 assignee / 任务 creator / 平台超管 / task.write / task.delete」(解死锁: creator 想删任务必先能清空 checklist); 终态/归档态 422; 触发 recomputeTaskState |
 | R-3923 | POST | /tasks/:id/items/:itemId/remarks | PERM | task.read OR task.read.own | 子任务备注 | 2026-07-09 立项 (规则 3b 豁免口子): 仅本条目 assignee / task.write 可写, 不受 "执行中" 锁约束; 归档态 422; TaskItem.remarks 子文档 (新字段) |
+| R-3924 | GET | /tasks/assignable-users | PERM | task.read OR task.read.own | **可派任务员工下拉** | 2026-08-02 立项: 建任务 / 模板编辑页的执行人+监督人候选. 原来打 R-0200 `GET /users?roleScope=staff`, 但那要 `user.read` —— 「财务」岗只有 task.write → 403 → 下拉全空 + el-select 甩 raw ObjectId. 口径: 本机构 UserOrgRel 里至少持有 1 个 clientLevel=0 岗位的 user (员工+混合岗), 纯家长排除, User.isActive=false 排除, 与 `assertUsersInOrg` 放行口径一致 (避免"选得到但提交 400"). 只返 `{id, realName, mobile, positions[]}`, 不下放用户档案读权限. 顺序: 必须注册在 `/:id` 之前 |
 
 **§39.1 归档 query 参数**（2026-07-08）:
 
