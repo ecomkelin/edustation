@@ -437,16 +437,16 @@ Auth 列简写:
 | ~~R-2368~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/tier-down~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2376~~ | ~~POST~~ | ~~/admin/pet/accounts/:id/tier-up~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2373~~ | ~~POST~~ | ~~/admin/pet/grant-item~~ | — | — | **DEPRECATED** 装饰删除 | 2026-07-15 |
-| R-2374 | POST | /admin/pet/grant-consumable | PERM | pet.write | 代买食物/玩具 | 扣学员积分 + 立即喂 |
-| R-2375 | GET | /admin/pet/shop | PERM | pet.read | 商城列表（admin 端，仅消耗品） | 不走 C 端 activeStudent 中间件 |
+| R-2374 | POST | /admin/pet/grant-consumable | PERM | pet.write | 代买食物/玩具（**ownerSpecies 校验 2026-07-21 v3**） | 扣学员积分 + 立即喂；pet.service.feed 校验 ownerSpecies 是否匹配 pet.species |
+| R-2375 | GET | /admin/pet/shop | PERM | pet.read | 商城列表（admin 端，仅消耗品，含 ownerSpecies） | 不走 C 端 activeStudent 中间件 |
 
 ### petShop C 端 (URL: /pet/shop)
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-2370 | GET | /pet/shop | GUARD | enrolled? | 商城列表（仅消耗品） | active student 上下文 |
+| R-2370 | GET | /pet/shop | GUARD | enrolled? | 商城列表（仅消耗品，含 ownerSpecies） | active student 上下文；2026-07-21 v3 商品含 ownerSpecies |
 | ~~R-2371~~ | ~~POST~~ | ~~/pet/shop/buy-item~~ | — | — | **DEPRECATED** 装饰删除 | 2026-07-15 |
-| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具（petId 可选，默认默认宠物） | 扣学生积分 + 立即喂 |
+| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具（petId 可选，**ownerSpecies 优先 2026-07-21 v3**） | 扣学生积分 + 立即喂；resolvePetId 优先找该学员对应 species 的宠物 |
 
 ### MM=24 petCatalog (URL: /admin/pet)
 
@@ -464,10 +464,10 @@ Auth 列简写:
 | ~~R-2489~~ | ~~PUT~~ | ~~/admin/pet/items/:id~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2490~~ | ~~GET~~ | ~~/admin/pet/items/:id/removable-check~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2491~~ | ~~DELETE~~ | ~~/admin/pet/items/:id~~ | — | — | **DEPRECATED** | 2026-07-15 |
-| R-2492 | GET | /admin/pet/consumables | PERM | pet.read | 消耗品列表 | |
-| R-2493 | POST | /admin/pet/consumables | ADMIN | pet.write | 新建消耗品 | 平台超管 |
+| R-2492 | GET | /admin/pet/consumables | PERM | pet.read | 消耗品列表（含 ownerSpecies 2026-07-21 v4 数组） | |
+| R-2493 | POST | /admin/pet/consumables | ADMIN | pet.write | 新建消耗品（**+ ownerSpecies 2026-07-21 v4 多选**） | 平台超管；payload `ownerSpecies: ["cat_orange","cat_grey"]` 数组（`[]` = 通用） |
 | R-2494 | GET | /admin/pet/consumables/:id | PERM | pet.read | 消耗品详情 | |
-| R-2495 | PUT | /admin/pet/consumables/:id | ADMIN | pet.write | 更新消耗品 | 平台超管 |
+| R-2495 | PUT | /admin/pet/consumables/:id | ADMIN | pet.write | 更新消耗品（**+ ownerSpecies 2026-07-21 v4 多选**） | 平台超管；同 R-2493 |
 | R-2496 | GET | /admin/pet/consumables/:id/removable-check | PERM | pet.read | 删除预检 | |
 | R-2497 | DELETE | /admin/pet/consumables/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
 | R-2498 | GET | /admin/pet/level-config | PERM | pet.read | 等级配置读 | 2026-07-15 per-org 等级曲线 |

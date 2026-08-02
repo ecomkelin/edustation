@@ -376,7 +376,8 @@ export default {
 
     async loadConsumables() {
       try {
-        const cr = await petApi.consumables({ pageSize: 100 }).catch(() => null)
+        // 2026-07-21 v4: 传 petId → 服务端只返 ownerSpecies 包含此 pet.species 或 ownerSpecies 为空(通用) 的消耗品
+        const cr = await petApi.consumables({ petId: this.pet?._id, pageSize: 100 }).catch(() => null)
         const items = (cr && (cr.items || cr)) || []
         const map = {}
         for (const c of items) {
@@ -388,7 +389,9 @@ export default {
             expGain: c.expGain,
             visualType: c.visualType || '',
             svgContent: c.svgContent || '',
-            videoFile: c.videoFile || null
+            videoFile: c.videoFile || null,
+            // 2026-07-21 v4: ownerSpecies 数组 (PetSpecies.key[], 多选)
+            ownerSpecies: Array.isArray(c.ownerSpecies) ? c.ownerSpecies : []
           }
         }
         this.consumableMap = map

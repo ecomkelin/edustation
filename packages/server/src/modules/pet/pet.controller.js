@@ -8,6 +8,7 @@
 
 const s = require('./pet.service')
 const petCatalog = require('./petCatalog.service')
+const PetAccount = require('@models/PetAccount.model')
 const ApiResponse = require('@utils/ApiResponse')
 const ApiError = require('@utils/ApiError')
 
@@ -43,8 +44,22 @@ exports.species = async (req, res) => {
 }
 
 // GET /pet/consumables — 食物图鉴
+// 2026-07-21 v4: ?petId=X 过滤 — ownerSpecies 包含 pet.species 或 ownerSpecies 为空数组 (通用) 才返回
 exports.consumables = async (req, res) => {
-  res.json(ApiResponse.ok(await petCatalog.listConsumables(req.query || {})))
+  const { petId } = req.query || {}
+  const items = await petCatalog.listConsumables(req.query || {})
+  let filtered = items
+  if (petId) {
+    const pet = await PetAccount.findOne({ _id: petId, org: req.orgId, student: req.activeStudentId })
+      .select('species').lean()
+    const petSpecies = pet?.species || null
+    filtered = items.filter((c) => {
+      const owners = c.ownerSpecies || []
+      if (!Array.isArray(owners) || owners.length === 0) return true
+      return petSpecies && owners.includes(petSpecies)
+    })
+  }
+  res.json(ApiResponse.ok({ items: filtered }))
 }
 
 // POST /api/v1/pet/adopt — 领养一只新宠物（≤ 上限）

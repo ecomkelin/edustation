@@ -328,6 +328,18 @@ async function feed({ orgId, studentId, petId, consumableKey, by = 'parent', ope
   const expGain = config.expGain
   const hungerGain = config.hungerRestore
 
+  // 2026-07-21 v4: ownerSpecies 数组校验 — 限定给某几个物种的消耗品
+  // pet.species ∈ ownerSpecies 才允许喂；空数组 = 通用
+  const ownerSpecies = found.consumable.ownerSpecies || []
+  if (Array.isArray(ownerSpecies) && ownerSpecies.length > 0) {
+    if (!ownerSpecies.includes(pet.species)) {
+      const speciesList = await petCatalog.listSpecies({ isActive: true })
+      const spMap = Object.fromEntries(speciesList.map((s) => [s.key, s.name]))
+      const names = ownerSpecies.map((k) => spMap[k] || k).join('、')
+      throw ApiError.unprocessable(`该消耗品仅限「${names}」使用`)
+    }
+  }
+
   const levelCfg = await petCatalog.getLevelConfig(orgId)
   // 2026-07-16: 最高等级来自 PetSpecies（per-species），PetAccount 无 override 字段
   const speciesRec = await petCatalog.getSpecies({ key: pet.species })
@@ -522,6 +534,9 @@ async function abandon({ orgId, studentId, petId, by = 'parent', operatorId = nu
   if (deleted.deletedCount === 0) {
     throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
   }
+
+  // 2026-07-21 v3: 不需要弃养级联清理（ownerSpecies 是 PetSpecies.key，不受宠物实例增减影响）
+  // 同物种的其他宠物仍可正常喂该消耗品
 
   // 审计 (弃养事件 sparse eventKey 不需要 — 一次性手动操作, 无幂等需求)
   // 2026-07-17: 弃养时 PetAccount 已物理删除, 必须 snapshot 学员姓名 + 宠物昵称/物种/等级才能在 admin 流水追溯

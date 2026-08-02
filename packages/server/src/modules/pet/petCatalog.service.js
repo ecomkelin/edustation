@@ -110,6 +110,7 @@ async function listConsumables({ kind, isActive, keyword } = {}) {
       Model: PetConsumable,
       baseFilter: base,
       keyword,
+      // 2026-07-21: ownerSpecies 是字符串（PetSpecies.key）— 无需 populate
       populateFields: ['videoFile']
     })
   }, 300_000)
@@ -121,6 +122,7 @@ async function listConsumables({ kind, isActive, keyword } = {}) {
  */
 async function findConsumable({ key }) {
   if (!key) return null
+  // 2026-07-21: ownerSpecies 是字符串，pet.service.feed 直接对比 pet.species
   const doc = await PetConsumable.findOne({ key, isActive: true }).lean()
   if (!doc) return null
   return {

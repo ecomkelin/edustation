@@ -449,6 +449,8 @@ async function createConsumable({ payload, operatorId }) {
     videoFile: visualType === 'video' ? (payload.videoFile || null) : null,
     isActive: payload.isActive !== false,
     description: payload.description || null,
+    // 2026-07-21 v4: 限定物种（PetSpecies.key 数组；空数组 = 通用）
+    ownerSpecies: Array.isArray(payload.ownerSpecies) ? payload.ownerSpecies : [],
     createdBy: operatorId,
     updatedBy: operatorId
   }
@@ -482,6 +484,10 @@ async function updateConsumable({ id, payload, operatorId }) {
   }
   if (payload.videoFile !== undefined && doc.visualType === 'video') {
     updates.videoFile = payload.videoFile || null
+  }
+  // 2026-07-21 v4: 限定物种（admin 可改；空数组清空）
+  if (payload.ownerSpecies !== undefined) {
+    updates.ownerSpecies = Array.isArray(payload.ownerSpecies) ? payload.ownerSpecies : []
   }
   updates.updatedBy = operatorId
 

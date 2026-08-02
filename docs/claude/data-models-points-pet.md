@@ -149,7 +149,19 @@
 
 ### 2.4 PetConsumable（食物 + 玩具，平台级）
 
-`key`(unique) / `name` / `kind`(food/toy) / **`pointCost` / `hungerRestore` / `expGain`（扁平三字段）** / `visualType`(**svg/video**，默认 svg；2026-07-16 删 image) / `svgContent` / `videoFile` / `isActive` / 审计。
+`key`(unique) / `name` / `kind`(food/toy) / **`pointCost` / `hungerRestore` / `expGain`（扁平三字段）** / `visualType`(**svg/video**，默认 svg；2026-07-16 删 image) / `svgContent` / `videoFile` / `isActive` / **`ownerSpecies`（2026-07-21 v4 新增，[] 数组）** / 审计。
+
+**ownerSpecies 字段**（2026-07-21 v4）：
+- 类型：`[String]`（PetSpecies.key 数组），默认 `[]`, `indexed`
+- `[]` = **通用**（任意宠物可喂，现状）
+- `["cat_orange", "cat_grey"]` = **多物种专属**：只要宠物 species 在列表内即可喂；其他物种宠物喂食 `pet.service.feed` 校验失败 → 422「该消耗品仅限「猫、灰猫」使用」
+- **跟图鉴直接相关**：ownerSpecies 是 PetSpecies.key 数组，**不**指向具体宠物实例
+- 同一物种的所有学员宠物都受限制（"猫薄荷"只对猫生效，无论该猫属于哪个学员）
+- 索引：`{ownerSpecies: 1}`（mongoose 多键索引，命中任一元素）
+- 配 admin catalog `PetConsumableTab.vue` 表单「归属」radio：通用 / 专属某物种（**多选** PetSpecies picker）
+- 配 client `shop.vue` 卡片「🔒 仅 XX、YY」徽章 + `detail.vue` 食物 chip `?petId=X` 服务端按 pet.species 过滤
+- **不需要弃养级联清理**：species key 不会因宠物实例弃养而消失
+- **限制**：admin 设定的 ownerSpecies 买完后**完全固定**（2026-07-21 产品决策），C 端不能改；admin 端可改
 
 > 删 `applicableTier` + `perTier`（{C,B,A,S,all}）子文档；2026-07-16 删 `image` 视觉类型 + `imageFile` 字段。
 
@@ -221,6 +233,41 @@ state=alive, species=locked, level=1, exp=0, hunger=INIT(300)
 - **isDefault 转移**：若弃养的是默认宠物，自动把剩余 `adoptedAt` 最早的一只提升为默认；没有剩余 → 该 student 退化为 0 只状态，下次 `ensureFirstPet` 重建
 - **不退积分**（与 feed 扣分对称，弃养为用户主动放弃；保持积分账本纯净）
 - 上 partial unique index 前必须先 dedupe：`pnpm db:seed:dedupe-pet-species`（干跑加 `--dry-run`）按 (org, student, species) 分组保留最早领养，其余 deleteOne + 写 `admin_abandon` reason='seed-dedupe' 审计
+
+### 3.5 消耗品归属（ownerSpecies，2026-07-21 v4 多选）
+
+**设计动机**：平台超管 / 机构想限定某消耗品只能喂给某几个物种的所有宠物（例："猫薄荷"只对猫喂，可指定多猫品种）。**与具体宠物实例无关**——消耗品 owner 跟图鉴是直接关系，跟学员宠物实例是间接关系。
+
+**v4 设计决策**（相对 v3 的升级）：
+- v1：ownerPetAccountId（绑定具体宠物实例）→ 需要弃养级联清理
+- v3：ownerSpecies（PetSpecies.key 单值）→ 单物种限制
+- **v4（当前）**：ownerSpecies（PetSpecies.key 数组，多选）→ 一份消耗品可指定多个物种
+
+**不变量**（写在 `pet.service.feed`）：
+- `consumable.ownerSpecies == []` → 任意宠物可喂（通用）
+- `consumable.ownerSpecies.length > 0` → 仅 `pet.species ∈ ownerSpecies` 可喂；不包含 → 422「该消耗品仅限「猫、灰猫」使用」（列出全部 ownerSpecies 中文名）
+
+**PetConsumable 字段**：`ownerSpecies: [String], default: [], indexed`。详见 §2.4。
+
+**pet shop controller 自动 resolve pet**（`petShop.controller.resolvePetId`，2026-07-21 v4）：
+1. `body.petId` 显式指定
+2. `PetConsumable.ownerSpecies`（v4）：若 consumable 有 ownerSpecies 数组，强制找该学员 `species ∈ ownerSpecies, state: 'alive'` 的宠物
+3. 默认宠物 fallback
+
+**为什么 admin 端不 resolve**：admin 端所有"代喂食 / 代买"端点已显式传 `petAccountId`，由 `pet.service.feed` 校验 ownerSpecies 一致性。
+
+**C 端 `GET /pet/consumables?petId=X`**（2026-07-21 v4）：
+- `petId` 存在 → 查 `pet.species`，仅返 `ownerSpecies.includes(pet.species) || ownerSpecies.length === 0` 的消耗品
+- `petId` 缺省 → 返所有（如 shop.vue）
+
+**不需要弃养级联清理**（v4 优势）：
+- species key 不随宠物实例变化
+- 同一物种下的所有学员宠物都受限制（或放行）
+
+**前端**：
+- admin `PetConsumableTab.vue`：表单「归属」radio + PetSpecies **多选** picker（共享图鉴）；列表加「归属」列（通用 / 🔒 仅 [物种1、物种2]）
+- client `shop.vue`：卡片显示「通用」/「🔒 仅 [物种1、物种2]」徽章（species key 通过 species 图鉴翻译为中文名）
+- client `detail.vue`：食物 chip `loadConsumables` 传 `petId`（`pet.controller.consumables` 端点按 pet.species 过滤）
 
 ### 3.5 per-species 逐级形象 fallback 链（2026-07-16 新增）
 

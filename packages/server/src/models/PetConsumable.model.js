@@ -42,6 +42,15 @@ const PetConsumableSchema = new Schema(
     // 软启用
     isActive: { type: Boolean, default: true, index: true },
 
+    // 2026-07-21 v4: 限定物种（PetSpecies.key 数组）
+    //   [] = 通用，所有宠物可喂（现状）
+    //   ["cat_orange", "cat_grey"] = 仅列表内物种的宠物可喂（如"猫薄荷"喂所有猫）
+    // 设计动机: 跟学员宠物实例是间接关系；跟宠物图鉴（PetSpecies）是直接关系
+    // 同一物种的所有学员宠物都受限制（不需要"每只宠物单独配"）
+    // 配合 petShop.controller.resolvePetId 自动选该物种的宠物 + pet.service.feed 校验
+    // **不需要弃养级联清理**（物种不会因宠物弃养而消失）
+    ownerSpecies: { type: [String], default: [], index: true },
+
     // 描述
     description: { type: String, default: null, maxlength: 500 },
 

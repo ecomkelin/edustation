@@ -431,6 +431,8 @@ async function removePetAccount({ orgId, petAccountId, operatorId }) {
   const deleted = await PetAccount.deleteOne({ _id: pet._id, org: orgId })
   if (deleted.deletedCount === 0) throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
 
+  // 2026-07-21 v3: 不需要弃养级联清理（ownerSpecies 是 PetSpecies.key，不受宠物实例增减影响）
+
   // 审计
   await petEvent.recordEvent({
     orgId,

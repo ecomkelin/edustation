@@ -37,6 +37,13 @@
           <span>{{ row.pointCost }}积分 / +{{ row.hungerRestore }}饱 / +{{ row.expGain }}exp</span>
         </template>
       </el-table-column>
+      <!-- 2026-07-21 v4: 归属列 — 通用 / 某物种专属（多个） -->
+      <el-table-column label="归属" width="220">
+        <template #default="{ row }">
+          <el-tag v-if="Array.isArray(row.ownerSpecies) && row.ownerSpecies.length > 0" size="small" type="warning">🔒 {{ ownerLabel(row) }}</el-tag>
+          <el-tag v-else size="small" type="info">通用</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="启用" width="80">
         <template #default="{ row }">
           <el-tag :type="row.isActive ? 'success' : 'info'" size="small">{{ row.isActive ? '是' : '否' }}</el-tag>
@@ -92,6 +99,28 @@
             <el-radio value="video">视频</el-radio>
           </el-radio-group>
         </el-form-item>
+        <!-- 2026-07-21 v4: 归属 (通用 / 某几个物种专属 — 多选) -->
+        <el-form-item label="归属">
+          <el-radio-group v-model="ownerMode">
+            <el-radio value="universal">🐾 通用（任意宠物可喂）</el-radio>
+            <el-radio value="specific">🔒 专属（仅某物种可喂，可多选）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="ownerMode === 'specific'" label="专属物种">
+          <!-- 2026-07-21 v4: picker 改为 PetSpecies 多选（共享图鉴） -->
+          <el-select
+            v-model="form.ownerSpecies"
+            multiple
+            filterable
+            collapse-tags
+            :loading="loadingSpecies"
+            placeholder="选择宠物物种（可多选）"
+            style="width: 400px"
+          >
+            <el-option v-for="s in speciesOptions" :key="s.key" :label="speciesOptionLabel(s)" :value="s.key" />
+          </el-select>
+          <span class="hint">限定后仅这些物种的宠物可喂；跟学员宠物实例是间接关系（共享图鉴）</span>
+        </el-form-item>
         <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
           <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
           <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
@@ -134,7 +163,7 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Upload, Picture } from '@element-plus/icons-vue'
 import { petCatalogApi } from '@/api/petCatalog'
@@ -167,8 +196,16 @@ export default {
       _id: null, key: '', name: '', kind: 'food',
       pointCost: 5, hungerRestore: 15, expGain: 10,
       visualType: 'svg', svgContent: '', videoFile: null,
-      isActive: true, description: ''
+      isActive: true, description: '',
+      // 2026-07-21 v4: 限定物种（PetSpecies.key 数组；空数组 = 通用）
+      ownerSpecies: []
     })
+
+    // 2026-07-21 v3: 归属 picker 状态
+    const ownerMode = ref('universal')     // 'universal' | 'specific'
+    // 宠物图鉴（PetSpecies）— 平台级共享
+    const speciesOptions = ref([])
+    const loadingSpecies = ref(false)
 
     const rules = {
       key: [{ required: true, message: 'key 必填', trigger: 'blur' }],
@@ -193,6 +230,8 @@ export default {
       } finally {
         loading.value = false
       }
+      // 2026-07-21 v4: 同时加载物种（用于列表 ownerLabel 翻译；与表单 picker 共享缓存）
+      if (speciesOptions.value.length === 0) loadSpecies()
     }
 
     function resetForm() {
@@ -200,17 +239,58 @@ export default {
         _id: null, key: '', name: '', kind: 'food',
         pointCost: 5, hungerRestore: 15, expGain: 10,
         visualType: 'svg', svgContent: '', videoFile: null,
-        isActive: true, description: ''
+        isActive: true, description: '',
+        ownerSpecies: []
       })
+      ownerMode.value = 'universal'
       formRef.value?.clearValidate()
     }
+
+    // 2026-07-21 v4: 列表「归属」列展示标签
+    function ownerLabel(row) {
+      const owners = row.ownerSpecies || []
+      if (!Array.isArray(owners) || owners.length === 0) return ''
+      // ownerSpecies 是 PetSpecies.key 字符串数组; 用本地 speciesOptions 翻译为中文名
+      return owners.map((k) => {
+        const sp = speciesOptions.value.find((s) => s.key === k)
+        return sp?.name || k
+      }).join('、')
+    }
+
+    // 2026-07-21 v3: 物种 picker 的展示标签
+    function speciesOptionLabel(s) {
+      return `${s.name || s.key} (${s.key})`
+    }
+
+    // 2026-07-21 v3: 加载宠物图鉴（PetSpecies 平台级共享）
+    async function loadSpecies() {
+      loadingSpecies.value = true
+      try {
+        const r = await petCatalogApi.listSpecies({ isActive: true })
+        speciesOptions.value = r.data?.items || r.items || []
+      } catch (e) {
+        speciesOptions.value = []
+      } finally {
+        loadingSpecies.value = false
+      }
+    }
+
+    // 监听 ownerMode 切换 — 切到通用时清空 owner
+    watch(ownerMode, (v) => {
+      if (v === 'universal') {
+        form.ownerSpecies = []
+      } else if (v === 'specific' && speciesOptions.value.length === 0) {
+        // 第一次切到专属模式时主动加载一次
+        loadSpecies()
+      }
+    })
 
     function openCreate() {
       resetForm()
       dialog.value = true
     }
 
-    function openEdit(row) {
+    async function openEdit(row) {
       resetForm()
       Object.assign(form, {
         _id: row._id, key: row.key, name: row.name, kind: row.kind,
@@ -222,6 +302,15 @@ export default {
         videoFile: row.videoFile || null,
         isActive: row.isActive, description: row.description || ''
       })
+      // 2026-07-21 v4: 加载 ownerSpecies (PetSpecies.key 数组)
+      const owners = row.ownerSpecies || []
+      if (Array.isArray(owners) && owners.length > 0) {
+        ownerMode.value = 'specific'
+        await loadSpecies()
+        form.ownerSpecies = [...owners]
+      } else {
+        ownerMode.value = 'universal'
+      }
       dialog.value = true
     }
 
@@ -239,6 +328,11 @@ export default {
     async function submit() {
       if (!formRef.value) return
       try { await formRef.value.validate() } catch (_) { return }
+      // 2026-07-21 v4: owner 校验（数组）
+      if (ownerMode.value === 'specific' && (!Array.isArray(form.ownerSpecies) || form.ownerSpecies.length === 0)) {
+        ElMessage.error('请选择至少 1 个专属物种')
+        return
+      }
       saving.value = true
       try {
         const payload = {
@@ -252,7 +346,9 @@ export default {
           svgContent: form.visualType === 'svg' ? (form.svgContent || null) : null,
           videoFile: form.visualType === 'video' ? (form.videoFile?.id || null) : null,
           isActive: !!form.isActive,
-          description: form.description || null
+          description: form.description || null,
+          // 2026-07-21 v4: 限定物种（universal 模式空数组清空）
+          ownerSpecies: ownerMode.value === 'specific' ? form.ownerSpecies : []
         }
         if (form._id) {
           await petCatalogApi.updateConsumable(form._id, payload)
@@ -291,10 +387,12 @@ export default {
       canPetWrite,
       filter, items, loading, dialog, saving, form, formRef, rules,
       videoPicker, previewOpen, previewRow,
+      ownerMode, speciesOptions, loadingSpecies,
       PET_CONSUMABLE_KINDS, PET_CONSUMABLE_KIND_LABELS,
       Plus, Upload, Picture,
       petCatalogApi,
-      load, openCreate, openEdit, resetForm, onPickVideo, uploadVideo, submit, onRemoveConfirm, openPreview
+      load, openCreate, openEdit, resetForm, onPickVideo, uploadVideo, submit, onRemoveConfirm, openPreview,
+      ownerLabel, speciesOptionLabel, loadSpecies
     }
   }
 }
