@@ -13,7 +13,13 @@
 import { storage, StorageKeys } from '@/utils/storage'
 import { http } from './request'
 
-const BASE_URL = '/api/v1'
+// #ifdef H5
+const BASE_URL = '/api/v1' // H5 走 vite proxy
+// #endif
+// #ifndef H5
+// 小程序 / App 无 dev proxy, 直连后端; 真机预览设 VITE_API_HOST=http://192.168.x.x:3000
+const BASE_URL = `${import.meta.env.VITE_API_HOST || 'http://localhost:3000'}/api/v1`
+// #endif
 
 /**
  * 构造带 auth / org / active student 的 header

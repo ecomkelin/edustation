@@ -9,7 +9,15 @@
  */
 import { storage, StorageKeys } from '@/utils/storage'
 
-const BASE_URL = '/api/v1'
+// #ifdef H5
+const BASE_URL = '/api/v1' // H5 走 vite proxy (vite.config.js server.proxy '/api' -> VITE_PROXY_TARGET)
+// #endif
+// #ifndef H5
+// 小程序 / App 无 dev proxy, 必须用完整 URL 直连后端
+// 微信开发者工具模拟器里 localhost 即本机后端, 开箱即用;
+// 真机预览 (手机扫码) 需改局域网 IP: packages/client/.env.development 加 VITE_API_HOST=http://192.168.x.x:3000
+const BASE_URL = `${import.meta.env.VITE_API_HOST || 'http://localhost:3000'}/api/v1`
+// #endif
 
 /** 自定义错误类型 */
 export class ApiError extends Error {
