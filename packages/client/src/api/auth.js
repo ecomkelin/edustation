@@ -27,5 +27,19 @@ export const authApi = {
 
   changePassword({ oldPassword, newPassword }) {
     return http.post('/auth/change-password', { oldPassword, newPassword })
+  },
+
+  // ─── 微信小程序登录 (2026-08) R-0106/R-0107/R-0108 ───
+  // 小程序不走 cookie: refresh token 由前端 storage 自管
+  wxLogin({ code }) {
+    return http.post('/auth/wx-login', { code }, { skipRefresh: true })
+  },
+
+  wxBind({ loginCode, phoneCode, scene }) {
+    return http.post('/auth/wx-bind', { loginCode, phoneCode, scene }, { skipRefresh: true })
+  },
+
+  wxRefresh({ refreshToken }) {
+    return http.post('/auth/wx-refresh', { refreshToken }, { skipRefresh: true })
   }
 }

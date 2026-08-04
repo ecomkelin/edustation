@@ -41,6 +41,26 @@ export const useAuthStore = defineStore('auth', {
     /**
      * 登录
      */
+    /**
+     * 应用 /me 返回: user/orgs/pendingConsents/currentOrgId + 落 storage。
+     * login / fetchMe / 微信登录共用, 单点维护"选主机构 + persist"。
+     * 仅在 currentOrgId 为空时才选主机构 (避免覆盖用户手动切换的机构)。
+     */
+    _applyMe(me) {
+      this.user = me
+      this.orgs = me.orgs || []
+      if (Array.isArray(me.pendingConsents)) {
+        this.pendingConsents = me.pendingConsents
+      }
+      if (!this.currentOrgId && this.orgs.length) {
+        const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
+        this.currentOrgId = main.org ? main.org.id : main.id
+        storage.set(StorageKeys.ORG_ID, this.currentOrgId)
+      }
+      this.persist()
+      return me
+    },
+
     async login({ mobile, password, captchaPass }) {
       const res = await authApi.login({ mobile, password, captchaPass })
       this.accessToken = res.accessToken
@@ -50,22 +70,12 @@ export const useAuthStore = defineStore('auth', {
       //    (request.js 是从 storage 读 Authorization,不是从 Pinia 内存)
       this.persist()
       // 拉 /me 拿完整 orgs + 权限 + 机构级 pendingConsents
-      const me = await authApi.me()
-      this.user = me
-      this.orgs = me.orgs || []
-      if (this.orgs.length) {
-        const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
-        this.currentOrgId = main.org ? main.org.id : main.id
-      }
-      if (Array.isArray(me.pendingConsents)) {
-        this.pendingConsents = me.pendingConsents
-      }
-      storage.set(StorageKeys.ORG_ID, this.currentOrgId)
-      this.persist()
+      this.currentOrgId = '' // 重置, 让 _applyMe 重新选主机构
+      this._applyMe(await authApi.me())
       return this
     },
 
-    /** 刷新 accessToken (由 request.js 自动调) */
+    /** 刷新 accessToken (H5 cookie 模式, 由 request.js doRefresh 自动调) */
     async refresh() {
       const res = await authApi.refresh()
       this.accessToken = res.accessToken
@@ -84,18 +94,45 @@ export const useAuthStore = defineStore('auth', {
 
     async fetchMe() {
       const me = await authApi.me()
-      this.user = me
-      this.orgs = me.orgs || []
-      if (Array.isArray(me.pendingConsents)) {
-        this.pendingConsents = me.pendingConsents
-      }
-      if (!this.currentOrgId && this.orgs.length) {
-        const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
-        this.currentOrgId = main.org ? main.org.id : main.id
-        storage.set(StorageKeys.ORG_ID, this.currentOrgId)
-      }
+      return this._applyMe(me)
+    },
+
+    // ─── 微信小程序登录 (2026-08) ───
+    // 小程序不走 cookie: refresh token 由前端 storage 自管 (WX_REFRESH_TOKEN)。
+
+    /** 把微信登录返回的 token 落地 + 拉 /me (wxLogin/wxBind 共用) */
+    _consumeWxTokens({ accessToken, refreshToken }) {
+      this.accessToken = accessToken
+      if (refreshToken) storage.set(StorageKeys.WX_REFRESH_TOKEN, refreshToken)
+      // ⚠️ 先 persist 落 storage, fetchMe 的请求才能从 storage 读到新 accessToken
       this.persist()
-      return me
+      this.currentOrgId = '' // 重置, 让 _applyMe 重新选主机构
+      return this.fetchMe()
+    },
+
+    /** 微信静默登录 (老用户)。返回后端 { status: 'bound' | 'need_bind' } */
+    async wxLogin({ code }) {
+      const res = await authApi.wxLogin({ code })
+      if (res.status === 'bound') await this._consumeWxTokens(res)
+      return res
+    },
+
+    /** 微信绑定 / 自助注册。返回后端 { status: 'bound' | 'need_org' } */
+    async wxBind({ loginCode, phoneCode, scene }) {
+      const res = await authApi.wxBind({ loginCode, phoneCode, scene })
+      if (res.status === 'bound') await this._consumeWxTokens(res)
+      return res
+    },
+
+    /** 微信刷新 (小程序专用, 从 storage 读 refreshToken 走 body; 由 request.js doRefresh 调) */
+    async wxRefresh() {
+      const rt = storage.get(StorageKeys.WX_REFRESH_TOKEN)
+      if (!rt) throw new Error('无 refresh token')
+      const res = await authApi.wxRefresh({ refreshToken: rt })
+      this.accessToken = res.accessToken
+      if (res.refreshToken) storage.set(StorageKeys.WX_REFRESH_TOKEN, res.refreshToken)
+      this.persist()
+      return res
     },
 
     setOrg(orgId) {
@@ -147,6 +184,8 @@ export const useAuthStore = defineStore('auth', {
       storage.remove(StorageKeys.ORG_ID)
       storage.remove(StorageKeys.ACTIVE_STUDENT)
       storage.remove(StorageKeys.AUTH)
+      storage.remove(StorageKeys.WX_REFRESH_TOKEN)
+      storage.remove(StorageKeys.WX_SCENE)
     },
 
     /**
@@ -160,7 +199,13 @@ export const useAuthStore = defineStore('auth', {
         if (this.accessToken) {
           await this.fetchMe()
         } else {
+          // H5: cookie refresh; 小程序/App: body refresh (从 storage 读 wx_refresh_token)
+          // #ifdef H5
           await this.refresh()
+          // #endif
+          // #ifndef H5
+          await this.wxRefresh()
+          // #endif
           await this.fetchMe()
         }
         return this.user

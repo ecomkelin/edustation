@@ -28,11 +28,19 @@
   },
   "quickapp": {},
   "mp-weixin": {
-    "appid": "",
+    "appid": "wx43a3702ed8d35652",
     "setting": {
       "urlCheck": false
     },
-    "usingComponents": true
+    "usingComponents": true,
+    "easycom": {
+      "autoscan": true,
+      "custom": {
+        "^uni-(.*)": "@/components/uni-$1.vue",
+        "^(active-student-header|ActiveStudentHeader)$": "@/components/layout/ActiveStudentHeader.vue",
+        "^(pending-consents|PendingConsents)$": "@/components/auth/PendingConsents.vue"
+      }
+    }
   },
   "h5": {
     "title": "EduStation · 校外培训家长端",
@@ -50,3 +58,4 @@
     }
   },
   "vueVersion": "3"
+}

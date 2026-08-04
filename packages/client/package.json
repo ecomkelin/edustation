@@ -5,10 +5,10 @@
   "description": "EduStation C 端 (家长/学生) — 重新设计：暖橙主题、情感化 UI/UX",
   "scripts": {
     "dev:h5": "uni",
-    "dev:mp-weixin": "uni -p mp-weixin",
+    "dev:mp-weixin": "node scripts/sync-manifest.js && uni -p mp-weixin",
     "dev:app": "uni -p app",
     "build:h5": "uni build",
-    "build:mp-weixin": "uni build -p mp-weixin",
+    "build:mp-weixin": "node scripts/sync-manifest.js && uni build -p mp-weixin",
     "build:app": "uni build -p app"
   },
   "dependencies": {

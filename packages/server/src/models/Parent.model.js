@@ -105,7 +105,8 @@ const ParentSchema = new Schema(
     remark: { type: String, default: '' },
 
     // ─── 审计 ───
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    // createdBy 可为 null: 微信小程序自助注册的家长无 currentUser (2026-08)
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     meta: { type: Schema.Types.Mixed, default: {} }
   },
   { timestamps: true, collection: 'parents' }

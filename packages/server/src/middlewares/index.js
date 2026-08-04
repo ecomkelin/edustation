@@ -12,6 +12,7 @@ module.exports = {
   requireEnrolledStudent: require('./requireEnrolledStudent'),
   validateRequest: require('./validateRequest'),
   loginRateLimit: require('./loginRateLimit'),
+  ipRateLimit: require('./ipRateLimit'),
   auditTrail: require('./auditTrail'),
   notFound: require('./notFound'),
   errorHandler: require('./errorHandler')

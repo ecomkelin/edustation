@@ -17,7 +17,8 @@ const { USER_AVATAR_KEYS, DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
  *   - passwordHash 不存明文（select:false；查询默认不带出，需 .select('+passwordHash') 才返回）
  *   - mobile 大陆手机号正则校验
  *   - idCard 选填；填了则全局唯一（partialFilterExpression 排除 null/缺省）
- *   - wechatUnionId 稀疏唯一（未绑定微信时不参与）
+ *   - wechatUnionId 稀疏唯一（未绑定微信时不参与；登录不用, 见 wechatOpenId）
+ *   - wechatOpenId 稀疏唯一（微信小程序登录身份标识）
  *
  * 关于 idCard 的格式校验（validator）：
  *   - 选填（!v 短路通过）
@@ -42,8 +43,13 @@ const UserSchema = new Schema(
       enum: USER_AVATAR_KEYS,
       default: DEFAULT_USER_AVATAR_KEY
     },
-    // 微信开放平台 unionId（绑定微信登录用；稀疏唯一，未绑定时为 null）
+    // 微信开放平台 unionId（稀疏唯一，未绑定时为 null）
+    //   - 当前登录流程不使用 (改用 wechatOpenId); 字段保留供 notification 渠道 capability 派生
+    //   - 若后续接开放平台做多端账号打通, 可再启用
     wechatUnionId: { type: String },
+    // 微信小程序 openId（每个小程序不同；稀疏唯一，未绑定时为 null）
+    //   - 微信登录的唯一身份标识: 同一微信号在同一小程序下 openId 稳定
+    wechatOpenId: { type: String },
     /**
      * 身份证号。选填；填了则全局唯一（partialFilterExpression 仅在非空时参与）。
      * 15 位旧证 / 18 位新证（末位可为 X）。
@@ -84,6 +90,8 @@ const UserSchema = new Schema(
 
 // 微信 unionId 稀疏唯一：未绑定（null/缺省）时多个用户共存不冲突
 UserSchema.index({ wechatUnionId: 1 }, { unique: true, sparse: true })
+// 微信 openId 稀疏唯一（同 unionId 语义，未绑定时多个用户共存不冲突）
+UserSchema.index({ wechatOpenId: 1 }, { unique: true, sparse: true })
 // 身份证号：填了才唯一。type=string 把 null/缺省排除在外（partial filter 等价于 sparse，但更显式）
 UserSchema.index(
   { idCard: 1 },

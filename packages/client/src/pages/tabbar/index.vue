@@ -80,7 +80,7 @@
         </view>
 
         <!-- 蛋态 -->
-        <view v-else-if="pet.state === 'egg'" class="home__pet-card press" @tap="goPetDetail">
+        <view v-else-if="pet && pet.state === 'egg'" class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
             <text class="home__pet-portrait-emoji">🥚</text>
           </view>
@@ -97,7 +97,19 @@
         <view v-else class="home__pet-card press" @tap="goPetDetail">
           <view class="home__pet-portrait">
             <!-- 2026-07-17: 优先 pet.currentVisual (per-level override)，其次 petSpecies 兜底 -->
-            <view v-if="pet && pet.currentVisual && pet.currentVisual.visualType === 'svg' && pet.currentVisual.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="pet.currentVisual.svgContent" />
+            <!-- 2026-08-04: SVG → image data URI 在小程序里偶尔 image src 解析失败, 加 emoji 兜底 (H5/小程序一致显示) -->
+            <view v-if="pet && pet.currentVisual && pet.currentVisual.visualType === 'svg' && petCurrentVisualSvgUri">
+              <!-- #ifdef H5 -->
+              <image
+                class="home__pet-portrait-svg-image"
+                :src="petCurrentVisualSvgUri"
+                mode="aspectFit"
+              />
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <text class="home__pet-portrait-emoji">{{ petEmoji }}</text>
+              <!-- #endif -->
+            </view>
             <video
               v-else-if="pet && pet.currentVisual && pet.currentVisual.visualType === 'video' && pet.currentVisual.videoFile && pet.currentVisual.videoFile.url"
               :src="pet.currentVisual.videoFile.url"
@@ -108,7 +120,18 @@
               :show-fullscreen-btn="false"
               class="home__pet-portrait-video"
             />
-            <view v-else-if="petSpecies && petSpecies.visualType === 'svg' && petSpecies.svgContent" class="home__svg-wrap home__pet-portrait-svg" v-html="petSpecies.svgContent" />
+            <view v-else-if="petSpecies && petSpecies.visualType === 'svg' && petSpeciesSvgUri">
+              <!-- #ifdef H5 -->
+              <image
+                class="home__pet-portrait-svg-image"
+                :src="petSpeciesSvgUri"
+                mode="aspectFit"
+              />
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <text class="home__pet-portrait-emoji">{{ petEmoji }}</text>
+              <!-- #endif -->
+            </view>
             <video
               v-else-if="petSpecies && petSpecies.visualType === 'video' && petSpecies.videoFile && petSpecies.videoFile.url"
               :src="petSpecies.videoFile.url"
@@ -384,8 +407,9 @@
 import { mapState, mapGetters } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { useStudentStore } from '@/stores/student'
+// 2026-08-04 fix: components 真在 template 里用 (kebab-case <active-student-header> / <pending-consents>)
+// 之前误以为没用到删掉, H5 就报 "Failed to resolve component"; 重新加回
 import ActiveStudentHeader from '@/components/layout/ActiveStudentHeader.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 import PendingConsents from '@/components/auth/PendingConsents.vue'
 import { lessonScheduleApi } from '@/api/lessonSchedule'
 import { notificationApi } from '@/api/notification'
@@ -414,7 +438,7 @@ const NOTIF_ICON = {
 // 2026-07-15 重构：装饰系统删除，PET_ITEM_SLOTS 不再需要
 
 export default {
-  components: { ActiveStudentHeader, EmptyState, PendingConsents },
+  components: { ActiveStudentHeader, PendingConsents },
   data() {
     return {
       loading: true,
@@ -581,6 +605,21 @@ export default {
     },
     petName() {
       return this.pet?.nickname || this.petSpecies?.name || '我的宠物'
+    },
+    /**
+     * 2026-08-04: 预先把 SVG 字符串转成 base64 data URI
+     * 微信小程序 <image> 不支持 v-html SVG, 必须用 data URI
+     * 在 computed 里算好, template 直接引用 (避免每次渲染都跑 btoa + Vue 副作用警告)
+     * 双重兜底: base64 优先, 失败走 utf8 (极少数 runtime 没 btoa 时)
+     * 注意: toSvgUri 必须是 methods (this 上下文), 不能放 computed 区
+     */
+    petCurrentVisualSvgUri() {
+      const svg = this.pet && this.pet.currentVisual && this.pet.currentVisual.svgContent
+      return this.toSvgUri(svg)
+    },
+    petSpeciesSvgUri() {
+      const svg = this.petSpecies && this.petSpecies.svgContent
+      return this.toSvgUri(svg)
     }
   },
   watch: {
@@ -800,7 +839,10 @@ export default {
         // 2026-07-03 修: 后端 getMine 返回 {pet: ...}, request.js 解包后 r = {pet};
         // 之前 `res || null` 把 {pet: ...} 整个当成 pet, 导致 this.pet.state/species 拿到 undefined.
         // 现在显式取 r.pet (与 detail.vue 同步)
-        this.pet = (res && (res.pet || res.data?.pet)) || null
+        // 2026-08-04 fix: JSON parse/stringify 拆掉 reactive Proxy, 让 svgContent 变成真 string
+        //   (Vue 2 options API 下 data property 自动 reactive, 直接给 <image :src> 会触发 toString 警告)
+        const rawPet = (res && (res.pet || res.data?.pet)) || null
+        this.pet = rawPet ? JSON.parse(JSON.stringify(rawPet)) : null
         // 2026-07-04 修: 之前二次 fetch /pet/species?tier=xxx 用 tier 过滤,会把 species 锁定在另一阶
         //   (如 pet.tier=B 但 species='rabbit_white' 是 C 阶) 就匹配不到, 渲染退到 emoji 兜底
         //   → admin 显示真正的 SVG, client 显示 🐣 完全不一致
@@ -811,7 +853,8 @@ export default {
           try {
             const list = await petApi.species({ isActive: true })
             const items = Array.isArray(list) ? list : list.items || list.data || []
-            this.petSpecies = items.find((s) => s.key === this.pet.species) || null
+            const found = items.find((s) => s.key === this.pet.species) || null
+            this.petSpecies = found ? JSON.parse(JSON.stringify(found)) : null
           } catch (_) {
             this.petSpecies = null
           }
@@ -870,6 +913,49 @@ export default {
         return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg)
       } catch (e) {
         return ''
+      }
+    },
+
+    /**
+     * 2026-08-04: 渲染用 SVG → base64 data URI (放在 methods 区, 这样 this.toSvgUri 在 computed 里能找到)
+     * 微信小程序 <image> 不支持 v-html SVG, 必须用 data URI
+     * 兜底链: typeof string 优先 → 否则 String() 转 (兼容 Proxy / Ref / 普通对象)
+     * 异常时返回空串, 让 template 的 v-if 跳过 <image> 走 emoji 兜底
+     * 关键: 小程序里 pet store 的 svgContent 经常是 reactive Proxy, String(Proxy) 不可靠;
+     *       改用 JSON 序列化兜底 (Proxy 都能 toJSON)
+     */
+    toSvgUri(svg) {
+      if (svg == null) return ''
+      let str = ''
+      // 优先 typeof string
+      if (typeof svg === 'string') {
+        str = svg
+      } else if (svg.__v_isRef) {
+        // Ref 解包
+        const v = svg.value
+        str = typeof v === 'string' ? v : ''
+      } else {
+        // 兜底: JSON 序列化 (Proxy / 普通对象 都能拆掉拿到原 string)
+        try {
+          const j = JSON.stringify(svg)
+          // JSON 序列化会把字符串包成 `"..."`, 反序列化回原 string
+          if (j && j.startsWith('"') && j.endsWith('"')) {
+            str = JSON.parse(j)
+          }
+        } catch (e) {
+          str = ''
+        }
+      }
+      if (!str) return ''
+      try {
+        const utf8 = unescape(encodeURIComponent(str))
+        return 'data:image/svg+xml;base64,' + (typeof btoa === 'function' ? btoa(utf8) : utf8)
+      } catch (e) {
+        try {
+          return 'data:image/svg+xml;utf8,' + encodeURIComponent(str)
+        } catch (e2) {
+          return ''
+        }
       }
     },
     countdownText: (d) => date.countdownLabel(d),
@@ -1760,6 +1846,13 @@ export default {
   &__pet-portrait-svg {
     position: relative;
     z-index: 1;
+  }
+  // 2026-08-04: 小程序不支持 v-html SVG,改 <image>+data URI 渲染
+  // image 元素需要显式 width/height, 否则在小程序里 height auto = 0
+  &__pet-portrait-svg-image {
+    width: 200rpx;
+    height: 200rpx;
+    display: block;
   }
   // 2026-07-15: 视频永远是 9:16, 容器是 1:1 (200rpx) — 不用 object-fit
   //             height: auto 在 absolute 定位下算 0 (video metadata 加载前无内禀尺寸) → 视频不可见

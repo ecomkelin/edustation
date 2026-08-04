@@ -21,3 +21,21 @@ exports.updateMeVD = [
   body('idCard').optional({ values: 'falsy' }).isString().matches(/^\d{15}(\d{2}[\dXx])?$/).withMessage('身份证号格式不正确'),
   body('region').optional({ values: 'falsy' }).isMongoId().withMessage('地区 id 格式错误')
 ]
+
+// ─── 微信小程序登录 (2026-08) ───
+// R-0106 wx-login: wx.login 的 code
+exports.wxLoginVD = [
+  body('code').isString().notEmpty().withMessage('微信 code 必填')
+]
+
+// R-0107 wx-bind: loginCode (wx.login) + phoneCode (getPhoneNumber) + 可选 scene
+exports.wxBindVD = [
+  body('loginCode').isString().notEmpty().withMessage('微信 loginCode 必填'),
+  body('phoneCode').isString().notEmpty().withMessage('微信 phoneCode 必填'),
+  body('scene').optional({ values: 'falsy' }).isString().withMessage('scene 格式错误')
+]
+
+// R-0108 wx-refresh: 小程序专用, refreshToken 走 body
+exports.wxRefreshVD = [
+  body('refreshToken').isString().notEmpty().withMessage('refreshToken 必填')
+]

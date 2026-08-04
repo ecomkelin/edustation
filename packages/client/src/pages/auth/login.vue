@@ -85,6 +85,19 @@
           <text class="login__btn-text">{{ submitting ? '登录中...' : '登 录' }}</text>
         </view>
 
+        <!-- #ifdef MP-WEIXIN -->
+        <!-- 微信一键登录 (getPhoneNumber 必须用原生 button 触发) -->
+        <view class="login__wx-divider"><text>或</text></view>
+        <button
+          class="login__wx-btn"
+          open-type="getPhoneNumber"
+          @getphonenumber="onGetPhoneNumber"
+        >
+          <text class="login__wx-icon">💚</text>
+          <text>微信一键登录</text>
+        </button>
+        <!-- #endif -->
+
         <!-- 提示 -->
         <view class="login__hint">
           <text>登录遇到问题?请联系机构老师</text>
@@ -126,6 +139,7 @@ import AgreementModal from '@/components/auth/AgreementModal.vue'
 import { toast } from '@/components/common/Toast'
 import { haptic } from '@/utils/haptic'
 import { isValidPhone } from '@/utils/format'
+import { storage, StorageKeys } from '@/utils/storage'
 
 export default {
   components: { SliderCaptcha, AgreementModal },
@@ -182,29 +196,7 @@ export default {
           password: this.form.password,
           captchaPass: this.captchaPass || undefined
         })
-
-        // 拉孩子
-        const student = useStudentStore()
-        try {
-          await student.fetchMyStudents()
-        } catch (_) {}
-
-        // requirePasswordChange 跳改密
-        if (auth.requirePasswordChange) {
-          haptic.warn()
-          toast.warn('首次登录,请修改初始密码')
-          setTimeout(() => {
-            uni.reLaunch({ url: '/pages/auth/reset-password?force=1' })
-          }, 600)
-          return
-        }
-
-        haptic.success()
-        toast.success('欢迎回来!')
-        setTimeout(() => {
-          // 2026-07-03: 首页路由改名 pages/tabbar/index (原 child.vue)
-uni.reLaunch({ url: '/pages/tabbar/index' })
-        }, 400)
+        await this.afterLoginSuccess()
       } catch (e) {
         this.failCount++
         this.captchaPass = ''
@@ -216,6 +208,79 @@ uni.reLaunch({ url: '/pages/tabbar/index' })
         } else {
           toast.error(e.message || '登录失败')
         }
+      } finally {
+        this.submitting = false
+      }
+    },
+
+    /**
+     * 登录成功后的通用收尾: 拉孩子 + requirePasswordChange 跳改密 + 进首页。
+     * 密码登录 / 微信登录共用。
+     */
+    async afterLoginSuccess() {
+      const auth = useAuthStore()
+      const student = useStudentStore()
+      try {
+        await student.fetchMyStudents()
+      } catch (_) {}
+
+      // requirePasswordChange 跳改密 (微信自助注册用户该标志为 false, 不会进这里)
+      if (auth.requirePasswordChange) {
+        haptic.warn()
+        toast.warn('首次登录,请修改初始密码')
+        setTimeout(() => {
+          uni.reLaunch({ url: '/pages/auth/reset-password?force=1' })
+        }, 600)
+        return
+      }
+
+      haptic.success()
+      toast.success('欢迎回来!')
+      setTimeout(() => {
+        uni.reLaunch({ url: '/pages/tabbar/index' })
+      }, 400)
+    },
+
+    // 微信一键登录 (MP-WEIXIN): getPhoneNumber 拿 phoneCode + uni.login 拿 loginCode
+    async onGetPhoneNumber(e) {
+      // 用户拒绝授权
+      if (!e.detail || e.detail.errMsg !== 'getPhoneNumber:ok') {
+        toast.warn('需要授权手机号才能登录')
+        return
+      }
+      if (!this.agreed) {
+        toast.warn('请先勾选同意协议')
+        haptic.warn()
+        return
+      }
+      // uni.login 拿 loginCode (wx.login)
+      const loginRes = await new Promise((resolve) => {
+        uni.login({
+          provider: 'weixin',
+          success: (r) => resolve(r),
+          fail: () => resolve(null)
+        })
+      })
+      if (!loginRes || !loginRes.code) {
+        toast.error('微信登录失败,请重试')
+        return
+      }
+      this.submitting = true
+      try {
+        const auth = useAuthStore()
+        const scene = storage.get(StorageKeys.WX_SCENE) || undefined
+        const res = await auth.wxBind({
+          loginCode: loginRes.code,
+          phoneCode: e.detail.code,
+          scene
+        })
+        if (res.status === 'need_org') {
+          toast.warn('请通过机构老师分享的二维码进入')
+          return
+        }
+        await this.afterLoginSuccess()
+      } catch (err) {
+        toast.error(err.message || '微信登录失败')
       } finally {
         this.submitting = false
       }
@@ -470,6 +535,46 @@ uni.reLaunch({ url: '/pages/tabbar/index' })
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin-right: 12rpx;
+  }
+
+  &__wx-divider {
+    display: flex;
+    align-items: center;
+    margin: $spacing-md 0 $spacing-sm;
+    color: $text-tertiary;
+    font-size: $font-xs;
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1;
+      height: 1rpx;
+      background: $divider-light;
+    }
+    &::before { margin-right: $spacing-sm; }
+    &::after { margin-left: $spacing-sm; }
+  }
+
+  &__wx-btn {
+    width: 100%;
+    padding: $spacing-md;
+    background: #07C160;
+    color: #fff;
+    border-radius: $radius-pill;
+    font-size: $font-lg;
+    font-weight: $font-weight-semibold;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__wx-icon {
+    margin-right: $spacing-xs;
   }
 
   &__hint {

@@ -14,9 +14,14 @@ const BASE_URL = '/api/v1' // H5 走 vite proxy (vite.config.js server.proxy '/a
 // #endif
 // #ifndef H5
 // 小程序 / App 无 dev proxy, 必须用完整 URL 直连后端
-// 微信开发者工具模拟器里 localhost 即本机后端, 开箱即用;
-// 真机预览 (手机扫码) 需改局域网 IP: packages/client/.env.development 加 VITE_API_HOST=http://192.168.x.x:3000
-const BASE_URL = `${import.meta.env.VITE_API_HOST || 'http://localhost:3000'}/api/v1`
+// 注意: uni-app 不识别 Vite 风格的 import.meta.env.VITE_*, 编译后会变量丢失变 {},
+//      fallback 到 localhost → 微信开发者工具模拟器走 localhost 不通 → 网络错误.
+// 调试微信小程序: 直接改下面的 DEV_API_HOST 为本机局域网 IP (后端监听 0.0.0.0 才行);
+// 真机预览也是同一个 IP (手机和电脑必须同 WiFi).
+// 部署时改用 manifest.json / 环境变量注入或运行时配置.
+// eslint-disable-next-line no-undef
+const DEV_API_HOST = 'http://192.168.1.8:3000'
+const BASE_URL = `${DEV_API_HOST}/api/v1`
 // #endif
 
 /** 自定义错误类型 */
@@ -80,17 +85,37 @@ async function doRefresh() {
   if (_refreshing) return _refreshing
   _refreshing = (async () => {
     try {
-      const res = await uni.request({
+      let res
+      // #ifdef H5
+      // H5: refresh token 走 httpOnly cookie (后端 setRefreshCookie 自动带)
+      res = await uni.request({
         url: `${BASE_URL}/auth/refresh`,
         method: 'POST',
         withCredentials: true,
         header: { 'Content-Type': 'application/json' }
       })
+      // #endif
+      // #ifndef H5
+      // 小程序/App: cookie 不可用, 从 storage 读 refreshToken 走 body
+      const rt = storage.get(StorageKeys.WX_REFRESH_TOKEN)
+      if (!rt) throw new Error('no refresh token')
+      res = await uni.request({
+        url: `${BASE_URL}/auth/wx-refresh`,
+        method: 'POST',
+        data: { refreshToken: rt },
+        header: { 'Content-Type': 'application/json' }
+      })
+      // #endif
       if (res.statusCode >= 200 && res.statusCode < 300 && res.data && res.data.success) {
+        const data = res.data.data
         const auth = storage.get(StorageKeys.AUTH) || {}
-        auth.accessToken = res.data.data.accessToken
+        auth.accessToken = data.accessToken
         storage.set(StorageKeys.AUTH, auth)
-        return res.data.data.accessToken
+        // #ifndef H5
+        // 小程序: 新 refreshToken 覆盖存 (H5 由 cookie 自动更新)
+        if (data.refreshToken) storage.set(StorageKeys.WX_REFRESH_TOKEN, data.refreshToken)
+        // #endif
+        return data.accessToken
       }
       throw new Error('refresh failed')
     } catch (e) {
@@ -101,6 +126,15 @@ async function doRefresh() {
       // #ifdef H5
       const path = window.location.pathname
       if (!path.startsWith('/pages/auth/')) {
+        uni.reLaunch({ url: '/pages/auth/login' })
+      }
+      // #endif
+      // #ifndef H5
+      // 小程序无 window.location, 用 getCurrentPages 判当前页避免重复跳转
+      const pages = getCurrentPages()
+      const cur = pages[pages.length - 1]
+      const curRoute = cur ? `/${cur.route}` : ''
+      if (!curRoute.startsWith('/pages/auth/')) {
         uni.reLaunch({ url: '/pages/auth/login' })
       }
       // #endif

@@ -64,6 +64,13 @@ module.exports = {
       // 触发封禁后, 在这段时间内该 key 的所有 /login 请求直接 429
       mobileLockMs: Number(process.env.LOGIN_RL_MOBILE_LOCK_MS || 15 * 60 * 1000), // 15 min
       ipLockMs: Number(process.env.LOGIN_RL_IP_LOCK_MS || 15 * 60 * 1000) // 15 min
+    },
+    // 微信登录端点 per-IP 限流 (wx-login/wx-bind/wx-refresh 共用)
+    //   - 无 mobile 线: 微信 code 一次性 + 微信侧频控已防单账号爆破, 这里只防 IP 爆刷
+    wx: {
+      ipMax: Number(process.env.WX_RL_IP_MAX || 30),
+      windowMs: Number(process.env.WX_RL_WINDOW_MS || 15 * 60 * 1000),
+      ipLockMs: Number(process.env.WX_RL_IP_LOCK_MS || 15 * 60 * 1000)
     }
   },
 
@@ -100,6 +107,21 @@ module.exports = {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+  },
+
+  /**
+   * 微信小程序 (2026-08)
+   *
+   * SaaS 主小程序的 appid/secret (跨机构共享, 1 套)。
+   * 用于 wx-login/wx-bind 的 jscode2session + getuserphonenumber, 以及 P1 的小程序码生成。
+   * 留空时 wx 端点返回 503 (不崩进程; 不进 envValidator REQUIRED)。
+   * secret 是敏感凭证, 只在后端使用, 永不下发前端。
+   */
+  wechat: {
+    mini: {
+      appId: process.env.WX_MINI_APPID || '',
+      secret: process.env.WX_MINI_SECRET || ''
+    }
   },
 
   upload: {

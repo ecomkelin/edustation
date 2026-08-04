@@ -18,6 +18,27 @@ const SELF_UPDATE_WHITELIST = ['realName', 'avatarSvgKey', 'idCard', 'region']
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
+ * 签发 access + refresh token 并把 refresh token 入库 (sha256 hash)。
+ * login / refresh / wx-login / wx-bind 共用此函数, 保证 token 入库路径单一。
+ *
+ * @param {object} user - User 文档 (需 ._id)
+ * @param {object} opts - { ip, userAgent }
+ * @returns {Promise<{ accessToken: string, refreshToken: string }>}
+ */
+async function issueTokens(user, { ip, userAgent } = {}) {
+  const accessToken = JwtUtil.signAccessToken({ userId: String(user._id) })
+  const refreshToken = JwtUtil.signRefreshToken({ userId: String(user._id), jti: Date.now() + Math.random() })
+  await RefreshToken.create({
+    user: user._id,
+    tokenHash: JwtUtil.hashToken(refreshToken),
+    expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
+    userAgent: userAgent || '',
+    ip: ip || ''
+  })
+  return { accessToken, refreshToken }
+}
+
+/**
  * 登录：校验账号状态 + 密码 → 签 access + refresh → 写 refreshToken 入库。
  *
  * 错误信息按"账号是否存在 / 状态 / 密码"分桶返回,前端能区分提示
@@ -89,17 +110,8 @@ async function login({ mobile, password: plain, ip, userAgent, captchaPass, rate
     throw ApiError.unauthorized('密码错误')
   }
 
-  const accessToken = JwtUtil.signAccessToken({ userId: String(user._id) })
-  const refreshToken = JwtUtil.signRefreshToken({ userId: String(user._id), jti: Date.now() + Math.random() })
-
-  // 入库 refresh token (sha256)
-  await RefreshToken.create({
-    user: user._id,
-    tokenHash: JwtUtil.hashToken(refreshToken),
-    expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
-    userAgent: userAgent || '',
-    ip: ip || ''
-  })
+  // 签 token + 入库 refresh (复用 issueTokens, 保证入库路径单一)
+  const { accessToken, refreshToken } = await issueTokens(user, { ip, userAgent })
 
   // 法律协议: 登录时只计算平台级 (此时尚未选择 org). 机构级在 /me 或下单时再算.
   // 任何异常都不应阻塞登录本身, 失败时返回空数组 (合规拦截在客户端 graceful 降级)
@@ -152,18 +164,8 @@ async function refresh({ refreshToken, ip, userAgent }) {
   record.isRevoked = true
   await record.save()
 
-  // 签新 token
-  const newAccess = JwtUtil.signAccessToken({ userId: String(user._id) })
-  const newRefresh = JwtUtil.signRefreshToken({ userId: String(user._id), jti: Date.now() + Math.random() })
-  await RefreshToken.create({
-    user: user._id,
-    tokenHash: JwtUtil.hashToken(newRefresh),
-    expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
-    userAgent: userAgent || '',
-    ip: ip || ''
-  })
-
-  return { accessToken: newAccess, refreshToken: newRefresh }
+  // 签新 token (复用 issueTokens, 保证入库路径单一; 返回 { accessToken, refreshToken })
+  return issueTokens(user, { ip, userAgent })
 }
 
 /**
@@ -338,4 +340,4 @@ function publicUser(u) {
   }
 }
 
-module.exports = { login, refresh, logout, me, updateMe, changePassword, publicUser }
+module.exports = { login, refresh, logout, me, updateMe, changePassword, publicUser, issueTokens }

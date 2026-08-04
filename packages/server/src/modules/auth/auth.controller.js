@@ -1,6 +1,7 @@
 'use strict'
 
 const service = require('./auth.service')
+const wxAuthService = require('./wx-auth.service')
 const ApiResponse = require('@utils/ApiResponse')
 const config = require('@config/index')
 
@@ -68,6 +69,42 @@ exports.updateMe = async (req, res) => {
 exports.changePassword = async (req, res) => {
   await service.changePassword(req.user.id, req.body.oldPassword, req.body.newPassword)
   res.json(ApiResponse.ok())
+}
+
+// ─── 微信小程序登录 (2026-08) ───
+// 小程序不依赖 cookie: refresh token 走响应体, 由客户端 storage 自管。
+// service 返回 { status, accessToken?, refreshToken?, user? }, controller 原样透传。
+
+// R-0106 微信静默登录 (老用户; 未绑定返 need_bind)
+exports.wxLogin = async (req, res) => {
+  const result = await wxAuthService.wxLogin({
+    code: req.body.code,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'] || ''
+  })
+  res.json(ApiResponse.ok(result))
+}
+
+// R-0107 微信绑定 / 自助注册
+exports.wxBind = async (req, res) => {
+  const result = await wxAuthService.wxBind({
+    loginCode: req.body.loginCode,
+    phoneCode: req.body.phoneCode,
+    scene: req.body.scene,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'] || ''
+  })
+  res.json(ApiResponse.ok(result))
+}
+
+// R-0108 微信刷新 (复用 service.refresh, 但从 body 读 token、不写 cookie、新 token 回 body)
+exports.wxRefresh = async (req, res) => {
+  const result = await service.refresh({
+    refreshToken: req.body.refreshToken,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'] || ''
+  })
+  res.json(ApiResponse.ok({ accessToken: result.accessToken, refreshToken: result.refreshToken }))
 }
 
 function setRefreshCookie(res, token) {
