@@ -369,7 +369,7 @@ export default {
     color: #fff;
     border-bottom-right-radius: 4rpx;
   }
-  &__msg--user &__msg-bubble > * { color: #fff; }
+  &__msg--user &__msg-bubble > view, &__msg--user &__msg-bubble > text { color: #fff; }
   &__msg--assistant &__msg-bubble {
     background: $bg-card;
     color: $text-primary;

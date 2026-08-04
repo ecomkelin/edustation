@@ -418,7 +418,7 @@ export default {
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
     color: #fff;
   }
-  &__tile-overlay > * { color: #fff; }
+  &__tile-overlay > view, &__tile-overlay > text { color: #fff; }
 
   &__tile-level {
     position: absolute;

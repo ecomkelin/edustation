@@ -13,11 +13,11 @@
 
 <script setup>
 import { computed } from 'vue'
-import avatars from '@shared/avatars'
-
-// 2026-07-05: Vite optimizeDeps 把 CJS 包成 __commonJS + 仅 expose `default`,
-//   named exports 在浏览器侧不可用. 改为 default import + 解构.
-const { getAvatarByKey, fallbackKey, DEFAULT_USER_AVATAR_KEY } = avatars
+// 2026-08-03: 改具名 import — 小程序 rollup 对 CJS default interop 不稳定,
+//   default 解构 { getAvatarByKey } = avatars 在小程序里拿到空对象 → undefined →
+//   getAvatarByKey is not a function → 首页白屏.
+//   走 @shared/avatars.mjs 的显式 named export (ESM 可靠), 且加 typeof 防御兜底.
+import { getAvatarByKey, fallbackKey, DEFAULT_USER_AVATAR_KEY } from '@shared/avatars'
 
 const props = defineProps({
   svgKey: { type: String, default: null },
@@ -49,11 +49,14 @@ function withColor(svg) {
 }
 
 const renderKey = computed(() => {
+  // 防御: 万一 avatars 桥接在某端拿不到, 降级到默认 key, 不崩 (渲染 fallback emoji)
+  if (typeof fallbackKey !== 'function') return DEFAULT_USER_AVATAR_KEY || 'mom'
   if (props.audience === 'user') return fallbackKey(props.svgKey, 'user') || DEFAULT_USER_AVATAR_KEY
   return fallbackKey(props.svgKey, 'student')
 })
 
 const svgData = computed(() => {
+  if (typeof getAvatarByKey !== 'function') return null
   const found = getAvatarByKey(renderKey.value)
   return found ? withColor(found.svg) : null
 })
