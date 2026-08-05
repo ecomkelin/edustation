@@ -1312,10 +1312,44 @@ async function templateUpdate({ id, orgId, body }) {
   return tpl.toObject()
 }
 
+/**
+ * 2026-08-05: 模板删除互锁补漏 (审计 H10 §8.1)
+ *   之前 templateRemove 直接 TaskTemplate.deleteOne, 无 assertUnused 互锁:
+ *     - Task.fromTemplate (required 默认值 = null, 但实例化过的 Task 该字段非空) 会悬空
+ *     - TaskGenerationLog.template (required: true 强 ref) 会悬空, join 报表失败
+ *   现在按 §8.1 范式补 templateUsageChecks + assertUnused, 与 task.taskUsageChecks 共用风格.
+ */
+function templateUsageChecks(orgId, templateId) {
+  return [
+    {
+      model: Task, filter: { org: orgId, fromTemplate: templateId },
+      label: '模板生成的 Task 实例', hint: '请先删除/解绑由该模板生成的任务后再删模板'
+    },
+    {
+      model: TaskGenerationLog, filter: { org: orgId, template: templateId },
+      label: '模板生成日志', hint: '请先清理该模板的生成日志记录后再删模板'
+    }
+  ]
+}
+
 async function templateRemove({ id, orgId }) {
-  const r = await TaskTemplate.deleteOne({ _id: id, org: orgId })
-  if (r.deletedCount === 0) throw ApiError.notFound('模板不存在')
+  const tpl = await TaskTemplate.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!tpl) throw ApiError.notFound('模板不存在')
+  // 互锁 (审计 H10)
+  await removable.assertUnused(orgId, templateUsageChecks(orgId, tpl._id))
+  const r = await TaskTemplate.deleteOne({ _id: tpl._id, org: orgId })
+  if (r.deletedCount === 0) throw ApiError.conflict('模板已被他人操作，请刷新后重试')
   return { success: true, id }
+}
+
+/**
+ * R-3917 配套预检端点 (供前端删除按钮弹挡板)
+ * 2026-08-05: 与 service.templateRemove 走同一组 templateUsageChecks, 预检与实际删除语义完全一致
+ */
+async function templateRemovableCheck({ id, orgId }) {
+  const tpl = await TaskTemplate.findOne({ _id: id, org: orgId }).select('_id').lean()
+  if (!tpl) return { canRemove: false, blockers: [{ entity: 'TaskTemplate', label: '任务模板', count: 0, hint: '该模板不存在或不属于本机构' }] }
+  return removable.check(orgId, templateUsageChecks(orgId, tpl._id))
 }
 
 async function templateRunNow({ id, orgId, actor }) {
@@ -1455,6 +1489,7 @@ module.exports = {
   templateList,
   templateUpdate,
   templateRemove,
+  templateRemovableCheck, // 2026-08-05: R-3917 配套预检 (审计 H10)
   templateRunNow,
   templatePause,
   templateResume,

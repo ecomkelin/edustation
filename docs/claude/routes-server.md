@@ -290,7 +290,7 @@ Auth 列简写:
 | R-1401 | GET | /lesson-schedules/:id | PERM | lessonSchedule.read | 详情 | |
 | R-1402 | POST | /lesson-schedules | PERM | lessonSchedule.write | 单条新建 | **2026-08-05: teacher 校验 org 归属 (审计 M7 防跨机构老师双预订不可见)** |
 | R-1403 | PUT | /lesson-schedules/:id | PERM | lessonSchedule.write | 更新 | **2026-08-05: 改 teacher/room 时校验 org 归属 (审计 M7); update 头部调 assertCourseInstanceActive (审计 L11)** |
-| R-1404 | DELETE | /lesson-schedules/:id | ADMIN_PWD | — | 物理删除 | 高风险, 互锁考勤/作品 |
+| R-1404 | DELETE | /lesson-schedules/:id | ADMIN_PWD | — | 物理删除 | 高风险, 互锁考勤/作品; **2026-08-05: 互锁补 checked_in/no_show/leave 三态考勤 (审计 H12), 级联 deleteMany 避免悬空引用** |
 | R-1405 | GET | /lesson-schedules/:id/removable-check | PERM | lessonSchedule.read | 删除预检 | |
 | R-1420 | POST | /lesson-schedules/:id/prepare | PERM | lessonSchedule.write | 准备上课 | scheduled → preparing |
 | R-1421 | POST | /lesson-schedules/:id/start | PERM | lessonSchedule.write | 开始上课 | preparing → in_progress; body 可选 actualStartTime / actualStartReason |
@@ -879,7 +879,8 @@ Auth 列简写:
 | R-3914 | POST | /tasks/templates | PERM | task.write | 创建周期模板 | 必填 title/defaultAssignees/defaultSupervisors/schedule.kind; nextRunAt 自动算 |
 | R-3915 | GET | /tasks/templates | PERM | task.read | 模板列表 | query: isActive/page/pageSize |
 | R-3916 | PATCH | /tasks/templates/:id | PERM | task.write | 编辑模板 | 改 schedule 重新算 nextRunAt |
-| R-3917 | DELETE | /tasks/templates/:id | PERM | task.delete | 删除模板 | 已有 Task 不受影响 (Task.fromTemplate 软引用) |
+| R-3917 | DELETE | /tasks/templates/:id | PERM | task.delete | 删除模板 | **2026-08-05: 加 requireBodyPassword + templateUsageChecks 互锁 Task.fromTemplate + TaskGenerationLog.template (审计 H10)** |
+| R-3917B | GET | /tasks/templates/:id/removable-check | PERM | task.read | 模板删除预检 | 2026-08-05: 与 service.templateRemove 走同一组 templateUsageChecks (审计 H10) |
 | R-3918 | POST | /tasks/templates/:id/run-now | PERM | task.write | 立即跑一次 (测试用) | 写 TaskGenerationLog (status=success) |
 | R-3919 | POST | /tasks/templates/:id/pause \| /resume | PERM | task.write | 暂停/恢复模板 | pause → nextRunAt=null; resume → 重算 nextRunAt |
 | R-3920 | POST | /tasks/:id/archive | PERM | task.delete | 归档 (软隐藏) | 2026-07-08 立项; list/kanban/stats 默认隐藏, 写操作全部 422; 不需密码 |

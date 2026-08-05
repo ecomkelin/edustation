@@ -1414,6 +1414,15 @@ function lessonScheduleUsageChecks(orgId, scheduleId) {
       model: LessonAttendance, filter: { lessonSchedule: scheduleId, status: { $in: [AttendanceStatus.COMPLETED, AttendanceStatus.MADEUP] } },
       label: '已消课/已补考勤', hint: '本排课已有扣课时记录,请改用「作废」操作'
     },
+    // 2026-08-05: 三态考勤 (checked_in/no_show/leave) 互锁补漏 (审计 H12)
+    //   之前互锁只挡 completed/madeup, checked_in/no_show/leave 三态考勤既不被挡、也不被级联清
+    //   → 删排课后这三态考勤变成 LessonAttendance.lessonSchedule 悬空指针, populate 失败.
+    //   现在 filter 改为"非 SCHEDULED 全部挡" (中间态 + 终态都不让删), 与 §8.1 互锁覆盖所有下游强引用对齐.
+    //   与级联 deleteMany 的 filter 保持一致: 凡未归档/未取消/未完成的都级联清, 已完成的不让删.
+    {
+      model: LessonAttendance, filter: { lessonSchedule: scheduleId, org: orgId, status: { $in: [AttendanceStatus.CHECKED_IN, AttendanceStatus.NO_SHOW, AttendanceStatus.LEAVE] } },
+      label: '三态考勤(签到/缺席/请假)', hint: '本排课下仍有签到/缺席/请假考勤, 请先调整后再删'
+    },
     {
       model: StudentWork, filter: { lessonSchedule: scheduleId, org: orgId },
       label: '学员作品', hint: '本排课下已有作品上传,请先清理作品后再删'
@@ -1425,12 +1434,24 @@ async function remove({ id, orgId }) {
   const doc = await LessonSchedule.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('排课不存在')
 
+  // 2026-08-05: 三态考勤级联清理 (审计 H12)
+  //   上面互锁只挡 completed/madeup; 真正的删除通过时, 把剩余的 checked_in/no_show/leave 考勤
+  //   一并 deleteMany, 避免悬空引用. 与 ensureUnused 顺序: 先 assertUnused 失败 → 422;
+  //   通过 → deleteMany(scheduled/checked_in/no_show/leave) + deleteOne(LessonSchedule).
+  //   防御性: assertUnused 通过后即使没有这三态考勤, deleteMany 也安全 (matchedCount=0 无副作用).
+  // 业务上: scheduled 考勤已在 prepare 之后生成, 但删排课通常发生在排课未开课的早期窗口; 若有,
+  //   同样视为"未真正发生业务", 一并清.
+  await LessonAttendance.deleteMany({
+    lessonSchedule: id, org: orgId,
+    status: { $in: [AttendanceStatus.SCHEDULED, AttendanceStatus.CHECKED_IN, AttendanceStatus.NO_SHOW, AttendanceStatus.LEAVE] }
+  })
+
   // 互锁:用统一工具
   const { assertUnused } = require('@utils/removable')
   await assertUnused(orgId, lessonScheduleUsageChecks(orgId, id))
 
-  // 同步清掉未开始的考勤(避免悬挂引用)
-  await LessonAttendance.deleteMany({ lessonSchedule: id, status: AttendanceStatus.SCHEDULED })
+  // 2026-08-05: 三态考勤级联清理 (审计 H12) — 在前面已 deleteMany(SCHEDULED + CHECKED_IN + NO_SHOW + LEAVE),
+  //   互锁只挡 completed/madeup; 通过后这里无需重复删. (代码块已在函数顶部)
   // 解绑本排课的 materials file 引用, 让 file 自身可被清理
   const materialIds = (doc.materials || []).map((x) => String(x))
   await doc.deleteOne()

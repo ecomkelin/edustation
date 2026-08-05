@@ -152,6 +152,11 @@ exports.templateRemove = async (req, res) => res.json(ApiResponse.ok(await s.tem
   id: req.params.id, orgId: req.orgId
 })))
 
+// 2026-08-05: R-3917 模板删除预检 (审计 H10)
+exports.templateRemovableCheck = async (req, res) => res.json(ApiResponse.ok(await s.templateRemovableCheck({
+  id: req.params.id, orgId: req.orgId
+})))
+
 exports.templateRunNow = async (req, res) => res.json(ApiResponse.ok(await s.templateRunNow({
   id: req.params.id, orgId: req.orgId, actor: req.user
 })))

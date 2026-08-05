@@ -54,7 +54,11 @@ router.post('/templates/:id/run-now', mws.requirePermission('task.write'), async
 // R-3916 PATCH /tasks/templates/:id
 router.patch('/templates/:id', mws.requirePermission('task.write'), v.templateUpdate, mws.validateRequest, asyncHandler(c.templateUpdate))
 // R-3917 DELETE /tasks/templates/:id
-router.delete('/templates/:id', mws.requirePermission('task.delete'), asyncHandler(c.templateRemove))
+// 2026-08-05: 加 requireBodyPassword (审计 H10) — 模板也是强引用下游 (Task.fromTemplate / TaskGenerationLog.template),
+//   物理删除需业务岗二次密码确认; 与 R-3904 /tasks/:id delete 弱化范式对齐.
+router.delete('/templates/:id', mws.requirePermission('task.delete'), mws.requireBodyPassword, asyncHandler(c.templateRemove))
+// R-3917 配套: 模板删除预检端点 (普通 task.read 权限即可调, 弹挡板用)
+router.get('/templates/:id/removable-check', mws.requirePermission('task.read'), asyncHandler(c.templateRemovableCheck))
 
 // ─── 任务列表 / 详情 / 预检 ────────────────────
 
