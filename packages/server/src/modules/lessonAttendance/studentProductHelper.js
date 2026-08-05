@@ -26,16 +26,27 @@ async function pickStudentProductFIFO({ orgId, student, accepted, now = new Date
 
 /**
  * 原子扣减 StudentProduct 1 课时。
- * 用 findOneAndUpdate({ remainingLessons: { $gte: 1 } }, { $inc: { remainingLessons: -1 } })
- * 单文档原子操作，避免并发"读-改-写"竞态超扣。
+ * 用 findOneAndUpdate({ _id, isActive, remainingLessons >= 1, expireDate > now },
+ *                      { $inc: { remainingLessons: -1 } })
+ * 单文档原子操作，避免并发"读-改-写"竞态超扣；同时把 isActive/expireDate/remainingLessons 全部
+ * 放进 filter，让"已停用 / 已过期 / 余额不足"任一情况都直接不命中 → 返回 null.
  *
- * 返回值：扣减成功 → 更新后的对象；余额不足或产品不存在 → null
+ * 2026-08-05: isActive/expireDate 加进原子 filter (审计 H7)
+ *   之前只校验 remainingLessons≥1, 不校验 isActive/expireDate → 可扣已停用 / 已过期 / 余额不足(此处也校验)的课包
+ *   现在 filter 同时限定 4 个条件, 配合 findOneAndUpdate 的原子性, 杜绝"扣前一刻被改/过期"竞态.
+ *
+ * 返回值：扣减成功 → 更新后的对象；任一条件不满足 → null
  * 当扣减到 0 时，额外把 isActive 置 false（与 LessonAttendance.service.complete 单条路径一致）。
  */
-async function deductOneLesson(spId) {
+async function deductOneLesson(spId, now = new Date()) {
   if (!spId) return null
   const updated = await StudentProduct.findOneAndUpdate(
-    { _id: spId, remainingLessons: { $gte: 1 } },
+    {
+      _id: spId,
+      isActive: true,
+      remainingLessons: { $gte: 1 },
+      expireDate: { $gt: now }
+    },
     { $inc: { remainingLessons: -1 } },
     { new: true }
   ).lean()

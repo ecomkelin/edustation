@@ -534,6 +534,35 @@ async function setStatus({ id, orgId, toStatus, reason }) {
     e.droppedAt = now
     e.dropReason = reason || e.dropReason
   }
+
+  // 2026-08-05: 退班/分班清空未来考勤 (审计 H8)
+  //   之前 setStatus→withdrew/dropped 或 update 改 courseInstance 后, 该学生在原 courseInstance 下
+  //   未来 status ∈ {scheduled, checked_in} 的 LessonAttendance 不会被清; 而 bulkCompleteForSchedule
+  //   按 lessonSchedule 过滤考勤、不校验 enrollment.status → 退班后旧班老师点"结束上课"仍扣该学生
+  //   StudentProduct 课时 (双重扣费). 现在退班时主动清掉这些未来考勤, 断掉双重消课链.
+  //   (已消课的 completed/madeup/no_show/leave 保留为审计痕迹, 不动)
+  const terminalNonEnrolled = [
+    CourseEnrollmentStatus.WITHDREW,
+    CourseEnrollmentStatus.DROPPED,
+    CourseEnrollmentStatus.ARCHIVED
+  ]
+  if (terminalNonEnrolled.includes(toStatus)) {
+    const futureScheduleIds = await LessonSchedule.find({
+      org: orgId,
+      courseInstance: e.courseInstance,
+      plannedStartTime: { $gt: now },
+      status: { $in: [LessonScheduleStatus.SCHEDULED, LessonScheduleStatus.PREPARING] }
+    }).select('_id').lean()
+    if (futureScheduleIds.length) {
+      await LessonAttendance.deleteMany({
+        org: orgId,
+        student: e.student,
+        lessonSchedule: { $in: futureScheduleIds.map((s) => s._id) },
+        status: { $in: [AttendanceStatus.SCHEDULED, AttendanceStatus.CHECKED_IN] }
+      })
+    }
+  }
+
   await e.save()
   invalidateReportCache(orgId)
   return detail(e._id, orgId)
@@ -634,6 +663,25 @@ async function update(id, orgId, payload) {
     if (!target) throw ApiError.badRequest('目标开班不属于本机构')
     if (![CourseInstanceStatus.ENROLLING, CourseInstanceStatus.ACTIVE].includes(target.status)) {
       throw ApiError.unprocessable(`目标开班状态 ${target.status}，不允许转入`)
+    }
+    // 2026-08-05: 分班清空旧班未来考勤 (审计 H8)
+    //   之前换班后旧 courseInstance 下未来 status ∈ {scheduled, checked_in} 的考勤保留 → 旧班老师 finish
+    //   仍扣该学生 StudentProduct 课时 (与新班同一课包 → 双重扣费). 现在清掉这些未来考勤.
+    //   历史 completed/madeup/no_show/leave 保留作为审计痕迹.
+    const now = new Date()
+    const oldFutureScheduleIds = await LessonSchedule.find({
+      org: orgId,
+      courseInstance: cur.courseInstance,
+      plannedStartTime: { $gt: now },
+      status: { $in: [LessonScheduleStatus.SCHEDULED, LessonScheduleStatus.PREPARING] }
+    }).select('_id').lean()
+    if (oldFutureScheduleIds.length) {
+      await LessonAttendance.deleteMany({
+        org: orgId,
+        student: cur.student,
+        lessonSchedule: { $in: oldFutureScheduleIds.map((s) => s._id) },
+        status: { $in: [AttendanceStatus.SCHEDULED, AttendanceStatus.CHECKED_IN] }
+      })
     }
     cur.courseInstance = target._id
     // 跨班后旧 studentProduct 与新开班未必兼容，清空让 service 按新开班的 acceptedCourseProducts 自动重选
@@ -819,46 +867,57 @@ async function myProgress({ orgId, student, courseInstanceId }) {
 
   // 2. 计划内总课次 (排除 cancelled + archived)
   let scheduledCount = 0
+  let scheduleIds = []
   try {
-    scheduledCount = await LessonSchedule.countDocuments({
+    const schedules = await LessonSchedule.find({
       org: orgId,
       courseInstance: ciId,
       status: {
         $nin: [LessonScheduleStatus.CANCELLED, LessonScheduleStatus.ARCHIVED]
       }
-    })
+    }).select('_id').lean()
+    scheduleIds = schedules.map((s) => s._id)
+    scheduledCount = schedules.length
   } catch (e) {
     console.warn('[courseEnrollment.myProgress] scheduledCount failed', e?.message)
   }
 
   // 3. 已上 (个人考勤 status='completed')
+  //   2026-08-05: 修复永远返回 0 的 bug (审计 H14)
+  //     LessonAttendance.model 没有 courseInstance 字段, 之前 `courseInstance: ciId` 条件
+  //     永远不命中 → attendedCount 恒 0, 家长看到出勤率永远 0%.
+  //     正确路径: 先拿该 courseInstance 的 scheduleIds, 再按 lessonSchedule ∈ scheduleIds 查考勤.
   let attendedCount = 0
-  try {
-    attendedCount = await LessonAttendance.countDocuments({
-      org: orgId,
-      student,
-      courseInstance: ciId,
-      status: AttendanceStatus.COMPLETED
-    })
-  } catch (e) {
-    console.warn('[courseEnrollment.myProgress] attendedCount failed', e?.message)
+  if (scheduleIds.length) {
+    try {
+      attendedCount = await LessonAttendance.countDocuments({
+        org: orgId,
+        student,
+        lessonSchedule: { $in: scheduleIds },
+        status: AttendanceStatus.COMPLETED
+      })
+    } catch (e) {
+      console.warn('[courseEnrollment.myProgress] attendedCount failed', e?.message)
+    }
   }
 
   // 4. 最近一次考勤
   let lastAttended = null
-  try {
-    lastAttended = await LessonAttendance.findOne({
-      org: orgId,
-      student,
-      courseInstance: ciId,
-      status: AttendanceStatus.COMPLETED
-    })
-      .sort({ actualEndTime: -1, updatedAt: -1 })
-      .select('actualEndTime lessonSchedule')
-      .populate('lessonSchedule', 'lessonNo plannedStartTime')
-      .lean()
-  } catch (e) {
-    console.warn('[courseEnrollment.myProgress] lastAttended failed', e?.message)
+  if (scheduleIds.length) {
+    try {
+      lastAttended = await LessonAttendance.findOne({
+        org: orgId,
+        student,
+        lessonSchedule: { $in: scheduleIds },
+        status: AttendanceStatus.COMPLETED
+      })
+        .sort({ actualEndTime: -1, updatedAt: -1 })
+        .select('actualEndTime lessonSchedule')
+        .populate('lessonSchedule', 'lessonNo plannedStartTime')
+        .lean()
+    } catch (e) {
+      console.warn('[courseEnrollment.myProgress] lastAttended failed', e?.message)
+    }
   }
 
   const remainingScheduled = Math.max(0, scheduledCount - attendedCount)

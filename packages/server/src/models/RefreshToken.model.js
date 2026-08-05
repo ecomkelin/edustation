@@ -36,7 +36,12 @@ const RefreshTokenSchema = new Schema(
     // 颁发时的 User-Agent，用于多设备管理和风控（"在哪个设备/浏览器登录的"）
     userAgent: { type: String },
     // 颁发时的 IP（同上；异常 IP 可触发强制下线）
-    ip: { type: String }
+    ip: { type: String },
+    // 2026-08-05: 会话族 id (审计 H2 刷新重放链条撤销)
+    //   同一登录会话 (login 一次生成) → 整个 refresh 轮换链共享同一个 familyId.
+    //   refresh 检测到旧 token 已 isRevoked=true 但仍被提交 (即重放) → 立即撤销整族 (含该用户所有未过期 token).
+    //   防 refresh 偷跑链无限续命.
+    familyId: { type: String, required: true, index: true }
   },
   { timestamps: true, collection: 'refresh_tokens' }
 )
@@ -45,5 +50,7 @@ const RefreshTokenSchema = new Schema(
 RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 // 查"该用户的有效令牌"（用于多设备管理/强制下线）
 RefreshTokenSchema.index({ user: 1, isRevoked: 1 })
+// 查"该族的所有 token"（用于 refresh 重放检测 → 整族撤销）
+RefreshTokenSchema.index({ familyId: 1, isRevoked: 1 })
 
 module.exports = model('RefreshToken', RefreshTokenSchema)

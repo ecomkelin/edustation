@@ -98,17 +98,17 @@ Auth 列简写:
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-0100 | POST | /auth/login | OPEN | — | 登录 | 限流 + 滑块; 响应直接带 `orgs`; 无机构非超管 → 403 |
-| R-0101 | POST | /auth/refresh | OPEN | — | 刷新 access token | httpOnly cookie |
-| R-0102 | POST | /auth/logout | AUTH | — | 登出 | 清 cookie |
+| R-0100 | POST | /auth/login | OPEN | — | 登录 | 限流 + 滑块; 响应直接带 `orgs`; 无机构非超管 → 403; **2026-08-05: 4 种错误文案统一返 "手机号或密码错误" (审计 M14 防账号存在性枚举)** |
+| R-0101 | POST | /auth/refresh | OPEN | — | 刷新 access token | httpOnly cookie; **2026-08-05: 重放检测 + 烧族 (审计 H2)** — 旧 token 已撤销仍被提交 → 视为重放, 按 familyId 撤销整族, 业务感知"被顶下线" |
+| R-0102 | POST | /auth/logout | AUTH | — | 登出 | 清 cookie; cookie `path` 已放宽到 `/api/v1/auth/` 让 logout 收到 refresh cookie (审计 H1) |
 | R-0103 | GET | /auth/me | AUTH | — | 当前用户信息 | |
 | R-0104 | PUT | /auth/me | AUTH | — | 自助改资料 | 白名单字段 |
-| R-0105 | POST | /auth/change-password | AUTH | — | 自助改密码 | 撤销所有 refresh |
+| R-0105 | POST | /auth/change-password | AUTH | — | 自助改密码 | 撤销所有 refresh; **2026-08-05: authenticate 强制改密门 (审计 H3)** — 试听转化建的家长 requirePasswordChange=true 时仅放行 `/auth/change-password` + `/auth/me`, 其他一律 403 require_password_change |
 | R-0106 | POST | /auth/wx-login | OPEN | — | 微信静默登录 | per-IP 限流; code→openid/unionid, 已绑定发 token / 否则 need_bind; 响应直接带 `orgs`; 无机构非超管 → 403 |
 | R-0107 | POST | /auth/wx-bind | OPEN | — | 微信绑定/自助注册 | per-IP 限流; 手机号绑定已有账号, 或 scene 有效 orgId 则自助注册, 否则 need_org; 响应直接带 `orgs`; 无机构非超管 → 403 |
 | R-0108 | POST | /auth/wx-refresh | OPEN | — | 微信刷新 token | per-IP 限流; 复用 service.refresh, body 读写不走 cookie |
-| R-0110 | GET | /captcha/challenge | OPEN | — | 拿滑块挑战 | captcha 是 auth 防刷伴生 |
-| R-0111 | POST | /captcha/verify | OPEN | — | 提交滑块答案 | 一次性 pass |
+| R-0110 | GET | /captcha/challenge | OPEN | — | 拿滑块挑战 | captcha 是 auth 防刷伴生; **2026-08-05: per-IP 限流 60 次/5 分钟 (审计 M15 防装饰性被绕过)** |
+| R-0111 | POST | /captcha/verify | OPEN | — | 提交滑块答案 | 一次性 pass; **2026-08-05: per-IP 限流 (审计 M15)** |
 
 ### MM=02 user (URL: /users)
 
@@ -117,19 +117,19 @@ Auth 列简写:
 | R-0200 | GET | /users | PERM | user.read | 列表 | |
 | R-0201 | GET | /users/:id | PERM | user.read | 详情 | |
 | R-0202 | POST | /users | PERM | user.write | 新建 | |
-| R-0203 | PUT | /users/:id | PERM | user.write | 更新 | |
+| R-0203 | PUT | /users/:id | PERM | user.write | 更新 | 2026-08-05: service 加 `UserOrgRel.exists({user,org})` 校验, 防跨机构越权 (审计 S1) |
 | R-0204 | DELETE | /users/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
 | R-0205 | GET | /users/:id/removable-check | PERM | user.read | 删除预检 | |
-| R-0206 | GET | /users/lookup | PERM | user.read | 按手机号查 | |
+| R-0206 | GET | /users/lookup | PERM | user.read | 按手机号查 | 2026-08-05: 强制 org 归属校验, 不属于本机构 (含平台超管) 返 404; 不再返回 isPlatformAdmin 字段 (审计 S1) |
 | R-0207 | GET | /users/unaffiliated | ADMIN | — | 游离用户列表 | 平台超管 |
 | R-0208 | PUT | /users/unaffiliated/:id | ADMIN | — | 改游离用户 | 平台超管 |
 | R-0209 | POST | /users/unaffiliated/:id/reset-password | ADMIN | — | 重置游离用户密码 | 平台超管 |
 | R-0210 | PUT | /users/:id/block | ADMIN | — | 黑名单 | 平台超管 |
 | R-0211 | PUT | /users/:id/unblock | ADMIN | — | 解黑名单 | 平台超管 |
-| R-0212 | PUT | /users/:id/positions | PERM | user.write | 调整职位 | |
+| R-0212 | PUT | /users/:id/positions | PERM | user.write | 调整职位 | **2026-08-05: 聚合传入 positions 的 permissions, 校验不绕过 sensitive 闸门 (审计 M17 pet.write/article.write/video.write 仅超管可 grant)** |
 | R-0213 | POST | /users/:id/org | PERM | user.write | 关联到机构 | |
-| R-0215 | POST | /users/:id/reset-password | PERM | user.resetPassword | 管理员重置密码 | |
-| R-0216 | POST | /users/:id/change-password | PERM | — | 管理员代改密码 | |
+| R-0215 | POST | /users/:id/reset-password | PERM | user.resetPassword | 管理员重置密码 | 2026-08-05: service 加 `UserOrgRel.exists({user,org})` 校验, 防止改别机构/超管密码 (审计 S1) |
+| R-0216 | POST | /users/:id/change-password | PERM | — | 管理员代改密码 | **2026-08-05: 改密后撤销该用户所有 refresh token (审计 M16 与 auth.changePassword 行为对齐)** |
 
 ### MM=03 position (URL: /positions)
 
@@ -174,7 +174,7 @@ Auth 列简写:
 | R-0501 | GET | /subjects/:id | PERM | subject.read | 详情 | |
 | R-0502 | POST | /subjects | PERM | subject.write | 新建 | |
 | R-0503 | PUT | /subjects/:id | PERM | subject.write | 更新 | |
-| R-0504 | DELETE | /subjects/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| R-0504 | DELETE | /subjects/:id | ADMIN_PWD | — | 物理删除 | 高风险; **2026-08-05: usageChecks 补 StudentWork.subject (审计 M18 防作品悬空)** |
 | R-0505 | GET | /subjects/:id/removable-check | PERM | subject.read | 删除预检 | |
 | R-0507 | GET | /subjects/source-orgs | ADMIN | — | 跨机构同步: 源机构列表 | 平台超管 |
 | R-0508 | GET | /subjects/by-org/:orgId | ADMIN | — | 跨机构同步: 源机构学科 | 平台超管 |
@@ -188,7 +188,7 @@ Auth 列简写:
 | R-0601 | GET | /categories/:id | AUTH | — | 详情 | |
 | R-0602 | POST | /categories | PERM | 动态 (按 model) | 新建 | model=Student→student.write / Subject→subject.write / LeadTag+Channel→recruit.write |
 | R-0603 | PUT | /categories/:id | PERM | 动态 (按 model) | 更新 | 同上 |
-| R-0604 | DELETE | /categories/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| R-0604 | DELETE | /categories/:id | ADMIN_PWD | — | 物理删除 | 高风险; **2026-08-05: Subject 分支补上 (审计 M18) — Subject.category 实为 ObjectId ref, 之前分支空是注释错误** |
 | R-0605 | GET | /categories/:id/removable-check | AUTH | — | 删除预检 | |
 | R-0608 | GET | /categories/tree | AUTH | — | 树形结构 | |
 
@@ -200,7 +200,7 @@ Auth 列简写:
 | R-0701 | GET | /regions/:id | AUTH | — | 详情 | |
 | R-0702 | POST | /regions | ADMIN | — | 新建 | 平台超管 |
 | R-0703 | PUT | /regions/:id | ADMIN | — | 更新 | 平台超管 |
-| R-0704 | DELETE | /regions/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| R-0704 | DELETE | /regions/:id | ADMIN_PWD | — | 物理删除 | 高风险; **2026-08-05: usageChecks 补 User.region (审计 M18 防用户现居地悬空)** |
 | R-0705 | GET | /regions/:id/removable-check | AUTH | — | 删除预检 | |
 | R-0708 | GET | /regions/tree | AUTH | — | 树形结构 | |
 
@@ -255,7 +255,7 @@ Auth 列简写:
 | R-1104 | DELETE | /course-instances/:id | ADMIN_PWD | — | 软删 (deletedAt) | 状态互锁 |
 | R-1105 | GET | /course-instances/:id/removable-check | PERM | courseInstance.read | 删除预检 | |
 | R-1106 | POST | /course-instances/:id/recover | ADMIN_PWD | — | 取消归档 (recover) | 2026-07-08 立项;把已软删的开班恢复, 仍需超管+密码 |
-| R-1113 | PUT | /course-instances/:id/status | PERM | courseInstance.write/setStatus | 状态变更 | cancelled 仅超管 |
+| R-1113 | PUT | /course-instances/:id/status | PERM | courseInstance.write/setStatus | 状态变更 | cancelled 仅超管; **2026-08-05: → cancelled 级联下游 (审计 M19)** — scheduled/preparing/in_progress 排课全置 cancelled + 该开班下 scheduled/checked_in 考勤置 no_show |
 
 ### MM=12 courseEnrollment (URL: /course-enrollments)
 
@@ -264,12 +264,12 @@ Auth 列简写:
 | R-1200 | GET | /course-enrollments | PERM | courseEnrollment.read | 列表 | |
 | R-1201 | GET | /course-enrollments/:id | PERM | courseEnrollment.read | 详情 | |
 | R-1202 | POST | /course-enrollments | PERM | courseEnrollment.write | 新建报名 | |
-| R-1203 | PUT | /course-enrollments/:id | PERM | courseEnrollment.write | 更新(分班) | |
+| R-1203 | PUT | /course-enrollments/:id | PERM | courseEnrollment.write | 更新(分班) | **2026-08-05: 分班时清空旧 courseInstance 下未来 scheduled/checked_in 考勤 (审计 H8 防双重消课)** |
 | R-1204 | DELETE | /course-enrollments/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
 | R-1205 | GET | /course-enrollments/:id/removable-check | PERM | courseEnrollment.read | 删除预检 | |
-| R-1213 | PUT | /course-enrollments/:id/status | PERM | courseEnrollment.write | 状态变更 | enrolled/withdrawn |
-| R-1214 | GET | /course-enrollments/me | C-END | (activeStudent) | 我的报名列表 | 默认排除 withdrawn; 2026-07-03 spread req.query 支持 page/pageSize/status 过滤 |
-| R-1215 | GET | /course-enrollments/me/by-instance/:courseInstanceId | C-END | (activeStudent) | 单课进度 (已上/计划总/剩余) | 聚合 LessonSchedule+Attendance |
+| R-1213 | PUT | /course-enrollments/:id/status | PERM | courseEnrollment.write | 状态变更 | enrolled/withdrawn; **2026-08-05: 退到 withdrew/dropped/archived 时清空该学生在原开班下未来考勤 (审计 H8 防双重消课)** |
+| R-1214 | GET | /course-enrollments/me | C-END | (activeStudent) | 我的报名列表 | 默认排除 withdrawn; 2026-07-03 spread req.query 支持 page/pageSize/status 过滤; **2026-08-05 改为白名单解构 status/page/pageSize, 拒绝 query.student/orgId 覆盖, 缺 activeStudentId 返 400 (审计 H4)** |
+| R-1215 | GET | /course-enrollments/me/by-instance/:courseInstanceId | C-END | (activeStudent) | 单课进度 (已上/计划总/剩余) | 聚合 LessonSchedule+Attendance; **2026-08-05: 修复 attendedCount 永远 0 的 bug (审计 H14)** — LessonAttendance 无 courseInstance 字段, 改为先拿 scheduleIds 再按 lessonSchedule 查询 |
 
 ### MM=13 room (URL: /rooms)
 
@@ -288,8 +288,8 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-1400 | GET | /lesson-schedules | PERM | lessonSchedule.read | 列表 | |
 | R-1401 | GET | /lesson-schedules/:id | PERM | lessonSchedule.read | 详情 | |
-| R-1402 | POST | /lesson-schedules | PERM | lessonSchedule.write | 单条新建 | |
-| R-1403 | PUT | /lesson-schedules/:id | PERM | lessonSchedule.write | 更新 | |
+| R-1402 | POST | /lesson-schedules | PERM | lessonSchedule.write | 单条新建 | **2026-08-05: teacher 校验 org 归属 (审计 M7 防跨机构老师双预订不可见)** |
+| R-1403 | PUT | /lesson-schedules/:id | PERM | lessonSchedule.write | 更新 | **2026-08-05: 改 teacher/room 时校验 org 归属 (审计 M7); update 头部调 assertCourseInstanceActive (审计 L11)** |
 | R-1404 | DELETE | /lesson-schedules/:id | ADMIN_PWD | — | 物理删除 | 高风险, 互锁考勤/作品 |
 | R-1405 | GET | /lesson-schedules/:id/removable-check | PERM | lessonSchedule.read | 删除预检 | |
 | R-1420 | POST | /lesson-schedules/:id/prepare | PERM | lessonSchedule.write | 准备上课 | scheduled → preparing |
@@ -298,11 +298,11 @@ Auth 列简写:
 | R-1424 | POST | /lesson-schedules/:id/archive | PERM | lessonSchedule.write | 归档 | finished → archived |
 | R-1425 | POST | /lesson-schedules/:id/sync-attendances | PERM | lessonSchedule.write | 补齐名单 | 修 prepare 后报名漏建考勤 |
 | R-1440 | POST | /lesson-schedules/preview | PERM | lessonSchedule.write | 批量排课预览 | 不入库 |
-| R-1441 | POST | /lesson-schedules/generate | PERM | lessonSchedule.write | 批量排课生成 | 入库 |
+| R-1441 | POST | /lesson-schedules/generate | PERM | lessonSchedule.write | 批量排课生成 | 入库; **2026-08-05: withTransaction 包裹整批 insert (审计 M8 防部分成功数据漂移)**; **preview/buildPlan 入口校验 teacher/room org 归属 (审计 M7)** |
 | R-1442 | GET | /lesson-schedules/:id/sync-attendances/preview | PERM | lessonSchedule.read | 补齐名单预览 | UI 决定按钮显隐 |
 | R-1450 | GET | /lesson-schedules/calendar | PERM | lessonSchedule.read | 日历视图 | |
-| R-1451 | GET | /lesson-schedules/conflicts | PERM | lessonSchedule.read | 冲突预检 | |
-| R-1492 | GET | /lesson-schedules/me/calendar | GUARD | — | 我的课表 | C 端家长; active student 上下文; 仅 enrolled 开班下的排课 |
+| R-1451 | GET | /lesson-schedules/conflicts | PERM | lessonSchedule.read | 冲突预检 | **2026-08-05: detectConflict 加 PREPARING 状态 (审计 H13 防老师双预订)** |
+| R-1492 | GET | /lesson-schedules/me/calendar | GUARD | — | 我的课表 | C 端家长; active student 上下文; 仅 enrolled 开班下的排课; **2026-08-05: controller 加 kidMap 校验, query.student 必须 ∈ user 名下 kid, 跨孩子 IDOR 堵口 (审计 H4)** |
 | R-1493 | GET | /lesson-schedules/me/by-instance/:courseInstanceId | GUARD | — | 开班内我的排课+考勤 | C 端家长; active student 上下文; instance-detail.vue 用; service 校验学生是该开班的 enrolled/archived 报名 |
 | R-1494 | GET | /lesson-schedules/me/:id | GUARD | — | 课程详情(单节排课) | C 端家长; schedule/detail.vue 用; 修复家长调业务端 /:id 403; service 校验学生在该开班有有效报名; 返回 shape 跟 detail() 对齐(含考勤 + resolvedContent) |
 
@@ -312,14 +312,14 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-1500 | GET | /lesson-attendances | PERM | lessonAttendance.read | 列表 | |
 | R-1502 | POST | /lesson-attendances | PERM | lessonAttendance.write | 手动添加考勤 | prepare 后补报名 |
-| R-1526 | POST | /lesson-attendances/check-in | PERM | lessonAttendance.write | 签到 | |
-| R-1527 | PUT | /lesson-attendances/:id/complete | PERM | lessonAttendance.write | 完成 | → completed |
-| R-1528 | PUT | /lesson-attendances/:id/no-show | PERM | lessonAttendance.write | 缺席 | → no_show |
+| R-1526 | POST | /lesson-attendances/check-in | PERM | lessonAttendance.write | 签到 | **2026-08-05: archived 拦截 (审计 M2 §8.2)** |
+| R-1527 | PUT | /lesson-attendances/:id/complete | PERM | lessonAttendance.write | 完成 | → completed; **2026-08-05: 走原子 deductOneLesson + 校验 isActive/expireDate/acceptedCourseProducts (审计 H6/H7); archived 拦截 (审计 M2)** |
+| R-1528 | PUT | /lesson-attendances/:id/no-show | PERM | lessonAttendance.write | 缺席 | → no_show; **2026-08-05: archived 拦截 (审计 M2 §8.2)** |
 | R-1529 | PUT | /lesson-attendances/:id/evaluation | PERM | lessonAttendance.write | 更新课评 | |
 | R-1530 | GET | /lesson-attendances/:id/works | PERM | studentWork.read | 考勤关联作品 | |
-| R-1542 | POST | /lesson-attendances/bulk-mark | PERM | lessonAttendance.write | 批量登记 | 一次保存整节课 |
-| R-1536 | GET | /lesson-attendances/me | GUARD | — | 我的考勤 | C 端家长; active student 上下文; 默认 status∈{scheduled,completed,madeup,leave} 适合上传作品 |
-| R-1562 | POST | /lesson-attendances/:id/makeup | PERM | lessonAttendance.write | 补课 | 补建 completed 记录 |
+| R-1542 | POST | /lesson-attendances/bulk-mark | PERM | lessonAttendance.write | 批量登记 | 一次保存整节课; **2026-08-05: archived + MADEUP 双拦截 (审计 M2 + M3)** |
+| R-1536 | GET | /lesson-attendances/me | GUARD | — | 我的考勤 | C 端家长; active student 上下文; 默认 status∈{scheduled,completed,madeup,leave} 适合上传作品; **2026-08-05: controller 缺 activeStudentId 返 400, 删除 q.orgId 防覆盖 (审计 H4)** |
+| R-1562 | POST | /lesson-attendances/:id/makeup | PERM | lessonAttendance.write | 补课 | 补建 completed 记录; **2026-08-05: archived 拦截 (审计 M2 §8.2)** |
 | R-1563 | POST | /lesson-attendances/:id/archive | PERM | lessonAttendance.write | 归档 | 2026-07-08; 软隐藏已结束学期的考勤, 反归档可逆 |
 | R-1564 | POST | /lesson-attendances/:id/unarchive | PERM | lessonAttendance.write | 取消归档 | 同上 |
 
@@ -354,9 +354,9 @@ Auth 列简写:
 | R-1701 | GET | /orders/:id | PERM | order.read | 详情 | |
 | R-1702 | POST | /orders | PERM | order.write | 新建订单 | |
 | R-1721 | POST | /orders/:id/pay | PERM | order.pay | 支付 | pending → paid |
-| R-1722 | POST | /orders/:id/refund | PERM | order.pay | 退款 | 部分退款支持; 联动 StudentProduct 软停用; 累计退完转 refunded |
-| R-1723 | POST | /orders/:id/cancel | PERM | order.write | 取消 | pending → cancelled |
-| R-1704 | DELETE | /orders/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 StudentProduct.order; 业务硬门挡 paid/refunded |
+| R-1722 | POST | /orders/:id/refund | PERM | order.pay | 退款 | 部分退款支持; 联动 StudentProduct 软停用; 累计退完转 refunded; **2026-08-05: findOneAndUpdate + 乐观锁 refundedAmount 旧值守卫 + $inc/$push 原子累加 (审计 H9 防并发超退)** |
+| R-1723 | POST | /orders/:id/cancel | PERM | order.write | 取消 | pending → cancelled; **2026-08-05: 加 partially_refunded/refunded 终态门挡 (审计 M4 防"退款→取消→物理删除"销毁财务凭证链)** |
+| R-1704 | DELETE | /orders/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 StudentProduct.order + FinanceTransaction.relatedOrder (2026-08-05 补); 业务硬门挡 paid/**partially_refunded**/refunded (2026-08-05 补 partially_refunded, 审计 M5) |
 | R-1705 | GET | /orders/:id/removable-check | PERM | order.read | 删除预检 | |
 | R-2078 | GET | /orders/me | AUTH | — | 家长 C 端名下所有 kid 跨机构订单 | 2026-07-05 重构: 不再强制绑 activeStudentId, userId 反查所有 kid 子集; query.student/status/page/pageSize 任选; populate student.name+org; 响应含 orgIds + kidMap 给前端筛选项用 |
 
@@ -367,7 +367,7 @@ Auth 列简写:
 | R-1800 | GET | /student-products | PERM | studentProduct.read | 列表 | |
 | R-1801 | GET | /student-products/:id | PERM | studentProduct.read | 详情 | |
 | R-1806 | GET | /student-products/:id/remaining | PERM | studentProduct.read | 剩余课时 | |
-| R-1869 | POST | /student-products/gift | PERM | studentProduct.gift | 赠课 | 员工直接建 StudentProduct |
+| R-1869 | POST | /student-products/gift | PERM | studentProduct.gift | 赠课 | 员工直接建 StudentProduct; **2026-08-05: totalLessons 加绝对上限 ≤ min(999, product.totalLessons×2) (审计 M6 防薅羊毛); 顺便校验 Student.isBlocked (审计 L2 与 order.create 对齐)** |
 | R-1804 | DELETE | /student-products/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 LessonAttendance.studentProduct + CourseEnrollment.studentProduct |
 | R-1805 | GET | /student-products/:id/removable-check | PERM | studentProduct.read | 删除预检 | |
 | R-2080 | GET | /student-products/me/:id/usage | GUARD | — | 单课包消费明细 (C 端) | 复用 R-1806 getUsage 业务, service 加 activeStudent 校验防越权; 2026-07-10 立项 — 客户端「我的课包」点课包弹层展示, 移除之前走的 toast |
@@ -388,9 +388,9 @@ Auth 列简写:
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-2000 | GET | /points/transactions | GUARD | — | 积分流水 | 当前活跃孩子 |
-| R-2060 | POST | /points/earn | GUARD | — | 手动获取积分 | stub, 阶段 2 接 trigger |
-| R-2072 | GET | /points/me | GUARD | — | 当前孩子积分余额 | |
+| R-2000 | GET | /points/transactions | GUARD | — | 积分流水 | 当前活跃孩子; **2026-08-05: controller 强制 student=req.activeStudentId, 拒绝 query.student 覆盖 (审计 H4)** |
+| R-2060 | POST | /points/earn | **PERM** | **points.write** | 手动获取积分 | stub; **2026-08-05: 路由挂 requirePermission('points.write') 堵积分自助刷分 (审计 S3)**; 阶段 3 C 端分享/签到得积分应另起专用端点 |
+| R-2072 | GET | /points/me | GUARD | — | 当前孩子积分余额 | **2026-08-05: controller 强制 student=req.activeStudentId (审计 H4)** |
 
 ### MM=21 pointsAdmin (URL: /points-admin)
 
@@ -400,7 +400,7 @@ Auth 列简写:
 | R-2101 | GET | /points-admin/accounts/:studentId | PERM | points.read | 单孩子账户 | |
 | R-2106 | GET | /points-admin/reasons | PERM | points.read | 原因字典 | Category(model=PointsReason) |
 | R-2110 | GET | /points-admin/transactions | PERM | points.read | 流水列表 | |
-| R-2115 | POST | /points-admin/accounts/:studentId/adjust | PERM | points.write | 手动加/扣分 | |
+| R-2115 | POST | /points-admin/accounts/:studentId/adjust | PERM | points.write | 手动加/扣分 | **2026-08-05: |amount| ≤ 100000 (审计 L4)** |
 
 ### MM=22 pet client (URL: /pet)
 
@@ -409,12 +409,12 @@ Auth 列简写:
 | R-2200 | GET | /pet/events | GUARD | — | 事件流水（可选 petId 过滤） | |
 | R-2206 | GET | /pet/species | GUARD | — | 物种字典 | |
 | R-2208 | GET | /pet/list | GUARD | — | 该学员全部宠物（默认在前） | 2026-07-15 多宠 |
-| R-2263 | POST | /pet/adopt | GUARD | — | 领养新宠物 | ≤10；未报班不可用 |
-| R-2264 | POST | /pet/:petId/hatch | GUARD | — | 孵化 | 2026-07-15 petId 化 |
-| R-2265 | POST | /pet/:petId/feed | GUARD | — | 喂养 | 2026-07-15 petId 化 |
+| R-2263 | POST | /pet/adopt | GUARD | — | 领养新宠物 | ≤10；未报班不可用; **2026-08-05: withTransaction 包裹 count+create 防并发突破 (审计 M1); controller studentIdOf 只读 activeStudentId (审计 H5)** |
+| R-2264 | POST | /pet/:petId/hatch | GUARD | — | 孵化 | 2026-07-15 petId 化; **2026-08-05: E11000 转友好提示 (审计 L5); controller studentIdOf 只读 activeStudentId (审计 H5)** |
+| R-2265 | POST | /pet/:petId/feed | GUARD | — | 喂养 | 2026-07-15 petId 化; **2026-08-05: controller studentIdOf 只读 activeStudentId (审计 H5)** |
 | R-2269 | POST | /pet/:petId/set-default | GUARD | — | 设为默认宠物 | 2026-07-15 新增 |
-| R-2272 | GET | /pet/me | GUARD | — | 默认宠物 | 懒创建首只 |
-| R-2379 | POST | /pet/:petId/abandon | GUARD | enrolled | 弃养（物理删除） | 2026-07-16；同种唯一后多余可弃养；isDefault 自动转移；最后一只挡板 |
+| R-2272 | GET | /pet/me | GUARD | — | 默认宠物 | 懒创建首只; **2026-08-05: controller studentIdOf 只读 activeStudentId (审计 H5)** |
+| R-2379 | POST | /pet/:petId/abandon | GUARD | enrolled | 弃养（物理删除） | 2026-07-16；同种唯一后多余可弃养；isDefault 自动转移；最后一只挡板; **2026-08-05: withTransaction 包裹 count+delete (审计 M1); controller studentIdOf 只读 activeStudentId (审计 H5)** |
 | ~~R-2207~~ | ~~GET~~ | ~~/pet/items~~ | — | — | **DEPRECATED** 装饰系统删除 | 2026-07-15 |
 | ~~R-2266~~ | ~~POST~~ | ~~/pet/equip~~ | — | — | **DEPRECATED** | 2026-07-15 |
 | ~~R-2267~~ | ~~POST~~ | ~~/pet/swap-egg~~ | — | — | **DEPRECATED** 去等阶 | 2026-07-15 |
@@ -449,7 +449,7 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-2370 | GET | /pet/shop | GUARD | enrolled? | 商城列表（仅消耗品，含 ownerSpecies） | active student 上下文；2026-07-21 v3 商品含 ownerSpecies |
 | ~~R-2371~~ | ~~POST~~ | ~~/pet/shop/buy-item~~ | — | — | **DEPRECATED** 装饰删除 | 2026-07-15 |
-| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具（petId 可选，**ownerSpecies 优先 2026-07-21 v3**） | 扣学生积分 + 立即喂；resolvePetId 优先找该学员对应 species 的宠物 |
+| R-2372 | POST | /pet/shop/buy-consumable | GUARD | enrolled | 学生买食物/玩具（petId 可选，**ownerSpecies 优先 2026-07-21 v3**） | 扣学生积分 + 立即喂；resolvePetId 优先找该学员对应 species 的宠物; **2026-08-05: controller studentIdOf 只读 activeStudentId (审计 H5)** |
 
 ### MM=24 petCatalog (URL: /admin/pet)
 
@@ -528,7 +528,7 @@ Auth 列简写:
 | R-2743 | POST | /trial-bookings/:id/reschedule-time | PERM | recruit.write | 改预约时间 | scheduled → scheduled |
 | R-2744 | POST | /trial-bookings/:id/revert-to-unscheduled | PERM | recruit.write | 退回未约 | scheduled → awaiting |
 | R-2745 | POST | /trial-bookings/:id/reschedule-from-cancelled | PERM | recruit.write | 取消后再约 | cancelled → 新 awaiting |
-| R-2761 | POST | /trial-bookings/:id/convert | PERM | recruit.convert | 转化执行 | 建 User/Student |
+| R-2761 | POST | /trial-bookings/:id/convert | PERM | recruit.convert | 转化执行 | 建 User/Student; **2026-08-05: 初始密码随机 6 位 (排除易混字符) 替代手机号后6位 (审计 H3 前半)** |
 
 ### MM=28 agent (URL: /agent)
 
@@ -575,7 +575,7 @@ Auth 列简写:
 | R-2922 | GET | /access-control/access-events/:id | PERM | accessControl.read | 单条流水 | Admin |
 | R-2927 | GET | /access-control/access-events/stats | PERM | accessControl.read | 进出统计 | Admin |
 | R-2930 | GET | /access-control/pickups | PERM | accessControl.read | 接送授权列表 | Admin |
-| R-2931 | POST | /access-control/pickups | PERM | accessControl.pickup | 新建接送授权 | Admin |
+| R-2931 | POST | /access-control/pickups | PERM | accessControl.pickup | 新建接送授权 | Admin; **2026-08-05: parent 类型时校验 pickupUser 是该 student 的监护人 (审计 M20 防给任意用户授权接学员)** |
 | R-2932 | GET | /access-control/pickups/:id | PERM | accessControl.read | 授权详情 | Admin |
 | R-2933 | PUT | /access-control/pickups/:id | PERM | accessControl.pickup | 更新授权 | Admin |
 | R-2934 | POST | /access-control/pickups/:id/revoke | PERM | accessControl.pickup | 撤销授权 | Admin |
@@ -583,14 +583,14 @@ Auth 列简写:
 | R-2970 | POST | /access-control/client/face-profiles/enroll-my-child | GUARD | — | 家长录入孩子人脸 | Client |
 | R-2971 | POST | /access-control/client/face-profiles/enroll-self | GUARD | — | 家长录入自己人脸 | Client |
 | R-2972 | POST | /access-control/client/pickups | GUARD | — | 家长新建接送授权 | Client |
-| R-2973 | GET | /access-control/client/pickups | GUARD | — | 家长查接送授权 | Client |
+| R-2973 | GET | /access-control/client/pickups | GUARD | — | 家长查接送授权 | Client; **2026-08-05: controller 缺 activeStudentId 返 400 (审计 H4 防 PIPL 接送人手机+身份证后4 全机构 dump)** |
 | R-2974 | POST | /access-control/client/pickups/:id/revoke | GUARD | — | 家长撤销授权 | Client |
 | R-2975 | GET | /access-control/client/access-events/my-child | GUARD | — | 家长查孩子进出 | Client |
 | R-2978 | GET | /access-control/client/access-events/as-pickup | GUARD | — | 接送人视角的进出 | Client |
 | R-2976 | POST | /access-control/devices/:id/regenerate-secret | PERM | accessControl.write | 重新生成设备密钥 | Admin |
 | R-2977 | POST | /access-control/devices/:id/door-state | PERM | accessControl.write | 设置门状态 | Admin |
 | R-2943 | GET | /access-control/client/consent/my | GUARD | — | 我的同意书 | Client |
-| R-2944 | POST | /access-control/client/consent/sign | GUARD | — | 签同意书 | Client |
+| R-2944 | POST | /access-control/client/consent/sign | GUARD | — | 签同意书 | Client; **2026-08-05: student subject 时校验 req.user 是该 student 的监护人 (审计 M10 防给别家孩子签同意书)** |
 | R-2945 | POST | /access-control/client/consent/:id/withdraw | GUARD | — | 撤回同意书 | Client |
 | R-2990 | POST | /access-control/webhook/:deviceSn | HMAC | — | 进出事件回调 | Webhook |
 | R-2992 | POST | /access-control/webhook/:deviceSn/heartbeat | HMAC | — | 设备心跳 | Webhook |

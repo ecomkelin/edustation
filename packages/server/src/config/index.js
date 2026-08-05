@@ -32,14 +32,21 @@ module.exports = {
 
   cookie: {
     name: process.env.REFRESH_COOKIE_NAME || 'edustation_refresh_token',
-    path: '/api/v1/auth/refresh',
-    // dev: 默认 lax(同源/同站皆可，足以覆盖 vite proxy 和直连场景)
-    // prod: 默认 none(允许前后端跨域；浏览器要求必须配 secure=true，所以 HTTPS 是硬性前提)
-    // 若生产是同域反代(nginx)部署，可手动 REFRESH_COOKIE_SAMESITE=lax 降到更严的策略
+    // 2026-08-05: cookie path 放宽到 /api/v1/auth/ (审计 H1)
+    //   之前 path='/api/v1/auth/refresh' → 浏览器按 RFC6265 path-match 不在 /logout 请求里发 cookie
+    //   → service.logout({refreshToken: undefined}) 早 return, DB 里 isRevoked 保持 false 长达 7 天
+    //   → 偷到一次 refresh cookie 即可无限续命.
+    //   现在 path='/api/v1/auth/' 让 /refresh + /logout 都能收到 cookie (clearCookie 仍精确指定 refresh path 清理).
+    path: '/api/v1/auth/',
+    // 2026-08-05: prod sameSite 默认改 'lax' (审计 M13)
+    //   之前 prod 默认 'none' 配合 Secure 允许跨域, 但配合 path=/api/v1/auth/ 放宽后,
+    //   恶意第三方页面可发起跨域 POST /refresh, 浏览器仍会带上 cookie → CSRF 驱动的会话 fixation + 风暴.
+    //   现在默认 'lax' (够覆盖顶层导航与同站子请求, 与 §5 Strict 语义对齐),
+    //   跨域部署需显式 opt-in: REFRESH_COOKIE_SAMESITE=none + 自配 CSRF double-submit.
     secure: process.env.REFRESH_COOKIE_SECURE
       ? process.env.REFRESH_COOKIE_SECURE === 'true'
       : env === 'production',
-    sameSite: process.env.REFRESH_COOKIE_SAMESITE || (env === 'production' ? 'none' : 'lax'),
+    sameSite: process.env.REFRESH_COOKIE_SAMESITE || (env === 'production' ? 'lax' : 'lax'),
     httpOnly: true,
     maxAgeMs: 7 * 24 * 60 * 60 * 1000 // 7 天
   },

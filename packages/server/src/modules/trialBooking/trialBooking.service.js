@@ -1,7 +1,22 @@
 'use strict'
 
 const mongoose = require('mongoose')
+const crypto = require('crypto')
 const TrialBooking = require('@models/TrialBooking.model')
+
+// 2026-08-05: 试听转化初始密码随机化 (审计 H3 前半)
+//   之前用 parent.phone.slice(-6) (手机号后6位) → 销售/名单持有者可猜, 配合 convert-preview
+//   返回明文密码形成"无门槛账号接管". 现在用 6 位字母+数字随机密码, 字典空间 62^6 ≈ 5.7e10.
+//   真实用户首登仍走 requirePasswordChange=true 强制改密 (authenticate 已守门).
+//   SMS 下发留作阶段 2 接入 (本期仅依赖强制改密门).
+function generateInitialPassword() {
+  // 排除易混字符 0/O/1/l/I, 6 位
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  const bytes = crypto.randomBytes(6)
+  let s = ''
+  for (let i = 0; i < 6; i++) s += chars[bytes[i] % chars.length]
+  return s
+}
 const ChildLead = require('@models/ChildLead.model')
 const Parent = require('@models/Parent.model')
 const LeadActivity = require('@models/LeadActivity.model')
@@ -18,7 +33,6 @@ const password = require('@utils/password')
 
 /**
  * 招生试听 - 试听预约 (TrialBooking) 业务逻辑
- *
  * 关键设计 (2026-06 重构):
  *   - preStudent 引用 ChildLead (替代 Lead)
  *   - parent 冗余 (TrialBooking.parent), 加速家长维度查询
@@ -662,7 +676,7 @@ async function convertPreview({ id, orgId }) {
     return { alreadyConverted: true, childLeadId: String(child._id) }
   }
 
-  const initialPassword = parent.phone.slice(-6)
+  const initialPassword = generateInitialPassword()
   const existingUser = parent.user
     ? await User.findOne({ _id: parent.user }).select('_id mobile realName').lean()
     : await User.findOne({ mobile: parent.phone }).select('_id mobile realName').lean()
@@ -727,6 +741,10 @@ async function convert({ id, orgId, currentUser }) {
   const parent = await Parent.findOne({ _id: child.parent, org: orgId })
   if (!parent) throw ApiError.notFound('家长账户不存在')
 
+  // 2026-08-05: 顶层先算一次 initialPassword (审计 H3 前半), 后面的 User upsert 与最终返回都复用同一密码
+  //   (避免两次 generateInitialPassword() 拿到不同密码 → DB 与响应不一致)
+  const initialPassword = generateInitialPassword()
+
   // Step 3: User upsert (findOneAndUpdate + $setOnInsert)
   //   - 同 phone 下首孩转化时建; 次孩复用 parent.user
   //   - $setOnInsert 避免覆盖已存在用户的姓名/密码
@@ -741,7 +759,8 @@ async function convert({ id, orgId, currentUser }) {
     }
   }
   if (!user) {
-    const passwordHash = await password.hash(parent.phone.slice(-6))
+    // 2026-08-05: 共享同一密码 (审计 H3 前半) — 顶层已生成 initialPassword, 这里直接复用 hash
+    const passwordHash = await password.hash(initialPassword)
     const newUser = await User.findOneAndUpdate(
       { mobile: parent.phone },
       {
@@ -818,7 +837,7 @@ async function convert({ id, orgId, currentUser }) {
 
   return {
     idempotent: false,
-    initialPassword: parent.phone.slice(-6),
+    initialPassword,
     user: { id: String(user._id), mobile: user.mobile, realName: user.realName, requirePasswordChange: !!user.requirePasswordChange },
     student: { id: String(student._id), name: student.name, school: student.school, grade: student.grade, className: student.className },
     childLead: child.toObject(),

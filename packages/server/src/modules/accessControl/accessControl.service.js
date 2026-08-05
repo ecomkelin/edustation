@@ -531,6 +531,14 @@ async function createPickup({ orgId, operatorId, payload }) {
     // 校验 user 在本机构
     const rel = await UserOrgRel.findOne({ user: pickupUser, org: orgId }).lean()
     if (!rel) throw ApiError.badRequest('pickupUser 不属于本机构')
+    // 2026-08-05: pickupUser 必须是该学生的监护人 (审计 M20)
+    //   之前 admin 可给任意本机构用户授权接任意本机构学员, 业务上无意义且留安全隐患
+    //   (非监护人也能接孩子). 现在强制 pickupUser ∈ stu.guardians, 否则 forbidden.
+    //   注: 平台超管路径被 requirePlatformAdmin 路由层挡住, 此处仍加校验双保险.
+    const isGuardian = (stu.guardians || []).some((g) => String(g) === String(pickupUser))
+    if (!isGuardian) {
+      throw ApiError.forbidden('pickupUser 不是该学员的监护人, 不可授权接送')
+    }
     // 同步姓名/电话
     payload.pickupName = u.realName || ''
     payload.pickupPhone = u.mobile || ''
@@ -650,11 +658,12 @@ async function signConsent({ payload, context }) {
   // 1. 取协议模板
   const template = await getConsentTemplate({ orgId: context.orgId, docKey: payload.docKey })
 
-  // 2. 校验主体存在
+  // 2. 校验主体存在 + 监护人归属 (审计 M10)
   await ensureSubjectInOrg({
     orgId: context.orgId,
     subjectType: payload.subjectType,
-    subjectId: payload.subject
+    subjectId: payload.subject,
+    callerUserId: context.userId
   })
 
   // 3. 写 UserConsent (append-only, partial unique 保证幂等)
@@ -816,7 +825,7 @@ async function clientListMyChildAccessEvents({ orgId, userId, activeStudentId, p
 // Internal helpers
 // ═══════════════════════════════════════════════════════════════
 
-async function ensureSubjectInOrg({ orgId, subjectType, subjectId }) {
+async function ensureSubjectInOrg({ orgId, subjectType, subjectId, callerUserId }) {
   let Model
   if (subjectType === 'student') Model = Student
   else if (subjectType === 'parent') Model = User
@@ -828,6 +837,22 @@ async function ensureSubjectInOrg({ orgId, subjectType, subjectId }) {
     // 校验 user 在本机构
     const rel = await UserOrgRel.findOne({ user: subjectId, org: orgId }).lean()
     if (!rel) throw ApiError.badRequest('pickupUser 不属于本机构')
+  } else if (subjectType === 'student') {
+    filter.org = orgId
+    // 2026-08-05: C 端家长签同意书时校验该 student 属于自己 (审计 M10)
+    //   之前 ensureSubjectInOrg student 分支只校验 org, 不校验 req.user 是该 student 的监护人
+    //   → 家长可给别家孩子签同意书留痕, 误导后续 admin 端录入人脸时只看"有 consent 存在"
+    //   现在 callerUserId 必传 (仅 C 端 consent/sign 走), 校验 guardians 包含 callerUserId.
+    //   admin 端录入路径 (R-2911) 不传 callerUserId → 跳过此校验 (admin 全权).
+    if (callerUserId) {
+      const stu = await Model.findOne(filter).select('_id org guardians').lean()
+      if (!stu) throw ApiError.badRequest(`${subjectType} 不存在`)
+      const isGuardian = (stu.guardians || []).some((g) => String(g) === String(callerUserId))
+      if (!isGuardian) {
+        throw ApiError.forbidden('该学生不在您的监护人列表中, 不可代签同意书')
+      }
+      return stu
+    }
   } else {
     filter.org = orgId
   }

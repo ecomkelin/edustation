@@ -37,9 +37,15 @@ const MODEL_USAGE_CHECKS = {
       hint: '该学员分类正在被本机构学员引用, 请先把学员分类改到其他类别后再删'
     }
   ],
+  // 2026-08-05: Subject.category 实为 ObjectId ref (Subject.model.js:115), 之前注释声称是 String
+  //   是过时错误. 现在补 Subject 引用互锁 (审计 M18).
   Subject: [
-    // Subject.category 是 String (字段名, 不是 ObjectId), 见 Subject.model 的 category 字段定义.
-    // removable-check 用客户端字符串检索; 在 service 里临时拼 filter.
+    {
+      model: Subject,
+      filter: {},  // 在 categoryUsageChecks 里拼 { org: orgId, category: id }
+      label: '学科引用',
+      hint: '该学科分类正在被本机构学科引用, 请先把学科分类改到其他类别后再删'
+    }
   ],
   LeadTag: [
     {
@@ -87,6 +93,9 @@ function categoryUsageChecks(orgId, doc, id) {
   for (const ex of extras) {
     if (ex.model === Student) {
       checks.push({ ...ex, filter: { org: orgId, type: id } })
+    } else if (ex.model === Subject) {
+      // 2026-08-05: Subject.category 是 ObjectId ref, 直接按 category=id 查
+      checks.push({ ...ex, filter: { org: orgId, category: id } })
     } else if (ex.model === Parent) {
       // Parent.tags 数组 + Parent.source 单值
       if (doc.model === 'LeadTag') {

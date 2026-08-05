@@ -13,8 +13,12 @@ const ApiResponse = require('@utils/ApiResponse')
 const ApiError = require('@utils/ApiError')
 
 function studentIdOf(req) {
-  const sid = req.body?.student || req.activeStudentId
-  if (!sid) throw ApiError.badRequest('缺少 studentId / x-active-student-id')
+  // 2026-08-05: C 端 IDOR 堵口 (审计 H5)
+  //   之前 `req.body?.student || req.activeStudentId` 让 body 控制目标学号 → 家长可操作/弃养/扣分别人宠物.
+  //   现在强制只用中间件挂的 req.activeStudentId (已经过 activeStudent 中间件做 guardians 校验),
+  //   拒绝 body.student 覆盖; 缺 activeStudentId 直接 400.
+  const sid = req.activeStudentId
+  if (!sid) throw ApiError.badRequest('缺少 x-active-student-id')
   return sid
 }
 

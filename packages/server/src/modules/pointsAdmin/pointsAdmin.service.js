@@ -25,11 +25,21 @@ async function adjust({ orgId, studentId, operatorId, body }) {
   if (!Number.isFinite(Number(amount)) || Number(amount) === 0) {
     throw ApiError.badRequest('amount 必须是非 0 整数')
   }
+  // 2026-08-05: 单次手动调整积分绝对上限 (审计 L4)
+  //   之前无上限, 持 points.write 的员工可单次加 1e12 分破坏看板统计/积分经济.
+  //   现在 |amount| ≤ 100000 (10 万); 超限需走 platform-admin 二次确认 (留作 future).
+  const ADJUST_MAX = 100000
+  const numAmount = Number(amount)
+  if (Math.abs(numAmount) > ADJUST_MAX) {
+    throw ApiError.unprocessable(
+      `单次调整积分绝对值 ${Math.abs(numAmount)} 超出上限 ${ADJUST_MAX}, 超大调整请联系平台超管`
+    )
+  }
   return pointsService.manualAdjust({
     orgId,
     studentId,
     operatorId,
-    amount: Number(amount),
+    amount: numAmount,
     reasonId,
     customReason: customReason || undefined,
     remark: remark || undefined

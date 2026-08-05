@@ -1,5 +1,6 @@
 'use strict'
 
+const mongoose = require('mongoose')
 const LessonSchedule = require('@models/LessonSchedule.model')
 const LessonAttendance = require('@models/LessonAttendance.model')
 const CourseInstance = require('@models/CourseInstance.model')
@@ -7,6 +8,7 @@ const CourseEnrollment = require('@models/CourseEnrollment.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const Room = require('@models/Room.model')
 const User = require('@models/User.model')
+const UserOrgRel = require('@models/UserOrgRel.model')
 // 招生试听 (2026-06): 试听预约表; 排课处 usage check + detail 字段需要
 const TrialBooking = require('@models/TrialBooking.model')
 // 学员作品 (2026-07-06 bugfix: 此前未 require, 删除排课时 usage check 报 StudentWork is not defined)
@@ -55,7 +57,17 @@ function parseBoundary(s, mode) {
 async function detectConflict({ orgId, teacher, room, start, end, excludeId }) {
   const baseFilter = {
     org: orgId,
-    status: { $in: [LessonScheduleStatus.SCHEDULED, LessonScheduleStatus.IN_PROGRESS] },
+    // 2026-08-05: 冲突检测加 PREPARING (审计 H13)
+    //   preparing 状态已生成考勤名单、肯定要上, 老师已点 "准备上课", 必须视为冲突源,
+    //   否则同老师/教室同一时段会被双排.
+    //   archived/finished/cancelled 排除 (终态不再冲突), in_progress 包含.
+    status: {
+      $in: [
+        LessonScheduleStatus.SCHEDULED,
+        LessonScheduleStatus.PREPARING,
+        LessonScheduleStatus.IN_PROGRESS
+      ]
+    },
     plannedStartTime: { $lt: end },
     plannedEndTime: { $gt: start }
   }
@@ -743,6 +755,22 @@ async function buildPlanAndDetectConflicts({ orgId, courseInstance, startDate, s
   const defaultRoom = room || inst.room
   if (!defaultTeacher) throw ApiError.badRequest('teacher 必填（schedulePlan 未指定老师，请在请求里传）')
   if (!defaultRoom) throw ApiError.badRequest('room 必填（开班未指定教室，请在请求里传）')
+  // 2026-08-05: 跨机构老师/教室校验 (审计 M7)
+  //   之前 preview/generate 都不查 teacher/room 是否在本机构 — 跨机构老师双预订不可见
+  //   现在与 create() 对齐: UserOrgRel.exists({user: teacher, org}) + Room.exists({_id, org})
+  //   entriesMap 内的逐节 teacher 在循环内单独校验 (下方)
+  if (!mongoose.isValidObjectId(defaultTeacher)) {
+    throw ApiError.badRequest('teacher id 格式错误')
+  }
+  if (!await UserOrgRel.exists({ user: defaultTeacher, org: orgId })) {
+    throw ApiError.badRequest('teacher 不属于本机构')
+  }
+  if (!mongoose.isValidObjectId(defaultRoom)) {
+    throw ApiError.badRequest('room id 格式错误')
+  }
+  if (!await Room.exists({ _id: defaultRoom, org: orgId })) {
+    throw ApiError.badRequest('room 不属于本机构')
+  }
 
   if (!startDate) throw ApiError.badRequest('startDate 必填')
   if (!startTime || !endTime) throw ApiError.badRequest('startTime / endTime 必填（HH:mm）')
@@ -877,6 +905,13 @@ async function create({ orgId, courseInstance, lessonNo, plannedStartTime, plann
     throw ApiError.badRequest('试听课必须挂在 [试听专用] 开班下, 请在批量排课中创建')
   }
   if (!await User.exists({ _id: teacher })) throw ApiError.badRequest('teacher 不存在')
+  // 2026-08-05: teacher org 归属校验 (审计 M7)
+  //   之前只 User.exists(_id) 校验存在, 不查 UserOrgRel — 跨机构老师也能挂上
+  //   排课, 与 detectConflict 的 org 过滤形成"跨机构同老师双预订" 盲区.
+  //   现在 UserOrgRel.exists({user: teacher, org: orgId}) 强制校验; 与 Room / CourseInstance 对齐.
+  if (!await UserOrgRel.exists({ user: teacher, org: orgId })) {
+    throw ApiError.badRequest('teacher 不属于本机构')
+  }
   if (!await Room.exists({ _id: room, org: orgId })) throw ApiError.badRequest('room 不属于本机构')
 
   const start = new Date(plannedStartTime)
@@ -967,7 +1002,22 @@ async function generate({ orgId, courseInstance, startDate, startTime, endTime, 
     title: (titleMap && titleMap[e.lessonNo]) || e.title,
     status: LessonScheduleStatus.SCHEDULED
   }))
-  const inserted = await LessonSchedule.insertMany(docs, { ordered: true })
+  // 2026-08-05: 事务包裹 (审计 M8)
+  //   之前 insertMany({ordered:true}) 中途失败时已插入的文档不回滚 → 部分成功数据漂移,
+  //   前端按"全部失败"处理; 下次重试又因 (courseInstance, lessonNo) 唯一索引撞键.
+  //   现在 withTransaction 包裹整批 insert; 中途失败整批回滚, 行为可重入.
+  const session = await mongoose.startSession()
+  let inserted
+  try {
+    inserted = await session.withTransaction(async () => {
+      return LessonSchedule.insertMany(docs, { ordered: true, session })
+    }, {
+      // readConcern/writeConcern 默认即可; mongoose 8 已默认 majority
+      readPreference: 'primary'
+    })
+  } finally {
+    await session.endSession()
+  }
 
   // 注意：不在排课生成阶段创建 LessonAttendance。
   // 业务语义：排课阶段教务还在排计划，"准备上课 (preparing)" 才意味着这节课进入执行环节，
@@ -983,6 +1033,11 @@ async function generate({ orgId, courseInstance, startDate, startTime, endTime, 
 async function update(id, orgId, payload) {
   const exist = await LessonSchedule.findOne({ _id: id, org: orgId })
   if (!exist) throw ApiError.notFound('排课不存在')
+  // 2026-08-05: 已 cancelled/closed 开班锁死排课编辑 (审计 L11)
+  //   之前 update 不调 assertCourseInstanceActive, 在 cancelled/closed 开班上仍可改
+  //   plannedStartTime/teacher/room, 触发新一轮 detectConflict 但绕过"开班必须 active" 的业务不变量.
+  //   现在与 prepare/start/finish/archive 对齐: 必须 CourseInstance ∈ {enrolling, active}.
+  await assertCourseInstanceActive(exist.courseInstance)
 
   // 1) 过滤掉不允许在 update 里改的字段（status 等）
   const STATUS_CHANGE_FIELDS = ['status']
@@ -1005,6 +1060,25 @@ async function update(id, orgId, payload) {
   // 3) 已取消的排课完全锁死
   if (exist.status === LessonScheduleStatus.CANCELLED) {
     throw ApiError.badRequest('已取消的排课不可编辑')
+  }
+
+  // 2026-08-05: 改 teacher/room 时校验 org 归属 (审计 M7)
+  //   之前 update 不查 teacher/room 是否在本机构, 可改派到跨机构老师
+  if (payload.teacher !== undefined && payload.teacher !== null && payload.teacher !== '') {
+    if (!mongoose.isValidObjectId(payload.teacher)) {
+      throw ApiError.badRequest('teacher id 格式错误')
+    }
+    if (!await UserOrgRel.exists({ user: payload.teacher, org: orgId })) {
+      throw ApiError.badRequest('teacher 不属于本机构')
+    }
+  }
+  if (payload.room !== undefined && payload.room !== null && payload.room !== '') {
+    if (!mongoose.isValidObjectId(payload.room)) {
+      throw ApiError.badRequest('room id 格式错误')
+    }
+    if (!await Room.exists({ _id: payload.room, org: orgId })) {
+      throw ApiError.badRequest('room 不属于本机构')
+    }
   }
 
   // 4) 实际上课时间允许在 update 里编辑（教务补录 / 修正）；但 actualStartTime 和 actualEndTime

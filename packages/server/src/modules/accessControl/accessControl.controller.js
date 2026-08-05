@@ -239,6 +239,12 @@ exports.clientEnrollSelf = async (req, res) => {
 }
 
 exports.clientListPickups = async (req, res) => {
+  // 2026-08-05: 全机构 dump 堵口 (审计 H4)
+  //   之前缺 activeStudentId 时 service 端 `if(student)filter.student=student` 跳过 → 返全机构接送授权
+  //   (含接送人手机 + 身份证后 4) — PIPL 泄露. 现在 controller 入口 fail-closed.
+  if (!req.activeStudentId) {
+    return res.status(400).json(ApiResponse.fail('缺少 x-active-student-id'))
+  }
   const data = await s.clientListPickups({
     orgId: req.orgId,
     userId: req.user.id,

@@ -47,6 +47,17 @@ function assertTransitionAuto(from, to) {
   }
 }
 
+// 2026-08-05: archived 写操作拦截 (审计 M2, §8.2)
+//   已归档考勤视作历史痕迹, 任何写操作 (complete/签到/补课/批量/课评) 一律 422.
+//   与 §8.2 软归档统一约定对齐: "所有写操作拦截已归档".
+//   写操作方: complete / markStatus / checkIn / bulkMarkForLesson / bulkCompleteForSchedule / makeup
+//   updateEvaluation 之前已自带 archived 校验 (line 314 附近).
+function assertNotArchived(att) {
+  if (att && att.archived === true) {
+    throw ApiError.unprocessable('考勤已归档, 不可操作; 请先取消归档')
+  }
+}
+
 // 排课处于这些状态时，考勤完全只读（不能改状态 / 课评 / 备注）
 const READONLY_SCHEDULE_STATUSES = [
   LessonScheduleStatus.ARCHIVED,
@@ -107,6 +118,7 @@ async function list({ orgId, lessonSchedule, courseInstance, student, status, ar
 async function checkIn({ orgId, id, studentProduct, remark }) {
   const att = await LessonAttendance.findOne({ _id: id, org: orgId })
   if (!att) throw ApiError.notFound('考勤记录不存在')
+  assertNotArchived(att)
   assertTransition(att.status, AttendanceStatus.CHECKED_IN)
 
   let spId = att.studentProduct
@@ -131,29 +143,61 @@ async function checkIn({ orgId, id, studentProduct, remark }) {
 /**
  * 消课：状态 → completed，扣 studentProduct.remainingLessons。
  * 若考勤在排课时没有预选到有效产品，studentProduct 为空，需先签到补上。
+ *
+ * 2026-08-05: 原子扣减 + isActive/expireDate 校验 + acceptedCourseProducts 校验 (审计 H6+H7)
+ *   - H6: 之前用 `findById + remainingLessons -= 1 + save()` 读-改-写, 两条考勤并发 complete
+ *     都读到 remaining=1 → 都写 0 → 学生白嫖 1 节课. 现在改用 deductOneLesson 原子 findOneAndUpdate.
+ *   - H7: 之前只校验 remainingLessons>0, 不校验 isActive/expireDate/courseProduct;
+ *     现在 deductOneLesson 自身在 filter 里强制 4 个条件, body 传入 studentProduct 还额外
+ *     校验 courseProduct ∈ CourseInstance.acceptedCourseProducts (防扣别课程的包).
  */
 async function complete({ id, orgId, actualEndTime, remark, studentProduct }) {
   const att = await LessonAttendance.findOne({ _id: id, org: orgId })
   if (!att) throw ApiError.notFound('考勤记录不存在')
+  assertNotArchived(att)
   assertTransition(att.status, AttendanceStatus.COMPLETED)
 
   // 解析最终扣课的产品：body > 已有
   let spId = studentProduct || att.studentProduct
   if (!spId) throw ApiError.unprocessable('该考勤未绑定学生产品，请先签到或传入 studentProduct')
 
-  const sp = await StudentProduct.findById(spId)
-  if (!sp) throw ApiError.badRequest('学生持有的产品不存在')
-  if (sp.student.toString() !== att.student.toString()) {
-    throw ApiError.badRequest('产品不属于该学生')
+  // H7 校验: 传入的 body.studentProduct 必须属于本考勤学生 + 必须属于本开班 acceptedCourseProducts
+  //   (避免老师手动传一个"别的课程的包"扣错; 该校验仅对 body 显式传入走, 已绑定的 spId 由 deductOneLesson 原子守卫)
+  if (studentProduct) {
+    const probe = await StudentProduct.findOne({
+      _id: studentProduct, org: orgId, student: att.student
+    }).select('_id courseProduct isActive remainingLessons expireDate').lean()
+    if (!probe) throw ApiError.badRequest('学生持有的产品不存在')
+    if (probe.student.toString() !== att.student.toString()) {
+      throw ApiError.badRequest('产品不属于该学生')
+    }
+    // 关联开班的 acceptedCourseProducts 校验 (与 addManual 对齐)
+    const schedule = await LessonSchedule.findOne({ _id: att.lessonSchedule, org: orgId })
+      .select('courseInstance').lean()
+    if (schedule && schedule.courseInstance) {
+      const inst = await CourseInstance.findOne({ _id: schedule.courseInstance, org: orgId })
+        .select('acceptedCourseProducts').lean()
+      const accepted = (inst && inst.acceptedCourseProducts) || []
+      if (accepted.length && !accepted.some((c) => String(c) === String(probe.courseProduct))) {
+        throw ApiError.unprocessable('该产品不属于本开班接受的课程产品, 不可扣')
+      }
+    }
   }
-  if (sp.remainingLessons <= 0) throw ApiError.unprocessable('学生持有的产品剩余课时为 0')
 
-  sp.remainingLessons -= 1
-  if (sp.remainingLessons === 0) sp.isActive = false
-  await sp.save()
+  // H6+H7 原子扣减: filter 内置 isActive / remainingLessons≥1 / expireDate>now 任一不满足直接 null
+  const updated = await deductOneLesson(spId)
+  if (!updated) {
+    // 区分错误文案 (便于前端判断): sp 不存在 vs 已停用 vs 余额不足 vs 已过期
+    const probe = await StudentProduct.findOne({ _id: spId, org: orgId }).select('isActive remainingLessons expireDate').lean()
+    if (!probe) throw ApiError.badRequest('学生持有的产品不存在')
+    if (!probe.isActive) throw ApiError.unprocessable('学生持有的产品已停用')
+    if (probe.remainingLessons <= 0) throw ApiError.unprocessable('学生持有的产品剩余课时为 0')
+    if (new Date(probe.expireDate).getTime() < Date.now()) throw ApiError.unprocessable('学生持有的产品已过期')
+    throw ApiError.unprocessable('扣减失败')
+  }
 
   att.status = AttendanceStatus.COMPLETED
-  att.studentProduct = sp._id
+  att.studentProduct = updated._id
   att.actualEndTime = actualEndTime ? new Date(actualEndTime) : new Date()
   if (remark !== undefined) att.remark = remark
   await att.save()
@@ -161,9 +205,9 @@ async function complete({ id, orgId, actualEndTime, remark, studentProduct }) {
   return {
     attendance: att.toObject(),
     studentProduct: {
-      id: sp._id,
-      remainingLessons: sp.remainingLessons,
-      isActive: sp.isActive
+      id: updated._id,
+      remainingLessons: updated.remainingLessons,
+      isActive: updated.isActive
     }
   }
 }
@@ -177,6 +221,7 @@ async function markStatus({ id, orgId, toStatus, remark }) {
   }
   const att = await LessonAttendance.findOne({ _id: id, org: orgId })
   if (!att) throw ApiError.notFound('考勤记录不存在')
+  assertNotArchived(att)
   assertTransition(att.status, toStatus)
   att.status = toStatus
   if (remark !== undefined) att.remark = remark
@@ -242,8 +287,15 @@ async function bulkMarkForLesson({ orgId, lessonSchedule, items }) {
     if (!NORMAL_STATUSES.includes(target)) {
       throw ApiError.badRequest(`不支持的状态：${target}`)
     }
-    if (att.status === AttendanceStatus.COMPLETED) {
-      throw ApiError.badRequest('已完成消课的考勤不可再修改')
+    // 2026-08-05: 终态锁 (审计 M2 + M3)
+    //   M2 (archived): 已归档考勤不可批量改 — 与 §8.2 软归档约束对齐
+    //   M3 (madeup): 已补课考勤不可批量改回 leave/no_show/checked_in
+    //     → 否则 "课时已扣但显示请假" 的不一致状态
+    if (att.archived === true) {
+      throw ApiError.unprocessable(`考勤已归档, 不可批量修改; 请先取消归档`)
+    }
+    if (att.status === AttendanceStatus.COMPLETED || att.status === AttendanceStatus.MADEUP) {
+      throw ApiError.badRequest('已完成消课 / 已补课的考勤不可再修改')
     }
     att.status = target
     if (target === AttendanceStatus.CHECKED_IN) {
@@ -348,6 +400,11 @@ async function bulkCompleteForSchedule({ orgId, lessonSchedule }) {
   const now = new Date()
 
   for (const att of atts) {
+    // 2026-08-05: archived 拦截 (审计 M2, §8.2)
+    if (att.archived === true) {
+      skipped.push({ attendance: att._id, reason: 'archived' })
+      continue
+    }
     // 已 completed 跳过（幂等：之前手动消过课的考勤不重复扣）
     if (att.status === AttendanceStatus.COMPLETED) {
       skipped.push({ attendance: att._id, reason: 'already_completed' })
@@ -573,6 +630,8 @@ async function addManual({ orgId, lessonSchedule, student, studentProduct, remar
 async function makeup({ id, orgId, actualStartTime, actualEndTime, remark }) {
  const orig = await LessonAttendance.findOne({ _id: id, org: orgId })
  if (!orig) throw ApiError.notFound('考勤记录不存在')
+ // 2026-08-05: archived 拦截 (审计 M2)
+ assertNotArchived(orig)
  if (orig.status === AttendanceStatus.COMPLETED || orig.status === AttendanceStatus.MADEUP) {
  throw ApiError.badRequest('已消课/已补的考勤无需再补')
  }

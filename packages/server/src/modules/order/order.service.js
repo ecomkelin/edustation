@@ -6,6 +6,7 @@ const Student = require('@models/Student.model')
 const StudentProduct = require('@models/StudentProduct.model')
 const Org = require('@models/Org.model')
 const LegalDoc = require('@models/LegalDoc.model')
+const FinanceTransaction = require('@models/FinanceTransaction.model')
 const ApiError = require('@utils/ApiError')
 const removable = require('@utils/removable')
 const { normalizePagination } = require('@utils/pagination')
@@ -227,6 +228,22 @@ async function create({ orgId, student, items, actualPrice, paymentMethod, paidA
     agreements: agreementsSnapshot
   })
 
+  // 2026-08-05: 0 元支付白拿课包堵口 (审计 S2) — create 路径
+  //   之前 isOfflinePaid 分支无条件 createStudentProductsForOrder → finalActualPrice=0 + paidAmount=0 也白拿
+  //   现在强制 paidAmount >= finalActualPrice - EPS. 注意: validator 层已经做了"paidAmount >= 传入的 actualPrice" 校验,
+  //   此处是"用重算后的 finalActualPrice 做兜底" (因为 finalActualPrice 可能 ≠ v.actualPrice, 缺省=originalPrice).
+  if (isOfflinePaid) {
+    const EPS = 1e-6
+    const numPaid = Number(initialPaidAmount)
+    if (!Number.isFinite(numPaid) || numPaid < finalActualPrice - EPS) {
+      // 回滚刚建的订单, 避免遗留 pending 订单
+      await Order.deleteOne({ _id: order._id })
+      throw ApiError.badRequest(
+        `paidAmount(${initialPaidAmount}) 不可低于订单实际成交价 actualPrice(${finalActualPrice})`
+      )
+    }
+  }
+
   // 法律协议: 同步落 UserConsent (append-only, 重复 (user,docKey,version) 被 unique 拦截即忽略)
   // 失败不阻断订单创建 (审计降级, log warn)
   if (actor && actor.userId && agreementsSnapshot.length) {
@@ -377,6 +394,13 @@ async function detail(id, orgId) {
 /**
  * 支付：更新订单状态 + 按 items 逐项创建 StudentProduct（source='order'）
  * 用于已存在的 pending 订单（典型场景：未来线上支付网关异步回调）。
+ *
+ * 2026-08-05: 0 元支付白拿课包堵口 (审计 S2)
+ *   - 之前 paidAmount 仅 validator min:0, service 不校验 → 任意 paidAmount=0 即可标 paid
+ *     并无条件 createStudentProductsForOrder → 白拿全部课包.
+ *   - 现在强制 paidAmount >= order.actualPrice - 浮点容差 (1e-6).
+ *   - 同时把 createStudentProductsForOrder 包进 try/catch, 失败回滚 order 到 pending
+ *     (与 create 路径的对齐, 防止"已 paid 但学生无课包"的数据漂移).
  */
 async function pay({ id, orgId, paymentMethod, paidAmount }) {
   const order = await Order.findOne({ _id: id, org: orgId })
@@ -384,19 +408,35 @@ async function pay({ id, orgId, paymentMethod, paidAmount }) {
   if (order.status !== OrderStatus.PENDING) {
     throw ApiError.badRequest(`订单当前状态 ${order.status}，不可支付`)
   }
+  // S2 堵口: paidAmount 必须 >= actualPrice (浮点容差 1e-6, 与 refund 容差对齐)
+  const EPS = 1e-6
+  const numPaid = Number(paidAmount)
+  if (!Number.isFinite(numPaid) || numPaid < order.actualPrice - EPS) {
+    throw ApiError.badRequest(
+      `paidAmount(${paidAmount}) 不可低于订单实际成交价 actualPrice(${order.actualPrice})`
+    )
+  }
 
   order.status = OrderStatus.PAID
   order.paymentMethod = paymentMethod
-  order.paidAmount = paidAmount
+  order.paidAmount = numPaid
   order.paidAt = new Date()
   await order.save()
 
-  const createdStudentProducts = await createStudentProductsForOrder({ order, orgId })
-
-  invalidateReportCache(orgId)
-  return {
-    order: order.toObject(),
-    studentProducts: createdStudentProducts
+  try {
+    const createdStudentProducts = await createStudentProductsForOrder({ order, orgId })
+    invalidateReportCache(orgId)
+    return {
+      order: order.toObject(),
+      studentProducts: createdStudentProducts
+    }
+  } catch (e) {
+    // SP 创建失败 → 回滚 order 到 pending, 与 create 路径对齐
+    await Order.updateOne(
+      { _id: order._id, status: OrderStatus.PAID },
+      { $set: { status: OrderStatus.PENDING, paidAt: null, paidAmount: 0 } }
+    )
+    throw e
   }
 }
 
@@ -405,6 +445,14 @@ async function cancel({ id, orgId, reason }) {
   if (!order) throw ApiError.notFound('订单不存在')
   if (order.status === OrderStatus.PAID) {
     throw ApiError.badRequest('已支付订单请联系财务退款')
+  }
+  // 2026-08-05: 终态门挡 (审计 M4)
+  //   之前 cancel 只挡 paid/cancelled, partially_refunded/refunded 仍可被改标为 cancelled
+  //   → 破坏终态语义 + 后续物理删除 (remove 同样只挡 paid/refunded) 不会拦截 cancelled
+  //   → 形成"refund → cancel → 物理删除"销毁财务凭证链
+  //   现在只允许 pending → cancelled; 其他状态一律 422
+  if (order.status === OrderStatus.PARTIALLY_REFUNDED || order.status === OrderStatus.REFUNDED) {
+    throw ApiError.unprocessable(`订单已${order.status}, 不可取消 (需走退款流程)`)
   }
   if (order.status === OrderStatus.CANCELLED) return order.toObject()
   order.status = OrderStatus.CANCELLED
@@ -465,26 +513,50 @@ async function refund({ id, orgId, amount, reason, operator }) {
   )
 
   // 5. 计算新状态（部分退 / 退完）
-  const newRefundedAmount = (order.refundedAmount || 0) + amount
+  const oldRefundedAmount = order.refundedAmount || 0
+  const newRefundedAmount = oldRefundedAmount + amount
   const isFullyRefunded = newRefundedAmount >= order.paidAmount - 0.01
   const newStatus = isFullyRefunded ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED
 
-  // 6. 写 Order.refunds + 更新累计 + 状态（单 Mongo 节点无事务，直接 save）
+  // 6. 2026-08-05: 原子累加 + 乐观锁 (审计 H9 退款并发超退堵口)
+  //   之前 read(findOne)→modify(refunds push + 累加 + status)→save 三步非原子,
+  //   两笔并发退款都读到 oldRefundedAmount 通过校验, 都写 last-write-wins 全量覆盖 →
+  //   累计超退 (paidAmount=1000, 两笔 600 实际退 1200).
+  //
+  //   修法: 用 findOneAndUpdate({_id, status, refundedAmount: 旧值}, {$inc, $set, $push}),
+  //   filter 内 refundedAmount = 旧值作为乐观锁 — 任一并发请求抢不到旧值即 matchedCount=0,
+  //   直接 409 让前端重试. refunds 子文档 $push (新预生成的 _id) 也原子追加, 不会丢单.
   const { Types } = require('mongoose')
-  const refundId = new Types.ObjectId()  // 子文档 _id 预生成（联动时回填到 SP.meta.refundId）
-  order.refunds.push({
-    _id: refundId,
-    amount,
-    reason,
-    operator: operator.userId,
-    refundedAt: new Date(),
-    remainingLessonsSnapshot,
-    consumedLessonsSnapshot
-  })
-  order.refundedAmount = newRefundedAmount
-  order.refundedAt = new Date()
-  order.status = newStatus
-  await order.save()
+  const refundId = new Types.ObjectId()
+  const refundedAt = new Date()
+  const updatedOrder = await Order.findOneAndUpdate(
+    {
+      _id: order._id,
+      org: orgId,
+      status: { $in: [OrderStatus.PAID, OrderStatus.PARTIALLY_REFUNDED] },
+      refundedAmount: oldRefundedAmount // 乐观锁: 仅未变更的累计值才匹配
+    },
+    {
+      $inc: { refundedAmount: amount },
+      $set: { status: newStatus, refundedAt },
+      $push: {
+        refunds: {
+          _id: refundId,
+          amount,
+          reason,
+          operator: operator.userId,
+          refundedAt,
+          remainingLessonsSnapshot,
+          consumedLessonsSnapshot
+        }
+      }
+    },
+    { new: true }
+  )
+  if (!updatedOrder) {
+    // matchedCount=0 → 乐观锁失败 / 状态机非法
+    throw ApiError.conflict('退款并发冲突, 请重试; 可能其他退款正在处理中')
+  }
 
   // 7. 首次退款时联动：软停用 Order 下所有「仍启用」的 SP
   //    多次部分退款时，SP 已在第一次停用，此处跳过（activeSps 为空）
@@ -496,19 +568,25 @@ async function refund({ id, orgId, amount, reason, operator }) {
         {
           $set: {
             isActive: false,
-            'meta.refundedAt': new Date(),
+            'meta.refundedAt': refundedAt,
             'meta.refundReason': reason,
             'meta.refundId': refundId
           }
         }
       )
     } catch (e) {
-      // 联动失败 → 回滚 Order（refunds 子文档 + 累计 + 状态）
-      order.refunds = order.refunds.filter((r) => !r._id.equals(refundId))
-      order.refundedAmount -= amount
-      order.refundedAt = order.refunds.length > 0 ? order.refunds[order.refunds.length - 1].refundedAt : null
-      order.status = order.refundedAmount > 0 ? OrderStatus.PARTIALLY_REFUNDED : OrderStatus.PAID
-      await order.save()
+      // 联动失败 → 原子回滚 Order 的退款累加 (用 $inc 负数 + 状态)
+      await Order.findOneAndUpdate(
+        {
+          _id: order._id,
+          status: { $in: [OrderStatus.PARTIALLY_REFUNDED, OrderStatus.REFUNDED] },
+          refundedAmount: { $gte: amount } // 乐观守卫, 避免重复回滚
+        },
+        {
+          $inc: { refundedAmount: -amount },
+          $pull: { refunds: { _id: refundId } }
+        }
+      )
       throw ApiError.unprocessable(`联动停用学员课包失败: ${e.message}`)
     }
   }
@@ -516,12 +594,12 @@ async function refund({ id, orgId, amount, reason, operator }) {
   // 8. 失效报告缓存
   invalidateReportCache(orgId)
 
-  // 9. 重新查一次（populate）返回
-  const updated = await Order.findById(order._id)
+  // 9. 重新查一次（populate）返回 (用 updatedOrder 已经是新数据, 二次查仅做 populate)
+  const finalOrder = await Order.findById(updatedOrder._id)
     .populate('student', 'name')
     .populate('items.courseProduct', 'name totalLessons validDays')
     .lean()
-  return { order: updated, refundId, newStatus, refundedAmount: newRefundedAmount }
+  return { order: finalOrder, refundId, newStatus, refundedAmount: newRefundedAmount }
 }
 
 /**
@@ -538,6 +616,14 @@ function orderUsageChecks(orgId, orderId) {
       filter: { org: orgId, order: orderId },
       label: '关联的学员课包',
       hint: '请先删除该订单产生的学员课包（StudentProduct）后再删订单'
+    },
+    // 2026-08-05: 财务流水引用 (审计 M18)
+    //   FinanceTransaction.relatedOrder 是强 ref, 删订单会让财务对账 join 失败 / 流水悬空
+    {
+      model: FinanceTransaction,
+      filter: { org: orgId, relatedOrder: orderId },
+      label: '关联财务流水',
+      hint: '该订单已被财务流水引用, 请先清理或调整关联流水后再删'
     }
   ]
 }
@@ -547,8 +633,9 @@ function orderUsageChecks(orgId, orderId) {
  *
  * 门控：
  *   1. requirePlatformPassword（路由层）：超管 + 自身密码
- *   2. 业务硬门：paid / refunded 订单禁止物理删除（财务凭证不能丢，引导走取消+退款）
- *   3. assertUnused：StudentProduct.order == id 必须 count=0
+ *   2. 业务硬门：paid / partially_refunded / refunded 订单禁止物理删除（财务凭证不能丢，引导走取消+退款）
+ *      2026-08-05: 补 partially_refunded 挡口 (审计 M5)
+ *   3. assertUnused：StudentProduct.order == id + FinanceTransaction.relatedOrder == id 必须 count=0
  *
  * 失败响应：
  *   - 业务硬门 → ApiError.unprocessable（422）
@@ -562,6 +649,9 @@ async function remove(id, orgId) {
   if (!order) throw ApiError.notFound('订单不存在')
   if (order.status === OrderStatus.PAID) {
     throw ApiError.unprocessable('已支付订单请联系财务走退款流程，不支持物理删除')
+  }
+  if (order.status === OrderStatus.PARTIALLY_REFUNDED) {
+    throw ApiError.unprocessable('已部分退款订单不支持物理删除, 留作财务凭证')
   }
   if (order.status === OrderStatus.REFUNDED) {
     throw ApiError.unprocessable('已退款订单不支持物理删除，留作财务凭证')

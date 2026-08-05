@@ -106,6 +106,8 @@ LessonAttendanceSchema.index({ student: 1 })
 //  之前 studentProduct 删除互锁也走这个 filter，没索引只能 collection scan
 LessonAttendanceSchema.index({ org: 1, studentProduct: 1 })
 // 2026-07-08: 归档过滤主索引 — list 默认 archived=false
-LessonAttendanceSchema.index({ org: 1, archived: 1, status: 1, plannedStartTime: -1 })
+// 2026-08-05: 修正 — LessonAttendance 没有 plannedStartTime 字段 (该字段在 LessonSchedule),
+//   之前索引引用不存在的字段 → 该索引永远不命中, 纯写入负担. 改为实际存在的 actualEndTime (按完成时间排序).
+LessonAttendanceSchema.index({ org: 1, archived: 1, status: 1, actualEndTime: -1 })
 
 module.exports = model('LessonAttendance', LessonAttendanceSchema)

@@ -12,13 +12,23 @@ exports.list = async (req, res) => res.json(ApiResponse.ok(await s.list({ orgId:
  * 默认 status 过滤：可上传作品的考勤 = scheduled / completed / madeup / leave
  *   (no_show / arrived 因学员未上课, 家长代交作品意义不大, 仍可通过 ?status=... 显式覆盖)
  * 默认按创建时间倒序，最近的课排在前。
+ *
+ * 2026-08-05: 全机构 dump 堵口 (审计 H4)
+ *   - 之前缺 `x-active-student-id` header 时 activeStudent 中间件静默 next(),
+ *     req.activeStudentId=undefined → service.list `if (student) filter.student = student` 跳过 → 返全机构考勤
+ *   - 现在 controller 入口 fail-closed: 未挂 activeStudentId 直接 400
+ *   - 同时删除 q.orgId, 防 ?orgId= 他机构覆盖
  */
 exports.mine = async (req, res) => {
+  if (!req.activeStudentId) {
+    return res.status(400).json(ApiResponse.fail('缺少 x-active-student-id'))
+  }
   // 默认 status 过滤：可上传作品的考勤集合
   const allowedDefault = ['scheduled', 'completed', 'madeup', 'leave']
-  // 复制 query, 移除 student (强制覆盖) + 整理 status
+  // 复制 query, 移除 student (强制覆盖) + orgId (防覆盖机构) + 整理 status
   const q = { ...req.query }
   delete q.student
+  delete q.orgId
   if (!q.status) {
     q.status = allowedDefault.join(',')
   }

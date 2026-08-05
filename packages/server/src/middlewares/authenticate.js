@@ -16,6 +16,16 @@ function extractToken(req) {
 }
 
 /**
+ * requirePasswordChange 强制改密白名单路径 (审计 H3 2026-08-05)
+ * 凡 user.requirePasswordChange===true → 仅允许这两个端点,
+ * 其他一律 403 require_password_change, 前端据此跳改密页.
+ */
+const PASSWORD_CHANGE_WHITELIST = new Set([
+  '/api/v1/auth/change-password',
+  '/api/v1/auth/me'
+])
+
+/**
  * 解析 Bearer Token，校验后挂载 req.user。
  *
  * 失败一律 throw ApiError(401)。
@@ -34,11 +44,29 @@ module.exports = async function authenticate(req, res, next) {
       throw ApiError.unauthorized('令牌无效或已过期')
     }
 
+    // 2026-08-05: select 加 isBlocked + requirePasswordChange (审计 H3/M11)
+    //   isBlocked 检查与 refresh 路径对齐 (auth.service.js 148-149)
+    //   requirePasswordChange 强制改密门 — 服务端校验, 不依赖前端拦截
     const user = await User.findById(payload.userId)
-      .select('mobile realName avatarSvgKey isPlatformAdmin isActive')
+      .select('mobile realName avatarSvgKey isPlatformAdmin isActive isBlocked requirePasswordChange')
       .lean()
     if (!user || !user.isActive) {
       throw ApiError.unauthorized('账号不存在或已停用')
+    }
+    if (user.isBlocked) {
+      throw ApiError.unauthorized('账号已被禁用')
+    }
+
+    // 2026-08-05: requirePasswordChange 强制改密门 (审计 H3)
+    //   试听转化建的家长账号 requirePasswordChange=true, 初始密码=手机号后6位高度可猜.
+    //   强制改密必须服务端守门 — 仅放行 /auth/change-password 与 /auth/me, 其他一律 403.
+    if (user.requirePasswordChange === true) {
+      const path = (req.originalUrl || req.url || '').split('?')[0]
+      if (!PASSWORD_CHANGE_WHITELIST.has(path)) {
+        // eslint-disable-next-line no-console
+        console.warn(`[auth] requirePasswordChange blocked path=${path} user=${user._id}`)
+        return next(ApiError.forbidden('请先修改初始密码', { code: 'require_password_change' }))
+      }
     }
 
     req.user = {

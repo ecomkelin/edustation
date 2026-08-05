@@ -19,7 +19,7 @@ exports.create = async (req, res) => {
 }
 
 exports.update = async (req, res) => {
-  const data = await service.update(req.params.id, req.body)
+  const data = await service.update(req.params.id, req.orgId, req.body)
   res.json(ApiResponse.ok(data))
 }
 
@@ -39,7 +39,7 @@ exports.changePassword = async (req, res) => {
 }
 
 exports.resetPassword = async (req, res) => {
-  await service.resetPassword(req.params.id, req.body.newPassword)
+  await service.resetPassword(req.params.id, req.orgId, req.body.newPassword)
   res.json(ApiResponse.ok())
 }
 
@@ -89,7 +89,9 @@ exports.updateUnaffiliated = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// 游离用户 resetPassword 走 platform-admin 守卫 (R-0209), orgId 在此场景下无意义,
+//   传 null 跳过 UserOrgRel 校验即可. service 内有 isPlatformAdmin 路径判断.
 exports.resetPasswordUnaffiliated = async (req, res) => {
-  await service.resetPassword(req.params.id, req.body.newPassword)
+  await service.resetPassword(req.params.id, null, req.body.newPassword)
   res.json(ApiResponse.ok())
 }

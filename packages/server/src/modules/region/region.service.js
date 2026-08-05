@@ -2,6 +2,7 @@
 
 const Region = require('@models/Region.model')
 const Org = require('@models/Org.model')
+const User = require('@models/User.model')
 const ApiError = require('@utils/ApiError')
 
 async function list({ level, parent, keyword, isActive }) {
@@ -86,6 +87,13 @@ function regionUsageChecks(regionId) {
     {
       model: Org, filter: { region: regionId },
       label: '机构引用', hint: '该地区正在被机构引用,请先调整机构地区后再删'
+    },
+    // 2026-08-05: 用户现居地引用 (审计 M18)
+    //   Region 是平台级共享字典, User.region 是 indexed 强 ref, 删地区会跨所有机构把
+    //   现居地填该地区的用户 populate 失效, 走强校验
+    {
+      model: User, filter: { region: regionId },
+      label: '用户现居地', hint: '该地区正在被用户引用,请先把用户地区改到其他地区后再删'
     }
   ]
 }

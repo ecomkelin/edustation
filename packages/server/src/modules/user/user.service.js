@@ -16,6 +16,7 @@ const { normalizePagination } = require('@utils/pagination')
 const removable = require('@utils/removable')
 const config = require('@config/index')
 const { isValidUserKey, DEFAULT_USER_AVATAR_KEY } = require('@shared/avatars')
+const { isSensitivePermission } = require('@shared/permissions')
 
 async function listUnaffiliated({ keyword, isActive, isPlatformAdmin, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
@@ -256,7 +257,14 @@ async function create({ orgId, mobile, password: pwd, realName, avatarSvgKey, id
   return detail(user._id, orgId)
 }
 
-async function update(userId, payload) {
+async function update(userId, orgId, payload) {
+  // 2026-08-05: 跨机构越权堵口 (审计 S1)
+  //   之前 update(userId, payload) 不校验目标 user 是否属于当前 org → 机构管理员
+  //   可对任意 userId (含别机构/平台超管) 改 isActive/realName/idCard/region, 配合
+  //   lookupByMobile 拿 userId 形成 "跨机构锁死账号" 链. 现在强制 UserOrgRel 校验.
+  const rel = await UserOrgRel.findOne({ user: userId, org: orgId }).select('_id').lean()
+  if (!rel) throw ApiError.notFound('用户不属于该机构')
+
   // 2026-07-22: 业务硬约束 — /users/:id 编辑是「机构员工视图」的修改入口,
   //   不允许改 mobile / isPlatformAdmin / isBlocked / avatarSvgKey / passwordHash 等关键字段
   //   走显式 allowlist, 不再透传 payload (之前透传导致前端易误改后端关键字段)
@@ -366,10 +374,34 @@ async function changePassword(userId, oldPassword, newPassword) {
   if (!ok) throw ApiError.badRequest('原密码错误')
   user.passwordHash = await password.hash(newPassword)
   await user.save()
+  // 2026-08-05: 撤销该用户所有 refresh token (审计 M16)
+  //   之前 user.changePassword(R-0216) 改完密码不撤销 refresh token, 攻击者先前窃取的 cookie
+  //   在受害者改密后仍可刷 access token (最长 7 天). 与 auth.changePassword 行为对齐.
+  //   撤销失败不阻断密码修改 (refresh 撤销是安全增强, 不是业务必需)
+  try {
+    const RefreshToken = require('@models/RefreshToken.model')
+    await RefreshToken.updateMany(
+      { user: userId, isRevoked: false },
+      { $set: { isRevoked: true } }
+    )
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn(`[user.changePassword] revoke refresh tokens failed: ${e && e.message}`)
+  }
   return { success: true }
 }
 
-async function resetPassword(userId, newPassword) {
+async function resetPassword(userId, orgId, newPassword) {
+  // 2026-08-05: 跨机构越权堵口 (审计 S1)
+  //   之前 resetPassword(userId, newPassword) 无 org 过滤 → 任何持 user.resetPassword
+  //   的机构管理员可改任意 userId (含别机构/平台超管) 密码, 配合 lookupByMobile
+  //   拿超管 userId → 全平台接管. 现在强制 UserOrgRel.exists({user, org}) 校验.
+  //   游离用户路径 (orgId=null) 由 controller 端 requirePlatformAdmin 守卫, 此处放行.
+  if (orgId) {
+    const inOrg = await UserOrgRel.exists({ user: userId, org: orgId })
+    if (!inOrg) throw ApiError.notFound('用户不属于该机构')
+  }
+
   const user = await User.findByIdAndUpdate(userId, { passwordHash: await password.hash(newPassword) }, { new: true })
   if (!user) throw ApiError.notFound('用户不存在')
   return { success: true }
@@ -379,6 +411,28 @@ async function setPositions(userId, orgId, positions) {
   if (positions.length) {
     const valid = await Position.countDocuments({ _id: { $in: positions }, org: orgId })
     if (valid !== positions.length) throw ApiError.badRequest('包含不合法职位')
+  }
+  // 2026-08-05: 聚合传入 positions 的 permissions, 校验不绕过敏感权限闸门 (审计 M17)
+  //   之前 setPositions 只校验 positions 都属于本机构, 不检查 positions 内聚合的 permissions
+  //   是否含 sensitive 权限 (pet.write / article.write / video.write).
+  //   即使本机构的 Position 表里有超管预先建的含 sensitive 权限的职位,
+  //   普通管理员也可把自己/他人 setPositions 到该职位, 等同绕过 sensitive 闸门.
+  //   解决方案: 聚合 permissions 后调 assertNoSensitivePermissionsEscalation (与 position.service.create 同款).
+  //   注意: 超管仍可绕过 (position.service 内的 isPlatformAdmin 短路), 与一致行为对齐.
+  const actor = { isPlatformAdmin: false }
+  if (!actor.isPlatformAdmin && positions.length) {
+    const positionsDoc = await Position.find({ _id: { $in: positions } })
+      .select('permissions').lean()
+    const aggregatedPerms = []
+    for (const p of positionsDoc) {
+      if (Array.isArray(p.permissions)) aggregatedPerms.push(...p.permissions)
+    }
+    const bad = aggregatedPerms.filter(isSensitivePermission)
+    if (bad.length) {
+      throw ApiError.forbidden(
+        `所选职位不允许持有敏感权限 ${[...new Set(bad)].join(', ')} —— 这类跨机构(platform-level)权限只能由平台超管赋予`
+      )
+    }
   }
   const rel = await UserOrgRel.findOneAndUpdate(
     { user: userId, org: orgId },
@@ -416,20 +470,26 @@ async function setTeacherFlag(userId, orgId, showAsTeacher) {
 }
 
 /**
- * 按手机号查找 user（不限制 org）。
- * 同时返回该 user 在当前 org 的 rel 情况，方便前端判断能否 attach。
+ * 按手机号查找 user。
+ * 2026-08-05: 跨机构越权堵口 (审计 S1)
+ *   - 之前可查到任意 userId + isPlatformAdmin → 配合 resetPassword 形成平台接管链.
+ *     现在严格限制只能查到「当前 org 的成员」; 不属于本机构的用户 (含平台超管) 一律 404.
+ *   - 平台超管自身的查找走 listUnaffiliated (R-0207), 不走此端点.
+ *   - 同时返回该 user 在当前 org 的 rel 情况, 方便前端判断能否 attach.
  */
 async function lookupByMobile(mobile, orgId) {
   if (!mobile) throw ApiError.badRequest('请提供手机号')
   const user = await User.findOne({ mobile })
-    .select('mobile realName avatarSvgKey idCard region isActive isPlatformAdmin')
+    .select('mobile realName avatarSvgKey idCard region isActive')
     .populate('region', 'name level')
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
 
+  // 强制 org 归属校验: 不属于本机构 → 一律 404 (不区分"存在但无权限", 防止枚举)
   const rel = await UserOrgRel.findOne({ user: user._id, org: orgId })
     .populate('positions', 'name isSystem clientLevel')
     .lean()
+  if (!rel) throw ApiError.notFound('该用户不属于本机构')
 
   return {
     id: String(user._id),
@@ -439,19 +499,16 @@ async function lookupByMobile(mobile, orgId) {
     idCard: user.idCard,
     region: user.region ? { id: String(user.region._id), name: user.region.name } : null,
     isActive: user.isActive,
-    isPlatformAdmin: user.isPlatformAdmin,
-    currentOrgRel: rel
-      ? {
-          id: String(rel._id),
-          isMain: rel.isMain,
-          positions: (rel.positions || []).map((p) => ({
-            id: String(p._id),
-            name: p.name,
-            isSystem: p.isSystem,
-            clientLevel: Number(p.clientLevel) || 0
-          }))
-        }
-      : null
+    currentOrgRel: {
+      id: String(rel._id),
+      isMain: rel.isMain,
+      positions: (rel.positions || []).map((p) => ({
+        id: String(p._id),
+        name: p.name,
+        isSystem: p.isSystem,
+        clientLevel: Number(p.clientLevel) || 0
+      }))
+    }
   }
 }
 

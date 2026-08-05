@@ -6,6 +6,7 @@ const Category = require('@models/Category.model')
 const Org = require('@models/Org.model')
 const CourseProduct = require('@models/CourseProduct.model')
 const CourseInstance = require('@models/CourseInstance.model')
+const StudentWork = require('@models/StudentWork.model')
 const ApiError = require('@utils/ApiError')
 
 /**
@@ -377,6 +378,12 @@ function subjectUsageChecks(orgId, subjectId) {
     {
       model: CourseInstance, filter: { org: orgId, subject: subjectId, deletedAt: null },
       label: '开班主学科', hint: '请先修改开班主学科后再删'
+    },
+    // 2026-08-05: 学员作品引用 (审计 M18)
+    //   StudentWork.subject 是强 ref, 删学科会让作品按学科筛/统计断链, 走强校验
+    {
+      model: StudentWork, filter: { org: orgId, subject: subjectId },
+      label: '学员作品', hint: '该学科下已有作品, 请先把作品移到其他学科后再删'
     }
   ]
 }

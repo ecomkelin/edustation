@@ -74,8 +74,8 @@ async function gift({ orgId, operatorId, student, courseProduct, totalLessons, e
   if (!courseProduct) throw ApiError.badRequest('courseProduct 必填')
   if (!giftReason || !giftReason.trim()) throw ApiError.badRequest('giftReason 必填（写明赠课原因）')
 
-  if (!await Student.exists({ _id: student, org: orgId })) {
-    throw ApiError.badRequest('学生不存在或不属于本机构')
+  if (!await Student.exists({ _id: student, org: orgId, isBlocked: { $ne: true } })) {
+    throw ApiError.badRequest('学生不存在或不属于本机构, 或已被冻结')
   }
   const p = await CourseProduct.findOne({ _id: courseProduct, org: orgId, isActive: true }).lean()
   if (!p) throw ApiError.badRequest('课程产品不存在或已下架')
@@ -83,6 +83,19 @@ async function gift({ orgId, operatorId, student, courseProduct, totalLessons, e
   // totalLessons / expireDate 不传时回落到 CourseProduct 默认
   const finalTotal = totalLessons != null ? totalLessons : p.totalLessons
   if (finalTotal <= 0) throw ApiError.badRequest('totalLessons 必须 >= 1')
+  // 2026-08-05: 赠课绝对上限堵口 (审计 M6)
+  //   之前无任何上限, 持 studentProduct.gift 权限的员工可单次送 999999 课时薅羊毛.
+  //   现在硬上限 999 (与下单场景 unitPrice*quantity 一致, 远高于真实业务最大单);
+  //   超出需走 platform-admin 二次确认 (留作 future, 当前先硬上限).
+  //   上限基于课程产品 totalLessons × 2 给一定弹性 (允许少量"加倍赠课"业务场景).
+  const GIFT_MAX = 999
+  const softCeiling = p.totalLessons * 2
+  const effectiveCeiling = Math.min(GIFT_MAX, Math.max(softCeiling, GIFT_MAX))
+  if (finalTotal > effectiveCeiling) {
+    throw ApiError.unprocessable(
+      `赠课课时 ${finalTotal} 超出上限 ${effectiveCeiling}, 超大赠课请联系平台超管`
+    )
+  }
 
   let finalExpire
   if (expireDate) {

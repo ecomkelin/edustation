@@ -79,15 +79,20 @@ async function computeUserOrgs(user) {
  * @param {object} opts - { ip, userAgent }
  * @returns {Promise<{ accessToken: string, refreshToken: string }>}
  */
-async function issueTokens(user, { ip, userAgent } = {}) {
+async function issueTokens(user, { ip, userAgent, familyId } = {}) {
   const accessToken = JwtUtil.signAccessToken({ userId: String(user._id) })
   const refreshToken = JwtUtil.signRefreshToken({ userId: String(user._id), jti: Date.now() + Math.random() })
+  // 2026-08-05: familyId 入会话族 (审计 H2 刷新重放链条撤销)
+  //   - login 调用: 新生成 familyId (本次登录一个新会话族)
+  //   - refresh 调用: 沿用旧 token 的 familyId (同一族轮换)
+  //   烧族: refresh 检测到旧 token 已 isRevoked 但仍被提交 → 立即按 familyId 撤销该族所有 token.
   await RefreshToken.create({
     user: user._id,
     tokenHash: JwtUtil.hashToken(refreshToken),
     expiresAt: new Date(Date.now() + REFRESH_TTL_MS),
     userAgent: userAgent || '',
-    ip: ip || ''
+    ip: ip || '',
+    familyId: familyId || require('crypto').randomBytes(16).toString('hex')
   })
   return { accessToken, refreshToken }
 }
@@ -138,21 +143,30 @@ async function login({ mobile, password: plain, ip, userAgent, captchaPass, rate
     if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
       rateLimit.recordMobileFailure()
     }
-    throw ApiError.unauthorized('账号不存在')
+    // 2026-08-05: 错误文案统一 (审计 M14)
+    //   之前 4 种文案区分账号存在性/封禁/停用/密码错, 攻击者可按文案分类拿到"已激活用户"清单.
+    //   现在 4 路径统一返 "手机号或密码错误", 差异 code 仅写日志/审计, 前端不可见.
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.login] reject: code=NOT_FOUND mobile=${mobile} ip=${ip}`)
+    throw ApiError.unauthorized('手机号或密码错误')
   }
   if (user.isBlocked) {
     await password.verify(user.passwordHash, plain).catch(() => false)
     if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
       rateLimit.recordMobileFailure()
     }
-    throw ApiError.unauthorized('账号已被禁用,请联系管理员')
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.login] reject: code=BLOCKED user=${user._id} ip=${ip}`)
+    throw ApiError.unauthorized('手机号或密码错误')
   }
   if (!user.isActive) {
     await password.verify(user.passwordHash, plain).catch(() => false)
     if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
       rateLimit.recordMobileFailure()
     }
-    throw ApiError.unauthorized('账号已停用,请联系管理员')
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.login] reject: code=INACTIVE user=${user._id} ip=${ip}`)
+    throw ApiError.unauthorized('手机号或密码错误')
   }
 
   // 2) 密码校验
@@ -161,7 +175,9 @@ async function login({ mobile, password: plain, ip, userAgent, captchaPass, rate
     if (rateLimit && typeof rateLimit.recordMobileFailure === 'function') {
       rateLimit.recordMobileFailure()
     }
-    throw ApiError.unauthorized('密码错误')
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.login] reject: code=BAD_PASSWORD user=${user._id} ip=${ip}`)
+    throw ApiError.unauthorized('手机号或密码错误')
   }
 
   // 2.5) 2026-08-05: 校验用户至少在一个有效机构里
@@ -208,6 +224,13 @@ async function login({ mobile, password: plain, ip, userAgent, captchaPass, rate
 
 /**
  * 刷新：读 cookie 里的 refresh token → 校验 + 未撤销 → 轮换（旧 token 撤销，签新 token）
+ *
+ * 2026-08-05: refresh 重放检测 + 烧族 (审计 H2)
+ *   之前旧 token 已 isRevoked=true 但再次被提交 → 仅返 401, 不告警不撤销.
+ *   这让"攻击者偷到 cookie 后与受害者赛跑"场景下, 攻击者拿到的新 token 持续有效 (只要他自己不去 refresh 触发轮换).
+ *   现在检测到 isRevoked=true 但仍被提交 → 视为重放攻击, 立即按 familyId 撤销该族所有 token (含攻击者持有的新 token).
+ *   受害者下次 access token 过期时也被强制下线, 必须重新登录 → 业务上感知到异常.
+ *
  * @returns {{ accessToken, refreshToken }}
  */
 async function refresh({ refreshToken, ip, userAgent }) {
@@ -222,8 +245,18 @@ async function refresh({ refreshToken, ip, userAgent }) {
 
   const tokenHash = JwtUtil.hashToken(refreshToken)
   const record = await RefreshToken.findOne({ tokenHash })
-  if (!record || record.isRevoked) {
-    throw ApiError.unauthorized('refresh token 已失效')
+
+  // H2: 重放检测 — 旧 token 已撤销仍被提交 → 烧族
+  if (!record) throw ApiError.unauthorized('refresh token 已失效')
+  if (record.isRevoked) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.refresh] REPLAY detected: user=${record.user} familyId=${record.familyId} ip=${ip} ua=${(userAgent || '').slice(0, 80)}`)
+    // 烧整族 (含攻击者轮换拿到的所有 token)
+    await RefreshToken.updateMany(
+      { familyId: record.familyId, isRevoked: false },
+      { $set: { isRevoked: true } }
+    )
+    throw ApiError.unauthorized('refresh token 已被撤销, 检测到重放, 会话族已全量下线')
   }
 
   // 检查 user 仍激活（包含 isBlocked 校验）
@@ -234,8 +267,8 @@ async function refresh({ refreshToken, ip, userAgent }) {
   record.isRevoked = true
   await record.save()
 
-  // 签新 token (复用 issueTokens, 保证入库路径单一; 返回 { accessToken, refreshToken })
-  return issueTokens(user, { ip, userAgent })
+  // 签新 token, 沿用同一 familyId (同族轮换)
+  return issueTokens(user, { ip, userAgent, familyId: record.familyId })
 }
 
 /**

@@ -154,33 +154,51 @@ async function ensureFirstPet(orgId, studentId, by = 'manual') {
  */
 async function adopt({ orgId, studentId, by = 'parent', speciesKey = null, asDefault = null }) {
   if (!orgId || !studentId) throw ApiError.badRequest('缺少 orgId/studentId')
-  const count = await PetAccount.countDocuments({ org: orgId, student: studentId })
-  if (count >= MAX_PETS_PER_STUDENT) {
-    throw ApiError.unprocessable(`最多领养 ${MAX_PETS_PER_STUDENT} 只宠物`)
-  }
-  // 决定 isDefault: asDefault=true 显式覆盖 (C 端); 否则按 count 推 (首只默认)
-  const shouldBeDefault = asDefault === true ? true : (count === 0)
-
-  let preSpecies = null
-  if (speciesKey) {
-    const sp = await petCatalog.getSpecies({ key: speciesKey })
-    if (!sp) throw ApiError.notFound(`物种 ${speciesKey} 不存在`)
-    if (sp.isActive === false) throw ApiError.unprocessable(`物种 ${speciesKey} 已下架`)
-    preSpecies = sp.key
-  }
-
-  // 2026-07-17: 转移默认 (新宠为默认时, 清学员其他默认避开 partial unique E11000)
-  if (shouldBeDefault && count > 0) {
-    await PetAccount.updateMany(
-      { org: orgId, student: studentId, isDefault: true },
-      { $set: { isDefault: false } }
-    )
-  }
-
-  const now = new Date()
-  let created
+  // 2026-08-05: 领养上限原子校验 (审计 M1)
+  //   之前 countDocuments → 内存判断 → create 三步非原子, 双端并发同时通过 count < MAX → 都 create → 突破 ≤5 上限.
+  //   现在 withTransaction 包裹 count + create; 同 session 下 count 读 + create 写, 隔离级别下其他事务的 create 不会插队.
+  //   (Mongo 单文档原子 create 也无法跨文档做"先检查再创建" — 必须事务.)
+  const mongoose = require('mongoose')
+  const session = await mongoose.startSession()
+  let count, shouldBeDefault, preSpecies, created
   try {
-    created = await PetAccount.create(baseEggDoc(orgId, studentId, shouldBeDefault, now, preSpecies))
+    await session.withTransaction(async () => {
+      count = await PetAccount.countDocuments({ org: orgId, student: studentId }, { session })
+      if (count >= MAX_PETS_PER_STUDENT) {
+        throw ApiError.unprocessable(`最多领养 ${MAX_PETS_PER_STUDENT} 只宠物`)
+      }
+      // 决定 isDefault: asDefault=true 显式覆盖 (C 端); 否则按 count 推 (首只默认)
+      shouldBeDefault = asDefault === true ? true : (count === 0)
+      // 转移默认 (新宠为默认时, 清学员其他默认避开 partial unique E11000)
+      if (shouldBeDefault && count > 0) {
+        await PetAccount.updateMany(
+          { org: orgId, student: studentId, isDefault: true },
+          { $set: { isDefault: false } },
+          { session }
+        )
+      }
+      const now = new Date()
+      preSpecies = null
+      if (speciesKey) {
+        const sp = await petCatalog.getSpecies({ key: speciesKey })
+        if (!sp) throw ApiError.notFound(`物种 ${speciesKey} 不存在`)
+        if (sp.isActive === false) throw ApiError.unprocessable(`物种 ${speciesKey} 已下架`)
+        preSpecies = sp.key
+      }
+      created = await PetAccount.create([baseEggDoc(orgId, studentId, shouldBeDefault, now, preSpecies)], { session })
+      created = created[0]
+    })
+  } catch (e) {
+    // E11000 同种唯一 (下面 try/catch 已处理); 上限 unprocessable 直接 throw
+    if (e && e.code === 11000) {
+      // 让外层 try/catch 统一处理 E11000
+      throw e
+    }
+    throw e
+  } finally {
+    await session.endSession()
+  }
+  try {
   } catch (e) {
     // 2026-07-17: 同种唯一 partial unique 索引 E11000 — 蛋已经 pre-assign 同 species
     // (典型: 老师之前选了 cat_orange 的蛋未破壳, 现在又选 cat_orange)
@@ -262,25 +280,39 @@ async function hatch({ orgId, studentId, petId, by = 'parent' }) {
   }
 
   const now = new Date()
-  const updated = await PetAccount.findOneAndUpdate(
-    { _id: pet._id, state: 'egg' },
-    {
-      $set: {
-        state: 'alive',
-        stateChangedAt: now,
-        species,
-        level: 1,
-        experience: 0,
-        hatchedAt: now,
-        eggHatchedAt: now,
-        currentHunger: INIT_HUNGER_AFTER_HATCH,
-        lastFedAt: now,
-        lastHungerDecayAt: now,
-        deathThresholdDays: DEFAULT_DEATH_THRESHOLD_DAYS
-      }
-    },
-    { new: true }
-  ).lean()
+  let updated
+  try {
+    updated = await PetAccount.findOneAndUpdate(
+      { _id: pet._id, state: 'egg' },
+      {
+        $set: {
+          state: 'alive',
+          stateChangedAt: now,
+          species,
+          level: 1,
+          experience: 0,
+          hatchedAt: now,
+          eggHatchedAt: now,
+          currentHunger: INIT_HUNGER_AFTER_HATCH,
+          lastFedAt: now,
+          lastHungerDecayAt: now,
+          deathThresholdDays: DEFAULT_DEATH_THRESHOLD_DAYS
+        }
+      },
+      { new: true }
+    ).lean()
+  } catch (e) {
+    // 2026-08-05: hatch 并发 E11000 友好提示 (审计 L5)
+    //   两个蛋同时 hatch + 同时 roll 到同一 species → 撞 (org, student, species) partial unique 索引
+    //   之前抛未处理 500 → 现在转 422 提示用户重试 / 换蛋
+    if (e && e.code === 11000) {
+      const sp = await petCatalog.getSpecies({ key: species })
+      throw ApiError.unprocessable(
+        `该学员已破壳领养 ${sp?.name || species}, 请刷新后重试或换只蛋`
+      )
+    }
+    throw e
+  }
 
   if (!updated) throw ApiError.conflict('宠物状态已变更，请刷新后重试')
 
@@ -504,35 +536,44 @@ async function abandon({ orgId, studentId, petId, by = 'parent', operatorId = nu
 
   const pet = await loadOwnedPet({ orgId, studentId, petId })
 
-  // 最后一只挡板 (避免 0 只 + isDefault 漂移)
-  const total = await PetAccount.countDocuments({ org: orgId, student: studentId })
-  if (total <= 1) {
-    throw ApiError.unprocessable('最后一只不能弃养，请先领养新宠物')
-  }
-
-  // isDefault 转移: 弃养的是默认 → 把剩余最早领养的提升为默认
-  if (pet.isDefault) {
-    const other = await PetAccount.findOne({
-      org: orgId,
-      student: studentId,
-      _id: { $ne: pet._id }
-    }).sort({ adoptedAt: 1 }).lean()
-    if (other) {
-      await PetAccount.updateOne(
-        { _id: other._id },
-        { $set: { isDefault: true } }
+  // 2026-08-05: 弃养"最后一只挡板"原子化 (审计 M1)
+  //   之前 countDocuments(total) → 内存判断 → deleteOne 三步非原子, 双端并发弃养恰好 2 只时
+  //   都通过 total=2 检查 → 都 deleteOne → 该 student 退化为 0 只 + isDefault 漂移.
+  //   现在 withTransaction 包裹 count + deleteOne + isDefault 转移, 同 session 内一致.
+  const mongoose = require('mongoose')
+  const session = await mongoose.startSession()
+  let deleted
+  try {
+    await session.withTransaction(async () => {
+      const total = await PetAccount.countDocuments({ org: orgId, student: studentId }, { session })
+      if (total <= 1) {
+        throw ApiError.unprocessable('最后一只不能弃养，请先领养新宠物')
+      }
+      // isDefault 转移: 弃养的是默认 → 把剩余最早领养的提升为默认
+      if (pet.isDefault) {
+        const other = await PetAccount.findOne(
+          { org: orgId, student: studentId, _id: { $ne: pet._id } }
+        ).sort({ adoptedAt: 1 }).lean()
+        if (other) {
+          await PetAccount.updateOne(
+            { _id: other._id },
+            { $set: { isDefault: true } },
+            { session }
+          )
+        }
+      }
+      // 删档 (PetAccount.visuals 已撤，per-species levelVisuals 在 PetSpecies 上，弃 PetAccount 不用解绑 File refs)
+      const result = await PetAccount.deleteOne(
+        { _id: pet._id, org: orgId, student: studentId },
+        { session }
       )
-    }
-  }
-
-  // 删档 (PetAccount.visuals 已撤，per-species levelVisuals 在 PetSpecies 上，弃 PetAccount 不用解绑 File refs)
-  const deleted = await PetAccount.deleteOne({
-    _id: pet._id,
-    org: orgId,
-    student: studentId
-  })
-  if (deleted.deletedCount === 0) {
-    throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
+      if (result.deletedCount === 0) {
+        throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
+      }
+      deleted = result
+    })
+  } finally {
+    await session.endSession()
   }
 
   // 2026-07-21 v3: 不需要弃养级联清理（ownerSpecies 是 PetSpecies.key，不受宠物实例增减影响）

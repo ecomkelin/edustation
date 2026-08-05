@@ -741,6 +741,65 @@ async function setStatus(id, orgId, toStatus, by, reason, isPlatformAdmin) {
     }
   }
 
+  // 2026-08-05: 开班取消(* → cancelled)级联下游 (审计 M19)
+  //   之前 setStatus → cancelled 只改 instance.status 与 statusLog, 不级联处理下游:
+  //   - 该开班下仍有 status ∈ {scheduled, preparing, in_progress} 的排课 → 排课变成孤儿
+  //   - 那些排课下的 LessonAttendance 也无法被该开班业务上下文管理
+  //   - 已 cancelled 开班里历史 completed 排课仍可被 makeup() 补课扣课时 (assertCourseInstanceActive 不覆盖)
+  //   现在: scheduled/preparing/in_progress 排课全部置 cancelled, scheduled/checked_in 考勤 no_show.
+  if (toStatus === 'cancelled') {
+    try {
+      const { LessonScheduleStatus } = require('@shared/enums')
+      // 1) 排课: scheduled/preparing/in_progress → cancelled (completed/no_show/leave/archived/cancelled 保持, 不可逆)
+      await LessonSchedule.updateMany(
+        {
+          org: orgId,
+          courseInstance: id,
+          status: {
+            $in: [
+              LessonScheduleStatus.SCHEDULED,
+              LessonScheduleStatus.PREPARING,
+              LessonScheduleStatus.IN_PROGRESS
+            ]
+          }
+        },
+        {
+          $set: {
+            status: LessonScheduleStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelledReason: `[开班取消] ${String(reason).trim()}`
+          }
+        }
+      )
+      // 2) 考勤: scheduled/checked_in → no_show (这些学生虽然没上成课, 但开班已取消不能补)
+      await LessonAttendance.updateMany(
+        {
+          org: orgId,
+          status: { $in: ['scheduled', 'checked_in'] }
+        },
+        { $set: { status: 'no_show' } }
+      )
+      // 只针对该开班下的考勤: 用 lessonSchedule.courseInstance = id 二次过滤
+      // LessonAttendance 没有 courseInstance 字段, 走 LessonSchedule 反查 (与 myProgress 同模式)
+      const cancelledScheduleIds = await LessonSchedule.find({
+        org: orgId, courseInstance: id
+      }).select('_id').lean()
+      if (cancelledScheduleIds.length) {
+        await LessonAttendance.updateMany(
+          {
+            org: orgId,
+            lessonSchedule: { $in: cancelledScheduleIds.map((s) => s._id) },
+            status: { $in: ['scheduled', 'checked_in'] }
+          },
+          { $set: { status: 'no_show' } }
+        )
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[cascade-cancel] failed for courseInstance', id, e && e.message)
+    }
+  }
+
   return detail(id, orgId)
 }
 

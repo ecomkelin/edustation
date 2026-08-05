@@ -17,8 +17,9 @@ const PetAccount = require('@models/PetAccount.model')
 const PetConsumable = require('@models/PetConsumable.model')
 
 function studentIdOf(req) {
-  const sid = req.body?.student || req.activeStudentId
-  if (!sid) throw ApiError.badRequest('缺少 studentId / x-active-student-id')
+  // 2026-08-05: C 端 IDOR 堵口 (审计 H5) — 与 pet.controller.studentIdOf 同款
+  const sid = req.activeStudentId
+  if (!sid) throw ApiError.badRequest('缺少 x-active-student-id')
   return sid
 }
 
