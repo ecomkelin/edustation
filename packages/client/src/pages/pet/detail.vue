@@ -59,10 +59,12 @@
              emoji 缩小到左上角半透明 overlay, 破壳动画保留 -->
         <view v-if="pet.state === 'egg' || hatchActive" class="pet-detail__egg-stage" :class="`hatch-${hatchPhase}`">
           <view class="pet-detail__egg-frame" :class="{ fading: hatchPhase === 'gold' }" @tap="onHatch">
-            <!-- 底层: species 本体视频/svg (egG 不用 levelVisuals fallback) -->
-            <view v-if="currentEggVisual && currentEggVisual.visualType === 'svg' && currentEggVisual.svgContent" class="pet-detail__svg-wrap pet-detail__egg-base" v-html="currentEggVisual.svgContent" />
+            <!-- 底层: species 本体视频/svg (egg 不用 levelVisuals fallback)
+                 2026-08-05: H5 走 v-html / video 原生; mp/app 一律 emoji 兜底 (v-html 剥离 + native video 黑屏) -->
+            <!-- #ifdef H5 -->
+            <view v-if="currentEggVisual && currentEggVisual.svgContent" class="pet-detail__svg-wrap pet-detail__egg-base" v-html="currentEggVisual.svgContent" />
             <video
-              v-else-if="currentEggVisual && currentEggVisual.visualType === 'video' && currentEggVisual.videoFile && currentEggVisual.videoFile.url"
+              v-else-if="currentEggVisual && currentEggVisual.videoFile && currentEggVisual.videoFile.url"
               :src="currentEggVisual.videoFile.url"
               :key="`egg-base-${currentEggVisual.videoFile._id || currentEggVisual.videoFile.id || ''}`"
               autoplay loop muted playsinline
@@ -71,6 +73,12 @@
               :show-fullscreen-btn="false"
               class="pet-detail__pet-video pet-detail__egg-base"
             />
+            <!-- #endif -->
+            <!-- #ifndef H5 -->
+            <view class="pet-detail__pet pet-detail__egg-base">
+              <text class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
+            </view>
+            <!-- #endif -->
             <!-- emoji 缩到左上角半透明, 保留"未破壳"状态标识 -->
             <text class="pet-detail__egg-emoji pet-detail__egg-emoji--overlay">🥚</text>
             <!-- 裂纹 overlay (破壳动画过程中才显示) -->
@@ -93,11 +101,15 @@
         </view>
 
         <!-- 已破壳：默认宠物本体（per-level override currentVisual → speciesRecord fallback → emoji）
-             2026-07-16: server 端 decoratePet 已解析 currentVisual，前端读这一个字段即可 -->
+             2026-07-16: server 端 decoratePet 已解析 currentVisual，前端读这一个字段即可
+             2026-08-05: 整段分裂 — H5 保留 SVG/v-html + video 原生路径; mp-weixin/app 一律 emoji 兜底
+             原因: ① v-html 剥离 SVG ② <video> 在 mp 端的 native 实现不支持复杂 absolute + transform + 177.78% 高度, 黑屏常见
+             而 emoji 在父 __pet flex-center 容器里稳定居中显示, 用户最少能识别物种 -->
         <view v-else class="pet-detail__pet">
-          <view v-if="currentVisual && currentVisual.visualType === 'svg' && currentVisual.svgContent" class="pet-detail__svg-wrap" v-html="currentVisual.svgContent" />
+          <!-- #ifdef H5 -->
+          <view v-if="currentVisual && currentVisual.svgContent" class="pet-detail__svg-wrap" v-html="currentVisual.svgContent" />
           <video
-            v-else-if="currentVisual && currentVisual.visualType === 'video' && currentVisual.videoFile && currentVisual.videoFile.url"
+            v-else-if="currentVisual && currentVisual.videoFile && currentVisual.videoFile.url"
             :src="currentVisual.videoFile.url"
             :key="`${currentVisual.source}-${currentVisual.level}-${pet.level}`"
             autoplay loop muted playsinline
@@ -107,6 +119,11 @@
             class="pet-detail__pet-video"
           />
           <text v-else class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
+          <!-- #endif -->
+          <!-- #ifndef H5 -->
+          <!-- mp / app / 其他小程序: 不区分 svg / video, 一律 emoji 兜底 (覆盖 SVG v-html 剥离 + native video 黑屏两个坑) -->
+          <text class="pet-detail__pet-emoji">{{ speciesEmoji }}</text>
+          <!-- #endif -->
         </view>
 
         <!-- 2026-07-18 第四期: 升级特效全屏遮罩 (一次性, 跨级时串行播放 Lv.X→Lv.X+1→...)
@@ -114,6 +131,7 @@
         <view v-if="levelUpActive && currentLevelUpEffect" class="pet-detail__levelup" @tap.stop>
           <view class="pet-detail__levelup-backdrop" :class="{ fade: levelUpFading }" />
           <view class="pet-detail__levelup-content">
+            <!-- #ifdef H5 -->
             <view v-if="currentLevelUpEffect.visualType === 'svg' && currentLevelUpEffect.svgContent"
                   class="pet-detail__levelup-svg"
                   :class="{ fade: levelUpFading }"
@@ -129,6 +147,11 @@
               class="pet-detail__levelup-video"
               @ended="onLevelUpEffectEnded"
             />
+            <!-- #endif -->
+            <!-- #ifndef H5 -->
+            <!-- 升级特效: mp / app 一律 emoji 兜底 (v-html 剥离 + 黑屏), 仍按 effect 时长关闭遮罩 -->
+            <text class="pet-detail__levelup-emoji">{{ speciesEmoji }}</text>
+            <!-- #endif -->
             <view class="pet-detail__levelup-tip">
               <text class="pet-detail__levelup-lv">Lv.{{ currentLevelUpEffect.level }}</text>
               <text v-if="levelUpQueue.length > 1" class="pet-detail__levelup-progress">
@@ -182,7 +205,13 @@
               @tap="onFeed(c.key)"
             >
               <view v-if="c.svgContent" class="pet-detail__food-thumb">
+                <!-- 2026-08-05: mp-weixin v-html 剥离 SVG, 非 H5 走 emoji (c.iconEmoji || 默认 🍖) -->
+                <!-- #ifdef H5 -->
                 <view class="pet-detail__svg-wrap" v-html="c.svgContent" />
+                <!-- #endif -->
+                <!-- #ifndef H5 -->
+                <text class="pet-detail__food-emoji">{{ c.iconEmoji || '🍖' }}</text>
+                <!-- #endif -->
               </view>
               <video
                 v-else-if="c.visualType === 'video' && c.videoUrl"
@@ -212,9 +241,11 @@
         <view class="pet-detail__others">
           <view v-for="p in otherPets" :key="p._id" class="pet-detail__other-card">
             <view class="pet-detail__other-media">
-              <!-- 2026-07-16: 读 currentVisual（per-level override 命中或 species fallback），server 端已解析 -->
+              <!-- 2026-07-16: 读 currentVisual（per-level override 命中或 species fallback），server 端已解析
+                   2026-08-05: H5 走 v-html / video; mp/app 一律 emoji 兜底 (v-html 剥离 + native video 黑屏) -->
+              <!-- #ifdef H5 -->
               <video
-                v-if="p.state === 'alive' && p.currentVisual && p.currentVisual.visualType === 'video' && p.currentVisual.videoFile && p.currentVisual.videoFile.url"
+                v-if="p.state === 'alive' && p.currentVisual && p.currentVisual.videoFile && p.currentVisual.videoFile.url"
                 :src="p.currentVisual.videoFile.url"
                 :key="`other-${p._id}-${p.level}-${p.currentVisual.source}-${p.currentVisual.level}`"
                 autoplay loop muted playsinline
@@ -222,7 +253,11 @@
                 class="pet-detail__other-video"
               />
               <view v-else-if="p.state === 'alive' && p.currentVisual && p.currentVisual.svgContent" class="pet-detail__svg-wrap" v-html="p.currentVisual.svgContent" />
-              <text v-else class="pet-detail__other-emoji">{{ p.state === 'egg' ? '🥚' : '🐾' }}</text>
+              <text v-else class="pet-detail__other-emoji">{{ p.state === 'egg' ? '🥚' : otherSpeciesEmoji(p) }}</text>
+              <!-- #endif -->
+              <!-- #ifndef H5 -->
+              <text class="pet-detail__other-emoji">{{ p.state === 'egg' ? '🥚' : otherSpeciesEmoji(p) }}</text>
+              <!-- #endif -->
             </view>
             <text class="pet-detail__other-name">{{ (p.speciesRecord && p.speciesRecord.name) || (p.state === 'egg' ? '待破壳' : p.species || '—') }} · Lv.{{ p.level }}</text>
             <view class="pet-detail__other-actions">
@@ -254,7 +289,9 @@ const LEVEL_UP_FADE_MS = 250
 const SPECIES_EMOJI = {
   cat_orange: '🐱', dog_puppy: '🐶', rabbit_white: '🐰', hamster_gold: '🐹',
   fox_red: '🦊', panda_baby: '🐼', penguin_baby: '🐧', owl_horned: '🦉',
-  dragon_emperor: '🐉', phoenix_fire: '🔥', unicorn_rainbow: '🦄', griffin_gold: '🦅'
+  dragon_emperor: '🐉', phoenix_fire: '🔥', unicorn_rainbow: '🦄', griffin_gold: '🦅',
+  // 2026-08-05: 新增 dolphin_blue (server seed 现只剩 3 只: 橘猫/小奶狗/蓝海豚)
+  dolphin_blue: '🐬'
 }
 
 export default {
@@ -594,7 +631,9 @@ export default {
     },
 
     goBack() { uni.navigateBack({ delta: 1 }) },
-    goEnroll() { uni.switchTab({ url: '/pages/tabbar/explore' }) }
+    goEnroll() { uni.switchTab({ url: '/pages/tabbar/explore' }) },
+    // 2026-08-05: 其他宠物卡 v-html SVG 分裂后的 emoji 兜底; 复用同文件 SPECIES_EMOJI
+    otherSpeciesEmoji(p) { return SPECIES_EMOJI[p?.species] || '🐾' }
   }
 }
 </script>
@@ -899,6 +938,7 @@ export default {
     z-index: 2;
     pointer-events: none;
   }
+  &__levelup-emoji { font-size: 240rpx; z-index: 2; }
   &__levelup-lv {
     font-size: $font-xl;
     font-weight: $font-weight-bold;

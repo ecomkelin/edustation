@@ -43,8 +43,7 @@ export const useAuthStore = defineStore('auth', {
      */
     /**
      * 应用 /me 返回: user/orgs/pendingConsents/currentOrgId + 落 storage。
-     * login / fetchMe / 微信登录共用, 单点维护"选主机构 + persist"。
-     * 仅在 currentOrgId 为空时才选主机构 (避免覆盖用户手动切换的机构)。
+     * fetchMe 走这里 (包含机构级 pendingConsents); login/wx 走 _applyOrgs (响应已带 orgs, 省一次 fetchMe)。
      */
     _applyMe(me) {
       this.user = me
@@ -52,26 +51,42 @@ export const useAuthStore = defineStore('auth', {
       if (Array.isArray(me.pendingConsents)) {
         this.pendingConsents = me.pendingConsents
       }
+      this._applyOrgs()
+      return me
+    },
+
+    /**
+     * 选主机构 + 写 ORG_ID + persist。
+     * login / wxLogin / wxBind / fetchMe 共用: 调用前提是 this.orgs 已赋值。
+     * 仅在 currentOrgId 为空时才选主机构 (避免覆盖用户手动切换的机构)。
+     *
+     * 2026-08-05: 加 console.warn 埋点, 暴露"用户无机构"这种本不该发生的情况,
+     * 便于排查 race / 孤儿账号之类问题 (后端 login 已拒签 token, 这里走到就是真 bug)。
+     */
+    _applyOrgs() {
       if (!this.currentOrgId && this.orgs.length) {
         const main = this.orgs.find((o) => o.isMain) || this.orgs[0]
         this.currentOrgId = main.org ? main.org.id : main.id
         storage.set(StorageKeys.ORG_ID, this.currentOrgId)
+      } else if (this.orgs.length === 0 && this.user && !this.user.isPlatformAdmin) {
+        // eslint-disable-next-line no-console
+        console.warn('[auth._applyOrgs] user has no orgs', this.user.id)
       }
       this.persist()
-      return me
     },
 
     async login({ mobile, password, captchaPass }) {
+      // 2026-08-05: 后端 login 响应直接带 orgs (与 /me 同源), 不再二次 fetchMe,
+      // 消除"login 拿到 token → me 返回空 → ORG_ID 不写"这个 race window。
       const res = await authApi.login({ mobile, password, captchaPass })
       this.accessToken = res.accessToken
       this.user = res.user
+      this.orgs = res.orgs || []
       this.pendingConsents = Array.isArray(res.pendingConsents) ? res.pendingConsents : []
-      // ⚠️ 立刻把 token 落 storage,否则下面 authApi.me() 在 request.js 里读不到
-      //    (request.js 是从 storage 读 Authorization,不是从 Pinia 内存)
+      // ⚠️ 立刻把 token 落 storage,否则后续切换 / 刷新时 request.js 读不到 Authorization
       this.persist()
-      // 拉 /me 拿完整 orgs + 权限 + 机构级 pendingConsents
-      this.currentOrgId = '' // 重置, 让 _applyMe 重新选主机构
-      this._applyMe(await authApi.me())
+      this.currentOrgId = '' // 重置, 让 _applyOrgs 重新选主机构
+      this._applyOrgs()
       return this
     },
 
@@ -100,14 +115,19 @@ export const useAuthStore = defineStore('auth', {
     // ─── 微信小程序登录 (2026-08) ───
     // 小程序不走 cookie: refresh token 由前端 storage 自管 (WX_REFRESH_TOKEN)。
 
-    /** 把微信登录返回的 token 落地 + 拉 /me (wxLogin/wxBind 共用) */
-    _consumeWxTokens({ accessToken, refreshToken }) {
+    /** 把微信登录返回的 token 落地 + 选主机构 (wxLogin/wxBind 共用)
+     *  2026-08-05: 后端 wx-login / wx-bind 响应直接带 orgs, 不再二次 fetchMe。
+     */
+    _consumeWxTokens({ accessToken, refreshToken, orgs, user }) {
       this.accessToken = accessToken
+      if (user) this.user = user // wxLogin/wxBind 响应里已带 publicUser(user), 直接覆盖避免再 fetchMe 拿到过期信息
+      if (orgs) this.orgs = orgs
       if (refreshToken) storage.set(StorageKeys.WX_REFRESH_TOKEN, refreshToken)
-      // ⚠️ 先 persist 落 storage, fetchMe 的请求才能从 storage 读到新 accessToken
+      // ⚠️ 先 persist 落 storage, 后续请求才能从 storage 读到新 accessToken
       this.persist()
-      this.currentOrgId = '' // 重置, 让 _applyMe 重新选主机构
-      return this.fetchMe()
+      this.currentOrgId = '' // 重置, 让 _applyOrgs 重新选主机构
+      this._applyOrgs()
+      return this
     },
 
     /** 微信静默登录 (老用户)。返回后端 { status: 'bound' | 'need_bind' } */

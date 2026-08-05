@@ -25,6 +25,9 @@ exports.login = async (req, res) => {
   res.json(ApiResponse.ok({
     accessToken: result.accessToken,
     user: result.user,
+    // 2026-08-05: 与 me() 同源的 orgs 列表 (service.login 已校验"必须有机构"才会走这里),
+    // 前端 login 不再二次 fetchMe, 消除 login → me 之间的 race window
+    orgs: result.orgs || [],
     // 招生试听 (2026-06): 试听转化建的家长账号首登强改; 前端拦截器据此跳改密页
     requirePasswordChange: result.requirePasswordChange,
     // 法律协议 (2026-06): 平台级未对齐版本协议清单 (登录时机构未确定, 只算平台级)

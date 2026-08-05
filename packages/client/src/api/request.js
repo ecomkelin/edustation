@@ -20,7 +20,7 @@ const BASE_URL = '/api/v1' // H5 走 vite proxy (vite.config.js server.proxy '/a
 // 真机预览也是同一个 IP (手机和电脑必须同 WiFi).
 // 部署时改用 manifest.json / 环境变量注入或运行时配置.
 // eslint-disable-next-line no-undef
-const DEV_API_HOST = 'http://192.168.1.8:3000'
+const DEV_API_HOST = 'http://192.168.1.185:3000'
 const BASE_URL = `${DEV_API_HOST}/api/v1`
 // #endif
 

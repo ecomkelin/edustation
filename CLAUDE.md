@@ -65,6 +65,13 @@ edustation/
 - **Refresh Token**：必须使用 **httpOnly, Secure, SameSite=Strict** Cookie，路径 `/api/auth/refresh`。
 - 登录返回 access token，同时设置 refresh cookie。刷新时轮换 refresh token。
 
+### 5.1 登录接口必须带回 orgs（避免 race window）
+- **后端** `/auth/login`、`/auth/wx-login`、`/auth/wx-bind` 响应必须包含 `orgs` 数组（与 `/auth/me` 同源），共用 `auth.service.computeUserOrgs(user)`。
+- **孤儿账号拒绝签 token**：登录时若 `UserOrgRel` 为空且非平台超管 → 直接抛 403 `账号未关联任何机构，请联系管理员`。**不要**让前端拿到 accessToken 才发现没机构可用。
+- **平台超管特例**：无 UserOrgRel 时给"虚拟"全机构列表（positions=[]，走 `requireOrg` 的超管短路），不会被这条卡住。
+- **前端** `auth.login` / `_consumeWxTokens` **不再二次调 `/auth/me`**，直接用响应里的 `orgs` 选主机构（`_applyOrgs`）。仅 `auth.fetchMe`（App.vue `onShow` 静默同步、机构切换后重算 pendingConsents）仍调 `/auth/me`。
+- **背景**（2026-08-05）：之前 login 只返 token，前端拿到后调 `/auth/me` 拿 orgs，中间偶发（副本延迟/连接抖动/缓存 miss）让 me 返回空 → `_applyMe` 不写 ORG_ID → 后续每个接口报"缺少 x-org-id header"，表现是"新浏览器第一次登录失败，再次登录又好了"。现在 login 直接带 orgs，省一次 round-trip，也消除了这个 race。
+
 ## 6. 家长与子女交互设计（重要）
 - 家长登录后始终在顶部显示当前活跃子女（单子女**不跳过选择步骤**，保持 UI 统一）。
 - 单子女时显示"当前孩子：xx"，但无切换列表；多子女时可切换。

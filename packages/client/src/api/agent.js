@@ -21,7 +21,7 @@ const BASE_URL = '/api/v1' // H5 走 vite proxy
 // uni-app 编译时 import.meta.env.VITE_* 会被丢成 {}, fallback localhost → 微信开发者工具里 localhost 不通.
 // 调试: 直接改 DEV_API_HOST 为本机局域网 IP (后端需监听 0.0.0.0).
 // 部署: 改用 manifest.json / 运行时配置 / 环境变量注入.
-const DEV_API_HOST = 'http://192.168.1.8:3000'
+const DEV_API_HOST = 'http://192.168.1.185:3000'
 const BASE_URL = `${DEV_API_HOST}/api/v1`
 // #endif
 

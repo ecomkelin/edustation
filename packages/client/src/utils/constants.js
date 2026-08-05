@@ -24,7 +24,9 @@ export const PET_SPECIES_EMOJI = {
   dragon_emperor: '🐲',
   phoenix_fire: '🔥',
   unicorn_rainbow: '🦄',
-  griffin_gold: '🦅'
+  griffin_gold: '🦅',
+  // 2026-08-05: 新增 - server seed 现存的蓝海豚 (dolphin_blue)
+  dolphin_blue: '🐬'
 }
 
 // === 考勤 ===

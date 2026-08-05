@@ -37,7 +37,7 @@ const password = require('@utils/password')
 const wechat = require('@utils/wechat')
 const authService = require('./auth.service')
 
-const { issueTokens, publicUser } = authService
+const { issueTokens, publicUser, computeUserOrgs } = authService
 
 // ─── 内部辅助 ───
 
@@ -169,6 +169,9 @@ async function registerSelf({ mobile, openid, orgId, inviter }) {
 /**
  * 微信静默登录 (老用户)。
  * 已绑定 openid → 发 token; 否则返回 need_bind 让前端走手机号绑定。
+ *
+ * 2026-08-05: 与 /auth/login 同源校验 — 没有机构 + 非超管 → 抛 403,
+ * 响应带回 orgs, 前端 _consumeWxTokens 不再二次 fetchMe
  */
 async function wxLogin({ code, ip, userAgent }) {
   const { openid } = await wechat.jscode2session(code)
@@ -180,13 +183,24 @@ async function wxLogin({ code, ip, userAgent }) {
   }
   assertUserLoggable(user)
 
+  const orgs = await computeUserOrgs(user)
+  if (orgs.length === 0 && !user.isPlatformAdmin) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.wxLogin] user has no orgs, reject: ${user._id} openid=${openid}`)
+    throw ApiError.forbidden('账号未关联任何机构,请联系管理员')
+  }
+
   const { accessToken, refreshToken } = await issueTokens(user, { ip, userAgent })
-  return { status: 'bound', accessToken, refreshToken, user: publicUser(user) }
+  return { status: 'bound', accessToken, refreshToken, user: publicUser(user), orgs }
 }
 
 /**
  * 微信绑定 / 自助注册 (新用户)。
  * loginCode + phoneCode → 微信身份 + 手机号 → 绑定已有账号 or 自助注册。
+ *
+ * 2026-08-05: 与 /auth/login 同源 — 响应带回 orgs, 前端 _consumeWxTokens 不再二次 fetchMe。
+ * registerSelf 已经挂好 UserOrgRel (家长位), 所以 wxBind 路径不可能落到 "无机构" 分支;
+ * 但命中已有账号 (如试听转化建的家长) 的分支仍然要走同源校验, 防止孤儿账号登录。
  */
 async function wxBind({ loginCode, phoneCode, scene, ip, userAgent }) {
   // 1) 换微信身份 + 手机号 (后端换取, 不信任客户端明文)
@@ -219,8 +233,16 @@ async function wxBind({ loginCode, phoneCode, scene, ip, userAgent }) {
     user = await registerSelf({ mobile, openid, orgId: ctx.orgId, inviter: ctx.inviter })
   }
 
+  // 4) 同源校验 + 算 orgs (与 wxLogin / login 走同一路径, 保证响应结构对齐)
+  const orgs = await computeUserOrgs(user)
+  if (orgs.length === 0 && !user.isPlatformAdmin) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.wxBind] user has no orgs, reject: ${user._id} mobile=${mobile}`)
+    throw ApiError.forbidden('账号未关联任何机构,请联系管理员')
+  }
+
   const { accessToken, refreshToken } = await issueTokens(user, { ip, userAgent })
-  return { status: 'bound', accessToken, refreshToken, user: publicUser(user) }
+  return { status: 'bound', accessToken, refreshToken, user: publicUser(user), orgs }
 }
 
 module.exports = { wxLogin, wxBind }

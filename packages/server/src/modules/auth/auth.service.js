@@ -18,6 +18,60 @@ const SELF_UPDATE_WHITELIST = ['realName', 'avatarSvgKey', 'idCard', 'region']
 const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
+ * 2026-08-05: 从 me() 抽出 — 登录 / me 共用的"用户机构列表"计算
+ *  原因: 之前 login 响应只带 user + token, 前端拿完 token 后还要再 fetchMe 拿 orgs,
+ *        中间任何偶发 (副本延迟/连接抖动/缓存 miss) 都会让前端 _applyMe 看到 orgs=[]
+ *        → 不写 ORG_ID → 后续每个接口报「缺少 x-org-id header」。
+ *  现在 login 直接带回 orgs, 前端省一次 round-trip, 也消除这个 race window。
+ *
+ *  超管特例: UserOrgRel 为空但 isPlatformAdmin=true 时, 给"虚拟" orgs = 全系统机构列表,
+ *           与原 me() 行为完全一致 (前端能进超管路径, x-org-id 走 requireOrg 的超管短路)。
+ */
+async function computeUserOrgs(user) {
+  const userId = user._id
+  const rels = await UserOrgRel.find({ user: userId })
+    .populate({
+      path: 'org',
+      select: 'name type isActive'
+    })
+    .populate({
+      path: 'positions',
+      select: 'name permissions isSystem',
+      populate: { path: 'permissions' }
+    })
+    .lean()
+
+  let orgs = rels.map((r) => ({
+    id: String(r.org._id),
+    name: r.org.name,
+    type: r.org.type,
+    isActive: r.org.isActive,
+    isMain: r.isMain,
+    positions: (r.positions || []).map((p) => ({
+      id: String(p._id),
+      name: p.name,
+      permissions: p.permissions,
+      isSystem: p.isSystem
+    }))
+  }))
+
+  if (user.isPlatformAdmin && orgs.length === 0) {
+    const Org = require('@models/Org.model')
+    const allOrgs = await Org.find({ isActive: true }).select('name type isActive').sort({ createdAt: 1 }).lean()
+    orgs = allOrgs.map((o, i) => ({
+      id: String(o._id),
+      name: o.name,
+      type: o.type,
+      isActive: o.isActive,
+      isMain: i === 0,
+      positions: []
+    }))
+  }
+
+  return orgs
+}
+
+/**
  * 签发 access + refresh token 并把 refresh token 入库 (sha256 hash)。
  * login / refresh / wx-login / wx-bind 共用此函数, 保证 token 入库路径单一。
  *
@@ -110,6 +164,19 @@ async function login({ mobile, password: plain, ip, userAgent, captchaPass, rate
     throw ApiError.unauthorized('密码错误')
   }
 
+  // 2.5) 2026-08-05: 校验用户至少在一个有效机构里
+  //  背景: /auth/login 之前不查 UserOrgRel, 孤儿账号也能拿到 accessToken,
+  //        前端 _applyMe 看到 orgs=[] → ORG_ID 永远不写 → 后续每个接口报
+  //        「缺少 x-org-id header」(偶发 race window, "再次登录又好了" 的根因)。
+  //  提前暴露: 没有机构 + 非平台超管 → 拒绝签 token。
+  //  平台超管走 computeUserOrgs 内的 "虚拟全机构列表" 分支, 不会被这条卡住。
+  const orgs = await computeUserOrgs(user)
+  if (orgs.length === 0 && !user.isPlatformAdmin) {
+    // eslint-disable-next-line no-console
+    console.warn(`[auth.login] user has no orgs, reject: ${user._id} mobile=${user.mobile}`)
+    throw ApiError.forbidden('账号未关联任何机构,请联系管理员')
+  }
+
   // 签 token + 入库 refresh (复用 issueTokens, 保证入库路径单一)
   const { accessToken, refreshToken } = await issueTokens(user, { ip, userAgent })
 
@@ -127,6 +194,9 @@ async function login({ mobile, password: plain, ip, userAgent, captchaPass, rate
     accessToken,
     refreshToken,
     user: publicUser(user),
+    // 2026-08-05: 直接带回 orgs, 前端 login 不再二次 fetchMe,
+    // 消除"login 拿到 token → me 返回空 → ORG_ID 不写"这个 race window
+    orgs,
     // 招生试听 (2026-06): 试听转化时为新家长设的初始密码 = mobile.slice(-6),
     // 首登后必须改密 (User.requirePasswordChange=true). 前端拦截器据此
     // 跳到 /reset-password?initial=1 强制改密.
@@ -194,46 +264,7 @@ async function me(userId, options = {}) {
     .lean()
   if (!user) throw ApiError.notFound('用户不存在')
 
-  const rels = await UserOrgRel.find({ user: userId })
-    .populate({
-      path: 'org',
-      select: 'name type isActive'
-    })
-    .populate({
-      path: 'positions',
-      select: 'name permissions isSystem',
-      populate: { path: 'permissions' }
-    })
-    .lean()
-
-  // 平台超管无 UserOrgRel, 但业务上要看所有机构; 给他"虚拟"机构列表 = 全系统机构
-  // 列表项不带 positions (平台超管天然拥有所有权限, 走 requirePermission 的 isPlatformAdmin 短路)
-  let orgs = rels.map((r) => ({
-    id: String(r.org._id),
-    name: r.org.name,
-    type: r.org.type,
-    isActive: r.org.isActive,
-    isMain: r.isMain,
-    positions: (r.positions || []).map((p) => ({
-      id: String(p._id),
-      name: p.name,
-      permissions: p.permissions,
-      isSystem: p.isSystem
-    }))
-  }))
-
-  if (user.isPlatformAdmin && orgs.length === 0) {
-    const Org = require('@models/Org.model')
-    const allOrgs = await Org.find({ isActive: true }).select('name type isActive').sort({ createdAt: 1 }).lean()
-    orgs = allOrgs.map((o, i) => ({
-      id: String(o._id),
-      name: o.name,
-      type: o.type,
-      isActive: o.isActive,
-      isMain: i === 0, // 第一个默认选中
-      positions: []
-    }))
-  }
+  const orgs = await computeUserOrgs(user)
 
   // 法律协议: 当前 orgId (来自 x-org-id) 决定机构级协议是否纳入计算
   let pendingConsents = []
@@ -340,4 +371,4 @@ function publicUser(u) {
   }
 }
 
-module.exports = { login, refresh, logout, me, updateMe, changePassword, publicUser, issueTokens }
+module.exports = { login, refresh, logout, me, updateMe, changePassword, publicUser, issueTokens, computeUserOrgs }

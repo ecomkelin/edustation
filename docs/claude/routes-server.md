@@ -98,14 +98,14 @@ Auth 列简写:
 
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
-| R-0100 | POST | /auth/login | OPEN | — | 登录 | 限流 + 滑块 |
+| R-0100 | POST | /auth/login | OPEN | — | 登录 | 限流 + 滑块; 响应直接带 `orgs`; 无机构非超管 → 403 |
 | R-0101 | POST | /auth/refresh | OPEN | — | 刷新 access token | httpOnly cookie |
 | R-0102 | POST | /auth/logout | AUTH | — | 登出 | 清 cookie |
 | R-0103 | GET | /auth/me | AUTH | — | 当前用户信息 | |
 | R-0104 | PUT | /auth/me | AUTH | — | 自助改资料 | 白名单字段 |
 | R-0105 | POST | /auth/change-password | AUTH | — | 自助改密码 | 撤销所有 refresh |
-| R-0106 | POST | /auth/wx-login | OPEN | — | 微信静默登录 | per-IP 限流; code→openid/unionid, 已绑定发 token / 否则 need_bind |
-| R-0107 | POST | /auth/wx-bind | OPEN | — | 微信绑定/自助注册 | per-IP 限流; 手机号绑定已有账号, 或 scene 有效 orgId 则自助注册, 否则 need_org |
+| R-0106 | POST | /auth/wx-login | OPEN | — | 微信静默登录 | per-IP 限流; code→openid/unionid, 已绑定发 token / 否则 need_bind; 响应直接带 `orgs`; 无机构非超管 → 403 |
+| R-0107 | POST | /auth/wx-bind | OPEN | — | 微信绑定/自助注册 | per-IP 限流; 手机号绑定已有账号, 或 scene 有效 orgId 则自助注册, 否则 need_org; 响应直接带 `orgs`; 无机构非超管 → 403 |
 | R-0108 | POST | /auth/wx-refresh | OPEN | — | 微信刷新 token | per-IP 限流; 复用 service.refresh, body 读写不走 cookie |
 | R-0110 | GET | /captcha/challenge | OPEN | — | 拿滑块挑战 | captcha 是 auth 防刷伴生 |
 | R-0111 | POST | /captcha/verify | OPEN | — | 提交滑块答案 | 一次性 pass |

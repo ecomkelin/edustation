@@ -50,8 +50,12 @@ export default defineConfig(({ mode }) => {
     // 2026-07-05: shared/*.js 是 CJS, uni-app 多端编译对 CJS exports 兼容性差
     //   加入 optimizeDeps 让 esbuild 预构建走 ESM-CJS interop, 同 admin 配置
     //   .mjs 通过 namespace import { default } 拿 CJS 命名空间
+    // 2026-08-05: pinia uni-app 3.0 alpha 已经标记为 external, 必须 exclude 不要让 vite 介入
+    //   include 会触发 "entry point pinia cannot be marked as external"
+    //   让 uni-app 自家 vite-plugin 处理 pinia 注入 common_vendor 即可
     optimizeDeps: {
-      include: ['@shared/avatars']
+      include: ['@shared/avatars'],
+      exclude: ['pinia']
     }
   }
 })
