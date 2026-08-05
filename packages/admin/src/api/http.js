@@ -30,6 +30,17 @@ const apiClient = axios.create({
 // 请求拦截：自动注入 Authorization + x-org-id
 apiClient.interceptors.request.use((config) => {
   const auth = useAuthStore()
+  // 2026-08-05: 登出死循环堵口 — 无 accessToken 时除 login/refresh 外一律不发请求.
+  //   之前登出后 NotificationBell 等轮询组件仍发请求 → 401 → 拦截器自动 refresh →
+  //   refresh 也 401(已撤销)→ clear + redirect → 路由 afterEach 又触发轮询 → 死循环.
+  //   现在请求拦截器层直接断: 未登录的非 auth 请求直接 reject, 根本不发到后端.
+  const isAuthEndpoint = config.url && (config.url.includes('/auth/login') || config.url.includes('/auth/refresh'))
+  if (!auth.accessToken && !isAuthEndpoint) {
+    // 标记 error 让响应拦截器静默放过 (不弹 toast, 不触发 refresh)
+    const e = new Error('UNAUTHENTICATED')
+    e.__unauthenticated = true
+    return Promise.reject(e)
+  }
   if (auth.accessToken) {
     config.headers.Authorization = `Bearer ${auth.accessToken}`
   }
@@ -126,6 +137,10 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     const { response, config } = error
+    // 2026-08-05: 请求拦截器拦截的"未登录"请求 — 静默 reject, 不弹 toast 不触发 refresh
+    if (error && error.__unauthenticated) {
+      return Promise.reject(error)
+    }
     if (!response) {
       ElMessage.error('网络异常')
       return Promise.reject(error)

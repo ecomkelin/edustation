@@ -89,6 +89,7 @@ export default {
       unreadCount: 0,
       items: [],
       timer: null,
+      unAfterEachHook: null,
       typeLabels: TYPE_LABELS
     }
   },
@@ -96,20 +97,37 @@ export default {
     this.reload()
     // 2026-07-13: 30s 轮询红点; 路由切换时再 reload 一次
     this.timer = setInterval(this.reload, 30000)
-    this.$router && this.$router.afterEach && this.$router.afterEach(() => {
-      this.reload()
-    })
+    // 2026-08-05: afterEach 返回清理函数, beforeUnmount 必须调 — 否则登出跳 /login 后
+    //   泄漏的回调仍会触发 reload → 401 → refresh 死循环.
+    if (this.$router && this.$router.afterEach) {
+      this.unAfterEachHook = this.$router.afterEach(() => {
+        this.reload()
+      })
+    }
   },
   beforeUnmount() {
     if (this.timer) clearInterval(this.timer)
+    // 2026-08-05: 清理 afterEach 钩子 (Vue Router 4 不会随组件 unmount 自动清)
+    if (this.unAfterEachHook) {
+      try { this.unAfterEachHook() } catch (_) { /* ignore */ }
+      this.unAfterEachHook = null
+    }
   },
   methods: {
     async reload() {
+      // 2026-08-05: 未认证直接停轮询 (登出后 accessToken 已清)
+      //   http 拦截器会对未认证请求 reject 'UNAUTHENTICATED', 这里检测到就停 timer
+      //   避免 30s 空转 + afterEach 触发的无效 reload.
+      const { useAuthStore } = await import('@/stores/auth')
+      if (!useAuthStore().accessToken) {
+        if (this.timer) { clearInterval(this.timer); this.timer = null }
+        return
+      }
       try {
         const r = await notificationApi.staffUnreadCount()
         this.unreadCount = r.data?.count || 0
       } catch (e) {
-        // 静默
+        // 静默 (401 已由 http 拦截器处理; UNAUTHENTICATED 是登出后正常态)
       }
     },
     async toggle() {

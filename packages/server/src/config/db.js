@@ -1,7 +1,13 @@
 'use strict'
 
 const mongoose = require('mongoose')
-const config = require('@config/index')
+
+// 测试环境 (jest): config/index 可能已被 helpers 链 require 过, db.uri 锁为 placeholder.
+//   此时 setup.js beforeAll 已注入真 mongo-memory URI, 需要动态读 env.
+//   其他环境: 正常 require config (config.db.uri 在 export 时求值一次即可).
+const config = process.env.NODE_ENV === 'test'
+  ? { db: { uri: process.env.MONGODB_URI, options: { serverSelectionTimeoutMS: 5000 } } }
+  : require('@config/index')
 
 mongoose.set('strictQuery', true)
 
@@ -10,10 +16,11 @@ mongoose.set('strictQuery', true)
  * @returns {Promise<typeof mongoose>}
  */
 async function connect() {
-  if (!config.db.uri) {
+  const uri = process.env.NODE_ENV === 'test' ? process.env.MONGODB_URI : config.db.uri
+  if (!uri) {
     throw new Error('MONGODB_URI is not set')
   }
-  await mongoose.connect(config.db.uri, config.db.options)
+  await mongoose.connect(uri, config.db.options)
   return mongoose
 }
 

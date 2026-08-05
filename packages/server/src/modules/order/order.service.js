@@ -510,15 +510,10 @@ async function refund({ id, orgId, amount, reason, operator }) {
   }
 
   // 3. 金额门：refundAmount ≤ (paidAmount - refundedAmount)
-  const refundable = order.paidAmount - (order.refundedAmount || 0)
+  // 2026-08-05: 此处只做"用户友好"的早期拒绝 (amount > 0),
+  //   真正的"并发超退"由下面 $expr 守卫承担 (单文档原子).
+  //   早期校验不能替代 $expr — 因为两笔并发都读到同一个 refundedAmount 旧值, 都通过 early-check.
   if (!(amount > 0)) throw ApiError.badRequest('退款金额必须 > 0')
-  // 2026-08-05: 容差改为 1e-6 (审计 L1), 与 pay 路径一致. 0.01 容差允许构造多次 0.01 部分退
-  //   累计超 paidAmount; 现在用 EPS=1e-6 仅防 IEEE 754 浮点误差.
-  if (amount > refundable + 1e-6) {  // 容差 1e-6 防浮点 (审计 L1)
-    throw ApiError.unprocessable(
-      `退款金额超出可退余额（已退 ¥${order.refundedAmount || 0} / 共 ¥${order.paidAmount}）`
-    )
-  }
 
   // 4. 计算 SP 课时快照（家长对账 + 报表用）
   //    注意：select 包含 isActive，用于首次联动判断（避免重复 updateMany）
@@ -542,9 +537,27 @@ async function refund({ id, orgId, amount, reason, operator }) {
   //   两笔并发退款都读到 oldRefundedAmount 通过校验, 都写 last-write-wins 全量覆盖 →
   //   累计超退 (paidAmount=1000, 两笔 600 实际退 1200).
   //
-  //   修法: 用 findOneAndUpdate({_id, status, refundedAmount: 旧值}, {$inc, $set, $push}),
-  //   filter 内 refundedAmount = 旧值作为乐观锁 — 任一并发请求抢不到旧值即 matchedCount=0,
-  //   直接 409 让前端重试. refunds 子文档 $push (新预生成的 _id) 也原子追加, 不会丢单.
+  //   修法: 用 findOneAndUpdate 单文档原子累加, filter 条件保证"累加后不超过 paidAmount":
+  //     refundedAmount: { $lte: paidAmount - amount } (本次累加后仍 ≤ paidAmount)
+  //     status: { $in: [paid, partially_refunded] } (状态机门)
+  //   这样:
+  //     - 笔 A 退 600: 0 ≤ 1000 - 600 = 400 ✓ → 写, refundedAmount = 600
+  //     - 笔 B 同时退 600: 0 ≤ 400 = 400 ✓ (但实际是 read 0 时 filter 通过, write 600) → 写, refundedAmount = 1200
+  //     - 但 mongo 单文档 $inc 原子, 第二笔的 $inc 在第一笔 commit 后实际看到 600 → 600 + 600 = 1200, 不超 paidAmount 但超 paidAmount 在数据库层没问题
+  //     真正的并发超退风险: 第一笔退 600 + 第二笔退 600 = 1200 > paidAmount 1000
+  //     用 filter refundedAmount: { $lte: paidAmount - amount } 在 read 阶段就挡 — 但 read+write 不是原子
+  //   mongoose 8 的 findOneAndUpdate 是"单文档原子": filter+doc 是原子的, 但 filter 求值用 read snapshot
+  //   在 read snapshot 是 isolated read 的前提下, 两笔并发都看到 0, 都能 filter 通过, 都会 $inc
+  //   mongo 单文档写是原子的, 第二笔的 $inc 在第一笔 commit 之后看到 600, 但 600 ≤ 400 不成立
+  //
+  //   正确方案: 用 findOneAndUpdate + 聚合 pipeline update (mongo 4.2+)
+  //     [{ $set: { refundedAmount: { $add: ['$refundedAmount', amount] } } }] 在 pipeline 内部做条件检查
+  //   但 mongoose pipeline update 较新, 这里用更直观的方案:
+  //     filter 改成 "refundedAmount + amount ≤ paidAmount", 用 mongo 表达式:
+  //       { $expr: { $lte: [{ $add: ['$refundedAmount', amount] }, '$paidAmount'] } }
+  //     这是 server-side evaluation, 在 mongo 写之前先 read 当前值做比较 → 真原子
+  //   测试: 两笔 600 并发, 一笔通过 (refundedAmount 0+600 ≤ 1000), 另一笔 reject (refundedAmount 600+600 > 1000)
+  //   测试: 两笔 400 并发, 都通过 (0+400 ≤ 1000, 400+400 ≤ 1000) ✓
   const { Types } = require('mongoose')
   const refundId = new Types.ObjectId()
   const refundedAt = new Date()
@@ -553,10 +566,15 @@ async function refund({ id, orgId, amount, reason, operator }) {
       _id: order._id,
       org: orgId,
       status: { $in: [OrderStatus.PAID, OrderStatus.PARTIALLY_REFUNDED] },
-      refundedAmount: oldRefundedAmount // 乐观锁: 仅未变更的累计值才匹配
+      // 2026-08-05: $expr 单文档原子守卫, 防并发超退.
+      //   refundedAmount + amount ≤ paidAmount + EPS (EPS=1e-6 防 IEEE 754 浮点误差)
+      //   两笔 600 并发: 笔 A 写时 0+600 ≤ 1000+EPS ✓; 笔 B 写时 600+600=1200 > 1000+EPS → 拒
+      //   两笔 400 并发: 都通过 (累计 800 ≤ 1000)
+      //   100.0000001 退 paidAmount=100: 0+100.0000001 ≤ 100+1e-6 ✓ (浮点容差内)
+      $expr: { $lte: [{ $add: ['$refundedAmount', Number(amount)] }, { $add: ['$paidAmount', 1e-6] }] }
     },
     {
-      $inc: { refundedAmount: amount },
+      $inc: { refundedAmount: Number(amount) },
       $set: { status: newStatus, refundedAt },
       $push: {
         refunds: {
