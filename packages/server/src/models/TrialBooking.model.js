@@ -8,7 +8,7 @@ const { Schema, model } = require('mongoose')
  * 业务上代表"一个孩子的一次试听参与记录"。ChildLead 1:N TrialBooking:
  *   - 同 ChildLead 第一次约: attemptNo=1
  *   - cancelled 后再约: 创建新一笔 TrialBooking, attemptNo=max+1
- *   - 试听完成后 (status=completed) 填 result.isEnrolled 决定是否触发转化
+ *   - 试听完成后 (status=completed) 填 result.outcome='enrolled' 决定是否触发转化
  *
  * 关键设计:
  *   - preStudent 引用 ChildLead (2026-06 改造, 替代 Lead)
@@ -20,19 +20,21 @@ const { Schema, model } = require('mongoose')
  *     - 时间/老师/教室/科目直接存在本 booking 上
  *   - 与 LessonAttendance 完全无关: 试听课不生成 LessonAttendance, 也不消耗 StudentProduct。
  *
- * 状态机 (2026-06-16 调整: 删除 no_show; 2026-06-20 加 considering; 2026-06-21 拆出 attached):
+ * 状态机 (2026-08-06 重构: 拆 status / outcome 两维 — status 只管流程, 结果统一走 result.outcome):
  *   awaiting_schedule → scheduled → arrived → completed
  *                              ↓        ↓        ↓
- *                          cancelled   considering (考虑期)
- *                                            ↓
- *                                       completed (跟进后定夺: 报名/不报名)
+ *                          cancelled  cancelled  cancelled (任意点可取消)
+ *   status=completed 即"试听已结束"; 三种结局对称坐在 result.outcome:
+ *     outcome='enrolled'    已报名 (触发转化流程)
+ *     outcome='declined'    未报名
+ *     outcome='considering' 考虑中 (试听做完但没当场定夺, 谈单老师跟进后再定夺)
  *   - scheduled 状态可改预约时间 (rescheduleTime) 或退回到 awaiting_schedule (revertToUnscheduled)
- *   - arrived → considering: 试听做完但家长没当场决定, 谈单老师后续跟进
- *   - considering → completed: 谈单老师跟进后家长确定 (result.isEnrolled=true 触发转化; false 关闭)
+ *   - arrived + 选 considering: 试听做完但家长没当场定夺 (status 翻 completed, 结果进考虑期)
+ *   - completed + outcome=considering 二次调 complete: 谈单老师跟进后定夺 (改 outcome=enrolled/declined)
  *   - 取消一律走 cancelled; 任何状态均可删除 (高危操作)
  *
  * 转化流程 (claim token 模式, 不依赖 mongoose 事务):
- *   1. TrialBooking.result.isEnrolled: null → true  (原子翻转作为重试安全 token)
+ *   1. TrialBooking.result.enrolledAt: null → now  (原子翻转作为重试安全 token; 前提 status=completed + outcome='enrolled')
  *   2. User/Student/UserOrgRel upsert 链 (每个独立幂等)
  *      - User upsert 用 parent.phone, 同 parent 下首孩转化时建账号, 次孩复用
  *   3. Parent.user 回填 (仅首次)
@@ -74,12 +76,12 @@ const TrialBookingSchema = new Schema(
     //   2026-06-21: 之前 result.negotiateTeacher 是 alias, 删了, 只保留顶级 consultant
     consultant: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
 
-    // ─── 状态机 (2026-06-16 删 no_show; 2026-06-20 加 considering) ───
-    // considering: 试听完成 (arrived) 但家长没当场定夺, 谈单老师后续跟进,
-    //   跟进完成时再翻回 completed 并填 result.isEnrolled (true 触发转化 / false 关闭)
+    // ─── 状态机 (2026-08-06 重构: 删 considering 顶级 status, 结果统一走 result.outcome) ───
+    //   status 只管流程进度: awaiting_schedule → scheduled → arrived → completed (+ 任意点 cancelled)
+    //   "考虑中" 不再是独立 status, 而是 status=completed + result.outcome='considering'
     status: {
       type: String,
-      enum: ['awaiting_schedule', 'scheduled', 'arrived', 'completed', 'considering', 'cancelled'],
+      enum: ['awaiting_schedule', 'scheduled', 'arrived', 'completed', 'cancelled'],
       default: 'awaiting_schedule',
       required: true
     },
@@ -88,19 +90,22 @@ const TrialBookingSchema = new Schema(
     actualStartTime: { type: Date, default: null },
     actualEndTime: { type: Date, default: null },
 
-    // ─── 转化结果 (status=completed 时填; 2026-06-20 considering 拆出后回退 boolean) ───
-    // isEnrolled: null=未填; true=已报名 (触发转化流程); false=不报名
-    //   considering 状态拆到顶级 status 字段 (2026-06-20); result 只承载"已定夺"信息
+    // ─── 试听结果 (2026-08-06 重构: status 只管流程, 结果统一走 outcome) ───
+    //   status=completed 即"试听已结束"; 三种结局对称坐在 outcome:
+    //     'enrolled'    已报名 (触发转化流程)
+    //     'declined'    未报名
+    //     'considering' 考虑中 (家长没当场定夺, 谈单老师后续跟进, 定夺后再翻 enrolled/declined)
+    //     null          未到 completed (arrived 待定夺), 业务上 completed 不该出现 null
     // 2026-06-21: result.negotiateTeacher 删了, 谈单老师统一走顶级 consultant 字段
     result: {
-      isEnrolled: { type: Boolean, default: null },
-      // 吸引报名的点 (仅 isEnrolled=true 时填)
+      outcome: { type: String, enum: ['enrolled', 'declined', 'considering'], default: null },
+      // 吸引报名的点 (仅 outcome=enrolled 时填)
       attractionPoint: { type: String, default: '' },
-      // 为什么不报名 (仅 isEnrolled=false 时填)
+      // 为什么不报名 (仅 outcome=declined 时填)
       reasonNotEnrolled: { type: String, default: '' },
-      // 2026-06-18 引入, 2026-06-20 改用途: 考虑期跟进日志
-      //   - considering 状态进入时: 记录家长当下态度/顾虑
-      //   - considering → completed 时: 保留历史态度作为参考 (业务上谈单老师看态度调整跟进策略)
+      // 考虑期跟进日志 (仅 outcome=considering 时填)
+      //   - 进入考虑期时: 记录家长当下态度/顾虑
+      //   - 定夺后: 保留历史态度作为参考 (业务上谈单老师看态度调整跟进策略)
       considerNote: { type: String, default: '' },
       // 2026-06-21 新增: 孩子课堂表现/反馈 (考虑中时)
       //   - 业务: 跟进电话时引述孩子的表现增强说服力 ("您孩子刚才做项目时...")
@@ -110,7 +115,7 @@ const TrialBookingSchema = new Schema(
       //   - 业务: 谈单老师打电话前先看这个, 准备切入点 + 报价策略 + 异议处理
       //   - 选填; 老咨询师不需要, 新人需要
       followUpScript: { type: String, default: '' },
-      // 转化时间 (isEnrolled 翻为 true 的时间, 用于 5 分钟撤销窗口判断)
+      // 转化时间 (outcome=enrolled 且执行 convert 时翻转, 用于 5 分钟撤销窗口判断 + claim token)
       enrolledAt: { type: Date, default: null },
       _id: false
     },

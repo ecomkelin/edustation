@@ -34,10 +34,6 @@
             @click="onUnconvert"
           >撤销转化</el-button>
           <el-button
-            size="small"
-            @click="emit('open-edit', child)"
-          >编辑基础信息</el-button>
-          <el-button
             v-if="hasPerm('recruit.write') && !['lost'].includes(child.status)"
             size="small"
             type="success"
@@ -211,8 +207,37 @@
             </el-table-column>
             <el-table-column label="是否报名" width="90">
               <template #default="{ row }">
-                <el-tag v-if="row.result?.isEnrolled === true" type="success" size="small">已报名</el-tag>
-                <el-tag v-else-if="row.result?.isEnrolled === false" type="info" size="small">未报名</el-tag>
+                <el-tag v-if="row.result?.outcome === 'enrolled'" type="success" size="small">已报名</el-tag>
+                <el-tag v-else-if="row.result?.outcome === 'declined'" type="info" size="small">未报名</el-tag>
+                <el-tag v-else-if="row.result?.outcome === 'considering'" type="warning" size="small">考虑中</el-tag>
+                <span v-else class="muted">-</span>
+              </template>
+            </el-table-column>
+            <!-- 2026-08-06: 结果说明列 — completed 行按 outcome 展示摘要, 悬停看全文 -->
+            <el-table-column label="结果说明" min-width="150">
+              <template #default="{ row }">
+                <el-tooltip
+                  v-if="row.status === 'completed' && row.result?.outcome"
+                  placement="top"
+                  :show-after="200"
+                >
+                  <template #content>
+                    <div class="result-tip">
+                      <template v-if="row.result.outcome === 'considering'">
+                        <div><span class="tip-k">家长态度：</span>{{ row.result.considerNote || '-' }}</div>
+                        <div v-if="row.result.childNote"><span class="tip-k">孩子表现：</span>{{ row.result.childNote }}</div>
+                        <div v-if="row.result.followUpScript"><span class="tip-k">跟进话术：</span>{{ row.result.followUpScript }}</div>
+                      </template>
+                      <template v-else-if="row.result.outcome === 'enrolled'">
+                        <div><span class="tip-k">吸引报名的点：</span>{{ row.result.attractionPoint || '-' }}</div>
+                      </template>
+                      <template v-else-if="row.result.outcome === 'declined'">
+                        <div><span class="tip-k">为什么不报名：</span>{{ row.result.reasonNotEnrolled || '-' }}</div>
+                      </template>
+                    </div>
+                  </template>
+                  <span class="remark-cell">{{ resultSummary(row) }}</span>
+                </el-tooltip>
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
@@ -222,19 +247,19 @@
                 {{ row.consultant?.realName || row.consultant?.mobile || '-' }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
                 <el-button
-                  v-if="(row.status === 'scheduled' || row.status === 'arrived' || (row.status === 'completed' && row.result?.isEnrolled === null)) && hasPerm('recruit.write')"
+                  v-if="(row.status === 'scheduled' || row.status === 'arrived' || (row.status === 'completed' && row.result?.outcome === 'considering')) && hasPerm('recruit.write')"
                   size="small"
                   link
                   type="primary"
                   @click="openSignIn(row)"
                 >
-                  {{ row.status === 'scheduled' ? '到店' : row.status === 'arrived' ? '完成' : '补填' }}
+                  {{ row.status === 'scheduled' ? '到店' : row.status === 'arrived' ? '完成' : '跟进' }}
                 </el-button>
                 <el-button
-                  v-if="row.status === 'completed' && row.result?.isEnrolled === true && !row.result?.enrolledAt && hasPerm('recruit.convert')"
+                  v-if="row.status === 'completed' && row.result?.outcome === 'enrolled' && !row.result?.enrolledAt && hasPerm('recruit.convert')"
                   size="small"
                   link
                   type="success"
@@ -308,9 +333,12 @@ import CreateBookingDialog from './CreateBookingDialog.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  childLeadId: { type: String, default: null }
+  childLeadId: { type: String, default: null },
+  // 打开时默认停在哪个 tab ('activities' | 'bookings')
+  // 2026-08-06: 列表页「转化」按钮在无可转化试听时, 直接把人送到试听记录 tab
+  defaultTab: { type: String, default: 'activities' }
 })
-const emit = defineEmits(['update:visible', 'updated', 'open-edit', 'open-parent', 'open-sibling'])
+const emit = defineEmits(['update:visible', 'updated', 'open-parent', 'open-sibling'])
 
 const authStore = useAuthStore()
 const isPlatformAdmin = computed(() => !!authStore.user?.isPlatformAdmin)
@@ -362,7 +390,7 @@ function canEditActivity(a) {
 
 watch(() => props.visible, async (v) => {
   if (v && props.childLeadId) {
-    activeTab.value = 'activities'
+    activeTab.value = props.defaultTab || 'activities'
     await load()
   } else {
     // 关闭时清掉数据, 下次打开重新加载
@@ -415,6 +443,15 @@ function lifecycleLabel(s) { return PARENT_LIFECYCLE_LABEL[s] || s || '-' }
 function lifecycleTagType(s) { return PARENT_LIFECYCLE_TAG_TYPE[s] || 'info' }
 function activityTypeLabel(t) { return LEAD_ACTIVITY_TYPE_LABEL[t] || t || '-' }
 function genderLabel(g) { return GENDER_LABEL[g] || g || '-' }
+// 2026-08-06: 结果说明列摘要 — completed 行按 outcome 取对应字段 (复用 TrialBookings 同款逻辑)
+function resultSummary(row) {
+  const r = row.result
+  if (!r || !r.outcome) return '-'
+  if (r.outcome === 'considering') return r.considerNote || '考虑中'
+  if (r.outcome === 'enrolled') return r.attractionPoint || '已报名'
+  if (r.outcome === 'declined') return r.reasonNotEnrolled || '未报名'
+  return '-'
+}
 function formatTime(d) {
   if (!d) return '-'
   return new Date(d).toLocaleString('zh-CN')
@@ -554,6 +591,19 @@ function onOpenSibling(s) {
 <style scoped>
 .loading-block { height: 200px; }
 .detail-content { padding: 0 4px; }
+/* 2026-08-06: 结果说明列 — 摘要截断 + tooltip 多行排版 */
+.remark-cell {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  color: #606266;
+  cursor: help;
+}
+.result-tip { max-width: 320px; line-height: 1.7; }
+.result-tip .tip-k { color: #c0c4cc; }
 .header {
   display: flex;
   gap: 8px;

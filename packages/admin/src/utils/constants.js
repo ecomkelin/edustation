@@ -75,14 +75,14 @@ export const CHILD_LEAD_STATUS_TAG_TYPE = {
   lost: 'danger'
 }
 
-// TrialBooking 状态机标签 (2026-06-16 删 no_show; 2026-06-20 加 considering)
-//   considering: 试听做完但家长没当场定夺, 谈单老师后续跟进
+// TrialBooking 状态机标签 (2026-08-06 重构: status 去掉 considering, 结果统一走 result.outcome)
+//   status 只管流程: 待约/已约/已到店/已完成/已取消
+//   "考虑中/已报名/未报名" 不再是 status, 而是结果 outcome (见下方 TRIAL_OUTCOME_*)
 export const TRIAL_BOOKING_STATUS_LABEL = {
   awaiting_schedule: '待约',
   scheduled: '已约',
   arrived: '已到店',
   completed: '已完成',
-  considering: '考虑中',
   cancelled: '已取消'
 }
 export const TRIAL_BOOKING_STATUS_TAG_TYPE = {
@@ -90,8 +90,19 @@ export const TRIAL_BOOKING_STATUS_TAG_TYPE = {
   scheduled: 'warning',
   arrived: 'primary',
   completed: 'success',
-  considering: 'warning',
   cancelled: 'danger'
+}
+
+// TrialBooking 试听结果标签 (status=completed 时, 由 result.outcome 区分三种结局)
+export const TRIAL_OUTCOME_LABEL = {
+  enrolled: '已报名',
+  declined: '未报名',
+  considering: '考虑中'
+}
+export const TRIAL_OUTCOME_TAG_TYPE = {
+  enrolled: 'success',
+  declined: 'info',
+  considering: 'warning'
 }
 
 // 触点类型标签

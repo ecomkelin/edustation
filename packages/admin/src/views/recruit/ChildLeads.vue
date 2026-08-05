@@ -61,6 +61,17 @@
             :value="c._id"
           />
         </el-select>
+        <!-- 是否已转化 (按 ChildLead.convertedStudent 判定, 不看 status) -->
+        <el-select
+          v-model="filters.converted"
+          placeholder="是否转化"
+          clearable
+          style="width: 120px"
+          @change="onFilterChange"
+        >
+          <el-option label="已转化" value="true" />
+          <el-option label="未转化" value="false" />
+        </el-select>
         <!-- 推广人 (Parent.promoteBy) -->
         <el-select
           v-model="filters.promoteBy"
@@ -160,14 +171,30 @@
           </template>
         </el-table-column>
 
-        <!-- 3. 性别 / 年龄 -->
+        <!-- 3. 是否转化 (2026-08-06)
+             判据是 convertedStudent 有值 (= 真的建了 Student), 不看 status —
+             status 只是展示态, convertedStudent 才是转化事实 -->
+        <el-table-column label="转化" width="96" align="center">
+          <template #default="{ row }">
+            <el-tooltip
+              v-if="row.convertedStudent"
+              :content="`学员: ${row.convertedStudent.name || '-'}${row.convertedAt ? ' / ' + formatTime(row.convertedAt) : ''}`"
+              placement="top"
+            >
+              <el-tag type="success" size="small">已转化</el-tag>
+            </el-tooltip>
+            <el-tag v-else type="info" size="small" effect="plain">未转化</el-tag>
+          </template>
+        </el-table-column>
+
+        <!-- 4. 性别 / 年龄 -->
         <el-table-column label="性别/年龄" width="90">
           <template #default="{ row }">
             {{ genderLabel(row.gender) }} / {{ row.age ?? '-' }}
           </template>
         </el-table-column>
 
-        <!-- 4. 学校 / 年级 -->
+        <!-- 5. 学校 / 年级 -->
         <el-table-column label="学校年级" min-width="140">
           <template #default="{ row }">
             <div>{{ typeof row.school === 'object' ? (row.school?.name || '-') : (row.school || '-') }}</div>
@@ -175,7 +202,7 @@
           </template>
         </el-table-column>
 
-        <!-- 5. 试听科目 (后端 list 只 populate 第一个 trialSubject; 多余的 trialSubjects 数组在 detail 弹窗才展开) -->
+        <!-- 6. 试听科目 (后端 list 只 populate 第一个 trialSubject; 多余的 trialSubjects 数组在 detail 弹窗才展开) -->
         <el-table-column label="试听科目" min-width="100">
           <template #default="{ row }">
             <span v-if="row.trialSubject?.name">
@@ -186,7 +213,7 @@
           </template>
         </el-table-column>
 
-        <!-- 6. 所属家长 -->
+        <!-- 7. 所属家长 -->
         <el-table-column label="所属家长" min-width="170">
           <template #default="{ row }">
             <el-link
@@ -205,7 +232,7 @@
           </template>
         </el-table-column>
 
-        <!-- 7. 最近试听 -->
+        <!-- 8. 最近试听 -->
         <el-table-column label="最近试听" width="120">
           <template #default="{ row }">
             <span v-if="row.latestBooking">
@@ -218,22 +245,29 @@
           </template>
         </el-table-column>
 
-        <!-- 8. 最近联系 -->
+        <!-- 9. 最近联系 -->
         <el-table-column label="最近联系" width="160">
           <template #default="{ row }">{{ formatTime(row.lastContactedAt) }}</template>
         </el-table-column>
 
-        <!-- 9. 录入人 -->
+        <!-- 10. 录入人 -->
         <el-table-column label="录入人" min-width="90">
           <template #default="{ row }">
             {{ row.createdBy?.realName || row.createdBy?.mobile || '-' }}
           </template>
         </el-table-column>
 
-        <!-- 10. 操作 -->
-        <el-table-column label="操作" width="280" fixed="right">
+        <!-- 11. 操作 (2026-08-06: 280 → 200; 去掉"撤销转化"(仅详情弹窗保留), 未转化行加"转化"入口)
+             按钮顺序: 详情 → 编辑 → 触点 (有权限时) → 转化 (未转化时; 行末高亮位置) -->
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button size="small" link @click="openDetail(row)">详情</el-button>
+            <el-button
+              v-if="hasPerm('recruit.write')"
+              size="small"
+              link
+              @click="openEdit(row)"
+            >编辑</el-button>
             <el-button
               v-if="!['converted', 'lost'].includes(row.status) && hasPerm('recruit.write')"
               size="small"
@@ -241,19 +275,23 @@
               type="primary"
               @click="openAddActivity(row)"
             >+ 触点</el-button>
-            <el-button
-              v-if="row.status === 'converted' && hasPerm('recruit.convert')"
-              size="small"
-              link
-              type="success"
-              @click="onUnconvert(row)"
-            >撤销</el-button>
-            <el-button
-              v-if="hasPerm('recruit.write')"
-              size="small"
-              link
-              @click="openEdit(row)"
-            >编辑</el-button>
+            <!-- 转化: 仅未转化行显示
+                 - 有可转化试听 (completed + 结果已报名) → 直接走 preview + 确认 + 转化
+                 - 没有 → 点击跳详情的「试听记录」tab, 先去完成试听/标结果 (tooltip 里说清楚) -->
+            <el-tooltip
+              v-if="showConvert(row)"
+              :content="convertHint(row)"
+              placement="top"
+              :show-after="200"
+            >
+              <el-button
+                size="small"
+                link
+                type="success"
+                :loading="convertingId === row._id"
+                @click="onConvert(row)"
+              >转化</el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -289,6 +327,7 @@
     <ChildLeadDetailDialog
       v-model:visible="detailDialog.visible"
       :child-lead-id="detailDialog.childLeadId"
+      :default-tab="detailDialog.defaultTab"
       @updated="load"
       @open-parent="onOpenParent"
       @open-sibling="onOpenSibling"
@@ -322,6 +361,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Download, Upload } from '@element-plus/icons-vue'
 import { childLeadApi } from '@/api/childLead'
+import { trialBookingApi } from '@/api/trialBooking'
 import { categoryApi } from '@/api/category'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
@@ -344,6 +384,8 @@ const isPlatformAdmin = computed(() => !!authStore.user?.isPlatformAdmin)
 const hasPerm = (code) => hasPermInOrg(authStore, code)
 
 const loading = ref(false)
+// 行内转化 loading (按行 id 锁, 避免整表 loading)
+const convertingId = ref(null)
 const rows = ref([])
 const total = ref(0)
 const trialSubjectOptions = ref([])
@@ -354,6 +396,8 @@ const filters = reactive({
   range: '3m',
   dateRange: [], // [YYYY-MM-DD, YYYY-MM-DD] - 设置后覆盖 range 预设
   trialSubject: null,
+  // 是否已转化: null=全部 / 'true' / 'false' (后端按 convertedStudent 判定, 不看 status)
+  converted: null,
   promoteBy: null,
   inviteTeacher: null,
   // 2026-06-21: 删 consultant 筛选 (Parent.consultant 字段下线)
@@ -365,7 +409,7 @@ const pagination = reactive({ page: 1, pageSize: 20 })
 
 const createDialog = reactive({ visible: false })
 const editDialog = reactive({ visible: false, childLead: null, parent: null })
-const detailDialog = reactive({ visible: false, childLeadId: null })
+const detailDialog = reactive({ visible: false, childLeadId: null, defaultTab: 'activities' })
 const parentDialog = reactive({ visible: false, parentId: null })
 const activityDialog = reactive({ visible: false, childLeadId: null, childName: '' })
 // 批量导入 (2026-06-20)
@@ -466,6 +510,7 @@ function onReset() {
   filters.range = '3m'
   filters.dateRange = []
   filters.trialSubject = null
+  filters.converted = null
   filters.promoteBy = null
   filters.inviteTeacher = null
   // 2026-06-21: 删 consultant 重置
@@ -490,8 +535,9 @@ function openEdit(row) {
   editDialog.visible = true
 }
 
-function openDetail(row) {
+function openDetail(row, tab = 'activities') {
   detailDialog.childLeadId = row._id
+  detailDialog.defaultTab = tab
   detailDialog.visible = true
 }
 
@@ -511,20 +557,58 @@ function openAddActivity(row) {
   activityDialog.visible = true
 }
 
-async function onUnconvert(row) {
-  const ok = await ElMessageBox.confirm(
-    `撤销 ${row.name} 的转化? (5 分钟内有效)`,
-    '撤销转化',
-    { type: 'warning' }
-  ).catch(() => null)
-  if (!ok) return
+// === 转化 (2026-08-06) ===
+// 转化是 per-booking 动作 (后端 claim token 锁在 TrialBooking.result.enrolledAt),
+// 所以行内按钮依赖 list 派生的 row.convertibleBooking; 没有就把人引到详情的试听记录 tab
+// 已流失行不给"去补试听结果"的引导 (业务上已放弃), 除非它真的有一笔可转化的试听
+function showConvert(row) {
+  if (row.convertedStudent || !hasPerm('recruit.convert')) return false
+  if (row.status === 'lost') return !!row.convertibleBooking
+  return true
+}
+
+function convertHint(row) {
+  return row.convertibleBooking
+    ? `转为正式学员 (第 ${row.convertibleBooking.attemptNo} 次试听已标记「已报名」)`
+    : '暂无可转化的试听: 需先在「试听记录」完成试听并把结果标记为「已报名」— 点击前往'
+}
+
+async function onConvert(row) {
+  // 没有可转化的试听 → 引导去详情的试听记录 tab 补结果
+  if (!row.convertibleBooking) {
+    ElMessage.info('请先完成试听并把结果标记为「已报名」')
+    openDetail(row, 'bookings')
+    return
+  }
+  convertingId.value = row._id
   try {
-    await childLeadApi.unconvert(row._id)
-    ElMessage.success('已撤销')
+    // 两步式: preview 拿初始密码/是否建账号 → 确认 → convert
+    const preview = await trialBookingApi.convertPreview(row.convertibleBooking.id)
+    if (preview.data?.alreadyConverted) {
+      ElMessage.warning('该孩子已转化')
+      load()
+      return
+    }
+    const ok = await ElMessageBox.confirm(
+      `将为 ${row.name} 创建学员档案` +
+      (preview.data?.willCreateUser
+        ? `, 并创建家长账号 (${preview.data.previewUser?.realName}, 初始密码: ${preview.data.initialPassword})`
+        : ` (家长账号 ${preview.data?.previewUser?.mobile || ''} 已存在, 复用)`) +
+      '。\n\n5 分钟内可在孩子详情里撤销。',
+      '确认转化',
+      { type: 'success', confirmButtonText: '确认转化', cancelButtonText: '取消' }
+    ).catch(() => null)
+    if (!ok) return
+    const r = await trialBookingApi.convert(row.convertibleBooking.id)
+    if (r.data?.idempotent) ElMessage.info('已转化, 幂等返回')
+    else if (r.data?.initialPassword) ElMessage.success(`已转化, 家长账号初始密码: ${r.data.initialPassword}`)
+    else ElMessage.success('已转化')
     load()
   } catch (e) {
-    const msg = e.response?.data?.message || e.message || '撤销失败'
-    ElMessage.error(`撤销失败: ${msg}`)
+    const msg = e.response?.data?.message || e.message || '转化失败'
+    ElMessage.error(`转化失败: ${msg}`)
+  } finally {
+    convertingId.value = null
   }
 }
 

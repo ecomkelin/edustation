@@ -50,7 +50,11 @@
 - `preStudent: ObjectId<ChildLead>`（替代原 Lead）
 - `parent: ObjectId<Parent>`（冗余，加速"该家长所有试听"查询）
 - `consultant: ObjectId<User>`（谈单老师，与 teacher 上课老师分离）
-- 其余字段与原 Lead 模型一致（`joinMode` / `lessonSchedule` / `room` / `scheduledAt` / `status` / `result` 等）
+- 其余字段与原 Lead 模型一致（`room` / `scheduledAt` / `status` / `result` 等；2026-06-21 起删 `joinMode`/`lessonSchedule`，试听课独立于排课系统）
+- **状态机 2026-08-06 重构（status / outcome 两维）**：
+  - `status` 只管流程：`awaiting_schedule → scheduled → arrived → completed`（+ 任意点 `cancelled`）
+  - `status=completed` 即"试听已结束"；三种结局由 `result.outcome` 区分：`enrolled`（已报名，触发转化）/ `declined`（未报名）/ `considering`（考虑中，谈单老师跟进后二次调 complete 改 outcome）
+  - 老的 `considering` 顶级 status 已删；老的 `result.isEnrolled`(boolean) 已删，统一用 `result.outcome`
 
 ### LeadActivity（触点日志，collection `lead_activities`）
 
@@ -125,10 +129,10 @@
 
 ## 转化两步式（claim token 模式，2026-06 改造；2026-06-16 去 auto-mark）
 
-- 试听完成后（`status=completed`，`result.isEnrolled=true`）触发转化
+- 试听完成后（`status=completed`，`result.outcome='enrolled'`）触发转化
 - `POST /api/v1/trial-bookings/:id/convert-preview` 返回 `initialPassword` + 即将创建 User/Student 预览；若 parent.user 已存在，标注 `alreadyExists: true`，复用现有 User
 - `POST /api/v1/trial-bookings/:id/convert` 真提交：
-  1. **Claim token**：`findOneAndUpdate({_id, status='completed', 'result.isEnrolled':true, 'result.enrolledAt':null}, {$set: {'result.enrolledAt': now}})` — 原子翻转，重试安全
+  1. **Claim token**：`findOneAndUpdate({_id, status='completed', 'result.outcome':'enrolled', 'result.enrolledAt':null}, {$set: {'result.enrolledAt': now}})` — 原子翻转，重试安全
   2. **User upsert**（仅首次）：`findOneAndUpdate({mobile: parent.phone}, {$setOnInsert: {mobile, passwordHash: bcrypt(parent.phone.slice(-6)), realName: '家长-'+parent.phone.slice(-4), requirePasswordChange: true}}, {upsert: true, new: true})` — 同 phone 下首孩建，次孩复用
   3. **UserOrgRel upsert**：查"家长" Position
   4. **Parent.user 回填**（仅首次）：`Parent.findOneAndUpdate({_id: parent._id, user: null}, {$set: {user: user._id}})`

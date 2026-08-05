@@ -37,7 +37,7 @@ const password = require('@utils/password')
  *   - preStudent 引用 ChildLead (替代 Lead)
  *   - parent 冗余 (TrialBooking.parent), 加速家长维度查询
  *   - 转化两步式: convert-preview (软预览) + convert (claim token + upsert 链)
- *   - 转化原子性: 用 TrialBooking.result.isEnrolled 翻转为 "claim token" + 各步
+ *   - 转化原子性: 用 TrialBooking.result.enrolledAt (null→now) 翻转作为 "claim token" + 各步
  *     findOneAndUpdate upsert 模式实现重试安全 (无 mongoose 事务)
  *   - 撤销转化: 5 分钟窗口, 由 childLead.service.unconvert 承担 (反向操作)
  *   - 1 家长带多孩: convert 时同 parent 下其他 ChildLead 自动 mark 'converted' (updateMany)
@@ -46,7 +46,7 @@ const password = require('@utils/password')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, status, from, to, teacher, subject, preStudent, parent, attemptNo, ageMin, ageMax, isEnrolled, page, pageSize }) {
+async function list({ orgId, status, from, to, teacher, subject, preStudent, parent, attemptNo, ageMin, ageMax, outcome, page, pageSize }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   if (status) {
@@ -54,12 +54,12 @@ async function list({ orgId, status, from, to, teacher, subject, preStudent, par
     if (arr.length > 1) filter.status = { $in: arr }
     else if (arr.length === 1) filter.status = arr[0]
   }
-  // 2026-06-16: 已完成按"已报名/未报名"分桶
-  //   - isEnrolled=true  → 已报名 (status=completed + result.isEnrolled === true)
-  //   - isEnrolled=false → 未报名 (status=completed + result.isEnrolled ∈ [false, null])
-  // 2026-06-20: considering 改走顶级 status 字段; isEnrolled 不再接受 'considering'
-  if (isEnrolled === 'true') { filter.status = 'completed'; filter['result.isEnrolled'] = true }
-  else if (isEnrolled === 'false') { filter.status = 'completed'; filter['result.isEnrolled'] = { $in: [false, null] } }
+  // 2026-08-06: 结果按 outcome 分桶 (status 只管流程, 三种结局对称坐在 result.outcome)
+  //   outcome=enrolled / declined / considering → status=completed + result.outcome=X
+  if (outcome && ['enrolled', 'declined', 'considering'].includes(outcome)) {
+    filter.status = 'completed'
+    filter['result.outcome'] = outcome
+  }
   if (teacher) filter.teacher = teacher
   if (subject) filter.subject = subject
   // 2026-06-18: 按孩子年龄过滤 (年龄段筛选)
@@ -590,29 +590,31 @@ async function checkIn({ id, orgId, currentUser, body }) {
   return doc.toObject()
 }
 
-/* ─── 试听完成 / 考虑期 (2026-06-20 改造) ────────────────────────
- *  业务: 试听做完有 3 种结果
- *    1. completed + isEnrolled=true   报名 (后续触发 convert 流程)
- *    2. completed + isEnrolled=false  不报名
- *    3. considering                   考虑期 (谈单老师后续跟进, 跟进后再走 1/2)
+/* ─── 试听完成 (2026-08-06 重构: outcome 驱动, status 只管流程) ────────────────────────
+ *  业务: 试听做完有 3 种结果, 都进 status=completed, 由 result.outcome 区分:
+ *    outcome='enrolled'    报名 (后续触发 convert 流程)
+ *    outcome='declined'    不报名
+ *    outcome='considering' 考虑期 (谈单老师后续跟进, 定夺后二次调 complete 改 outcome)
  *
- *  触发规则 (后端推断 status, 不让前端传):
- *    - body.result.isEnrolled ∈ [true, false] → status='completed'
- *    - body.result.isEnrolled === null/undefined 且 body.result.considerNote 非空 → status='considering'
- *    - 已 considering, 二次调 complete 填 isEnrolled → status='completed' (跟进完成)
+ *  允许触发的状态:
+ *    - arrived / scheduled: 首次录结果
+ *    - completed + outcome='considering': 跟进后定夺 (改成 enrolled/declined)
+ *    - 其他 (completed+enrolled/declined, cancelled, awaiting_schedule): 不允许 (避免覆盖)
  *
- *  业务校验:
- *    - scheduled/arrived 状态 → 允许触发 (新流程)
- *    - considering 状态 → 允许触发 (跟进完成)
- *    - completed → 不允许 (避免覆盖已转化记录)
- *    - cancelled/awaiting_schedule → 不允许
+ *  outcome 推断 (后端只认 body.result.outcome, 不再从 boolean 推):
+ *    - outcome ∈ {enrolled,declined,considering} → 设 result.outcome + status=completed
+ *    - 未带 outcome → 维持当前 status (arrived 待定夺), 仅更新备注/谈单老师
  */
 async function complete({ id, orgId, currentUser, body }) {
   if (!currentUser) throw ApiError.unauthorized()
   const doc = await TrialBooking.findOne({ _id: id, org: orgId })
   if (!doc) throw ApiError.notFound('试听预约不存在')
-  if (!['arrived', 'scheduled', 'considering'].includes(doc.status)) {
-    throw ApiError.badRequest(`仅 arrived / scheduled / considering 可完成, 当前 ${doc.status}`)
+  // 允许: arrived/scheduled (首次录), completed+considering (跟进定夺)
+  const canComplete =
+    ['arrived', 'scheduled'].includes(doc.status) ||
+    (doc.status === 'completed' && doc.result?.outcome === 'considering')
+  if (!canComplete) {
+    throw ApiError.badRequest(`当前状态不可录结果 (status=${doc.status}, outcome=${doc.result?.outcome})`)
   }
 
   if (body.actualEndTime) doc.actualEndTime = new Date(body.actualEndTime)
@@ -626,24 +628,14 @@ async function complete({ id, orgId, currentUser, body }) {
     if (body.result.childNote !== undefined) doc.result.childNote = body.result.childNote
     if (body.result.followUpScript !== undefined) doc.result.followUpScript = body.result.followUpScript
 
-    // 状态机: 根据入参决定翻 completed / considering / arrived (2026-06-21 修复)
-    //   - isEnrolled === true|false  → "已定夺" → status=completed
-    //   - isEnrolled === null + 当前 arrived   → 翻 considering (明确表达"未决, 进考虑期")
-    //   - isEnrolled === null + 当前 considering → 保持 considering (改备注)
-    //   - 其他 (arrived + 啥都没带) → 维持 arrived
-    if (body.result.isEnrolled === true || body.result.isEnrolled === false) {
-      // 已定夺: completed
-      doc.result.isEnrolled = body.result.isEnrolled
+    // outcome 驱动: 三值任一 → 设 result.outcome + status=completed
+    //   (考虑中也是 completed, 由 outcome 区分; 不再用 considering 顶级 status)
+    const nextOutcome = body.result.outcome
+    if (['enrolled', 'declined', 'considering'].includes(nextOutcome)) {
+      doc.result.outcome = nextOutcome
       doc.status = 'completed'
-    } else if (body.result.isEnrolled === null) {
-      // 选"考虑中": arrived → considering; considering → 保持 considering
-      doc.result.isEnrolled = null
-      if (doc.status === 'arrived' || doc.status === 'scheduled') {
-        doc.status = 'considering'
-      }
-      // 已 considering 则维持 (改备注/谈单老师, 不动 status)
     }
-    // 其他场景: arrived + 啥都没带 → 维持 arrived (待定夺)
+    // 未带 outcome → 维持当前 status (arrived 待定夺), 仅更新上面的备注/谈单老师
   }
   await doc.save()
   // 翻 childLead.status='tried' (若已 converted 保持)
@@ -661,8 +653,8 @@ async function convertPreview({ id, orgId }) {
     .populate('preStudent', 'name gender school grade className parent')
     .populate('parent', 'phone user')
   if (!doc) throw ApiError.notFound('试听预约不存在')
-  if (doc.status !== 'completed' || doc.result?.isEnrolled !== true) {
-    throw ApiError.badRequest('仅 completed + result.isEnrolled=true 可触发转化预览')
+  if (doc.status !== 'completed' || doc.result?.outcome !== 'enrolled') {
+    throw ApiError.badRequest('仅 completed + result.outcome=enrolled 可触发转化预览')
   }
   const child = doc.preStudent
   if (!child) throw ApiError.notFound('孩子潜客不存在')
@@ -716,7 +708,7 @@ async function convert({ id, orgId, currentUser }) {
       _id: id,
       org: orgId,
       status: 'completed',
-      'result.isEnrolled': true,
+      'result.outcome': 'enrolled',
       'result.enrolledAt': null
     },
     { $set: { 'result.enrolledAt': new Date() } },

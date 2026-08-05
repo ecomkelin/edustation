@@ -294,9 +294,8 @@ const META = {
   },
   complete_trial: {
     description:
-      '试听完成 (status → completed)。同时填 result 子文档: ' +
-      'isEnrolled (true 表示家长确认报名, 此时才允许走 convert_trial); ' +
-      'attractionPoint (吸引点); reasonNotEnrolled (未报名原因)。' +
+      '试听完成 (status → completed, 由 result.outcome 定结局)。outcome=enrolled (报名, 才允许走 convert_trial) / declined (未报名) / considering (考虑中, 后续跟进)。' +
+      'attractionPoint (吸引点); reasonNotEnrolled (未报名原因); considerNote (考虑中态度)。' +
       '谈单老师通过顶级 consultant 字段 (User._id) 传入, 2026-06-21 起 result.negotiateTeacher 已下线。' +
       '完成后 ChildLead.status 翻 tried。',
     parameters: {
@@ -308,11 +307,11 @@ const META = {
         consultant: { type: 'string', description: '谈单老师 User._id (顶级字段, 2026-06-21)' },
         result: {
           type: 'object',
-          description: '试听结果, 至少需要 isEnrolled 字段',
+          description: '试听结果, 至少需要 outcome 字段',
           properties: {
-            isEnrolled: { type: 'boolean', description: 'true=确认报名, false=未报名' },
-            attractionPoint: { type: 'string', description: '吸引点 / 报名动机' },
-            reasonNotEnrolled: { type: 'string', description: '未报名原因 (isEnrolled=false 时填)' }
+            outcome: { type: 'string', enum: ['enrolled', 'declined', 'considering'], description: 'enrolled=确认报名, declined=未报名, considering=考虑中' },
+            attractionPoint: { type: 'string', description: '吸引点 / 报名动机 (outcome=enrolled 时填)' },
+            reasonNotEnrolled: { type: 'string', description: '未报名原因 (outcome=declined 时填)' }
           }
         }
       }
@@ -321,7 +320,7 @@ const META = {
   convert_trial: {
     description:
       '【高风险,需前端二次确认】试听转学员。' +
-      '前提: booking.status=completed 且 result.isEnrolled=true, 且 result.enrolledAt 未被翻转 (防并发)。' +
+      '前提: booking.status=completed 且 result.outcome=enrolled, 且 result.enrolledAt 未被翻转 (防并发)。' +
       '系统将自动: ① 原子翻转 enrolledAt (claim token); ② upsert User (mobile=parent.phone, 密码=手机号后 6 位, realName="家长-{孩名}", requirePasswordChange=true); ③ upsert UserOrgRel (家长职位); ④ 写回 Parent.user; ⑤ 创建 Student; ⑥ 翻 ChildLead.status=converted + 写 convertedStudent; ⑦ 重算 Parent.lifecycle。' +
       '5 分钟内可调用 unconvert_trial 撤销。',
     parameters: {

@@ -40,7 +40,7 @@ awaiting_schedule → scheduled → arrived → completed
 ### 转化两步式 (claim token 模式)
 1. `POST /convert-preview` — 软预览, 返回 `initialPassword` 等
 2. `POST /convert` — 真提交:
-   - **Claim token**: `TrialBooking.result.isEnrolled: null → true` (原子翻转)
+   - **Claim token**: `TrialBooking.result.enrolledAt: null → now` (原子翻转, 前提 status=completed + result.outcome='enrolled')
    - **User upsert**: `findOneAndUpdate({mobile}, {$setOnInsert: ...}, {upsert: true})`
    - **UserOrgRel upsert**: 同上, 关联「家长」Position
    - **Student create**: 拷贝 lead.name/gender/school/grade/className

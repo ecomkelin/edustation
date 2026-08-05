@@ -62,7 +62,7 @@
     <el-table :data="items" v-loading="loading" style="margin-top: 12px" :row-class-name="rowClass">
       <el-table-column label="订单号" width="120" fixed="left">
         <template #default="{ row }">
-          <el-link type="primary" :underline="'never'" class="order-link" @click="openDetail(row)">
+          <el-link type="primary" underline="never" class="order-link" @click="openDetail(row)">
             {{ String(row._id).slice(-6).toUpperCase() }}
           </el-link>
         </template>

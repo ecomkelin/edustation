@@ -22,7 +22,7 @@
           v-for="(it, idx) in subjectSummary"
           :key="idx"
           size="small"
-          :type="idx === 0 ? '' : 'info'"
+          :type="idx === 0 ? 'primary' : 'info'"
           class="subj-tag"
         >
           {{ it.name }} × {{ it.count }}
@@ -115,7 +115,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:visible', 'scheduled'])
 
-const dialogTitle = computed(() => props.singleMode ? '排一次试听' : '批量排试听日程')
+const dialogTitle = computed(() => props.singleMode ? '排一次试听' : '批量排试听课')
 
 const formRef = ref(null)
 const submitting = ref(false)

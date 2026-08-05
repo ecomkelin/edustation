@@ -72,6 +72,8 @@ exports.list = [
   // 2026-06-20: 补 source / trialSubject 校验 (前端筛选项一直无效, 后端缺这俩 query 校验 + 过滤分支)
   query('source').optional().isMongoId().withMessage('source 需为 Channel 字典 id'),
   query('trialSubject').optional().isMongoId().withMessage('trialSubject 需为 Subject 字典 id'),
+  // 2026-08-06: 是否已转化 (以 ChildLead.convertedStudent 判定, 不看 status)
+  query('converted').optional({ nullable: true }).isBoolean().withMessage('converted 需为 true/false'),
   query('from').optional().isISO8601(),
   query('to').optional().isISO8601(),
   query('page').optional().isInt({ min: 1 }),

@@ -12,7 +12,7 @@
       <template #title>导入流程</template>
       <div class="intro">
         1. 下载 Excel 模板 (8 列: 手机号 / 孩子姓名 / 年龄 / 试听科目 / 学校 / 年级 / 班级 / 邀约老师) —
-        <el-link type="primary" :underline="false" @click="handleDownloadTemplate">[下载模板]</el-link>
+        <el-link type="primary" underline="never" @click="handleDownloadTemplate">[下载模板]</el-link>
         <br />
         2. 填好后上传, 每次最多 1000 行 —
         <el-upload

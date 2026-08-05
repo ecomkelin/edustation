@@ -125,7 +125,7 @@ async function recruitTeacherConversion({ orgId, from, to }) {
   return withCache(`${orgId}:recruit-teacher-conversion:${f.toISOString()}:${t.toISOString()}`, async () => {
     // 1) 按 teacher 聚合 trial_bookings
     //   - 状态: 包含 completed 才算"试听过" (avoid no_show/cancelled 干扰)
-    //   - 转化: result.isEnrolled=true
+    //   - 转化: result.outcome='enrolled'
     const teacherStats = await TrialBooking.aggregate([
       {
         $match: {
@@ -141,7 +141,7 @@ async function recruitTeacherConversion({ orgId, from, to }) {
           trialCount: { $sum: 1 },
           arrivedCount: { $sum: { $cond: [{ $eq: ['$status', 'arrived'] }, 1, 0] } },
           completedCount: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
-          enrolledCount: { $sum: { $cond: [{ $eq: ['$result.isEnrolled', true] }, 1, 0] } }
+          enrolledCount: { $sum: { $cond: [{ $eq: ['$result.outcome', 'enrolled'] }, 1, 0] } }
         }
       }
     ])
@@ -165,7 +165,7 @@ async function recruitTeacherConversion({ orgId, from, to }) {
           arrivedCount: t.arrivedCount,
           completedCount: t.completedCount,
           enrolledCount: t.enrolledCount,
-          // 转化率定义: 已消课且 result.isEnrolled=true / 试听过 (= trialCount)
+          // 转化率定义: result.outcome='enrolled' / 试听过 (= trialCount)
           conversionRate: t.trialCount > 0
             ? Math.round((t.enrolledCount / t.trialCount) * 1000) / 10
             : 0

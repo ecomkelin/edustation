@@ -35,11 +35,8 @@ exports.list = [
   // 2026-06-18: 按孩子年龄过滤 (前端年龄段下拉会同时传 min/max)
   query('ageMin').optional().isInt({ min: 0, max: 100 }),
   query('ageMax').optional().isInt({ min: 0, max: 100 }),
-  // 2026-06-16: 已完成按"已报名/未报名"分桶
-  //   - 'true'  → 已报名 (status=completed + result.isEnrolled === true)
-  //   - 'false' → 未报名 (status=completed + result.isEnrolled ∈ [false, null])
-  // 2026-06-20: 考虑期 (considering) 改走顶级 status, isEnrolled 列表参数不再接 'considering'
-  query('isEnrolled').optional().isIn(['true', 'false']).withMessage('isEnrolled 需为 true/false'),
+  // 2026-08-06: 结果按 outcome 分桶 (enrolled/declined/considering), status=completed + result.outcome=X
+  query('outcome').optional().isIn(['enrolled', 'declined', 'considering']).withMessage('outcome 需为 enrolled/declined/considering'),
   query('page').optional().isInt({ min: 1 }),
   query('pageSize').optional().isInt({ min: 1, max: 200 })
 ]
@@ -82,9 +79,8 @@ exports.checkIn = [
 exports.complete = [
   body('actualEndTime').optional().isISO8601().withMessage('actualEndTime 需为 ISO 日期'),
   body('result').optional().isObject().withMessage('result 需为对象'),
-  // 2026-06-20: isEnrolled 退回 boolean (考虑期 considering 改走顶级 status 字段)
-  //   null 也允许 (前端 explicit 表达"未定夺")
-  body('result.isEnrolled').optional({ nullable: true }).isBoolean().withMessage('isEnrolled 需为 boolean'),
+  // 2026-08-06: outcome 驱动 (enrolled/declined/considering), null=未带 (维持当前 status)
+  body('result.outcome').optional({ nullable: true }).isIn(['enrolled', 'declined', 'considering']).withMessage('outcome 需为 enrolled/declined/considering'),
   body('result.attractionPoint').optional({ nullable: true }).isString().isLength({ max: 500 }),
   body('result.reasonNotEnrolled').optional({ nullable: true }).isString().isLength({ max: 500 }),
   body('result.considerNote').optional({ nullable: true }).isString().isLength({ max: 500 }),

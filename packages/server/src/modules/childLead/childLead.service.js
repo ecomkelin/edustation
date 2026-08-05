@@ -29,7 +29,7 @@ const { getDefaultChannelId } = require('@modules/parent/parent.service')
 
 /* ─── 列表 / 详情 ─────────────────────────────────── */
 
-async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, inviteTeacher, source, trialSubject }) {
+async function list({ orgId, currentUser, scope, status, keyword, parent, from, to, page, pageSize, promoteBy, inviteTeacher, source, trialSubject, converted }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   // 销售/教务分级
@@ -45,6 +45,13 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
   }
   if (parent) filter.parent = parent
   if (inviteTeacher) filter.inviteTeacher = inviteTeacher
+  // 2026-08-06: 是否已转化 — 以 convertedStudent 为准, 不用 status
+  //   convertedStudent 是"真的建了 Student"的唯一判据 (trialBooking.service.convert Step 7 回填);
+  //   status='converted' 只是展示态, 撤销/回退时也可能与之短暂不一致
+  if (converted !== undefined && converted !== null && converted !== '') {
+    const wantConverted = converted === true || converted === 'true'
+    filter.convertedStudent = wantConverted ? { $ne: null } : null
+  }
   // 2026-06-20: 补 source / trialSubject 过滤
   //   ⚠️ 历史数据一致性:
   //   - source 字段: schema 是 ObjectId, 老/新数据都是 ObjectId (单值字段 raw insertMany 不受影响)
@@ -148,6 +155,29 @@ async function list({ orgId, currentUser, scope, status, keyword, parent, from, 
           scheduledAt: b.scheduledAt
         }
       }
+    }
+    // 派生: 可转化的试听 (2026-08-06)
+    //   转化是 per-booking 动作, 前置条件 = completed + result.outcome='enrolled' + enrolledAt 未 claim
+    //   (见 trialBooking.service.convert Step 1 claim token)
+    //   列表带上它, 前端才能在行内直接给"转化"入口; 没有则说明还得先去试听记录里标结果
+    //   ⚠️ 已转化的孩子也可能有第二笔 enrolled 未 claim 的 booking, 前端用 convertedStudent 兜底判空
+    const convertible = await TrialBooking.aggregate([
+      {
+        $match: {
+          org: require('mongoose').Types.ObjectId.createFromHexString(String(orgId)),
+          preStudent: { $in: ids },
+          status: 'completed',
+          'result.outcome': 'enrolled',
+          'result.enrolledAt': null
+        }
+      },
+      { $sort: { attemptNo: 1 } },
+      { $group: { _id: '$preStudent', doc: { $first: '$$ROOT' } } }
+    ])
+    const convertibleByChild = new Map(convertible.map((r) => [String(r._id), r.doc]))
+    for (const c of items) {
+      const b = convertibleByChild.get(String(c._id))
+      if (b) c.convertibleBooking = { id: String(b._id), attemptNo: b.attemptNo }
     }
     // 派生: 兄弟孩子 rank/count (同 parent 下"第几个孩子")
     // 2026-06-19 修 bug: c.parent 可能是 populate 出来的对象, String() 会变 "[object Object]"
@@ -506,7 +536,7 @@ async function unconvert({ id, orgId, currentUser }) {
   }
 
   // 拿回 TrialBooking (用于 result 重置)
-  const bookings = await TrialBooking.find({ preStudent: child._id, org: orgId, 'result.isEnrolled': true })
+  const bookings = await TrialBooking.find({ preStudent: child._id, org: orgId, 'result.outcome': 'enrolled' })
 
   // 1) 物理删除 Student
   if (child.convertedStudent) {
@@ -527,7 +557,7 @@ async function unconvert({ id, orgId, currentUser }) {
   // 2026-06-21: 删 negotiateTeacher 字段 (谈单老师统一走顶级 consultant, 不在 result 内)
   for (const b of bookings) {
     b.result = {
-      isEnrolled: null,
+      outcome: null,
       attractionPoint: '',
       reasonNotEnrolled: '',
       enrolledAt: null

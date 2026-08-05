@@ -53,22 +53,32 @@
           :disabled="selectedRows.length === 0"
           @click="batchDialog.visible = true"
         >
-          批量排日程
+          批量排试听课
         </el-button>
       </div>
     </el-card>
 
     <!-- 看板 (按状态 tab) -->
     <el-card class="board-card" shadow="never">
-      <el-tabs v-model="activeTab" @tab-change="onTabChange">
-        <el-tab-pane
-          v-for="tab in TABS"
-          :key="tab.value"
-          :name="tab.value"
-        >
-          <template #label>
-            <span>{{ tab.label }} ({{ counts[tab.value] }})</span>
-          </template>
+      <!-- 2026-08-06: tab 按业务维度分组 — 「试听进行中」(流程进度) / 「试听结果」(试听后转化结局) / 尾部 (已取消 + 全部)
+           - 替代原 el-tabs 平铺 8 个 tab; 考虑中/已报名/未报名 都属"试听结果", 归到一起, 不再被"已取消"打断
+           - el-tabs 原生不支持分组, 改自定义 tab bar; 数据层 (TABS / counts / load) 不变, 仅视图分组 -->
+      <div class="tab-groups">
+        <div v-for="g in tabGroups" :key="g.key" class="tab-group">
+          <span v-if="g.title" class="tab-group-title">{{ g.title }}</span>
+          <div class="tab-group-tabs">
+            <button
+              v-for="t in g.tabs"
+              :key="t.value"
+              type="button"
+              :class="['tab-btn', { active: activeTab === t.value }]"
+              @click="onTabClick(t.value)"
+            >
+              {{ t.label }}<span class="tab-count"> ({{ counts[t.value] }})</span>
+            </button>
+          </div>
+        </div>
+      </div>
           <el-table
             v-loading="loading"
             :data="rows"
@@ -78,14 +88,14 @@
             :row-class-name="rowClassName"
             @selection-change="onSelectionChange"
           >
-            <el-table-column v-if="tab.value === 'awaiting_schedule'" type="selection" width="50" />
+            <el-table-column v-if="activeTab === 'awaiting_schedule'" type="selection" width="50" />
             <el-table-column label="孩子姓名" min-width="100">
               <template #default="{ row }">
                 <!-- 2026-06-24: 孩子姓名可点击 → 弹 ChildLeadDetailDialog (详情内已带完整触点时间线 + [+ 触点])
                      - 兜底: 没有 childLeadId 时退化为纯文本
                      - 不再内联触点摘要 (用户决定: 点开 dialog 就能看完整, 列表里不重复显示) -->
                 <div v-if="row.preStudent?._id || row.preStudent">
-                  <el-link type="primary" :underline="false" @click="openChildDetail(row)">
+                  <el-link type="primary" underline="never" @click="openChildDetail(row)">
                     {{ row.preStudent?.name || '-' }}
                   </el-link>
                 </div>
@@ -101,10 +111,10 @@
                 <!-- 2026-06-24: 联系电话本身也可点击 → 弹 ParentDetailDialog (详情内已带聚合触点时间线 + [+ 添加触点])
                      - 不再内联家长聚合摘要 (用户决定: 点开 dialog 就能看完整, 列表里不重复显示) -->
                 <template v-if="getParentId(row)">
-                  <el-link v-if="row.preStudent?.parent?.phone" type="primary" :underline="false" @click="openParentDetail(row)">
+                  <el-link v-if="row.preStudent?.parent?.phone" type="primary" underline="never" @click="openParentDetail(row)">
                     {{ row.preStudent.parent.phone }}
                   </el-link>
-                  <el-link v-else-if="row.parent?.phone" type="primary" :underline="false" @click="openParentDetail(row)">
+                  <el-link v-else-if="row.parent?.phone" type="primary" underline="never" @click="openParentDetail(row)">
                     {{ row.parent.phone }}
                   </el-link>
                 </template>
@@ -143,9 +153,47 @@
             </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
-                <el-tag :type="TRIAL_BOOKING_STATUS_TAG_TYPE[row.status]" size="small">
+                <!-- completed 按 result.outcome 细分显示 (已报名/未报名/考虑中); 其他走 status -->
+                <el-tag
+                  v-if="row.status === 'completed' && row.result?.outcome"
+                  :type="TRIAL_OUTCOME_TAG_TYPE[row.result.outcome]"
+                  size="small"
+                >
+                  {{ TRIAL_OUTCOME_LABEL[row.result.outcome] }}
+                </el-tag>
+                <el-tag v-else :type="TRIAL_BOOKING_STATUS_TAG_TYPE[row.status]" size="small">
                   {{ TRIAL_BOOKING_STATUS_LABEL[row.status] }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <!-- 2026-08-06: 结果说明列 — completed 行按 outcome 展示摘要, 悬停看全文
+                 (考虑中: 家长态度/孩子表现/话术; 已报名: 吸引点; 未报名: 原因)
+                 业务: 谈单老师跟进/复盘时列表上一眼看到, 不必每次点开试听详情弹窗 -->
+            <el-table-column label="结果说明" min-width="160">
+              <template #default="{ row }">
+                <el-tooltip
+                  v-if="row.status === 'completed' && row.result?.outcome"
+                  placement="top"
+                  :show-after="200"
+                >
+                  <template #content>
+                    <div class="result-tip">
+                      <template v-if="row.result.outcome === 'considering'">
+                        <div><span class="tip-k">家长态度：</span>{{ row.result.considerNote || '-' }}</div>
+                        <div v-if="row.result.childNote"><span class="tip-k">孩子表现：</span>{{ row.result.childNote }}</div>
+                        <div v-if="row.result.followUpScript"><span class="tip-k">跟进话术：</span>{{ row.result.followUpScript }}</div>
+                      </template>
+                      <template v-else-if="row.result.outcome === 'enrolled'">
+                        <div><span class="tip-k">吸引报名的点：</span>{{ row.result.attractionPoint || '-' }}</div>
+                      </template>
+                      <template v-else-if="row.result.outcome === 'declined'">
+                        <div><span class="tip-k">为什么不报名：</span>{{ row.result.reasonNotEnrolled || '-' }}</div>
+                      </template>
+                    </div>
+                  </template>
+                  <span class="remark-cell">{{ resultSummary(row) }}</span>
+                </el-tooltip>
+                <span v-else class="muted">-</span>
               </template>
             </el-table-column>
             <el-table-column label="邀约人" min-width="100">
@@ -158,7 +206,7 @@
             </el-table-column>
             <!-- 2026-06-21: 谈单老师列 — 走顶级 consultant 字段 (替代 result.negotiateTeacher)
                  - 后端 list 已 populate 'consultant, mobile realName'
-                 - 只在 completed 状态有意义 (isEnrolled=true 时才填), 流程 tab 显示 "-"
+                 - 只在 completed 状态有意义 (outcome=enrolled 时才填), 流程 tab 显示 "-"
                  - 业务上"已报名" tab 销售最关注"谁谈的单" -->
             <el-table-column label="谈单老师" min-width="100">
               <template #default="{ row }">
@@ -182,7 +230,7 @@
                 <span v-else class="muted">-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="320" fixed="right">
+            <el-table-column label="操作" width="200" fixed="right" class-name="action-col">
               <template #default="{ row }">
                 <!-- 2026-06-24: + 触点 — 给当前 preStudent 快速记一笔沟通
                      - 仅在 preStudent 存在时显示 (orphan booking 无 child)
@@ -210,22 +258,15 @@
                   @click="openSignIn(row)"
                 >完成试听</el-button>
                 <el-button
-                  v-if="row.status === 'completed' && row.result?.isEnrolled === null"
-                  size="small"
-                  type="warning"
-                  link
-                  @click="openSignIn(row)"
-                >补填结果</el-button>
-                <el-button
-                  v-if="row.status === 'completed' && row.result?.isEnrolled === true && !row.result?.enrolledAt"
+                  v-if="row.status === 'completed' && row.result?.outcome === 'enrolled' && !row.result?.enrolledAt"
                   size="small"
                   type="success"
                   link
                   @click="openSignIn(row)"
                 >转化</el-button>
-                <!-- 2026-06-20: considering 顶级 status — 谈单老师后续跟进, 这里让用户能重新打开 dialog 跟进/定夺 -->
+                <!-- 2026-08-06: 考虑中 = completed + outcome=considering, 谈单老师可重新打开 dialog 跟进/定夺 -->
                 <el-button
-                  v-if="row.status === 'considering'"
+                  v-if="row.status === 'completed' && row.result?.outcome === 'considering'"
                   size="small"
                   type="warning"
                   link
@@ -284,11 +325,9 @@
             @size-change="load"
             @current-change="load"
           />
-        </el-tab-pane>
-      </el-tabs>
     </el-card>
 
-    <!-- 批量排日程 dialog (2026-06: 试听不再走排课系统, 排的是"试听日程") -->
+    <!-- 批量排试听课 dialog (2026-06: 试听不再走排课系统, 排的是"试听日程") -->
     <BatchScheduleDialog
       v-model:visible="batchDialog.visible"
       :bookings="selectedRows"
@@ -412,7 +451,7 @@ import { useAuthStore } from '@/stores/auth'
 import { trialBookingApi } from '@/api/trialBooking'
 import { userApi } from '@/api/user'
 import { categoryApi } from '@/api/category'
-import { TRIAL_BOOKING_STATUS_LABEL, TRIAL_BOOKING_STATUS_TAG_TYPE } from '@/utils/constants'
+import { TRIAL_BOOKING_STATUS_LABEL, TRIAL_BOOKING_STATUS_TAG_TYPE, TRIAL_OUTCOME_LABEL, TRIAL_OUTCOME_TAG_TYPE } from '@/utils/constants'
 import { hasPermInOrg } from '@/utils/permissionHelper'
 import { handleRemoveError } from '@/utils/removable'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
@@ -425,26 +464,44 @@ import ActivityCreateDialog from './ActivityCreateDialog.vue'
 // 2026-06-24: 删 ActivitiesTimelineDialog — 行内点击改弹现有 ChildLeadDetailDialog / ParentDetailDialog
 //             这两个 dialog 已自带完整触点时间线 + [+ 触点] 入口, 没必要再造专用 dialog
 
-// 2026-06-20 调整:
-//   - 状态机加 'considering' 顶级 status, 在 [已到店] 和 [已报名] 之间独立 tab
-//   - 业务流: 待约 → 已约 → 已到店 → 考虑中 → 已报名/未报名
+// 2026-08-06 重构 (status/outcome 两维):
+//   - status 只管流程: 待约/已约/已到店/已完成/已取消
+//   - "考虑中/已报名/未报名" 都属试听结果, 由 status=completed + outcome 区分
+//   - 业务流: 待约 → 已约 → 已到店 → 已完成(outcome: 已报名/未报名/考虑中)
 //                    ↓        ↓        ↓
-//                已取消      (可退回)  (可被转化/被定夺)
-//   - "已完成" 拆 2 个: 已报名(isEnrolled=true) / 未报名(isEnrolled=false or null)
+//                已取消      (可退回)  (可被转化/被定夺/可跟进)
 //   - 每个 tab 配置:
-//       - status / isEnrolled: 给后端 list 用 (除 'all' 外必填 status)
+//       - status / outcome: 给后端 list 用 (除 'all' 外必填 status)
 //       - dateFiltered: 看板视角的 tab 受日期 picker 约束; 流程视角不受
 const TABS = [
   { value: 'awaiting_schedule', label: '待约', status: 'awaiting_schedule', dateFiltered: false },
   { value: 'scheduled', label: '已约', status: 'scheduled', dateFiltered: false },
   { value: 'arrived', label: '已到店', status: 'arrived', dateFiltered: false },
-  // 2026-06-20: 考虑期独立 tab — 试听做完但家长没当场定夺, 谈单老师后续跟进
-  { value: 'considering', label: '考虑中', status: 'considering', dateFiltered: false },
+  // 考虑中 = completed + outcome=considering (试听做完但家长没当场定夺, 谈单老师后续跟进)
+  { value: 'considering', label: '考虑中', status: 'completed', outcome: 'considering', dateFiltered: false },
   { value: 'cancelled', label: '已取消', status: 'cancelled', dateFiltered: false },
-  { value: 'completed_enrolled', label: '已报名', status: 'completed', isEnrolled: 'true', dateFiltered: true },
-  { value: 'completed_not_enrolled', label: '未报名', status: 'completed', isEnrolled: 'false', dateFiltered: true },
+  { value: 'completed_enrolled', label: '已报名', status: 'completed', outcome: 'enrolled', dateFiltered: true },
+  { value: 'completed_not_enrolled', label: '未报名', status: 'completed', outcome: 'declined', dateFiltered: true },
   { value: 'all', label: '全部', dateFiltered: true }
 ]
+
+// 2026-08-06: tab 分组 — 把"试听进行中"(流程) 与 "试听结果"(转化结局) 分开, 呼应业务两段式
+//   - 进行中: 待约 / 已约 / 已到店
+//   - 试听结果: 考虑中 / 已报名 / 未报名 (这三个都是"试听完成后的状态", 归到一起)
+//   - 尾部: 已取消 (废单) + 全部 (概览), 无组标题
+//   - 数据仍来自 TABS; 这里只声明分组顺序与标题, 供 template 渲染
+const TAB_GROUPS = [
+  { key: 'progress', title: '试听进行中', values: ['awaiting_schedule', 'scheduled', 'arrived'] },
+  { key: 'result', title: '试听结果', values: ['considering', 'completed_enrolled', 'completed_not_enrolled'] },
+  { key: 'closed', title: '', values: ['cancelled', 'all'] }
+]
+
+const tabGroups = computed(() =>
+  TAB_GROUPS.map((g) => ({
+    ...g,
+    tabs: g.values.map((v) => TABS.find((t) => t.value === v)).filter(Boolean)
+  }))
+)
 
 const activeTab = ref('awaiting_schedule')
 const loading = ref(false)
@@ -648,7 +705,7 @@ async function loadSubjectOptions() {
 
 /**
  * 2026-06-16: counts 也走 TABS 配置
- *   - 根据每个 tab 的 status / isEnrolled / dateFiltered 拼参数
+ *   - 根据每个 tab 的 status / outcome / dateFiltered 拼参数
  *   - counts 不带分页 (pageSize 越大越好, 但 1 已足够返回 total)
  *   - 拆"已报名/未报名"后, counts 桶也跟着分, 标签数字精准
  */
@@ -657,7 +714,7 @@ async function loadAllCounts() {
     try {
       const params = { pageSize: 1 }
       if (t.status) params.status = t.status
-      if (t.isEnrolled) params.isEnrolled = t.isEnrolled
+      if (t.outcome) params.outcome = t.outcome
       if (t.dateFiltered) {
         params.from = filters.dateRange?.[0] || undefined
         params.to = filters.dateRange?.[1] || undefined
@@ -703,7 +760,7 @@ async function load() {
     }
     const tab = TABS.find((t) => t.value === activeTab.value)
     if (tab?.status) params.status = tab.status
-    if (tab?.isEnrolled) params.isEnrolled = tab.isEnrolled
+    if (tab?.outcome) params.outcome = tab.outcome
     if (tab?.dateFiltered) {
       params.from = filters.dateRange?.[0] || undefined
       params.to = filters.dateRange?.[1] || undefined
@@ -733,7 +790,13 @@ async function load() {
   }
 }
 
-function onTabChange() {
+/**
+ * 2026-08-06: 切 tab — 自定义分组 tab bar 的点击入口 (替代原 el-tabs 的 tab-change 事件)
+ *  - 先置 activeTab, 再 reset 分页/勾选, 最后 reload
+ *  - 行为与原 onTabChange 一致, 只是改为显式传值 (原 el-tabs 靠 v-model 已更新)
+ */
+function onTabClick(v) {
+  activeTab.value = v
   pagination.page = 1
   selectedRows.value = []
   load()
@@ -782,11 +845,11 @@ async function onCancel(row) {
 /**
  * 退回未约 (scheduled → awaiting_schedule, 2026-06-16 新增)
  *   - 业务上: 已约过但销售决定要从"待约"池子重新挑老师/时间
- *   - 退回后该 booking 会出现在"待约" tab, 走批量排日程 / 跟班 重新选
+ *   - 退回后该 booking 会出现在"待约" tab, 走批量排试听课 / 跟班 重新选
  */
 async function onRevertToUnscheduled(row) {
   const ok = await ElMessageBox.confirm(
-    `确认把 ${row.preStudent?.name} (第 ${row.attemptNo} 次) 退回 [待约]?\n\n退回后该预约会从"已约" tab 移到"待约" tab, 可重新批量排日程或跟班。`,
+    `确认把 ${row.preStudent?.name} (第 ${row.attemptNo} 次) 退回 [待约]?\n\n退回后该预约会从"已约" tab 移到"待约" tab, 可重新批量排试听课或跟班。`,
     '退回未约',
     { type: 'warning' }
   ).catch(() => null)
@@ -907,6 +970,19 @@ function onBatchScheduled() {
   loadAllCounts()
 }
 
+/**
+ * 2026-08-06: 结果说明列摘要 — completed 行按 outcome 取对应字段
+ *   谈单老师跟进/复盘时, 列表上一眼能看到要点, 不必每次点开试听详情弹窗
+ */
+function resultSummary(row) {
+  const r = row.result
+  if (!r || !r.outcome) return '-'
+  if (r.outcome === 'considering') return r.considerNote || '考虑中'
+  if (r.outcome === 'enrolled') return r.attractionPoint || '已报名'
+  if (r.outcome === 'declined') return r.reasonNotEnrolled || '未报名'
+  return '-'
+}
+
 function formatTime(d) {
   if (!d) return '-'
   return new Date(d).toLocaleString('zh-CN')
@@ -992,6 +1068,60 @@ function rowClassName({ row }) {
 .board-card {
   margin-bottom: 16px;
 }
+
+/* 2026-08-06: 自定义分组 tab bar (替代 el-tabs 平铺) — 「试听进行中」/「试听结果」/ 尾部 */
+.tab-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #e4e7ed; /* 视觉分隔, 对齐 el-tabs 原底线位置 */
+}
+.tab-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tab-group-title {
+  font-size: 12px;
+  color: #909399;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.tab-group-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tab-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  font-size: 14px;
+  color: #606266;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
+}
+.tab-btn:hover {
+  color: var(--el-color-primary);
+}
+.tab-btn.active {
+  color: var(--el-color-primary);
+  font-weight: 600;
+  background-color: var(--el-color-primary-light-9);
+}
+.tab-count {
+  font-size: 12px;
+  color: #909399;
+  font-weight: 400;
+}
+.tab-btn.active .tab-count {
+  color: var(--el-color-primary);
+}
 .pagination {
   margin-top: 16px;
   justify-content: flex-end;
@@ -1016,6 +1146,25 @@ function rowClassName({ row }) {
   vertical-align: middle;
   color: #606266;
   cursor: help;
+}
+
+/* 2026-08-06: 结果说明列 tooltip 内多行排版 */
+.result-tip {
+  max-width: 320px;
+  line-height: 1.7;
+}
+.result-tip .tip-k {
+  color: #c0c4cc;
+}
+
+/* 2026-08-06: 操作列按钮允许换行 — scheduled 5 按钮换 2 行, 避免列固定太宽 (按钮少时也不留大片空白) */
+:deep(.action-col .cell) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  align-items: center;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 /* 2026-06-16: 计划时间列动态着色 */
