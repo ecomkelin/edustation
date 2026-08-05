@@ -431,6 +431,15 @@ async function removePetAccount({ orgId, petAccountId, operatorId }) {
   const deleted = await PetAccount.deleteOne({ _id: pet._id, org: orgId })
   if (deleted.deletedCount === 0) throw ApiError.conflict('宠物已被他人操作，请刷新后重试')
 
+  // 2026-08-05: $unset PetEvent.petAccount (审计 L13)
+  //   之前 PetEvent.petAccount 字段软审计保留, 但 admin 事件流按 petAccount populate 查询时
+  //   该字段指向已删 PetAccount → populate null / 数据漂移. 现在 $unset 让历史事件的 petAccount=null,
+  //   前端 populate 安全显示空名 (不影响事件按 createdAt 排序 + type/level 展示).
+  await PetEvent.updateMany(
+    { petAccount: pet._id },
+    { $unset: { petAccount: '' } }
+  )
+
   // 2026-07-21 v3: 不需要弃养级联清理（ownerSpecies 是 PetSpecies.key，不受宠物实例增减影响）
 
   // 审计

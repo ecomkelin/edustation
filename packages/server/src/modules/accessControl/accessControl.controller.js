@@ -122,6 +122,16 @@ exports.removableCheckFaceProfile = async (req, res) => {
   res.json(ApiResponse.ok(data))
 }
 
+// 2026-08-05: R-2914 真删除 handler (审计 L12) — 之前路由误用 removableCheck, 现在走真物理删除
+exports.removeFaceProfile = async (req, res) => {
+  const data = await s.removeFaceProfile({
+    orgId: req.orgId,
+    id: req.params.id,
+    operatorId: req.user && req.user.id
+  })
+  res.json(ApiResponse.ok(data))
+}
+
 // ─── AccessEvent ───────────────────────────────────
 exports.listAccessEvents = async (req, res) => {
   const data = await s.listAccessEvents({ orgId: req.orgId, ...req.query })

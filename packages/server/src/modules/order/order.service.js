@@ -160,7 +160,24 @@ async function create({ orgId, student, items, actualPrice, paymentMethod, paidA
           )
         }
       }
-      // platform 类型的协议在登录拦截已经把关, 这里允许快照入库即可, 不重新校验
+      // 2026-08-05: platform 类型也校验 LegalDoc 存在 (审计 L3)
+      //   之前注释说"登录拦截已把关", 但登录拦截只查 pendingConsents (用户未签的),
+      //   用户静默同意过的 platform 协议 (留 userConsent 记录) 可能在 LegalDoc 已被清理/版本被替换,
+      //   仍能下单拿快照入库. 现在与 org 类型对齐: 必须 LegalDoc(org=null, key, version, isActive=true) 存在.
+      if (ag.type === 'platform') {
+        const pd = await LegalDoc.findOne({
+          org: null, key: ag.docKey, version: ag.version, isActive: true
+        }).select('_id key version title').lean()
+        if (!pd) {
+          // 该版本已下架, 让前端重新拉取 pendingConsents 提示
+          const current = await LegalDoc.findOne({ org: null, key: ag.docKey, isActive: true })
+            .select('key version title').lean()
+          throw ApiError.badRequest(
+            `《${current ? current.title : ag.docKey}》已升级到新版本, 请重新阅读并同意后再下单`,
+            { pending: current ? [{ key: current.key, version: current.version, type: 'platform' }] : [] }
+          )
+        }
+      }
     }
   }
 
@@ -495,7 +512,9 @@ async function refund({ id, orgId, amount, reason, operator }) {
   // 3. 金额门：refundAmount ≤ (paidAmount - refundedAmount)
   const refundable = order.paidAmount - (order.refundedAmount || 0)
   if (!(amount > 0)) throw ApiError.badRequest('退款金额必须 > 0')
-  if (amount > refundable + 0.01) {  // 容差 0.01 防浮点
+  // 2026-08-05: 容差改为 1e-6 (审计 L1), 与 pay 路径一致. 0.01 容差允许构造多次 0.01 部分退
+  //   累计超 paidAmount; 现在用 EPS=1e-6 仅防 IEEE 754 浮点误差.
+  if (amount > refundable + 1e-6) {  // 容差 1e-6 防浮点 (审计 L1)
     throw ApiError.unprocessable(
       `退款金额超出可退余额（已退 ¥${order.refundedAmount || 0} / 共 ¥${order.paidAmount}）`
     )
@@ -515,7 +534,7 @@ async function refund({ id, orgId, amount, reason, operator }) {
   // 5. 计算新状态（部分退 / 退完）
   const oldRefundedAmount = order.refundedAmount || 0
   const newRefundedAmount = oldRefundedAmount + amount
-  const isFullyRefunded = newRefundedAmount >= order.paidAmount - 0.01
+  const isFullyRefunded = newRefundedAmount >= order.paidAmount - 1e-6 // 容差 1e-6 (审计 L1)
   const newStatus = isFullyRefunded ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED
 
   // 6. 2026-08-05: 原子累加 + 乐观锁 (审计 H9 退款并发超退堵口)

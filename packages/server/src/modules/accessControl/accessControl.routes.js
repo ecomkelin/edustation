@@ -59,7 +59,8 @@ adminRouter.post('/face-profiles/:id/revoke', mws.requirePermission('accessContr
 adminRouter.get('/face-profiles/:id/removable-check', mws.requirePermission('accessControl.read'), v.idParam, mws.validateRequest, asyncHandler(c.removableCheckFaceProfile))
 // 物理删除 (高风险)
 // R-2914 DELETE /access-control/face-profiles/:id
-adminRouter.delete('/face-profiles/:id', mws.requirePlatformPassword, v.idParam, mws.validateRequest, asyncHandler(c.removableCheckFaceProfile)) // PoC: 软删代替物理删
+// 2026-08-05: 真物理删除 handler (审计 L12) — 之前误用 removableCheck, 现在走 c.removeFaceProfile.
+adminRouter.delete('/face-profiles/:id', mws.requirePlatformPassword, v.idParam, mws.validateRequest, asyncHandler(c.removeFaceProfile))
 
 // ─── AccessEvent (流水) ──────────────────────
 // R-2920 GET /access-control/access-events

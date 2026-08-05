@@ -4,9 +4,15 @@ const { body } = require('express-validator')
 const { ATTENDANCE_STATUSES } = require('@shared/enums')
 
 const checkIn = [
-  body('lessonSchedule').isMongoId(),
-  body('student').isMongoId(),
-  body('studentProduct').isMongoId(),
+  body('lessonSchedule').isMongoId().withMessage('lessonSchedule 必填'),
+  body('student').isMongoId().withMessage('student 必填'),
+  // 2026-08-05: studentProduct 改为 optional (审计 L6)
+  //   service 语义: 不传 = 沿用考勤原绑定的 sp; 传 = 替换 (边缘场景: 学生新购入产品).
+  //   之前 validator 把 studentProduct 标为必填 → 客户端按 service 语义不传 → 400, 是死分支.
+  body('studentProduct').optional({ nullable: true }).custom((v) => {
+    if (v === null || v === '') return true
+    return /^[0-9a-fA-F]{24}$/.test(String(v))
+  }).withMessage('studentProduct 必须是 ObjectId 或 null'),
   body('remark').optional().isString().isLength({ max: 200 })
 ]
 

@@ -224,6 +224,11 @@ async function markStatus({ id, orgId, toStatus, remark }) {
   assertNotArchived(att)
   assertTransition(att.status, toStatus)
   att.status = toStatus
+  // 2026-08-05: 清 studentProduct (审计 L8)
+  //   改 leave/no_show 时, studentProduct 字段保留会误导报表 (按 studentProduct != null 推断"已消课").
+  //   这些状态明确表示"未上课, 未消课", 显式置 null 让上游报表逻辑准确.
+  //   完成状态(completed/madeup)由 complete / makeup 路径写入, 不走这里.
+  if (att.studentProduct) att.studentProduct = null
   if (remark !== undefined) att.remark = remark
   await att.save()
   invalidateReportCache(orgId)

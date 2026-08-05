@@ -17,6 +17,16 @@ const apiRouter = require('./routers')
 function createApp() {
   const app = express()
 
+  // 2026-08-05: trust proxy (审计 L15)
+  //   nginx 反代后 `req.ip` 全部为 nginx IP, loginRateLimit per-IP 桶塌缩成单一桶
+  //   (一个滥用者能锁掉整个办公室 NAT 后所有人); RefreshToken.ip / auditTrail.ip 也失去取证价值.
+  //   显式 opt-in: TRUST_PROXY=1 / true 时设 1 (信任 1 层代理, 即 nginx);
+  //   不设则默认 false, 防止 X-Forwarded-For 伪造影响限流/审计 IP 取证.
+  //   prod 部署应配 TRUST_PROXY=1, dev 单机直连保持 false.
+  if (process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1)
+  }
+
   // body / cookie / cors
   app.use(cors(buildCorsOptions()))
 

@@ -289,16 +289,51 @@ async function revokeFaceProfile({ orgId, id, operatorId, reason }) {
   return fp.toObject()
 }
 
-async function removableCheckFaceProfile({ orgId, id }) {
-  // FaceProfile 用 soft revoke; 但 admin 想物理删历史时, 仍走 removableCheck
-  return removable.check(orgId, [
+// 2026-08-05: face-profile 互锁补漏 (审计 L12 §8.1)
+//   之前 removableCheckFaceProfile 只查 AccessEvent.matchFaceProfile 引用, 漏 AuthorizedPickup.faceProfile 强 ref.
+//   加上让物理删除前的预检挡板更完整 (已 revokEd 软删的档案不会有强引用, 但物理删前仍应挡).
+function faceProfileUsageChecks(orgId, id) {
+  return [
     {
       model: AccessEvent,
       filter: { org: orgId, matchFaceProfile: id },
       label: '历史进出事件',
       hint: '该档案已被识别过 N 次, 不可物理删除; 如不再使用请走 /revoke 软撤销'
+    },
+    {
+      model: AuthorizedPickup,
+      filter: { org: orgId, faceProfile: id },
+      label: '接送授权',
+      hint: '该人脸档案正被接送授权引用, 请先清掉授权后再删'
     }
-  ])
+  ]
+}
+
+async function removableCheckFaceProfile({ orgId, id }) {
+  const fp = await FaceProfile.findOne({ _id: id, org: orgId }).select('_id revokedAt').lean()
+  if (!fp) {
+    return { canRemove: false, blockers: [{ entity: 'FaceProfile', label: '人脸档案', count: 0, hint: '该档案不存在或不属于本机构' }] }
+  }
+  return removable.check(orgId, faceProfileUsageChecks(orgId, id))
+}
+
+/**
+ * R-2914 DELETE /access-control/face-profiles/:id 真实物理删除 handler
+ * 2026-08-05: 之前路由误用 removableCheckFaceProfile 校验但不真删 (审计 L12).
+ *   现在: 真实物理删除 FaceProfile 文档 + 走 §8.1 完整互锁 (AccessEvent + AuthorizedPickup).
+ *   requirePlatformPassword 路由守卫保持 (超管 + 密码二次确认).
+ */
+async function removeFaceProfile({ orgId, id, operatorId }) {
+  const fp = await FaceProfile.findOne({ _id: id, org: orgId })
+  if (!fp) throw ApiError.notFound('人脸档案不存在')
+  // 业务上更建议走 revoke 软删; 物理删是"该档案永不使用了"的硬操作
+  await removable.assertUnused(orgId, faceProfileUsageChecks(orgId, id))
+  await FaceProfile.deleteOne({ _id: id, org: orgId })
+  // 写一条审计 (best-effort, 不阻断)
+  try {
+    console.warn(`[accessControl.removeFaceProfile] deleted ${id} by ${operatorId}`)
+  } catch (_) { /* ignore */ }
+  return { success: true, id }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -910,7 +945,7 @@ module.exports = {
   listDevices, getDevice, createDevice, updateDevice, removeDevice, removableCheckDevice,
   regenerateSecret, setDoorState, recordHeartbeat,
   // face profile
-  listFaceProfiles, getFaceProfile, enrollFaceProfile, revokeFaceProfile, removableCheckFaceProfile,
+  listFaceProfiles, getFaceProfile, enrollFaceProfile, revokeFaceProfile, removableCheckFaceProfile, removeFaceProfile,
   // access event
   listAccessEvents, getAccessEvent, getAccessEventStats, recordEvent,
   // pickup

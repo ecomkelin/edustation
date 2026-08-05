@@ -297,8 +297,8 @@ Auth 列简写:
 | R-1422 | POST | /lesson-schedules/:id/finish | PERM | lessonSchedule.write | 完成排课 | → finished |
 | R-1424 | POST | /lesson-schedules/:id/archive | PERM | lessonSchedule.write | 归档 | finished → archived |
 | R-1425 | POST | /lesson-schedules/:id/sync-attendances | PERM | lessonSchedule.write | 补齐名单 | 修 prepare 后报名漏建考勤 |
-| R-1440 | POST | /lesson-schedules/preview | PERM | lessonSchedule.write | 批量排课预览 | 不入库 |
-| R-1441 | POST | /lesson-schedules/generate | PERM | lessonSchedule.write | 批量排课生成 | 入库; **2026-08-05: withTransaction 包裹整批 insert (审计 M8 防部分成功数据漂移)**; **preview/buildPlan 入口校验 teacher/room org 归属 (审计 M7)** |
+| R-1440 | POST | /lesson-schedules/preview | PERM | lessonSchedule.write | 批量排课预览 | 不入库; **2026-08-05: validator HH:mm 加 0-23/0-59 范围校验 (审计 L10)** |
+| R-1441 | POST | /lesson-schedules/generate | PERM | lessonSchedule.write | 批量排课生成 | 入库; **2026-08-05: withTransaction 包裹整批 insert (审计 M8 防部分成功数据漂移)**; **preview/buildPlan 入口校验 teacher/room org 归属 (审计 M7); validator HH:mm 范围校验 (审计 L10)** |
 | R-1442 | GET | /lesson-schedules/:id/sync-attendances/preview | PERM | lessonSchedule.read | 补齐名单预览 | UI 决定按钮显隐 |
 | R-1450 | GET | /lesson-schedules/calendar | PERM | lessonSchedule.read | 日历视图 | |
 | R-1451 | GET | /lesson-schedules/conflicts | PERM | lessonSchedule.read | 冲突预检 | **2026-08-05: detectConflict 加 PREPARING 状态 (审计 H13 防老师双预订)** |
@@ -312,7 +312,7 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-1500 | GET | /lesson-attendances | PERM | lessonAttendance.read | 列表 | |
 | R-1502 | POST | /lesson-attendances | PERM | lessonAttendance.write | 手动添加考勤 | prepare 后补报名 |
-| R-1526 | POST | /lesson-attendances/check-in | PERM | lessonAttendance.write | 签到 | **2026-08-05: archived 拦截 (审计 M2 §8.2)** |
+| R-1526 | POST | /lesson-attendances/check-in | PERM | lessonAttendance.write | 签到 | **2026-08-05: archived 拦截 (审计 M2 §8.2); validator studentProduct 改 optional 与 service 契约对齐 (审计 L6)** |
 | R-1527 | PUT | /lesson-attendances/:id/complete | PERM | lessonAttendance.write | 完成 | → completed; **2026-08-05: 走原子 deductOneLesson + 校验 isActive/expireDate/acceptedCourseProducts (审计 H6/H7); archived 拦截 (审计 M2)** |
 | R-1528 | PUT | /lesson-attendances/:id/no-show | PERM | lessonAttendance.write | 缺席 | → no_show; **2026-08-05: archived 拦截 (审计 M2 §8.2)** |
 | R-1529 | PUT | /lesson-attendances/:id/evaluation | PERM | lessonAttendance.write | 更新课评 | |
@@ -352,9 +352,9 @@ Auth 列简写:
 |---|---|---|---|---|---|---|
 | R-1700 | GET | /orders | PERM | order.read | 列表 | |
 | R-1701 | GET | /orders/:id | PERM | order.read | 详情 | |
-| R-1702 | POST | /orders | PERM | order.write | 新建订单 | |
+| R-1702 | POST | /orders | PERM | order.write | 新建订单 | **2026-08-05: platform 协议快照也校验 LegalDoc 存在性 + 版本对齐 (审计 L3)** |
 | R-1721 | POST | /orders/:id/pay | PERM | order.pay | 支付 | pending → paid |
-| R-1722 | POST | /orders/:id/refund | PERM | order.pay | 退款 | 部分退款支持; 联动 StudentProduct 软停用; 累计退完转 refunded; **2026-08-05: findOneAndUpdate + 乐观锁 refundedAmount 旧值守卫 + $inc/$push 原子累加 (审计 H9 防并发超退)** |
+| R-1722 | POST | /orders/:id/refund | PERM | order.pay | 退款 | 部分退款支持; 联动 StudentProduct 软停用; 累计退完转 refunded; **2026-08-05: findOneAndUpdate + 乐观锁 refundedAmount 旧值守卫 + $inc/$push 原子累加 (审计 H9 防并发超退); 浮点容差改为 1e-6 (审计 L1)** |
 | R-1723 | POST | /orders/:id/cancel | PERM | order.write | 取消 | pending → cancelled; **2026-08-05: 加 partially_refunded/refunded 终态门挡 (审计 M4 防"退款→取消→物理删除"销毁财务凭证链)** |
 | R-1704 | DELETE | /orders/:id | ADMIN_PWD | — | 物理删除 | 中风险, 互锁 StudentProduct.order + FinanceTransaction.relatedOrder (2026-08-05 补); 业务硬门挡 paid/**partially_refunded**/refunded (2026-08-05 补 partially_refunded, 审计 M5) |
 | R-1705 | GET | /orders/:id/removable-check | PERM | order.read | 删除预检 | |
@@ -569,8 +569,8 @@ Auth 列简写:
 | R-2911 | POST | /access-control/face-profiles | PERM | accessControl.write | 录入人脸 | Admin |
 | R-2912 | GET | /access-control/face-profiles/:id | PERM | accessControl.read | 档案详情 | Admin |
 | R-2913 | POST | /access-control/face-profiles/:id/revoke | PERM | accessControl.write | 撤销人脸 | Admin |
-| R-2914 | DELETE | /access-control/face-profiles/:id | ADMIN_PWD | — | 物理删除档案 | PoC: 软删代替 |
-| R-2915 | GET | /access-control/face-profiles/:id/removable-check | PERM | accessControl.read | 删除预检 | Admin |
+| R-2914 | DELETE | /access-control/face-profiles/:id | ADMIN_PWD | — | 物理删除档案 | **2026-08-05: 真删除 handler (审计 L12)** — 之前误用 removableCheck 不真删, 现在走 c.removeFaceProfile + 完整互锁 (AccessEvent + AuthorizedPickup) |
+| R-2915 | GET | /access-control/face-profiles/:id/removable-check | PERM | accessControl.read | 删除预检 | Admin; **2026-08-05: 互锁补 AuthorizedPickup.faceProfile (审计 L12)** |
 | R-2920 | GET | /access-control/access-events | PERM | accessControl.read | 进出流水列表 | Admin |
 | R-2922 | GET | /access-control/access-events/:id | PERM | accessControl.read | 单条流水 | Admin |
 | R-2927 | GET | /access-control/access-events/stats | PERM | accessControl.read | 进出统计 | Admin |

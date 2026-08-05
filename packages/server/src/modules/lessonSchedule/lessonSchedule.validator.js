@@ -58,8 +58,23 @@ const finish = [
 const preview = [
   body('courseInstance').isMongoId(),
   body('startDate').isISO8601(),
-  body('startTime').matches(/^\d{2}:\d{2}$/).withMessage('startTime 必须是 HH:mm'),
-  body('endTime').matches(/^\d{2}:\d{2}$/).withMessage('endTime 必须是 HH:mm'),
+  body('startTime').matches(/^\d{2}:\d{2}$/).withMessage('startTime 必须是 HH:mm')
+    // 2026-08-05: 范围校验 (审计 L10) — 防止 "99:99" 等非法时间静默进位到次日
+    .custom((v) => {
+      const [h, m] = v.split(':').map(Number)
+      if (h < 0 || h > 23 || m < 0 || m > 59) {
+        throw new Error('startTime 必须是合法 HH:mm (0-23 / 0-59)')
+      }
+      return true
+    }),
+  body('endTime').matches(/^\d{2}:\d{2}$/).withMessage('endTime 必须是 HH:mm')
+    .custom((v) => {
+      const [h, m] = v.split(':').map(Number)
+      if (h < 0 || h > 23 || m < 0 || m > 59) {
+        throw new Error('endTime 必须是合法 HH:mm (0-23 / 0-59)')
+      }
+      return true
+    }),
   body('teacher').optional().isMongoId(),
   body('room').optional().isMongoId(),
   body('title').optional().isString().isLength({ max: 100 }),
@@ -76,8 +91,23 @@ const preview = [
 const generate = [
   body('courseInstance').isMongoId(),
   body('startDate').isISO8601(),
-  body('startTime').matches(/^\d{2}:\d{2}$/).withMessage('startTime 必须是 HH:mm'),
-  body('endTime').matches(/^\d{2}:\d{2}$/).withMessage('endTime 必须是 HH:mm'),
+  body('startTime').matches(/^\d{2}:\d{2}$/).withMessage('startTime 必须是 HH:mm')
+    // 2026-08-05: 范围校验 (审计 L10) — 防止 "99:99" 等非法时间静默进位到次日
+    .custom((v) => {
+      const [h, m] = v.split(':').map(Number)
+      if (h < 0 || h > 23 || m < 0 || m > 59) {
+        throw new Error('startTime 必须是合法 HH:mm (0-23 / 0-59)')
+      }
+      return true
+    }),
+  body('endTime').matches(/^\d{2}:\d{2}$/).withMessage('endTime 必须是 HH:mm')
+    .custom((v) => {
+      const [h, m] = v.split(':').map(Number)
+      if (h < 0 || h > 23 || m < 0 || m > 59) {
+        throw new Error('endTime 必须是合法 HH:mm (0-23 / 0-59)')
+      }
+      return true
+    }),
   body('teacher').optional().isMongoId(),
   body('room').optional().isMongoId(),
   body('title').optional().isString().isLength({ max: 100 }),
