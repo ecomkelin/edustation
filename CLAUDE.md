@@ -278,6 +278,7 @@ server/src/
 | 改用户 / 登录 / 权限码 / 职位 / 多租户身份 | [docs/claude/data-models-user.md](docs/claude/data-models-user.md) |
 | 改学生 / 家长切换 / 监护人 | [docs/claude/data-models-student.md](docs/claude/data-models-student.md) |
 | 改学科 / 课程产品 / 开班 / 排课计划 | [docs/claude/data-models-course.md](docs/claude/data-models-course.md) |
+| 改任务 / 任务模板 / 周期任务 / 看板 (含 tag 链路: 编辑入口 / 列表筛选 / 多选 AND / 看板 byTag / KPI 看板 R-1957) | [docs/claude/data-models-task.md](docs/claude/data-models-task.md) |
 | 改报名 / 排课 / 考勤 / 作品 / 消课选包 | [docs/claude/data-models-enrollment.md](docs/claude/data-models-enrollment.md) |
 | 改订单 / 课包 / 支付 / 赠课 | [docs/claude/data-models-order.md](docs/claude/data-models-order.md) |
 | 改积分 / 宠物 / 喂养 / 商店 | [docs/claude/data-models-points-pet.md](docs/claude/data-models-points-pet.md) |

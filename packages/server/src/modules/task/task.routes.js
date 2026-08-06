@@ -38,6 +38,11 @@ router.get('/assignable-users', mws.requirePermission('task.read', 'task.read.ow
 // 2026-07-11: 同上, OR 任一即可进入看板
 router.get('/kanban', mws.requirePermission('task.read', 'task.read.own'), v.kanban, mws.validateRequest, asyncHandler(c.kanban))
 
+// R-3925 GET /tasks/distinct-tags (2026-08-06 P1.2)
+// 顺序要求: 必须在 /:id 之前 (单段通配)
+// 返本机构所有出现过的标签 (去重 + zh-CN 字典序), 给 TagEditor suggestions / 多选筛选 options 用
+router.get('/distinct-tags', mws.requirePermission('task.read', 'task.read.own'), asyncHandler(c.distinctTags))
+
 // ─── 模板 ─────────────────────────────────────
 // 顺序要求: 必须在 /:id 之前
 

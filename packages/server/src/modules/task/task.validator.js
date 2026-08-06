@@ -33,8 +33,8 @@ const create = [
   // 2026-07-08: 开始时间改必填 (前端默认今天)
   body('startAt').isISO8601().withMessage('startAt 必填且为 ISO8601 时间'),
   body('dueAt').isISO8601().withMessage('dueAt 必填且为 ISO8601 时间'),
-  body('tags').optional().isArray(),
-  body('tags.*').optional().isString().isLength({ max: 30 }),
+  body('tags').optional().isArray({ max: 30 }).withMessage('标签数 ≤ 30'),
+  body('tags.*').optional().isString().trim().isLength({ min: 1, max: 30 }).withMessage('单标签 1~30 字'),
   body('relatedTo.entity').optional().isString().isLength({ max: 50 }),
   body('relatedTo.id').optional({ nullable: true }).isMongoId(),
   // checklist 条目: 可选,若传则每项必填 title + assignee
@@ -56,8 +56,8 @@ const update = [
   body('supervisors.*').optional().isMongoId(),
   body('startAt').optional({ nullable: true }).isISO8601(),
   body('dueAt').optional().isISO8601(),
-  body('tags').optional().isArray(),
-  body('tags.*').optional().isString().isLength({ max: 30 }),
+  body('tags').optional().isArray({ max: 30 }).withMessage('标签数 ≤ 30'),
+  body('tags.*').optional().isString().trim().isLength({ min: 1, max: 30 }).withMessage('单标签 1~30 字'),
   body('status').optional().isIn(TASK_STATUSES).withMessage('状态值非法')
 ]
 
@@ -74,6 +74,9 @@ const list = [
   query('keyword').optional().isString().isLength({ max: 100 }),
   query('dueBefore').optional().isISO8601(),
   query('dueAfter').optional().isISO8601(),
+  // 2026-08-06: P1.1 — 列表 chip 点击筛选 (单值, 多值走 $in); P2.1 多选 AND 走 query('tags') 复数
+  query('tag').optional().isString().isLength({ max: 30 }),
+  query('tags').optional().isString(),
   query('page').optional().isInt({ min: 1 }),
   query('pageSize').optional().isInt({ min: 1, max: 200 })
 ]
@@ -123,7 +126,9 @@ const kanban = [
   query('assignee').optional().isMongoId(),
   query('type').optional().isIn(TASK_TYPES),
   query('priority').optional().isIn(TASK_PRIORITIES),
-  query('scope').optional().isIn(['mine', 'all']) // mine = 只看我相关的;all = org 全部
+  query('scope').optional().isIn(['mine', 'all']), // mine = 只看我相关的;all = org 全部
+  // 2026-08-06 P2.2: ?view=byTag → 复用 R-3913 路径, 改返 { byTag, allTags }, 不新增 R 号
+  query('view').optional().isIn(['byTag'])
 ]
 
 // ─── 模板：创建 ────────────────────────────────────────
@@ -140,6 +145,9 @@ const templateCreate = [
   body('itemTemplates.*.title').isString().trim().notEmpty().isLength({ max: 200 }),
   body('itemTemplates.*.assigneeRole').optional().isString().isLength({ max: 50 }),
   body('itemTemplates.*.order').optional().isInt({ min: 0 }),
+  // 2026-08-06 P3.1: 模板默认标签 — 与 task.tags 同清洗规则
+  body('defaultTags').optional().isArray({ max: 30 }).withMessage('默认标签数 ≤ 30'),
+  body('defaultTags.*').optional().isString().trim().isLength({ min: 1, max: 30 }).withMessage('单标签 1~30 字'),
   body('schedule').exists(),
   body('schedule.kind').isIn(TASK_SCHEDULE_KINDS),
   body('schedule.hour').optional().isArray(),
@@ -165,6 +173,9 @@ const templateUpdate = [
   body('defaultSupervisors').optional().isArray({ min: 1 }),
   body('defaultSupervisors.*').optional().isMongoId(),
   body('itemTemplates').optional().isArray(),
+  // 2026-08-06 P3.1: 模板默认标签 (update 链同样走 isArray + isString)
+  body('defaultTags').optional().isArray({ max: 30 }).withMessage('默认标签数 ≤ 30'),
+  body('defaultTags.*').optional().isString().trim().isLength({ min: 1, max: 30 }).withMessage('单标签 1~30 字'),
   body('schedule').optional().exists(),
   body('schedule.kind').optional().isIn(TASK_SCHEDULE_KINDS),
   body('schedule.hour').optional().isArray(),

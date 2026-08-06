@@ -383,6 +383,7 @@ Auth 列简写:
 | R-1954 | GET | /reports/points-activity | PERM | report.read | 积分与活跃 | |
 | R-1955 | GET | /reports/recruit-promoter | PERM | recruit.read | 推广人 ROI | 招生看板 |
 | R-1956 | GET | /reports/recruit-teacher-conversion | PERM | recruit.read | 试听老师转化率 | 招生看板 |
+| R-1957 | GET | /reports/task-overview | PERM | report.read | **任务概览看板** | 2026-08-06 立项 (P3.2 任务 tag 全链路): `$facet` 三段 byTag(byTag unwind+group Top 20)/byStatus/totals(count/open/overdue/done/completionRate). 累计型指标 (与 range 无关) + 60s 进程内 withCache. 用途: 经营视角横切任务, 默认 /reports/task-overview 路由直入, 与 5 块现有经营看板同权 |
 
 ### MM=20 points (URL: /points)
 
@@ -875,7 +876,7 @@ Auth 列简写:
 | R-3910 | POST | /tasks/:id/comments | PERM | task.read | 评论 | content 必填; mentions 解析后存 (通知中心用) |
 | R-3911 | GET | /tasks/:id/removable-check | PERM | task.read | **删除预检** | DestructiveConfirm precheck; 返 `{canRemove, blockers}` |
 | R-3912 | GET | /tasks/stats | PERM | task.read | 我的统计 (列表/详情页顶部用) | 返 mineTotal/mineDue/mineOverdue/mineSubmitted/mineReview |
-| R-3913 | GET | /tasks/kanban | PERM | task.read | 看板 4 列分桶 | query: assignee/type/priority/scope=mine\|all; 返 {todo, inProgress, pendingReview, done} |
+| R-3913 | GET | /tasks/kanban | PERM | task.read | 看板 4 列分桶 | query: assignee/type/priority/scope=mine\|all/**view=byTag**; 返 {todo, inProgress, pendingReview, done} 或 {byTag, allTags}; **2026-08-06 改**: 加 `?view=byTag` (P2.2) 复用本端点按标签分桶, 不新增 R 号 |
 | R-3914 | POST | /tasks/templates | PERM | task.write | 创建周期模板 | 必填 title/defaultAssignees/defaultSupervisors/schedule.kind; nextRunAt 自动算 |
 | R-3915 | GET | /tasks/templates | PERM | task.read | 模板列表 | query: isActive/page/pageSize |
 | R-3916 | PATCH | /tasks/templates/:id | PERM | task.write | 编辑模板 | 改 schedule 重新算 nextRunAt |
@@ -888,6 +889,7 @@ Auth 列简写:
 | R-3922 | DELETE | /tasks/:id/items/:itemId | PERM | task.write | 删除 checklist 条目 | 2026-07-08 立项 (堵 R-3904 挡板无入口的洞); **2026-07-08 改**: 权限扩到「条目 assignee / 任务 creator / 平台超管 / task.write / task.delete」(解死锁: creator 想删任务必先能清空 checklist); 终态/归档态 422; 触发 recomputeTaskState |
 | R-3923 | POST | /tasks/:id/items/:itemId/remarks | PERM | task.read OR task.read.own | 子任务备注 | 2026-07-09 立项 (规则 3b 豁免口子): 仅本条目 assignee / task.write 可写, 不受 "执行中" 锁约束; 归档态 422; TaskItem.remarks 子文档 (新字段) |
 | R-3924 | GET | /tasks/assignable-users | PERM | task.read OR task.read.own | **可派任务员工下拉** | 2026-08-02 立项: 建任务 / 模板编辑页的执行人+监督人候选. 原来打 R-0200 `GET /users?roleScope=staff`, 但那要 `user.read` —— 「财务」岗只有 task.write → 403 → 下拉全空 + el-select 甩 raw ObjectId. 口径: 本机构 UserOrgRel 里至少持有 1 个 clientLevel=0 岗位的 user (员工+混合岗), 纯家长排除, User.isActive=false 排除, 与 `assertUsersInOrg` 放行口径一致 (避免"选得到但提交 400"). 只返 `{id, realName, mobile, positions[]}`, 不下放用户档案读权限. 顺序: 必须注册在 `/:id` 之前 |
+| R-3925 | GET | /tasks/distinct-tags | PERM | task.read OR task.read.own | **本机构标签历史** | 2026-08-06 立项 (P1.2 任务 tag 全链路): `Task.distinct('tags', {org, archived:{$ne:true}})` 返 `String[]` (去重 + zh-CN 字典序), 给 TagEditor suggestions / 多选筛选用. 顺序: 必须注册在 `/:id` 之前; 走 multikey 索引 `{org:1, tags:1}` (1w 行 < 50ms) |
 
 **§39.1 归档 query 参数**（2026-07-08）:
 

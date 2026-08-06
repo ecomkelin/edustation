@@ -181,10 +181,28 @@
         </el-card>
 
         <el-card class="block">
-          <template #header><b>标签</b></template>
-          <div>
+          <template #header>
+            <div class="card-header">
+              <b>标签</b>
+              <!-- 2026-08-06: tags 编辑入口 (P0.1) — 复用 TaskCreate 的 TagEditor; canEdit 已含 !isFinal -->
+              <span v-if="canEdit && !tagEditing">
+                <el-button link type="primary" size="small" @click="startEditTags">编辑</el-button>
+              </span>
+              <span v-else-if="tagEditing" class="tag-edit-actions">
+                <el-button link type="primary" size="small" :loading="tagSaving" @click="saveTags">保存</el-button>
+                <el-button link size="small" :disabled="tagSaving" @click="cancelEditTags">取消</el-button>
+              </span>
+            </div>
+          </template>
+          <!-- 只读模式 -->
+          <div v-if="!tagEditing">
             <el-tag v-for="t in (task.tags || [])" :key="t" size="small" style="margin-right: 4px">{{ t }}</el-tag>
             <span v-if="!task.tags || task.tags.length === 0" class="empty">—</span>
+          </div>
+          <!-- 编辑模式 -->
+          <div v-else>
+            <TagEditor v-model="tagDraft" :max="30" :suggestions="tagOptions"
+              placeholder="按 Enter 添加标签 (历史标签联想 + 后端统一清洗)" />
           </div>
         </el-card>
       </el-col>
@@ -253,6 +271,7 @@ import {
   TASK_ASSIGNEE_STATUS_LABELS, TASK_REVIEW_RESULT_LABELS
 } from '@shared/enums.mjs'
 import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import TagEditor from '@/components/TagEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -282,6 +301,38 @@ const reviewSaving = ref(false)
 
 const cancelVisible = ref(false)
 const cancelForm = ref({ reason: '' })
+
+// 2026-08-06: tags 编辑状态 (P0.1) — 详情页内联编辑, 保存走 taskApi.update
+const tagEditing = ref(false)
+const tagDraft = ref([])
+const tagSaving = ref(false)
+// 2026-08-06 P1.2: 历史标签联想 (R-3925 /tasks/distinct-tags)
+const tagOptions = ref([])
+
+function startEditTags() {
+  tagDraft.value = [...(task.value.tags || [])]
+  tagEditing.value = true
+}
+
+function cancelEditTags() {
+  tagEditing.value = false
+  tagDraft.value = []
+}
+
+async function saveTags() {
+  if (tagSaving.value) return
+  tagSaving.value = true
+  try {
+    await taskApi.update(task.value._id, { tags: tagDraft.value })
+    ElMessage.success('标签已保存')
+    tagEditing.value = false
+    await loadDetail()    // reload 拿到后端清洗后的最终值
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '保存失败')
+  } finally {
+    tagSaving.value = false
+  }
+}
 const cancelSaving = ref(false)
 
 // 权限
@@ -511,7 +562,14 @@ async function doDelete({ password }) {
   router.replace('/tasks')
 }
 
-onMounted(loadDetail)
+onMounted(async () => {
+  await loadDetail()
+  // 2026-08-06 P1.2: 加载历史标签, 给 TagEditor suggestions 用 (编辑态联想)
+  try {
+    const r = await taskApi.distinctTags()
+    tagOptions.value = Array.isArray(r.data) ? r.data : []
+  } catch (_) { /* 静默 */ }
+})
 </script>
 
 <style scoped>

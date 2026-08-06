@@ -139,5 +139,8 @@ TaskSchema.index({ status: 1, dueAt: 1 })
 TaskSchema.index({ fromTemplate: 1 })
 // 归档过滤主索引: list / kanban / stats 默认 archived=false
 TaskSchema.index({ org: 1, archived: 1, status: 1, dueAt: 1 })
+// 2026-08-06 P1.1/P2.1: 标签筛选 (list chip ?tag= + 多选 ?tags=) + P1.2 distinctTags
+//   multikey 索引, 数组字段走它, 避免全表扫
+TaskSchema.index({ org: 1, tags: 1 })
 
 module.exports = model('Task', TaskSchema)

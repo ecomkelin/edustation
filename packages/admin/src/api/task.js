@@ -47,6 +47,10 @@ export const taskApi = {
   // 不用 userApi.list: 那要 user.read 权限, 财务岗只有 task.write → 403 空下拉
   assignableUsers: () => http.get('/tasks/assignable-users'),
 
+  // ─── 标签历史 (R-3925, 2026-08-06 P1.2) ──
+  // 本机构所有出现过的标签 (去重 + zh-CN 字典序), 给 TagEditor suggestions / 多选筛选 options 用
+  distinctTags: () => http.get('/tasks/distinct-tags'),
+
   // ─── 模板 ──────────────────────────────
   templateList: (params) => http.get('/tasks/templates', { params }),
   templateCreate: (data) => http.post('/tasks/templates', data),

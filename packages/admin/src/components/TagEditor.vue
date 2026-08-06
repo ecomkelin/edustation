@@ -16,37 +16,56 @@
       size="small"
       class="tag-input"
       :maxlength="50"
+      list="tag-editor-suggestions"
       @keyup.enter="confirm"
       @blur="confirm"
     />
     <el-button v-else size="small" :icon="Plus" @click="showInput" :disabled="modelValue.length >= max">
       添加
     </el-button>
+    <!-- 2026-08-06: P1.2 — suggestions 下拉, 用原生 HTML5 datalist (轻量, 仓库 0 处用过 el-autocomplete) -->
+    <datalist v-if="suggestions.length" id="tag-editor-suggestions">
+      <option v-for="s in filteredSuggestions" :key="s" :value="s" />
+    </datalist>
   </div>
 </template>
 
 <script setup>
 /**
- * 标签数组编辑器 (用于 teachingFeatures / businessScope / honors 等 String[] 字段)
+ * 标签数组编辑器 (用于 teachingFeatures / businessScope / honors / Task.tags 等 String[] 字段)
  *
  * modelValue: String[] 数组
+ * suggestions: String[] 可选, 输入时从 datalist 联想 (P1.2 任务标签)
  *
  * 用法:
  *   <TagEditor v-model="form.teachingFeatures" :max="30" placeholder="..." />
+ *   <TagEditor v-model="task.tags" :suggestions="tagOptions" />
  */
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   max: { type: Number, default: 30 },
-  placeholder: { type: String, default: '按 Enter 添加' }
+  placeholder: { type: String, default: '按 Enter 添加' },
+  // 2026-08-06: P1.2 — 历史标签建议, 父组件 onMounted 拉一次传进来
+  suggestions: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['update:modelValue'])
 
 const inputVisible = ref(false)
 const inputValue = ref('')
 const inputRef = ref()
+
+// 过滤掉已选中的; 输入时按当前输入前缀/子串过滤 (浏览器原生气泡仍可见到全量)
+const filteredSuggestions = computed(() => {
+  const chosen = new Set(props.modelValue)
+  const q = (inputValue.value || '').trim().toLowerCase()
+  return props.suggestions
+    .filter((s) => !chosen.has(s))
+    .filter((s) => !q || s.toLowerCase().includes(q))
+    .slice(0, 20)
+})
 
 function showInput() {
   inputVisible.value = true

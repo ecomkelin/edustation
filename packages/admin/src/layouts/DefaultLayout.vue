@@ -119,6 +119,8 @@ import {
   ShoppingCart,
   School,
   Present,
+  // 员工任务 (2026-07-08) — 列表 + 齿轮图标 (P3.2 任务概览看板 R-1957 共用)
+  List,
   Platform,
   Connection,
   Warning,
@@ -140,8 +142,6 @@ import {
   Wallet,
   // 操作留痕 (2026-06-27) — 文档/清单图标
   Document,
-  // 员工任务 (2026-07-08) — 列表 + 齿轮图标
-  List,
   SetUp,
   // 通知管理 (2026-07-11 v0.9) — 铃铛图标
   Bell,
@@ -346,6 +346,8 @@ const menuGroups = [
       { path: '/reports/room-utilization', label: '教室利用率', icon: School, perm: 'report.read' },
       { path: '/reports/teacher-productivity', label: '老师产能', icon: User, perm: 'report.read' },
       { path: '/reports/points-activity', label: '积分与活跃', icon: Present, perm: 'report.read' },
+      // 2026-08-06 P3.2: 任务概览看板 (R-1957) — 按标签维度横切, 走 report.read
+      { path: '/reports/task-overview', label: '任务概览', icon: List, perm: 'report.read' },
       // 招生看板 (2026-06)
       { path: '/reports/recruit', label: '招生看板', icon: Promotion, perm: 'recruit.read' }
     ]

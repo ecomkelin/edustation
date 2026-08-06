@@ -47,6 +47,11 @@
         </div>
       </el-form-item>
 
+      <!-- 2026-08-06 P3.1: 模板默认标签 — generateFromTemplate 写入生成任务的 tags, 兜底 ['周期任务'] 保后向兼容 -->
+      <el-form-item label="默认标签">
+        <TagEditor v-model="form.defaultTags" :max="30" :suggestions="tagOptions" placeholder="按 Enter 添加 (历史标签联想,空 = 不自动加任何标签)" />
+      </el-form-item>
+
       <el-divider content-position="left">周期</el-divider>
 
       <el-form-item label="类型" prop="schedule.kind">
@@ -97,6 +102,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
+import TagEditor from '@/components/TagEditor.vue'
 import {
   TASK_TYPES, TASK_TYPE_LABELS,
   TASK_PRIORITIES, TASK_PRIORITY_LABELS
@@ -114,6 +120,8 @@ const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五
 const isNew = computed(() => route.params.id === 'new')
 const saving = ref(false)
 const userOptions = ref([])
+// 2026-08-06 P3.1: 历史标签联想 (R-3925 /tasks/distinct-tags), 给 TagEditor suggestions 用
+const tagOptions = ref([])
 const formRef = ref(null)
 
 // 2026-07-08: computed 双向绑定, 让 el-select 和 form.validate 共享同一份数据.
@@ -144,6 +152,8 @@ const form = ref({
   defaultAssignees: [],
   defaultSupervisors: [],
   itemTemplates: [],
+  // 2026-08-06 P3.1: 模板默认标签 (空数组 = 不自动加任何标签, 走 _sanitizeTags + 兜底 ['周期任务'])
+  defaultTags: [],
   schedule: { kind: 'daily', hour: [9], weekdays: [], daysOfMonth: [] },
   isActive: true
 })
@@ -288,6 +298,11 @@ async function onSubmit() {
 onMounted(async () => {
   await loadUsers()
   await loadTemplate()
+  // 2026-08-06 P3.1: 加载历史标签, 给 TagEditor suggestions 用 (静默失败不影响主流程)
+  try {
+    const r = await taskApi.distinctTags()
+    tagOptions.value = Array.isArray(r.data) ? r.data : []
+  } catch (_) { /* 静默 */ }
 })
 </script>
 

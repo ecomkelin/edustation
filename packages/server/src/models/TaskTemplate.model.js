@@ -96,6 +96,8 @@ const TaskTemplateSchema = new Schema(
     },
     // 条目模板
     itemTemplates: { type: [TaskTemplateItemSchema], default: [] },
+    // 2026-08-06 P3.1: 默认标签 — generateFromTemplate 写入生成任务的 tags, 兜底 ['周期任务'] 保后向兼容
+    defaultTags: { type: [String], default: [] },
     // 周期规则
     schedule: { type: TaskScheduleSchema, required: true },
     // 下次生成时间（定时任务扫描这个字段；null = 未启用或已结束）

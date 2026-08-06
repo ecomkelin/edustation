@@ -229,7 +229,7 @@ async function canViewTask(actor, task) {
 
 // ─── 列表 ──────────────────────────────────────
 
-async function list({ orgId, status, type, priority, assignee, creator, supervisor, myRole, keyword, dueBefore, dueAfter, page, pageSize, archived, actor }) {
+async function list({ orgId, status, type, priority, assignee, creator, supervisor, myRole, keyword, dueBefore, dueAfter, page, pageSize, archived, actor, tag, tags }) {
   const p = normalizePagination({ page, pageSize })
   const filter = { org: orgId }
   // 2026-07-08: 归档过滤 — 默认隐藏已归档, ?archived=true 才看历史
@@ -246,6 +246,18 @@ async function list({ orgId, status, type, priority, assignee, creator, supervis
   if (creator) filter.creator = creator
   if (supervisor) filter.supervisors = supervisor
   if (keyword) filter.title = { $regex: keyword, $options: 'i' }
+  // 2026-08-06: P1.1 — 列表 chip 点击筛选 (?tag=单值 或 ?tag=a,b 多值 $in)
+  if (tag) {
+    const arr = String(tag).split(',').map((s) => s.trim()).filter(Boolean)
+    if (arr.length === 1) filter.tags = arr[0]
+    else if (arr.length > 1) filter.tags = { $in: arr }
+  }
+  // 2026-08-06: P2.1 — 多选标签 AND 筛选 (?tags=a,b,c 必须同时含全部)
+  if (tags) {
+    const arr = String(tags).split(',').map((s) => s.trim()).filter(Boolean)
+    if (arr.length === 1) filter.tags = arr[0]
+    else if (arr.length > 1) filter.tags = { $all: arr }
+  }
   if (dueBefore || dueAfter) {
     filter.dueAt = {}
     if (dueBefore) filter.dueAt.$lte = new Date(dueBefore)
@@ -345,7 +357,7 @@ async function create({ orgId, title, description, type, priority, creator, assi
     dueAt,
     status: items.length > 0 ? 'assigned' : 'assigned',
     progress: 0,
-    tags: tags || [],
+    tags: _sanitizeTags(tags),
     relatedTo: relatedTo || {}
   })
   // 创建条目
@@ -403,7 +415,7 @@ async function update({ id, orgId, body, actor }) {
   if (body.priority != null) task.priority = body.priority
   if (body.startAt !== undefined) task.startAt = body.startAt
   if (body.dueAt != null) task.dueAt = body.dueAt
-  if (body.tags != null) task.tags = body.tags
+  if (body.tags != null) task.tags = _sanitizeTags(body.tags)
   // 2026-08-02: 收集新加入的 assignees + supervisors, 一次性发 task_assigned
   //   diff 在写库前算 (避免被前面赋值覆盖)
   const newRecipientIds = []
@@ -613,6 +625,27 @@ function assertNoSupervisorAssigneeOverlap(assignees, supervisors) {
   if (overlap.length) {
     throw ApiError.badRequest(`监督人与执行人不能为同一人: ${[...new Set(overlap)].join(', ')}`)
   }
+}
+
+/**
+ * 2026-08-06: tags 字段统一清洗 (P0.2) — trim + 拒空串 + 去重 + 限长(单标签 30, 总数 30)。
+ * 任何写入路径(create / update / generateFromTemplate)都过这个函数, 保证存进 DB 的 tags 永远
+ * 是干净的标准数组。前端可信赖后端, 不必自己做清洗。
+ */
+function _sanitizeTags(tags) {
+  if (!Array.isArray(tags)) return []
+  const seen = new Set()
+  const out = []
+  for (const raw of tags) {
+    if (typeof raw !== 'string') continue
+    const t = raw.trim()
+    if (!t || t.length > 30) continue        // 拒空 + 限单标签长
+    if (seen.has(t)) continue                  // 去重
+    seen.add(t)
+    out.push(t)
+    if (out.length >= 30) break                // 限总标签数
+  }
+  return out
 }
 
 // ─── 状态机：执行人提交 ────────────────────────
@@ -881,7 +914,11 @@ async function addComment({ id, orgId, content, mentions, actor }) {
 
 // ─── 看板 ──────────────────────────────────────
 
-async function kanban({ orgId, assignee, type, priority, scope, actor }) {
+async function kanban({ orgId, assignee, type, priority, scope, actor, view }) {
+  // 2026-08-06 P2.2: ?view=byTag → 按标签分桶 (与原 4 状态桶并列, 不互斥)
+  if (view === 'byTag') {
+    return kanbanByTag({ orgId, assignee, type, priority, scope, actor })
+  }
   // 2026-07-11: 与 list 同语义 — task.read.own 持有者能进接口但只能看自己的 (走 $or)
   const perms = (actor && actor.permissions) || []
   const canSeeAll = actor && (actor.isPlatformAdmin || perms.includes('task.read'))
@@ -917,6 +954,49 @@ async function kanban({ orgId, assignee, type, priority, scope, actor }) {
     // expired / cancelled 不进看板(避免污染)
   }
   return buckets
+}
+
+// 2026-08-06 P2.2: 看板按标签分组 (?view=byTag, 复用 R-3913 路径不新增 R 号)
+//   每个 tag 一列, 每列内嵌原 4 状态子列 (todo/inProgress/pendingReview/done) — 与 status 看板"并列"而非互斥
+//   复用 _bucketOf 状态→桶映射, 与原 kanban() 保持 100% 一致
+function _bucketOf(status) {
+  if (status === 'assigned' || status === 'draft') return 'todo'
+  if (['in_progress', 'partial_submitted', 'rejected'].includes(status)) return 'inProgress'
+  if (status === 'submitted') return 'pendingReview'
+  if (status === 'approved') return 'done'
+  return null  // expired / cancelled / 其他不进看板
+}
+
+async function kanbanByTag({ orgId, assignee, type, priority, scope, actor }) {
+  const perms = (actor && actor.permissions) || []
+  const canSeeAll = actor && (actor.isPlatformAdmin || perms.includes('task.read'))
+  const baseFilter = { org: orgId, archived: { $ne: true }, tags: { $exists: true, $ne: [] } }
+  if (assignee) baseFilter['assignees.user'] = assignee
+  if (type) baseFilter.type = type
+  if (priority) baseFilter.priority = priority
+  if (!canSeeAll || scope === 'mine') {
+    baseFilter.$or = [
+      { creator: actor.userId },
+      { 'assignees.user': actor.userId },
+      { supervisors: actor.userId }
+    ]
+  }
+  const tasks = await Task.find(baseFilter)
+    .populate('creator', 'realName avatar')
+    .populate('assignees.user', 'realName avatar')
+    .sort({ dueAt: 1, priority: -1 })
+    .lean()
+  const byTag = {}
+  for (const t of tasks) {
+    const bucket = _bucketOf(t.status)
+    if (!bucket) continue                                  // 终态不进看板
+    for (const tag of (t.tags || [])) {
+      if (!byTag[tag]) byTag[tag] = { todo: [], inProgress: [], pendingReview: [], done: [] }
+      byTag[tag][bucket].push(t)
+    }
+  }
+  const allTags = Object.keys(byTag).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  return { byTag, allTags }
 }
 
 // ─── 统计 ──────────────────────────────────────
@@ -1271,6 +1351,8 @@ async function templateCreate({ orgId, body, actor }) {
     defaultAssignees: body.defaultAssignees || [],
     defaultSupervisors: body.defaultSupervisors,
     itemTemplates: body.itemTemplates || [],
+    // 2026-08-06 P3.1: 模板默认标签 — 复用 P0.2 _sanitizeTags 统一清洗
+    defaultTags: _sanitizeTags(body.defaultTags || []),
     schedule,
     nextRunAt,
     isActive: body.isActive !== false,
@@ -1300,10 +1382,12 @@ async function templateList({ orgId, page, pageSize, isActive }) {
 async function templateUpdate({ id, orgId, body }) {
   const tpl = await TaskTemplate.findOne({ _id: id, org: orgId })
   if (!tpl) throw ApiError.notFound('模板不存在')
+  // 2026-08-06 P3.1: defaultTags 单独处理, 写库前过 _sanitizeTags
   const fields = ['title', 'description', 'type', 'priority', 'defaultAssignees', 'defaultSupervisors', 'itemTemplates', 'isActive']
   for (const f of fields) {
     if (body[f] != null) tpl[f] = body[f]
   }
+  if (body.defaultTags != null) tpl.defaultTags = _sanitizeTags(body.defaultTags)
   if (body.schedule != null) {
     tpl.schedule = body.schedule
     tpl.nextRunAt = computeNextRunAt(body.schedule)
@@ -1384,7 +1468,9 @@ async function generateFromTemplate(tpl, actor, isManualRun = false) {
       dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
       status: 'assigned',
       progress: 0,
-      tags: ['周期任务'],
+      // 2026-08-06 P3.1: 模板 defaultTags 兜底向后兼容 — 无 defaultTags 时仍写 ['周期任务']
+      //   用户在模板编辑里把 defaultTags 设为 [], 这里就走空数组, 完全去掉
+      tags: _sanitizeTags(tpl.defaultTags && tpl.defaultTags.length ? tpl.defaultTags : ['周期任务']),
       fromTemplate: tpl._id
     })
     if (tpl.itemTemplates && tpl.itemTemplates.length > 0) {
@@ -1453,6 +1539,18 @@ async function templateResume({ id, orgId }) {
   return tpl.toObject()
 }
 
+/**
+ * 2026-08-06: R-3925 P1.2 — 本机构所有出现过的标签去重 + 字典序。
+ * 走 Mongoose Model.distinct (multikey 索引 {org, tags} 直接命中, 万级 < 50ms)。
+ * 已归档任务的标签不进选项 (前端 TagEditor suggestions 应只提示"当前活跃"标签)。
+ */
+async function distinctTags({ orgId }) {
+  const raw = await Task.distinct('tags', { org: orgId, archived: { $ne: true } })
+  return raw
+    .filter((t) => typeof t === 'string' && t.trim())
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+}
+
 module.exports = {
   // 列表/详情/CRUD
   list,
@@ -1463,6 +1561,8 @@ module.exports = {
   removableCheck,
   // 可派任务员工下拉 (R-3924, 2026-08-02)
   assignableUsers,
+  // 标签历史 (R-3925, 2026-08-06 P1.2)
+  distinctTags,
   // 归档 (2026-07-08)
   archive,
   unarchive,
@@ -1480,6 +1580,7 @@ module.exports = {
   addComment,
   // 看板/统计
   kanban,
+  kanbanByTag,   // 2026-08-06 P2.2 — 内部走 ?view=byTag 分支, 不外部直接调
   stats,
   // cron
   expireOverdue,

@@ -12,5 +12,7 @@ export const reportApi = {
   lessonConsumption: (params) => http.get('/reports/lesson-consumption', { params }),
   roomUtilization: (params) => http.get('/reports/room-utilization', { params }),
   teacherProductivity: (params) => http.get('/reports/teacher-productivity', { params }),
-  pointsActivity: (params) => http.get('/reports/points-activity', { params })
+  pointsActivity: (params) => http.get('/reports/points-activity', { params }),
+  // 2026-08-06 P3.2: R-1957 任务概览看板 — 按标签维度横切, 走 report.read 权限
+  taskOverview: (params) => http.get('/reports/task-overview', { params })
 }

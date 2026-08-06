@@ -57,7 +57,8 @@
         <el-date-picker v-model="form.dueAt" type="datetime" style="width: 240px" />
       </el-form-item>
       <el-form-item label="标签">
-        <el-input v-model="tagsInput" placeholder="逗号分隔,例如:紧急,月结" />
+        <!-- 2026-08-06 P1.2: 用 TagEditor 替换裸 input, 自动 suggestions + 后端统一清洗 -->
+        <TagEditor v-model="form.tags" :max="30" :suggestions="tagOptions" placeholder="按 Enter 添加 (历史标签联想)" />
       </el-form-item>
       <el-form-item label="checklist">
         <div class="items">
@@ -87,6 +88,7 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
 import { useAuthStore } from '@/stores/auth'
+import TagEditor from '@/components/TagEditor.vue'
 import {
   TASK_TYPES, TASK_TYPE_LABELS,
   TASK_PRIORITIES, TASK_PRIORITY_LABELS
@@ -102,7 +104,8 @@ const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRI
 
 const formRef = ref(null)
 const saving = ref(false)
-const tagsInput = ref('')
+// 2026-08-06 P1.2: 标签历史联想 (本机构出现过的标签, R-3925 /tasks/distinct-tags)
+const tagOptions = ref([])
 const userOptions = ref([])
 
 const form = ref({
@@ -115,7 +118,9 @@ const form = ref({
   supervisors: [], // onMounted 加载完 userOptions 后再设默认 (避免 el-select MULTIPLE 残留 raw id chip)
   startAt: new Date(), // 2026-07-08: 开始时间必填, 默认今天
   dueAt: null,
-  items: []
+  items: [],
+  // 2026-08-06: tags 改为数组直接交给 TagEditor, 后端 P0.2 统一清洗 (trim/dedup/≤30)
+  tags: []
 })
 
 const isPlatformAdmin = computed(() => !!auth.user?.isPlatformAdmin)
@@ -164,10 +169,8 @@ async function onSubmit() {
   }
   saving.value = true
   try {
+    // 2026-08-06: tags 已在 form.value 数组里, 无需 split, 后端 P0.2 _sanitizeTags 统一清洗
     const payload = { ...form.value }
-    if (tagsInput.value) {
-      payload.tags = tagsInput.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
-    }
     const r = await taskApi.create(payload)
     // 2026-08-02: 反馈通知数量 — 后端实际入库的 inbox 数与"assignees + supervisors 一致"是
     //   后端的责任 (Bug A 模板缺失 fallback + Bug B 监督人也收), 但前端给用户"看得见的反馈",
@@ -195,6 +198,12 @@ onMounted(async () => {
     // 拉不到人时不能静默: 否则用户只看到空下拉, 无从判断是没人还是没权限
     ElMessage.error('加载员工列表失败,请刷新重试或联系管理员')
   }
+
+  // 2026-08-06 P1.2: 加载标签历史, 给 TagEditor suggestions (失败不阻塞, 静默走空数组)
+  try {
+    const r = await taskApi.distinctTags()
+    tagOptions.value = Array.isArray(r.data) ? r.data : []
+  } catch (_) { /* 静默, TagEditor 没建议也能用 */ }
 
   // 等下一帧让 el-select 看到新 options 后再 set 默认值
   // (避免 el-select MULTIPLE 残留 raw id chip + 单一 el-select 接不住 v-model 的边角问题)

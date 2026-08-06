@@ -21,7 +21,7 @@
 - `dueAt`（到期时间，**必填**；过期由 cron 标 `expired`）
 - `status`（状态机，见 [§3](#3-任务状态机)）
 - `progress`（0~100，service 聚合 `TaskItem.done / total` 写回）
-- `tags`（自由标签）
+- `tags`（自由标签，`String[]`；2026-08-06 规范化：后端 `task.service._sanitizeTags` 统一 trim+去重+拒空+限长(单标签 1~30, 总数 ≤30)；前端可直接信赖存进 DB 的是标准数组，不必自清洗。索引 `{org:1, tags:1}` 走 multikey 覆盖 list 单值 `?tag=` / 多值 `?tag=a,b` ($in) / 多选 AND `?tags=a,b` ($all) / `Task.distinct('tags')` 四种用法）
 - `relatedTo`（关联业务实体：`{ entity, id }`，跳转上下文）
 - `fromTemplate`（TaskTemplate ref；周期任务生成时写入，便于追溯）
 - `meta`（Mixed 扩展属性）
@@ -36,6 +36,7 @@ TaskSchema.index({ org: 1, 'assignees.user': 1 })     // 我执行的(数组字�
 TaskSchema.index({ org: 1, supervisors: 1 })          // 我监督的
 TaskSchema.index({ status: 1, dueAt: 1 })             // cron 过期扫描
 TaskSchema.index({ fromTemplate: 1 })                 // 模板追溯
+TaskSchema.index({ org: 1, tags: 1 })                 // 2026-08-06 P1.1/P2.1/P1.2 — 标签筛选 + distinct
 ```
 
 ---
@@ -224,6 +225,7 @@ filter.$or = [
 - `defaultAssignees`（`[{ user, role? }]`，阶段 2 解析 role）
 - `defaultSupervisors`（User ref 数组，必填 ≥ 1）
 - `itemTemplates`（`[{ title, assigneeRole?, order }]`）
+- `defaultTags`（`String[]`，**2026-08-06 P3.1**：`generateFromTemplate` 写入生成任务的 `tags` 字段；空数组 = 不自动加任何标签；不设时兜底 `['周期任务']` 保后向兼容。`task.service._sanitizeTags` 同样 trim+去重+限长。顺序：tags = `tpl.defaultTags || ['周期任务']`）
 - `schedule.kind`：daily / weekly / monthly / cron（cron 阶段 2）
 - `schedule.hour`：`[Number]` 生成时刻 0~23
 - `schedule.weekdays`：weekly 用 0~6（0=周日）

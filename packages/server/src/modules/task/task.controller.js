@@ -134,6 +134,12 @@ exports.assignableUsers = async (req, res) => res.json(ApiResponse.ok(await s.as
   orgId: req.orgId
 })))
 
+// ─── 标签历史 (R-3925, 2026-08-06 P1.2) ──────
+// 本机构所有出现过的标签 (去重 + zh-CN 字典序), 给 TagEditor suggestions / 多选筛选 options 用
+exports.distinctTags = async (req, res) => res.json(ApiResponse.ok(await s.distinctTags({
+  orgId: req.orgId
+})))
+
 // ─── 模板 ───────────────────────────────────
 
 exports.templateList = async (req, res) => res.json(ApiResponse.ok(await s.templateList({

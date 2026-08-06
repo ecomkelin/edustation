@@ -39,4 +39,9 @@ router.get('/recruit-promoter', mws.requirePermission('recruit.read'), asyncHand
 // R-1956 GET /reports/recruit-teacher-conversion
 router.get('/recruit-teacher-conversion', mws.requirePermission('recruit.read'), asyncHandler(c.recruitTeacherConversion))
 
+// R-1957 GET /reports/task-overview (2026-08-06 P3.2)
+//   任务概览看板 — 总数/未完结/逾期/完成率 + 按标签 Top 20 分布 + 按 status 桶
+//   走 report.read 权限 (与其他 5 块经营看板同权)
+router.get('/task-overview', mws.requirePermission('report.read'), asyncHandler(c.taskOverview))
+
 module.exports = router

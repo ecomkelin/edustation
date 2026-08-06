@@ -18,7 +18,9 @@ const services = {
   roomUtilization:     require('./roomUtilization.service'),
   teacherProductivity: require('./teacherProductivity.service'),
   pointsActivity:      require('./pointsActivity.service'),
-  recruit:             require('./recruit.service')   // 2026-06 招生看板
+  recruit:             require('./recruit.service'),   // 2026-06 招生看板
+  // 2026-08-06 P3.2: R-1957 任务概览看板 — 按标签维度横切的机构经营视角 KPI
+  taskOverview:        require('./taskOverview.service')
 }
 
 exports.overview = async (req, res) => {
@@ -54,5 +56,11 @@ exports.recruitPromoter = async (req, res) => {
 
 exports.recruitTeacherConversion = async (req, res) => {
   const data = await services.recruit.recruitTeacherConversion({ orgId: req.orgId, ...req.query })
+  res.json(ApiResponse.ok(data))
+}
+
+// ─── 任务概览看板 (R-1957, 2026-08-06 P3.2) ──────
+exports.taskOverview = async (req, res) => {
+  const data = await services.taskOverview.taskOverview({ orgId: req.orgId, ...req.query })
   res.json(ApiResponse.ok(data))
 }
