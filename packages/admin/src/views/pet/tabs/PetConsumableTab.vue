@@ -69,84 +69,104 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialog" :title="form._id ? '编辑消耗品' : '新建消耗品'" width="640px" :close-on-click-modal="false" @close="resetForm">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="Key" prop="key">
-          <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 food_normal" />
-        </el-form-item>
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="类型" prop="kind">
-          <el-radio-group v-model="form.kind">
-            <el-radio v-for="k in PET_CONSUMABLE_KINDS" :key="k" :value="k">{{ PET_CONSUMABLE_KIND_LABELS[k] }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="积分价" prop="pointCost">
-          <el-input-number v-model="form.pointCost" :min="0" :max="100000" />
-        </el-form-item>
-        <el-form-item label="饱腹度">
-          <el-input-number v-model="form.hungerRestore" :min="0" :max="1000" />
-          <span class="hint">喂食恢复饱腹度（0-1000）</span>
-        </el-form-item>
-        <el-form-item label="经验值">
-          <el-input-number v-model="form.expGain" :min="0" :max="100000" />
-        </el-form-item>
-
-        <el-form-item label="视觉类型" prop="visualType">
-          <el-radio-group v-model="form.visualType" :disabled="!!form._id">
-            <el-radio value="svg">SVG</el-radio>
-            <el-radio value="video">视频</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <!-- 2026-07-21 v4: 归属 (通用 / 某几个物种专属 — 多选) -->
-        <el-form-item label="归属">
-          <el-radio-group v-model="ownerMode">
-            <el-radio value="universal">🐾 通用（任意宠物可喂）</el-radio>
-            <el-radio value="specific">🔒 专属（仅某物种可喂，可多选）</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="ownerMode === 'specific'" label="专属物种">
-          <!-- 2026-07-21 v4: picker 改为 PetSpecies 多选（共享图鉴） -->
-          <el-select
-            v-model="form.ownerSpecies"
-            multiple
-            filterable
-            collapse-tags
-            :loading="loadingSpecies"
-            placeholder="选择宠物物种（可多选）"
-            style="width: 400px"
-          >
-            <el-option v-for="s in speciesOptions" :key="s.key" :label="speciesOptionLabel(s)" :value="s.key" />
-          </el-select>
-          <span class="hint">限定后仅这些物种的宠物可喂；跟学员宠物实例是间接关系（共享图鉴）</span>
-        </el-form-item>
-        <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
-          <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
-          <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
-        </el-form-item>
-        <el-form-item v-else label="视频文件">
-          <FilePicker v-model="videoPicker" scope="pet" mime-prefix="video/" title="选择图标视频" @select="onPickVideo" />
-          <div v-if="form.videoFile" class="preview">
-            <video :src="form.videoFile.url" controls preload="metadata" style="width:200px;max-height:140px;border-radius:6px" />
-            <el-button link type="danger" @click="form.videoFile = null">清除</el-button>
+    <!-- 创建/编辑 drawer (2026-08-07: 从 el-dialog 640px 改为右侧抽屉 800px, 与 PetSpeciesTab 统一.
+         原因: 专属物种多选 + SVG/视频预览在 640px 弹窗里太挤; 抽屉自然更宽 + sticky footer + 保留列表上下文) -->
+    <el-drawer
+      v-model="dialog"
+      direction="rtl"
+      size="800px"
+      :with-header="false"
+      :close-on-click-modal="false"
+      :destroy-on-close="true"
+      @close="resetForm"
+    >
+      <div class="consumable-drawer">
+        <header class="consumable-drawer__head">
+          <div class="consumable-drawer__head-main">
+            <h3>{{ form._id ? '编辑消耗品' : '新建消耗品' }}</h3>
           </div>
-          <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadVideo" accept="video/*">
-            <el-button :icon="Upload" size="small">上传新视频</el-button>
-          </el-upload>
-        </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="form.isActive" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="2" maxlength="500" show-word-limit />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
-      </template>
-    </el-dialog>
+          <el-button link @click="dialog = false">关闭</el-button>
+        </header>
+        <section class="consumable-drawer__body">
+          <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+            <el-form-item label="Key" prop="key">
+              <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 food_normal" />
+            </el-form-item>
+            <el-form-item label="名称" prop="name">
+              <el-input v-model="form.name" />
+            </el-form-item>
+            <el-form-item label="类型" prop="kind">
+              <el-radio-group v-model="form.kind">
+                <el-radio v-for="k in PET_CONSUMABLE_KINDS" :key="k" :value="k">{{ PET_CONSUMABLE_KIND_LABELS[k] }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="积分价" prop="pointCost">
+              <el-input-number v-model="form.pointCost" :min="0" :max="100000" />
+            </el-form-item>
+            <el-form-item label="饱腹度">
+              <el-input-number v-model="form.hungerRestore" :min="0" :max="1000" />
+              <span class="hint">喂食恢复饱腹度（0-1000）</span>
+            </el-form-item>
+            <el-form-item label="经验值">
+              <el-input-number v-model="form.expGain" :min="0" :max="100000" />
+            </el-form-item>
+
+            <el-form-item label="视觉类型" prop="visualType">
+              <el-radio-group v-model="form.visualType" :disabled="!!form._id">
+                <el-radio value="svg">SVG</el-radio>
+                <el-radio value="video">视频</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <!-- 2026-07-21 v4: 归属 (通用 / 某几个物种专属 — 多选) -->
+            <el-form-item label="归属">
+              <el-radio-group v-model="ownerMode">
+                <el-radio value="universal">🐾 通用（任意宠物可喂）</el-radio>
+                <el-radio value="specific">🔒 专属（仅某物种可喂，可多选）</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="ownerMode === 'specific'" label="专属物种">
+              <!-- 2026-07-21 v4: picker 改为 PetSpecies 多选（共享图鉴） -->
+              <el-select
+                v-model="form.ownerSpecies"
+                multiple
+                filterable
+                collapse-tags
+                :loading="loadingSpecies"
+                placeholder="选择宠物物种（可多选）"
+                style="width: 400px"
+              >
+                <el-option v-for="s in speciesOptions" :key="s.key" :label="speciesOptionLabel(s)" :value="s.key" />
+              </el-select>
+              <span class="hint">限定后仅这些物种的宠物可喂；跟学员宠物实例是间接关系（共享图鉴）</span>
+            </el-form-item>
+            <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
+              <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
+              <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
+            </el-form-item>
+            <el-form-item v-else label="视频文件">
+              <FilePicker v-model="videoPicker" scope="pet" mime-prefix="video/" title="选择图标视频" @select="onPickVideo" />
+              <div v-if="form.videoFile" class="preview">
+                <video :src="form.videoFile.url" controls preload="metadata" style="width:200px;max-height:140px;border-radius:6px" />
+                <el-button link type="danger" @click="form.videoFile = null">清除</el-button>
+              </div>
+              <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadVideo" accept="video/*">
+                <el-button :icon="Upload" size="small">上传新视频</el-button>
+              </el-upload>
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="form.isActive" />
+            </el-form-item>
+            <el-form-item label="描述">
+              <el-input v-model="form.description" type="textarea" :rows="2" maxlength="500" show-word-limit />
+            </el-form-item>
+          </el-form>
+        </section>
+        <footer class="consumable-drawer__foot">
+          <el-button @click="dialog = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+        </footer>
+      </div>
+    </el-drawer>
 
     <!-- 图标大图预览 -->
     <el-dialog v-model="previewOpen" :title="previewRow ? `${previewRow.name}（${previewRow.key}）` : '图标预览'" width="480px" :show-close="true" align-center>
@@ -414,4 +434,42 @@ export default {
 .preview-large-svg { width: 100%; max-width: 400px; max-height: 60vh; display: flex; align-items: center; justify-content: center; }
 .preview-large-svg svg { width: 100%; height: auto; max-height: 60vh; display: block; }
 .preview-large-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; color: #999; padding: 32px; }
+
+/* 2026-08-07: 右侧抽屉（替换原 640px 居中 dialog）— 与 PetSpeciesTab 同一范式
+   - 三段式：head (标题栏) / body (form 滚动区) / foot (sticky 操作栏)
+   - drawer 默认 body 有 padding，我们自己接管滚动 */
+.consumable-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.consumable-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+}
+.consumable-drawer__head-main h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.consumable-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+}
+.consumable-drawer__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+}
 </style>

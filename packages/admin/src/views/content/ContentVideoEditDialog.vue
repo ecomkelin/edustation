@@ -1,75 +1,86 @@
 <!--
-  科普视频编辑/创建 dialog
+  科普视频编辑/创建 drawer (2026-08-07: 从 el-dialog 640px 改为右侧抽屉 720px.
+  平台超管专属 (requirePlatformAdmin))
   对应 R-3805 create / R-3806 update
-  平台超管专属 (requirePlatformAdmin)
 -->
 <template>
-  <el-dialog
+  <el-drawer
     :model-value="modelValue"
-    :title="isEdit ? '编辑视频' : '新建视频'"
-    width="640px"
+    direction="rtl"
+    size="720px"
+    :with-header="false"
     :close-on-click-modal="false"
+    :destroy-on-close="true"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-      <el-form-item label="标题" prop="title">
-        <el-input v-model="form.title" maxlength="80" show-word-limit placeholder="吸引家长点击的视频名" />
-      </el-form-item>
+    <div class="video-drawer">
+      <header class="video-drawer__head">
+        <div class="video-drawer__head-main">
+          <h3>{{ isEdit ? '编辑视频' : '新建视频' }}</h3>
+        </div>
+        <el-button link @click="$emit('update:modelValue', false)">关闭</el-button>
+      </header>
+      <section class="video-drawer__body">
+        <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+          <el-form-item label="标题" prop="title">
+            <el-input v-model="form.title" maxlength="80" show-word-limit placeholder="吸引家长点击的视频名" />
+          </el-form-item>
 
-      <el-form-item label="简介" prop="intro">
-        <el-input v-model="form.intro" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="一句话讲清楚这个视频讲什么" />
-      </el-form-item>
+          <el-form-item label="简介" prop="intro">
+            <el-input v-model="form.intro" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="一句话讲清楚这个视频讲什么" />
+          </el-form-item>
 
-      <el-form-item label="视频 URL" prop="videoUrl">
-        <el-input v-model="form.videoUrl" placeholder="https:// 开头, mp4 直链或 H5 embed URL, C 端 web-view 打开" />
-        <span class="hint">生产环境请填自有视频地址, demo 用 example.com 占位</span>
-      </el-form-item>
+          <el-form-item label="视频 URL" prop="videoUrl">
+            <el-input v-model="form.videoUrl" placeholder="https:// 开头, mp4 直链或 H5 embed URL, C 端 web-view 打开" />
+            <span class="hint">生产环境请填自有视频地址, demo 用 example.com 占位</span>
+          </el-form-item>
 
-      <el-form-item label="emoji封面">
-        <el-input v-model="form.coverEmoji" maxlength="4" style="width: 120px;" placeholder="例如 🎬" />
-      </el-form-item>
+          <el-form-item label="emoji封面">
+            <el-input v-model="form.coverEmoji" maxlength="4" style="width: 120px;" placeholder="例如 🎬" />
+          </el-form-item>
 
-      <el-form-item label="分类">
-        <el-input v-model="form.category" maxlength="50" placeholder="如 science / nature / space, 留空 = 全部" />
-      </el-form-item>
+          <el-form-item label="分类">
+            <el-input v-model="form.category" maxlength="50" placeholder="如 science / nature / space, 留空 = 全部" />
+          </el-form-item>
 
-      <el-form-item label="时长(秒)">
-        <el-input-number v-model="form.durationSeconds" :min="0" :max="86400" placeholder="可选, 仅展示" />
-      </el-form-item>
+          <el-form-item label="时长(秒)">
+            <el-input-number v-model="form.durationSeconds" :min="0" :max="86400" placeholder="可选, 仅展示" />
+          </el-form-item>
 
-      <el-form-item label="标签">
-        <el-tag
-          v-for="t in form.tags"
-          :key="t"
-          closable
-          style="margin-right: 6px;"
-          @close="removeTag(t)"
-        >
-          {{ t }}
-        </el-tag>
-        <el-input
-          v-if="tagInputVisible"
-          ref="tagInputRef"
-          v-model="tagInputValue"
-          class="tag-input"
-          size="small"
-          style="width: 100px;"
-          @keyup.enter="addTag"
-          @blur="addTag"
-        />
-        <el-button v-else size="small" type="primary" plain @click="showTagInput">+ 添加标签</el-button>
-      </el-form-item>
+          <el-form-item label="标签">
+            <el-tag
+              v-for="t in form.tags"
+              :key="t"
+              closable
+              style="margin-right: 6px;"
+              @close="removeTag(t)"
+            >
+              {{ t }}
+            </el-tag>
+            <el-input
+              v-if="tagInputVisible"
+              ref="tagInputRef"
+              v-model="tagInputValue"
+              class="tag-input"
+              size="small"
+              style="width: 100px;"
+              @keyup.enter="addTag"
+              @blur="addTag"
+            />
+            <el-button v-else size="small" type="primary" plain @click="showTagInput">+ 添加标签</el-button>
+          </el-form-item>
 
-      <el-form-item label="发布">
-        <el-switch v-model="form.isPublished" active-text="已发布" inactive-text="草稿" />
-      </el-form-item>
-    </el-form>
-
-    <template #footer>
-      <el-button @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
-    </template>
-  </el-dialog>
+          <el-form-item label="发布">
+            <el-switch v-model="form.isPublished" active-text="已发布" inactive-text="草稿" />
+          </el-form-item>
+        </el-form>
+      </section>
+      <footer class="video-drawer__foot">
+        <el-button @click="$emit('update:modelValue', false)">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+      </footer>
+    </div>
+  </el-drawer>
 </template>
 
 <script setup>
@@ -206,4 +217,41 @@ async function onSave() {
 <style lang="scss" scoped>
 .hint { margin-left: 12px; color: #999; font-size: 12px; }
 .tag-input { margin-left: 6px; }
+
+/* 2026-08-07: 右侧抽屉三段式 (替换原 640px 居中 dialog) */
+.video-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.video-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #303133;
+  }
+}
+.video-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+}
+.video-drawer__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+}
 </style>

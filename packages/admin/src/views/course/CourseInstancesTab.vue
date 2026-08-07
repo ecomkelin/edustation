@@ -193,231 +193,252 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialog" :title="form._id ? '编辑开班' : '新建开班'" width="640px" :close-on-click-modal="false">
-      <el-form :model="form" label-width="100px">
-        <!-- 1. 教学科目（决策起点：先定教什么） -->
-        <el-form-item label="教学科目" required>
-          <el-select v-model="form.subject" :disabled="locked" clearable placeholder="选择本班实际教学的科目" style="width: 100%">
-            <el-option v-for="s in subjects" :key="s._id" :label="s.name" :value="s._id" />
-          </el-select>
-          <div v-if="subjectOutOfProduct" class="hint-warn">
-            提示：所选科目不在该课程产品的科目范围内（仅参考，不阻塞保存）
+    <!-- 新建/编辑开班 drawer (2026-08-07: 从 el-dialog 640px 改为右侧抽屉 760px.
+         排课计划 + 师资/教室 + 教学特例（含教学大纲/课件子表） + 课程介绍 + 招生,
+         字段多 + 嵌套子表, 640px 弹窗太长整体滚动体验差;
+         抽屉 sticky head/foot + body 独立滚动, 嵌套子表也更舒展) -->
+    <el-drawer
+      v-model="dialog"
+      direction="rtl"
+      size="760px"
+      :with-header="false"
+      :close-on-click-modal="false"
+      :destroy-on-close="true"
+    >
+      <div class="ci-drawer">
+        <header class="ci-drawer__head">
+          <div class="ci-drawer__head-main">
+            <h3>{{ form._id ? '编辑开班' : '新建开班' }}</h3>
           </div>
-          <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
-        </el-form-item>
-        <!-- 2. 开班名称 -->
-        <el-form-item label="开班名称">
-          <el-input v-model="form.name" :disabled="locked" maxlength="200" show-word-limit placeholder="例：2026 春季 国画 A 班" />
-          <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
-        </el-form-item>
+          <el-button link @click="dialog = false">关闭</el-button>
+        </header>
+        <section class="ci-drawer__body">
+          <el-form :model="form" label-width="100px">
+            <!-- 1. 教学科目（决策起点：先定教什么） -->
+            <el-form-item label="教学科目" required>
+              <el-select v-model="form.subject" :disabled="locked" clearable placeholder="选择本班实际教学的科目" style="width: 100%">
+                <el-option v-for="s in subjects" :key="s._id" :label="s.name" :value="s._id" />
+              </el-select>
+              <div v-if="subjectOutOfProduct" class="hint-warn">
+                提示：所选科目不在该课程产品的科目范围内（仅参考，不阻塞保存）
+              </div>
+              <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
+            </el-form-item>
+            <!-- 2. 开班名称 -->
+            <el-form-item label="开班名称">
+              <el-input v-model="form.name" :disabled="locked" maxlength="200" show-word-limit placeholder="例：2026 春季 国画 A 班" />
+              <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
+            </el-form-item>
 
-        <!-- 3. 排课计划 -->
-        <el-divider content-position="left">排课计划</el-divider>
-        <el-form-item label="模式" required>
-          <el-radio-group v-model="form.schedulePlan.mode" :disabled="locked" @change="onModeChange">
-            <el-radio-button value="weekly">每周 N 节</el-radio-button>
-            <el-radio-button value="cycle">上 X 休 Y</el-radio-button>
-          </el-radio-group>
-          <div class="form-hint">
+            <!-- 3. 排课计划 -->
+            <el-divider content-position="left">排课计划</el-divider>
+            <el-form-item label="模式" required>
+              <el-radio-group v-model="form.schedulePlan.mode" :disabled="locked" @change="onModeChange">
+                <el-radio-button value="weekly">每周 N 节</el-radio-button>
+                <el-radio-button value="cycle">上 X 休 Y</el-radio-button>
+              </el-radio-group>
+              <div class="form-hint">
+                <template v-if="form.schedulePlan.mode === 'weekly'">
+                  按日历周排：每周固定 N 节 + 固定休息日（如"每周二/五 + 周日休"）
+                </template>
+                <template v-else>
+                  连续滚动周期：上 N 天课休 1 天，不绑日历周（如"上 5 休 1"周一到周五上课周末轮休）
+                </template>
+              </div>
+            </el-form-item>
+            <el-form-item label="预设方案">
+              <el-select v-model="form.schedulePlanPreset" :disabled="locked" style="width: 100%" @change="onPresetChange">
+                <el-option v-for="p in filteredPresets" :key="p.value" :label="p.label" :value="p.value" />
+              </el-select>
+              <div class="form-hint">选了预设会套对应值；手动改字段会自动切到"自定义"。</div>
+            </el-form-item>
+            <!-- weekly 模式字段 -->
             <template v-if="form.schedulePlan.mode === 'weekly'">
-              按日历周排：每周固定 N 节 + 固定休息日（如"每周二/五 + 周日休"）
+              <el-form-item label="每周课次" required>
+                <el-input-number v-model="form.schedulePlan.lessonsPerWeek" :disabled="locked" :min="1" :max="7" @change="onSchedulePlanManualEdit" />
+              </el-form-item>
+              <el-form-item label="休息日">
+                <el-select v-model="form.schedulePlan.restDays" :disabled="locked" multiple collapse-tags collapse-tags-tooltip clearable placeholder="不选表示无固定休息日" style="width: 100%" @change="onSchedulePlanManualEdit">
+                  <el-option v-for="(label, v) in REST_DAY_LABELS" :key="v" :label="label" :value="Number(v)" />
+                </el-select>
+              </el-form-item>
             </template>
-            <template v-else>
-              连续滚动周期：上 N 天课休 1 天，不绑日历周（如"上 5 休 1"周一到周五上课周末轮休）
+            <!-- cycle 模式字段 -->
+            <template v-if="form.schedulePlan.mode === 'cycle'">
+              <el-form-item label="上几天" required>
+                <el-input-number v-model="form.schedulePlan.cycleOnDays" :disabled="locked" :min="1" :max="30" @change="onSchedulePlanManualEdit" />
+              </el-form-item>
+              <el-form-item label="休几天" required>
+                <el-input-number v-model="form.schedulePlan.cycleOffDays" :disabled="locked" :min="1" :max="30" @change="onSchedulePlanManualEdit" />
+              </el-form-item>
             </template>
-          </div>
-        </el-form-item>
-        <el-form-item label="预设方案">
-          <el-select v-model="form.schedulePlanPreset" :disabled="locked" style="width: 100%" @change="onPresetChange">
-            <el-option v-for="p in filteredPresets" :key="p.value" :label="p.label" :value="p.value" />
-          </el-select>
-          <div class="form-hint">选了预设会套对应值；手动改字段会自动切到"自定义"。</div>
-        </el-form-item>
-        <!-- weekly 模式字段 -->
-        <template v-if="form.schedulePlan.mode === 'weekly'">
-          <el-form-item label="每周课次" required>
-            <el-input-number v-model="form.schedulePlan.lessonsPerWeek" :disabled="locked" :min="1" :max="7" @change="onSchedulePlanManualEdit" />
-          </el-form-item>
-          <el-form-item label="休息日">
-            <el-select v-model="form.schedulePlan.restDays" :disabled="locked" multiple collapse-tags collapse-tags-tooltip clearable placeholder="不选表示无固定休息日" style="width: 100%" @change="onSchedulePlanManualEdit">
-              <el-option v-for="(label, v) in REST_DAY_LABELS" :key="v" :label="label" :value="Number(v)" />
-            </el-select>
-          </el-form-item>
-        </template>
-        <!-- cycle 模式字段 -->
-        <template v-if="form.schedulePlan.mode === 'cycle'">
-          <el-form-item label="上几天" required>
-            <el-input-number v-model="form.schedulePlan.cycleOnDays" :disabled="locked" :min="1" :max="30" @change="onSchedulePlanManualEdit" />
-          </el-form-item>
-          <el-form-item label="休几天" required>
-            <el-input-number v-model="form.schedulePlan.cycleOffDays" :disabled="locked" :min="1" :max="30" @change="onSchedulePlanManualEdit" />
-          </el-form-item>
-        </template>
-        <el-form-item label="总课次" required>
-          <el-input-number v-model="form.schedulePlan.totalPlannedLessons" :min="1" />
-          <div v-if="locked" class="form-hint">筹备状态外不可上调；下调时不能小于已排课数</div>
-        </el-form-item>
-        <el-form-item label="单节时长(分)">
-          <el-input-number v-model="form.schedulePlan.minutesPerLesson" :disabled="locked" :min="1" placeholder="不填则用课程产品的设置" />
-          <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
-        </el-form-item>
+            <el-form-item label="总课次" required>
+              <el-input-number v-model="form.schedulePlan.totalPlannedLessons" :min="1" />
+              <div v-if="locked" class="form-hint">筹备状态外不可上调；下调时不能小于已排课数</div>
+            </el-form-item>
+            <el-form-item label="单节时长(分)">
+              <el-input-number v-model="form.schedulePlan.minutesPerLesson" :disabled="locked" :min="1" placeholder="不填则用课程产品的设置" />
+              <div v-if="locked" class="form-hint">筹备状态外不可修改</div>
+            </el-form-item>
 
-        <!-- 4. 师资 / 教室（课程产品下移到这里） -->
-        <el-divider content-position="left" style="margin-top: 16px">师资 / 教室</el-divider>
-        <el-form-item label="课程产品" required>
-          <el-select v-model="form.courseProduct" placeholder="选择课程产品（课包）" style="width: 100%">
-            <el-option v-for="t in products" :key="t._id" :label="t.name" :value="t._id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="老师" required>
-          <el-select v-model="form.teacher" filterable placeholder="选择老师" style="width: 100%">
-            <el-option v-for="t in teachers" :key="t.id" :label="t.realName || t.mobile" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="老师简介">
-          <el-input v-model="form.teacherIntro" type="textarea" :rows="3" placeholder="老师尚未确定时也可先填简介" />
-        </el-form-item>
-        <el-form-item label="教室" required>
-          <el-select v-model="form.room" filterable placeholder="选择教室" style="width: 100%">
-            <el-option v-for="r in rooms" :key="r._id" :label="r.name" :value="r._id" />
-          </el-select>
-        </el-form-item>
+            <!-- 4. 师资 / 教室（课程产品下移到这里） -->
+            <el-divider content-position="left" style="margin-top: 16px">师资 / 教室</el-divider>
+            <el-form-item label="课程产品" required>
+              <el-select v-model="form.courseProduct" placeholder="选择课程产品（课包）" style="width: 100%">
+                <el-option v-for="t in products" :key="t._id" :label="t.name" :value="t._id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="老师" required>
+              <el-select v-model="form.teacher" filterable placeholder="选择老师" style="width: 100%">
+                <el-option v-for="t in teachers" :key="t.id" :label="t.realName || t.mobile" :value="t.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="老师简介">
+              <el-input v-model="form.teacherIntro" type="textarea" :rows="3" placeholder="老师尚未确定时也可先填简介" />
+            </el-form-item>
+            <el-form-item label="教室" required>
+              <el-select v-model="form.room" filterable placeholder="选择教室" style="width: 100%">
+                <el-option v-for="r in rooms" :key="r._id" :label="r.name" :value="r._id" />
+              </el-select>
+            </el-form-item>
 
-        <!-- 5. 教学特例 (override) - 仅编辑模式可见; 教务可对某些课做"开班级"覆盖 -->
-        <template v-if="form._id">
-          <el-divider content-position="left">教学特例</el-divider>
-          <el-alert
-            v-if="!form._syllabusSnapshot || !form._syllabusSnapshot.lessons || form._syllabusSnapshot.lessons.length === 0"
-            type="info"
-            :closable="false"
-            show-icon
-            style="margin-bottom: 8px"
-          >
-            <template #title>本开班尚未从科目快照教学大纲</template>
-            <div>提示：开班时若教学科目未配置大纲/课件,这里没有可覆盖的源。可以到「学科」管理页先为该科目配置。</div>
-          </el-alert>
-          <el-alert
-            v-else
-            type="success"
-            :closable="false"
-            show-icon
-            style="margin-bottom: 8px"
-          >
-            <template #title>
-              已从科目快照教学大纲 ({{ form._syllabusSnapshot.lessons.length }} 节)
+            <!-- 5. 教学特例 (override) - 仅编辑模式可见; 教务可对某些课做"开班级"覆盖 -->
+            <template v-if="form._id">
+              <el-divider content-position="left">教学特例</el-divider>
+              <el-alert
+                v-if="!form._syllabusSnapshot || !form._syllabusSnapshot.lessons || form._syllabusSnapshot.lessons.length === 0"
+                type="info"
+                :closable="false"
+                show-icon
+                style="margin-bottom: 8px"
+              >
+                <template #title>本开班尚未从科目快照教学大纲</template>
+                <div>提示：开班时若教学科目未配置大纲/课件,这里没有可覆盖的源。可以到「学科」管理页先为该科目配置。</div>
+              </el-alert>
+              <el-alert
+                v-else
+                type="success"
+                :closable="false"
+                show-icon
+                style="margin-bottom: 8px"
+              >
+                <template #title>
+                  已从科目快照教学大纲 ({{ form._syllabusSnapshot.lessons.length }} 节)
+                </template>
+                <div>下方表格为本开班的"特例覆盖" — 留空字段表示沿用快照,填了的字段会替换快照的对应字段。</div>
+              </el-alert>
+
+              <!-- 教学大纲特例 -->
+              <el-form-item label="教学大纲特例">
+                <div style="width: 100%">
+                  <div style="margin-bottom: 6px">
+                    <el-button :icon="Plus" size="small" type="primary" @click="openCiSyllabusDialog()">添加特例课时</el-button>
+                    <span class="form-hint">仅对要改的课次做特例,其它课次继续走快照</span>
+                  </div>
+                  <el-table :data="form.syllabusOverride.lessons" border size="small" max-height="240">
+                    <el-table-column prop="lessonNo" label="课次" width="70" />
+                    <el-table-column prop="topic" label="主题" min-width="140" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        <span v-if="row.topic" style="color: #409eff">{{ row.topic }}</span>
+                        <span v-else class="muted">—</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="内容" min-width="160" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        <span v-if="row.description" style="color: #409eff; font-size: 12px">{{ row.description }}</span>
+                        <span v-else class="muted">—</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="目标" min-width="120" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        <template v-if="row.objectives && row.objectives.length">
+                          <el-tag v-for="(o, i) in row.objectives.slice(0, 2)" :key="i" size="small" style="margin-right: 4px">{{ o }}</el-tag>
+                          <el-tag v-if="row.objectives.length > 2" type="info" size="small">+{{ row.objectives.length - 2 }}</el-tag>
+                        </template>
+                        <span v-else class="muted">—</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="durationMinutes" label="时长(分)" width="80">
+                      <template #default="{ row }">
+                        <span v-if="row.durationMinutes">{{ row.durationMinutes }}</span>
+                        <span v-else class="muted">—</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="100" fixed="right">
+                      <template #default="{ row, $index }">
+                        <el-button size="small" link type="primary" @click="openCiSyllabusDialog($index)">编辑</el-button>
+                        <el-button size="small" link type="danger" @click="form.syllabusOverride.lessons.splice($index, 1)">删除</el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </el-form-item>
+
+              <!-- 课件特例 -->
+              <el-form-item label="课件特例">
+                <div style="width: 100%">
+                  <div style="margin-bottom: 6px">
+                    <el-button :icon="Plus" size="small" type="primary" @click="openCiMaterialsDialog()">添加课件特例</el-button>
+                    <span class="form-hint">在快照基础上追加本开班专属的课件</span>
+                  </div>
+                  <el-table :data="form.lessonMaterialsOverride.items" border size="small" max-height="240">
+                    <el-table-column prop="lessonNo" label="课次" width="70" />
+                    <el-table-column label="文件数" width="80">
+                      <template #default="{ row }">
+                        <span style="color: #606266">{{ (row.fileIds || []).length }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="文件" min-width="240">
+                      <template #default="{ row }">
+                        <template v-if="row.fileIds && row.fileIds.length">
+                          <el-tag v-for="(fid, i) in row.fileIds.slice(0, 3)" :key="fid" size="small" style="margin-right: 4px">{{ materialName(fid) }}</el-tag>
+                          <el-tag v-if="row.fileIds.length > 3" type="info" size="small">+{{ row.fileIds.length - 3 }}</el-tag>
+                        </template>
+                        <span v-else class="muted">未选择</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="100" fixed="right">
+                      <template #default="{ row, $index }">
+                        <el-button size="small" link type="primary" @click="openCiMaterialsDialog($index)">编辑</el-button>
+                        <el-button size="small" link type="danger" @click="form.lessonMaterialsOverride.items.splice($index, 1)">删除</el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </el-form-item>
             </template>
-            <div>下方表格为本开班的"特例覆盖" — 留空字段表示沿用快照,填了的字段会替换快照的对应字段。</div>
-          </el-alert>
 
-          <!-- 教学大纲特例 -->
-          <el-form-item label="教学大纲特例">
-            <div style="width: 100%">
-              <div style="margin-bottom: 6px">
-                <el-button :icon="Plus" size="small" type="primary" @click="openCiSyllabusDialog()">添加特例课时</el-button>
-                <span class="form-hint">仅对要改的课次做特例,其它课次继续走快照</span>
-              </div>
-              <el-table :data="form.syllabusOverride.lessons" border size="small" max-height="240">
-                <el-table-column prop="lessonNo" label="课次" width="70" />
-                <el-table-column prop="topic" label="主题" min-width="140" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    <span v-if="row.topic" style="color: #409eff">{{ row.topic }}</span>
-                    <span v-else class="muted">—</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="内容" min-width="160" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    <span v-if="row.description" style="color: #409eff; font-size: 12px">{{ row.description }}</span>
-                    <span v-else class="muted">—</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="目标" min-width="120" show-overflow-tooltip>
-                  <template #default="{ row }">
-                    <template v-if="row.objectives && row.objectives.length">
-                      <el-tag v-for="(o, i) in row.objectives.slice(0, 2)" :key="i" size="small" style="margin-right: 4px">{{ o }}</el-tag>
-                      <el-tag v-if="row.objectives.length > 2" type="info" size="small">+{{ row.objectives.length - 2 }}</el-tag>
-                    </template>
-                    <span v-else class="muted">—</span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="durationMinutes" label="时长(分)" width="80">
-                  <template #default="{ row }">
-                    <span v-if="row.durationMinutes">{{ row.durationMinutes }}</span>
-                    <span v-else class="muted">—</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="100" fixed="right">
-                  <template #default="{ row, $index }">
-                    <el-button size="small" link type="primary" @click="openCiSyllabusDialog($index)">编辑</el-button>
-                    <el-button size="small" link type="danger" @click="form.syllabusOverride.lessons.splice($index, 1)">删除</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-          </el-form-item>
+            <!-- 6. 课程介绍 -->
+            <el-divider content-position="left">课程介绍</el-divider>
+            <el-form-item label="课程简介">
+              <el-input v-model="form.description" type="textarea" :rows="4" placeholder="可填写本班特色、课程亮点等" />
+            </el-form-item>
 
-          <!-- 课件特例 -->
-          <el-form-item label="课件特例">
-            <div style="width: 100%">
-              <div style="margin-bottom: 6px">
-                <el-button :icon="Plus" size="small" type="primary" @click="openCiMaterialsDialog()">添加课件特例</el-button>
-                <span class="form-hint">在快照基础上追加本开班专属的课件</span>
-              </div>
-              <el-table :data="form.lessonMaterialsOverride.items" border size="small" max-height="240">
-                <el-table-column prop="lessonNo" label="课次" width="70" />
-                <el-table-column label="文件数" width="80">
-                  <template #default="{ row }">
-                    <span style="color: #606266">{{ (row.fileIds || []).length }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="文件" min-width="240">
-                  <template #default="{ row }">
-                    <template v-if="row.fileIds && row.fileIds.length">
-                      <el-tag v-for="(fid, i) in row.fileIds.slice(0, 3)" :key="fid" size="small" style="margin-right: 4px">{{ materialName(fid) }}</el-tag>
-                      <el-tag v-if="row.fileIds.length > 3" type="info" size="small">+{{ row.fileIds.length - 3 }}</el-tag>
-                    </template>
-                    <span v-else class="muted">未选择</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="100" fixed="right">
-                  <template #default="{ row, $index }">
-                    <el-button size="small" link type="primary" @click="openCiMaterialsDialog($index)">编辑</el-button>
-                    <el-button size="small" link type="danger" @click="form.lessonMaterialsOverride.items.splice($index, 1)">删除</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-          </el-form-item>
-        </template>
-
-        <!-- 6. 课程介绍 -->
-        <el-divider content-position="left">课程介绍</el-divider>
-        <el-form-item label="课程简介">
-          <el-input v-model="form.description" type="textarea" :rows="4" placeholder="可填写本班特色、课程亮点等" />
-        </el-form-item>
-
-        <!-- 6. 招生 -->
-        <el-divider content-position="left">招生</el-divider>
-        <el-form-item label="计划开课日" required>
-          <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item label="预计结束日">
-          <span class="readonly-value">{{ formatDate(formEstimatedEndDate, 'YYYY-MM-DD') || '—' }}</span>
-          <div class="form-hint">按"开课日 + ceil(总课次 / 每周课次) × 7 天"自动算，仅展示</div>
-        </el-form-item>
-        <el-form-item label="最大人数">
-          <el-input-number v-model="form.maxStudents" :min="1" />
-          <div class="form-hint">仅作 UI 参考；超额允许，通过"分班"解决。</div>
-        </el-form-item>
-        <el-form-item label="状态" v-if="form._id">
-          <el-tag :type="statusType(form.status)">{{ statusLabel(form.status) }}</el-tag>
-          <div class="form-hint">状态变更请用列表的「改状态」/「取消」按钮（需填写原因）</div>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
-      </template>
-    </el-dialog>
+            <!-- 6. 招生 -->
+            <el-divider content-position="left">招生</el-divider>
+            <el-form-item label="计划开课日" required>
+              <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" />
+            </el-form-item>
+            <el-form-item label="预计结束日">
+              <span class="readonly-value">{{ formatDate(formEstimatedEndDate, 'YYYY-MM-DD') || '—' }}</span>
+              <div class="form-hint">按"开课日 + ceil(总课次 / 每周课次) × 7 天"自动算，仅展示</div>
+            </el-form-item>
+            <el-form-item label="最大人数">
+              <el-input-number v-model="form.maxStudents" :min="1" />
+              <div class="form-hint">仅作 UI 参考；超额允许，通过"分班"解决。</div>
+            </el-form-item>
+            <el-form-item label="状态" v-if="form._id">
+              <el-tag :type="statusType(form.status)">{{ statusLabel(form.status) }}</el-tag>
+              <div class="form-hint">状态变更请用列表的「改状态」/「取消」按钮（需填写原因）</div>
+            </el-form-item>
+          </el-form>
+        </section>
+        <footer class="ci-drawer__foot">
+          <el-button @click="dialog = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
+        </footer>
+      </div>
+    </el-drawer>
 
     <!-- 修改状态 弹窗（含 cancelled → 复生选项，仅超管可见） -->
     <el-dialog v-model="statusDialog" :title="`修改状态：${transferSourceLabel}`" width="480px" :close-on-click-modal="false">
@@ -2662,5 +2683,41 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+/* 2026-08-07: 新建/编辑开班 右侧抽屉三段式 (替换原 640px 居中 dialog) */
+.ci-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ci-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+}
+.ci-drawer__head-main h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.ci-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+}
+.ci-drawer__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
 }
 </style>

@@ -173,7 +173,8 @@ const menuGroups = [
     title: '系统管理',
     icon: Platform,
     children: [
-      // 顺序 (2026-06-22 用户决策): 1 机构档案 2 游离用户 3 AI管理 4 宠物管理 5 地区管理 6 平台配置
+      // 顺序 (2026-08-07 用户决策): 1 机构档案 2 游离用户 3 AI管理 4 宠物管理 5 科普文章 6 科普视频 7 平台配置
+      //   (原 5 地区管理 已挪进「平台配置」子组首位; 科普文章/视频 从子组提到外层)
       // 原 /orgs 改名为 机构档案; 与新一级菜单'机构管理'(本机构内部运营) 消歧
       { path: '/orgs', label: '机构档案', icon: Box, requirePlatform: true },
       // 游离用户 (2026-06-19): 不属于任何机构的孤儿账号 (跨机构数据, 平台超管审/清)
@@ -188,26 +189,28 @@ const menuGroups = [
       //   - pet.write: 平台超管 / 被授予内容主编的子账号
       //   - pet.read (默认管理员): 可 URL 直链进入 (后端 read 不卡权限, 写按钮自动隐藏)
       { path: '/pet/catalog', label: '宠物管理', icon: Notebook, perm: 'pet.read' },
-      // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典
-      { path: '/regions', label: '地区管理', icon: Box, requirePlatform: true },
-      // 平台配置 (2026-06-22): 4 个平台级配置项合并子组
+      // 2026-07-22 改造: 文章 + 视频 不再硬门 requirePlatformAdmin, 改 requirePermission.
+      //   科普文章 - perm  article.read (菜单可见), 内页 write button 由 article.write 控制
+      //   科普视频 - perm  video.read (菜单可见), 内页 write button 由 video.write 控制
+      //   谁持这些码? 平台超管默认可, 「平台 · 内容主编」职位也可 (超管在 position 编辑 grant)
+      // 2026-08-07: 从「平台配置」子组提到外层 (内容主编不是平台超管, 埋在平台配置里语义不对且难找)
+      { path: '/content/articles', label: '科普文章', icon: Reading, perm: 'article.read' },
+      { path: '/content/videos', label: '科普视频', icon: Picture, perm: 'video.read' },
+      // 平台配置 (2026-06-22): 平台级配置项合并子组
       // 子组里都是 requirePlatform: true (纯平台超管配置), 机构用户看不到
       {
         label: '平台配置',
         icon: Setting,
         children: [
+          // 地区管理 (2026-06-22): 原"地区字典"简化命名; 平台超管维护省市区字典
+          // 2026-08-07: 从外层挪进平台配置子组首位 (它本就是纯平台超管字典配置)
+          { path: '/regions', label: '地区管理', icon: Box, requirePlatform: true },
           // 定时任务监控 (2026-07-13 MM=41): 所有 setInterval 实时状态 + 详细说明 + 手动 trigger
           { path: '/system/cron-monitor', label: '定时任务监控', icon: Bell, requirePlatform: true },
           // 站点配置: 备案号/运营主体 (2026-06)
           { path: '/system/site-config', label: '站点配置', icon: Setting, requirePlatform: true },
           // 平台协议 (2026-06): 平台级协议只读
           { path: '/legal/platform', label: '平台协议', icon: Files, requirePlatform: true },
-          // 2026-07-22 改造: 文章 + 视频 不再硬门 requirePlatformAdmin, 改 requirePermission.
-          //   科普文章 - perm  article.read (菜单可见), 内页 write button 由 article.write 控制
-          //   科普视频 - perm  video.read (菜单可见), 内页 write button 由 video.write 控制
-          //   谁持这些码? 平台超管默认可, 「平台 · 内容主编」职位也可 (超管在 position 编辑 grant)
-          { path: '/content/articles', label: '科普文章', icon: Reading, perm: 'article.read' },
-          { path: '/content/videos', label: '科普视频', icon: Picture, perm: 'video.read' },
           // 操作留痕 (2026-06-27): 全系统写操作 + 敏感 GET 审计日志, 仅平台超管
           { path: '/system/audit-logs', label: '操作留痕', icon: Document, requirePlatform: true },
           // 流程/说明类放最下面: 一次性的阅读材料, 不常看

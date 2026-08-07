@@ -28,7 +28,11 @@
       "Bash(grep -rn \"^\\\\s*small$\" --include=\"*.vue\" packages/admin/src/views/users/)",
       "Bash(pkill -f \"remote-debugging-port=93\")",
       "Bash(lsof -ti:8001)",
-      "Bash(grep -vE \"docs/claude/data-models-task|views/orgs/|views/task/|modules/task/|admin/src/router/index.js$|.claude/settings\")"
+      "Bash(grep -vE \"docs/claude/data-models-task|views/orgs/|views/task/|modules/task/|admin/src/router/index.js$|.claude/settings\")",
+      "Bash(sed -n '/style/,$p')",
+      "Bash(awk '/<style/,0' packages/admin/src/views/pet/tabs/PetSpeciesTab.vue)",
+      "Bash(sed -i '' \"s|from '@vue/compiler-sfc'|from '/Users/kelin/prog/rgzw/edustation/node_modules/.pnpm/@vue+compiler-sfc@3.5.35/node_modules/@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js'|\" /private/tmp/claude-501/-Users-kelin-prog-rgzw-edustation/42d4210f-9844-4e04-9754-129172757bbc/parse.mjs)",
+      "Bash(node /private/tmp/claude-501/-Users-kelin-prog-rgzw-edustation/42d4210f-9844-4e04-9754-129172757bbc/parse.mjs)"
     ],
     "additionalDirectories": [
       "/Users/kelin/prog/rgzw/edustation"

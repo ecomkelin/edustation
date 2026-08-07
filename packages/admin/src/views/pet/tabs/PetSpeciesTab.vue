@@ -75,157 +75,176 @@
       </el-table-column>
     </el-table>
 
-    <!-- 创建/编辑 dialog -->
-    <el-dialog v-model="dialog" :title="form._id ? '编辑物种' : '新建物种'" width="720px" :close-on-click-modal="false" @close="resetForm">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item label="Key" prop="key">
-          <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 cat_orange" />
-        </el-form-item>
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" />
-        </el-form-item>
-        <el-form-item label="视觉类型" prop="visualType">
-          <el-radio-group v-model="form.visualType" :disabled="!!form._id">
-            <el-radio value="video">视频（推荐 9:16）</el-radio>
-            <el-radio value="svg">SVG</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
-          <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
-          <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
-        </el-form-item>
-        <!-- 2026-07-12: video visualType — 走 FilePicker (mime=video/*) + 上传新视频 -->
-        <el-form-item v-if="form.visualType === 'video'" label="视频文件">
-          <FilePicker v-model="videoPicker" scope="pet" mime-prefix="video/" title="选择物种视频" @select="onPickVideo" />
-          <div v-if="form.videoFile" class="preview">
-            <video :src="form.videoFile.url" controls preload="metadata" style="width:240px;max-height:160px;border-radius:6px" />
-            <el-button link type="danger" @click="form.videoFile = null">清除</el-button>
+    <!-- 创建/编辑 drawer (2026-08-07: 从 el-dialog 720px 改为右侧抽屉 800px.
+         原因: 嵌套 levelVisuals table + per-level 升级特效表单在 720px 弹窗里太挤;
+         抽屉自然更宽 + sticky footer + 保留列表上下文) -->
+    <el-drawer
+      v-model="dialog"
+      direction="rtl"
+      size="800px"
+      :with-header="false"
+      :close-on-click-modal="false"
+      :destroy-on-close="true"
+    >
+      <div class="species-drawer">
+        <header class="species-drawer__head">
+          <div class="species-drawer__head-main">
+            <h3>{{ form._id ? '编辑物种' : '新建物种' }}</h3>
           </div>
-          <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadVideo" accept="video/*">
-            <el-button :icon="Upload" size="small">上传新视频</el-button>
-          </el-upload>
-          <span class="hint">建议 mp4/webm，单文件 ≤ 20MB</span>
-        </el-form-item>
-        <el-form-item label="权重">
-          <el-input-number v-model="form.weight" :min="0" :max="10000" />
-          <span class="hint">破壳时加权随机权重，0=不参与抽取</span>
-        </el-form-item>
+          <el-button link @click="dialog = false">关闭</el-button>
+        </header>
+        <section class="species-drawer__body">
+          <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+            <el-form-item label="Key" prop="key">
+              <el-input v-model="form.key" :disabled="!!form._id" placeholder="全局唯一 key，如 cat_orange" />
+            </el-form-item>
+            <el-form-item label="名称" prop="name">
+              <el-input v-model="form.name" />
+            </el-form-item>
+            <el-form-item label="视觉类型" prop="visualType">
+              <el-radio-group v-model="form.visualType" :disabled="!!form._id">
+                <el-radio value="video">视频（推荐 9:16）</el-radio>
+                <el-radio value="svg">SVG</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="form.visualType === 'svg'" label="SVG 内容" prop="svgContent">
+              <el-input v-model="form.svgContent" type="textarea" :rows="6" placeholder="<svg>...</svg>" />
+              <div v-if="form.svgContent" class="preview svg-preview" v-html="form.svgContent" />
+            </el-form-item>
+            <!-- 2026-07-12: video visualType — 走 FilePicker (mime=video/*) + 上传新视频 -->
+            <el-form-item v-if="form.visualType === 'video'" label="视频文件">
+              <FilePicker v-model="videoPicker" scope="pet" mime-prefix="video/" title="选择物种视频" @select="onPickVideo" />
+              <div v-if="form.videoFile" class="preview">
+                <video :src="form.videoFile.url" controls preload="metadata" style="width:240px;max-height:160px;border-radius:6px" />
+                <el-button link type="danger" @click="form.videoFile = null">清除</el-button>
+              </div>
+              <el-upload v-else :show-file-list="false" :auto-upload="true" :http-request="uploadVideo" accept="video/*">
+                <el-button :icon="Upload" size="small">上传新视频</el-button>
+              </el-upload>
+              <span class="hint">建议 mp4/webm，单文件 ≤ 20MB</span>
+            </el-form-item>
+            <el-form-item label="权重">
+              <el-input-number v-model="form.weight" :min="0" :max="10000" />
+              <span class="hint">破壳时加权随机权重，0=不参与抽取</span>
+            </el-form-item>
 
-        <!-- 2026-07-16: per-species 逐级形象覆盖（fallback 链：visuals[L] → visuals[L-1] → ... → 物种自身视觉） -->
-        <!-- 2026-07-18: 删「最高等级」输入框 — 最高等级完全由 levelVisuals[].max(level) 派生 -->
-        <el-divider content-position="left">各等级配置 (per-species 覆盖)</el-divider>
-        <el-form-item label="每级配置">
-          <div class="level-visuals-block">
-            <div class="level-visuals-hint">
-              未列出的等级自动继承上一级（1 级兜底走物种自身视觉字段）。
-              每级同时配置「形象」（持续循环）与「升级特效」（升级瞬时事件，未配=无特效）。
-            </div>
-            <el-table :data="form.levelVisuals" size="small" border class="level-visuals-table" row-key="rowKey">
-              <el-table-column label="等级" width="80" align="center" fixed>
-                <template #default="{ row }">
-                  <span class="level-chip">Lv.{{ row.level }}</span>
-                </template>
-              </el-table-column>
-              <!-- 2026-07-18 第四期 UX: 把「视觉类型+内容」与「升级特效」合并到同一列
-                   (每级一行的完整配置在同一 cell 内, 操作和查看都更顺手) -->
-              <el-table-column label="每级配置 (形象 + 升级特效)" min-width="560">
-                <template #default="{ row, $index }">
-                  <div class="level-row-cell">
-                    <!-- 形象分组: 持续循环的本体视觉 -->
-                    <div class="level-row-section">
-                      <div class="level-row-section__head">
-                        <span class="level-row-section__title">🎭 形象</span>
-                        <span class="level-row-section__hint">该等级时循环播放</span>
-                      </div>
-                      <div class="level-row-section__body">
-                        <el-radio-group v-model="row.visualType" size="small">
-                          <el-radio-button value="video">视频</el-radio-button>
-                          <el-radio-button value="svg">SVG</el-radio-button>
-                        </el-radio-group>
-                        <div class="level-row-section__content">
-                          <template v-if="row.visualType === 'video'">
-                            <div v-if="row.videoFile?.url" class="video-current">
-                              <video :src="row.videoFile.url" controls preload="metadata" class="row-video-preview" />
-                              <el-button link type="danger" size="small" @click="row.videoFile = null">清除</el-button>
+            <!-- 2026-07-16: per-species 逐级形象覆盖（fallback 链：visuals[L] → visuals[L-1] → ... → 物种自身视觉） -->
+            <!-- 2026-07-18: 删「最高等级」输入框 — 最高等级完全由 levelVisuals[].max(level) 派生 -->
+            <el-divider content-position="left">各等级配置 (per-species 覆盖)</el-divider>
+            <el-form-item label="每级配置">
+              <div class="level-visuals-block">
+                <div class="level-visuals-hint">
+                  未列出的等级自动继承上一级（1 级兜底走物种自身视觉字段）。
+                  每级同时配置「形象」（持续循环）与「升级特效」（升级瞬时事件，未配=无特效）。
+                </div>
+                <el-table :data="form.levelVisuals" size="small" border class="level-visuals-table" row-key="rowKey">
+                  <el-table-column label="等级" width="80" align="center" fixed>
+                    <template #default="{ row }">
+                      <span class="level-chip">Lv.{{ row.level }}</span>
+                    </template>
+                  </el-table-column>
+                  <!-- 2026-07-18 第四期 UX: 把「视觉类型+内容」与「升级特效」合并到同一列
+                       (每级一行的完整配置在同一 cell 内, 操作和查看都更顺手) -->
+                  <el-table-column label="每级配置 (形象 + 升级特效)" min-width="560">
+                    <template #default="{ row, $index }">
+                      <div class="level-row-cell">
+                        <!-- 形象分组: 持续循环的本体视觉 -->
+                        <div class="level-row-section">
+                          <div class="level-row-section__head">
+                            <span class="level-row-section__title">🎭 形象</span>
+                            <span class="level-row-section__hint">该等级时循环播放</span>
+                          </div>
+                          <div class="level-row-section__body">
+                            <el-radio-group v-model="row.visualType" size="small">
+                              <el-radio-button value="video">视频</el-radio-button>
+                              <el-radio-button value="svg">SVG</el-radio-button>
+                            </el-radio-group>
+                            <div class="level-row-section__content">
+                              <template v-if="row.visualType === 'video'">
+                                <div v-if="row.videoFile?.url" class="video-current">
+                                  <video :src="row.videoFile.url" controls preload="metadata" class="row-video-preview" />
+                                  <el-button link type="danger" size="small" @click="row.videoFile = null">清除</el-button>
+                                </div>
+                                <div v-else class="upload-row">
+                                  <FilePicker v-model="row._pickerOpen" scope="pet" mime-prefix="video/" title="选择形象视频" @select="(f) => onPickLvVideo($index, f)" />
+                                  <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvVideo($index, req)" accept="video/*">
+                                    <el-button :icon="Upload" size="small">上传形象视频</el-button>
+                                  </el-upload>
+                                </div>
+                              </template>
+                              <template v-else>
+                                <el-input v-model="row.svgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
+                              </template>
                             </div>
-                            <div v-else class="upload-row">
-                              <FilePicker v-model="row._pickerOpen" scope="pet" mime-prefix="video/" title="选择形象视频" @select="(f) => onPickLvVideo($index, f)" />
-                              <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvVideo($index, req)" accept="video/*">
-                                <el-button :icon="Upload" size="small">上传形象视频</el-button>
-                              </el-upload>
+                          </div>
+                        </div>
+                        <!-- 升级特效分组: 升级瞬时事件, 与形象严格区分; 未配 = 无特效 -->
+                        <div class="level-row-section level-row-section--effect">
+                          <div class="level-row-section__head">
+                            <span class="level-row-section__title">✨ 升级特效</span>
+                            <span class="level-row-section__hint">升到该等级时播一次</span>
+                          </div>
+                          <div class="level-row-section__body">
+                            <el-radio-group v-model="row.effVType" size="small">
+                              <el-radio-button :value="''">无</el-radio-button>
+                              <el-radio-button value="video">视频</el-radio-button>
+                              <el-radio-button value="svg">SVG</el-radio-button>
+                            </el-radio-group>
+                            <div class="level-row-section__content">
+                              <template v-if="row.effVType === 'video'">
+                                <div v-if="row.effVideoFile?.url" class="video-current">
+                                  <video :src="row.effVideoFile.url" controls preload="metadata" class="row-video-preview" />
+                                  <el-button link type="danger" size="small" @click="row.effVideoFile = null">清除</el-button>
+                                </div>
+                                <div v-else class="upload-row">
+                                  <FilePicker :model-value="row._effPickerOpen" scope="pet" mime-prefix="video/" title="选择升级特效视频" @update:model-value="(v) => row._effPickerOpen = v" @select="(f) => onPickLvEffVideo($index, f)" />
+                                  <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvEffVideo($index, req)" accept="video/*">
+                                    <el-button :icon="Upload" size="small">上传特效视频</el-button>
+                                  </el-upload>
+                                </div>
+                              </template>
+                              <template v-else-if="row.effVType === 'svg'">
+                                <el-input v-model="row.effSvgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
+                              </template>
+                              <span v-else class="level-row-section__placeholder">未配 — 升级时直接换形象，无过渡特效</span>
                             </div>
-                          </template>
-                          <template v-else>
-                            <el-input v-model="row.svgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
-                          </template>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <!-- 升级特效分组: 升级瞬时事件, 与形象严格区分; 未配 = 无特效 -->
-                    <div class="level-row-section level-row-section--effect">
-                      <div class="level-row-section__head">
-                        <span class="level-row-section__title">✨ 升级特效</span>
-                        <span class="level-row-section__hint">升到该等级时播一次</span>
-                      </div>
-                      <div class="level-row-section__body">
-                        <el-radio-group v-model="row.effVType" size="small">
-                          <el-radio-button :value="''">无</el-radio-button>
-                          <el-radio-button value="video">视频</el-radio-button>
-                          <el-radio-button value="svg">SVG</el-radio-button>
-                        </el-radio-group>
-                        <div class="level-row-section__content">
-                          <template v-if="row.effVType === 'video'">
-                            <div v-if="row.effVideoFile?.url" class="video-current">
-                              <video :src="row.effVideoFile.url" controls preload="metadata" class="row-video-preview" />
-                              <el-button link type="danger" size="small" @click="row.effVideoFile = null">清除</el-button>
-                            </div>
-                            <div v-else class="upload-row">
-                              <FilePicker :model-value="row._effPickerOpen" scope="pet" mime-prefix="video/" title="选择升级特效视频" @update:model-value="(v) => row._effPickerOpen = v" @select="(f) => onPickLvEffVideo($index, f)" />
-                              <el-upload :show-file-list="false" :auto-upload="true" :http-request="(req) => uploadLvEffVideo($index, req)" accept="video/*">
-                                <el-button :icon="Upload" size="small">上传特效视频</el-button>
-                              </el-upload>
-                            </div>
-                          </template>
-                          <template v-else-if="row.effVType === 'svg'">
-                            <el-input v-model="row.effSvgContent" type="textarea" :rows="2" :maxlength="50000" show-word-limit placeholder="<svg>...</svg>" />
-                          </template>
-                          <span v-else class="level-row-section__placeholder">未配 — 升级时直接换形象，无过渡特效</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="80" align="center" fixed="right">
-                <template #default="{ $index, row }">
-                  <el-button link type="danger" size="small" @click="removeLevelVisual($index)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <div class="level-visuals-add">
-              <el-button size="small" type="primary" :icon="Plus" @click="addLevelVisual">
-                新增一级覆盖
-              </el-button>
-            </div>
-          </div>
-        </el-form-item>
-        <!-- 2026-06-23: 物种级饱腹度衰减间隔（分钟/点） -->
-        <el-form-item label="饱腹度衰减">
-          <el-input-number v-model="form.hungerDecayMinutes" :min="1" :max="10080" />
-          <span class="hint">每 {{ form.hungerDecayMinutes }} 分钟扣 1 点饱腹度（破壳时宠物继承）</span>
-        </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="form.isActive" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="form.description" type="textarea" :rows="2" maxlength="500" show-word-limit />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
-      </template>
-    </el-dialog>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="80" align="center" fixed="right">
+                    <template #default="{ $index, row }">
+                      <el-button link type="danger" size="small" @click="removeLevelVisual($index)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div class="level-visuals-add">
+                  <el-button size="small" type="primary" :icon="Plus" @click="addLevelVisual">
+                    新增一级覆盖
+                  </el-button>
+                </div>
+              </div>
+            </el-form-item>
+            <!-- 2026-06-23: 物种级饱腹度衰减间隔（分钟/点） -->
+            <el-form-item label="饱腹度衰减">
+              <el-input-number v-model="form.hungerDecayMinutes" :min="1" :max="10080" />
+              <span class="hint">每 {{ form.hungerDecayMinutes }} 分钟扣 1 点饱腹度（破壳时宠物继承）</span>
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="form.isActive" />
+            </el-form-item>
+            <el-form-item label="描述">
+              <el-input v-model="form.description" type="textarea" :rows="2" maxlength="500" show-word-limit />
+            </el-form-item>
+          </el-form>
+        </section>
+        <footer class="species-drawer__foot">
+          <el-button @click="dialog = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+        </footer>
+      </div>
+    </el-drawer>
 
     <!-- 形象大图预览（点击列表缩略图触发） -->
     <el-dialog
@@ -719,4 +738,42 @@ export default {
   padding: 6px 0;
 }
 .level-row-section .el-textarea__inner { min-height: 56px; }
+
+/* 2026-08-07: 右侧抽屉（替换原 720px 居中 dialog）
+   - 三段式：head (sticky 标题栏) / body (form 滚动区) / foot (sticky 操作栏)
+   - drawer 默认 body 有 padding，我们自己接管滚动 */
+.species-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.species-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+}
+.species-drawer__head-main h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.species-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+}
+.species-drawer__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid #ebeef5;
+  background: #fff;
+  flex-shrink: 0;
+}
 </style>
