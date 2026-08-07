@@ -867,7 +867,7 @@ Auth 列简写:
 | R-3901 | GET | /tasks | PERM | task.read | 列表 (含可见性过滤) | query: myRole/status/type/priority/assignee/creator/supervisor/keyword/dueBefore/dueAfter/page/pageSize; 无 task.read 时只看我相关 |
 | R-3902 | GET | /tasks/:id | PERM | task.read | 详情 (含 items/reviews/comments) | service.canViewTask 校验可见性,否则 403 |
 | R-3903 | PATCH | /tasks/:id | PERM | task.write | 编辑任务 | 仅 creator / task.write 可改; 终态 (approved/cancelled/expired) 拒绝; status 只能走专用端点 |
-| R-3904 | DELETE | /tasks/:id | PERM+PWD | task.delete | 物理删除任务 (工作流类, §8.1 弱化) | **2026-07-08 改**: 平台超管 OR 任务 creator 本人; 中间件 `requirePermission('task.delete') + requireBodyPassword` (前者挡权限位, 后者校验 body.password); 业务硬门挡 submitted/approved; 互锁 TaskItem/TaskReview/TaskComment |
+| R-3904 | DELETE | /tasks/:id | PERM+PWD | task.delete | 物理删除任务 (工作流类, §8.1 弱化) | **2026-07-08 改**: 平台超管 OR 任务 creator 本人; 中间件 `requirePermission('task.delete') + requireBodyPassword` (前者挡权限位, 后者校验 body.password); 业务硬门挡 submitted/approved; **2026-08-06 改**: mongoose transaction 级联删 TaskItem/TaskReview/TaskComment (子表都是 Task 自身的 ref, 不算外部业务引用, 不再用 assertUnused 挡); controller 写 req.body._cascade 给 auditTrail, 单条 AuditLog 含 `_cascade: { taskItems, taskReviews, taskComments }` |
 | R-3905 | POST | /tasks/:id/submit | PERM | task.read | 执行人「提交完成」 | 校验自己所有条目 done; 写 Task.assignees[].status=submitted |
 | R-3906 | POST | /tasks/:id/review | PERM | task.review | 监督人审批 | 必填 result (approved/rejected/requested_changes); 写 TaskReview 留痕 |
 | R-3907 | POST | /tasks/:id/cancel | PERM | task.write | 取消任务 | 仅 creator / task.write; 可选 reason (作为评论留痕) |
@@ -886,7 +886,7 @@ Auth 列简写:
 | R-3919 | POST | /tasks/templates/:id/pause \| /resume | PERM | task.write | 暂停/恢复模板 | pause → nextRunAt=null; resume → 重算 nextRunAt |
 | R-3920 | POST | /tasks/:id/archive | PERM | task.delete | 归档 (软隐藏) | 2026-07-08 立项; list/kanban/stats 默认隐藏, 写操作全部 422; 不需密码 |
 | R-3921 | POST | /tasks/:id/unarchive | PERM | task.delete | 取消归档 | 同上; 反归档可逆, 幂等 |
-| R-3922 | DELETE | /tasks/:id/items/:itemId | PERM | task.write | 删除 checklist 条目 | 2026-07-08 立项 (堵 R-3904 挡板无入口的洞); **2026-07-08 改**: 权限扩到「条目 assignee / 任务 creator / 平台超管 / task.write / task.delete」(解死锁: creator 想删任务必先能清空 checklist); 终态/归档态 422; 触发 recomputeTaskState |
+| R-3922 | DELETE | /tasks/:id/items/:itemId | PERM | task.write | 删除 checklist 条目 | 2026-07-08 立项 (堵 R-3904 挡板无入口的洞, 让用户能在物理删除前清空 checklist); **2026-07-08 改**: 权限扩到「条目 assignee / 任务 creator / 平台超管 / task.write / task.delete」; 终态/归档态 422; 触发 recomputeTaskState. **2026-08-06 改**: R-3904 级联删后 R-3922 仅用于"用户想单独删某一条 checklist"场景, 不再是删任务的必走路径 |
 | R-3923 | POST | /tasks/:id/items/:itemId/remarks | PERM | task.read OR task.read.own | 子任务备注 | 2026-07-09 立项 (规则 3b 豁免口子): 仅本条目 assignee / task.write 可写, 不受 "执行中" 锁约束; 归档态 422; TaskItem.remarks 子文档 (新字段) |
 | R-3924 | GET | /tasks/assignable-users | PERM | task.read OR task.read.own | **可派任务员工下拉** | 2026-08-02 立项: 建任务 / 模板编辑页的执行人+监督人候选. 原来打 R-0200 `GET /users?roleScope=staff`, 但那要 `user.read` —— 「财务」岗只有 task.write → 403 → 下拉全空 + el-select 甩 raw ObjectId. 口径: 本机构 UserOrgRel 里至少持有 1 个 clientLevel=0 岗位的 user (员工+混合岗), 纯家长排除, User.isActive=false 排除, 与 `assertUsersInOrg` 放行口径一致 (避免"选得到但提交 400"). 只返 `{id, realName, mobile, positions[]}`, 不下放用户档案读权限. 顺序: 必须注册在 `/:id` 之前 |
 | R-3925 | GET | /tasks/distinct-tags | PERM | task.read OR task.read.own | **本机构标签历史** | 2026-08-06 立项 (P1.2 任务 tag 全链路): `Task.distinct('tags', {org, archived:{$ne:true}})` 返 `String[]` (去重 + zh-CN 字典序), 给 TagEditor suggestions / 多选筛选用. 顺序: 必须注册在 `/:id` 之前; 走 multikey 索引 `{org:1, tags:1}` (1w 行 < 50ms) |

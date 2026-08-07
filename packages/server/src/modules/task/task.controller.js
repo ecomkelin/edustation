@@ -38,12 +38,21 @@ exports.update = async (req, res) => res.json(ApiResponse.ok(await s.update({
   actor: req.user
 })))
 
-exports.remove = async (req, res) => res.json(ApiResponse.ok(await s.remove({
-  id: req.params.id,
-  orgId: req.orgId,
-  // 2026-07-08: 物理删除权限放宽 (task.delete 持有者 + creator / 平台超管), 需传 actor 给 service 校验
-  actor: req.user
-})))
+exports.remove = async (req, res) => {
+  const result = await s.remove({
+    id: req.params.id,
+    orgId: req.orgId,
+    // 2026-07-08: 物理删除权限放宽 (task.delete 持有者 + creator / 平台超管), 需传 actor 给 service 校验
+    actor: req.user
+  })
+  // 2026-08-06: 级联删除 (TaskItem/TaskReview/TaskComment) 计数 → 写 req.body._cascade
+  //   auditTrail 中间件 (res.on('finish')) 自动捕获到 AuditLog.body, 形成"单条复合日志"
+  //   业务层不直接写 AuditLog (避免重复 actor/org 信息), 借中间件管道
+  if (result && result.cascade && req.body) {
+    req.body._cascade = result.cascade
+  }
+  return res.json(ApiResponse.ok(result))
+}
 
 exports.removableCheck = async (req, res) => res.json(ApiResponse.ok(await s.removableCheck({
   id: req.params.id,

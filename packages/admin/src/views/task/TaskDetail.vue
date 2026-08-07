@@ -27,9 +27,10 @@
         <!-- 物理删除 — 走 DestructiveConfirm slot 范式 (组件内自带 precheck + 输密码) -->
         <DestructiveConfirm
           v-if="canDelete"
-          target="任务"
+          :target="`任务「${task.title}」`"
           warning="中风险"
-          :precheck-notes="['任务下 checklist 已清空', '无外部业务引用']"
+          reason="此操作不可恢复。已完成 / 待审核的任务请先「取消任务」或走「归档」操作；仅在误操作 / 重复创建时使用物理删除。"
+          :precheck-notes="[]"
           :precheck="() => taskApi.removableCheck(route.params.id).then((r) => r.data)"
           @confirm="doDelete"
         >

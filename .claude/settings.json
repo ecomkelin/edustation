@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(grep -o 'Teleport,{.\\\\{0,120\\\\}' ./node_modules/.pnpm/element-plus@2.14.1_vue@3.5.35/node_modules/element-plus/es/components/dialog/src/dialog.vue_vue_type_script_setup_true_lang.mjs)",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"console.log\\('element-plus', require\\('element-plus/package.json'\\).version\\)\")",
+      "Bash(OUT_DIR=/private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad node /private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad/drive.cjs)",
+      "Bash(sed -i '' \"s|chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium|chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing|\" /private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad/drive.cjs)",
+      "Bash(OUT_DIR=/private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad node /private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad/drive2.cjs)",
+      "Bash(OUT_DIR=/private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad STAMP=$\\(date +%H%M%S\\) node /private/tmp/claude-501/-Users-wwzz-Downloads-proxyclawd/88833871-9d1c-410a-8425-a5a54e5377ef/scratchpad/drive3.cjs)"
+    ]
+  }
+}

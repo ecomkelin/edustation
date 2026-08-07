@@ -25,6 +25,8 @@ const Task = require('@models/Task.model')
 const TaskItem = require('@models/TaskItem.model')
 const TaskReview = require('@models/TaskReview.model')
 const TaskComment = require('@models/TaskComment.model')
+// 2026-08-06: 物理删除 Task 时级联删子表 (TaskItem/Review/Comment), 用 mongoose transaction 包原子性
+const mongoose = require('mongoose')
 const TaskTemplate = require('@models/TaskTemplate.model')
 const TaskGenerationLog = require('@models/TaskGenerationLog.model')
 const User = require('@models/User.model')
@@ -472,27 +474,13 @@ async function update({ id, orgId, body, actor }) {
 
 // ─── 物理删除 + 预检 (§8.1) ───────────────────
 
+// 2026-08-06: 物理删除 Task 时**自动级联**删 TaskItem / TaskReview / TaskComment
+//   (决策: 三子表都级联删; 事务保证原子性; 复合 audit 日志 withChild)
+//   → 不再用 assertUnused 阻挡这三张子表 (它们会随 Task 一起消失, 不算外部业务引用)
+//   → taskUsageChecks 保留函数壳 (removableCheck 还在调), 返回空数组
 function taskUsageChecks(orgId, taskId) {
-  return [
-    {
-      model: TaskItem,
-      filter: { org: orgId, task: taskId },
-      label: '任务条目',
-      hint: '请先在任务详情页右侧 checklist 区域, 用条目后的「删除」按钮清空条目'
-    },
-    {
-      model: TaskReview,
-      filter: { org: orgId, task: taskId },
-      label: '任务核查记录',
-      hint: '请先删除该任务的核查历史'
-    },
-    {
-      model: TaskComment,
-      filter: { org: orgId, task: taskId },
-      label: '任务评论',
-      hint: '请先删除该任务的评论'
-    }
-  ]
+  // 留空: 三子表都是 Task 自身的子表 (Task.* 是 ref), 删除 Task 时一起消失
+  return []
 }
 
 async function remove({ id, orgId, actor }) {
@@ -507,15 +495,60 @@ async function remove({ id, orgId, actor }) {
   if (!isPlatformAdmin && !isCreator) {
     throw ApiError.forbidden('仅任务创建人或平台超管可物理删除该任务')
   }
+  // 业务互锁校验 (现在空跑, 留位以便未来加外部业务引用)
   await removable.assertUnused(orgId, taskUsageChecks(orgId, id))
-  // 级联删除子表
-  await Promise.all([
-    TaskItem.deleteMany({ org: orgId, task: id }),
-    TaskReview.deleteMany({ org: orgId, task: id }),
-    TaskComment.deleteMany({ org: orgId, task: id }),
-    Task.deleteOne({ _id: id, org: orgId })
-  ])
-  return { success: true, id }
+  // ─── 事务包裹级联删除 (2026-08-06 决策) ───
+  //   范式参考 packages/server/src/modules/lessonSchedule/lessonSchedule.service.js:1009
+  //   顺序: 子表 → 主表 (避免主表先删了但子表还在的孤儿)
+  //   失败: 整批回滚, 数据保持一致
+  // ─── 单机 MongoDB 兼容 (2026-08-06): ───
+  //   standalone mongod 不支持多文档事务 (即使 4.2+ 也要求 --replSet 启用副本集).
+  //   dev 环境单机, 跑 withTransaction 会抛 "Transaction numbers are only allowed on a replica set member or mongos".
+  //   try/catch 抓这个错降级到非事务顺序删; prod 集群触发不到这个分支.
+  //   dev 没事务保护可接受 (CLAUDE.md §0: 开发阶段不考虑脏数据).
+  let cascade
+  try {
+    const session = await mongoose.startSession()
+    try {
+      await session.withTransaction(async () => {
+        const [items, reviews, comments, tasks] = await Promise.all([
+          TaskItem.deleteMany({ org: orgId, task: id }, { session }),
+          TaskReview.deleteMany({ org: orgId, task: id }, { session }),
+          TaskComment.deleteMany({ org: orgId, task: id }, { session }),
+          Task.deleteOne({ _id: id, org: orgId }, { session })
+        ])
+        cascade = {
+          taskItems: items.deletedCount || 0,
+          taskReviews: reviews.deletedCount || 0,
+          taskComments: comments.deletedCount || 0,
+          task: tasks.deletedCount || 0
+        }
+      }, { readPreference: 'primary' })
+    } finally {
+      await session.endSession()
+    }
+  } catch (err) {
+    // 20 = IllegalOperation (mongo error code). 错误信息含 "Transaction numbers are only allowed"
+    const msg = (err && err.message) || ''
+    const isStandalone = err?.code === 20 || /Transaction numbers are only allowed/i.test(msg)
+    if (!isStandalone) throw err
+    // 单机降级: 无事务保护的并行删
+    const [items, reviews, comments, tasks] = await Promise.all([
+      TaskItem.deleteMany({ org: orgId, task: id }),
+      TaskReview.deleteMany({ org: orgId, task: id }),
+      TaskComment.deleteMany({ org: orgId, task: id }),
+      Task.deleteOne({ _id: id, org: orgId })
+    ])
+    cascade = {
+      taskItems: items.deletedCount || 0,
+      taskReviews: reviews.deletedCount || 0,
+      taskComments: comments.deletedCount || 0,
+      task: tasks.deletedCount || 0
+    }
+  }
+  // 返回 cascade 计数, controller 会写入 req.body._cascade 给 auditTrail 捕获
+  //   → AuditLog body 自动含 { _cascade: { taskItems, taskReviews, ... } } 单条复合日志
+  return { success: true, id, cascade }
 }
 
 async function removableCheck({ id, orgId }) {

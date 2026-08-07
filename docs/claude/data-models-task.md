@@ -335,19 +335,44 @@ TaskGenerationLogSchema.index({ template: 1, runAt: -1 })
 
 ## 10. 物理删除互锁（§8.1）
 
+**2026-08-06 决策**：物理删除 Task 时**自动级联**删 TaskItem / TaskReview / TaskComment，三子表都是 Task 自身的 `task` ref，不算外部业务引用。
+
 ```js
 function taskUsageChecks(orgId, taskId) {
-  return [
-    { model: TaskItem,    filter: { org: orgId, task: taskId }, label: '任务条目',     hint: '请先删除 checklist 条目' },
-    { model: TaskReview,  filter: { org: orgId, task: taskId }, label: '任务核查记录', hint: '请先删除核查历史' },
-    { model: TaskComment, filter: { org: orgId, task: taskId }, label: '任务评论',     hint: '请先删除评论' }
-  ]
+  // 留空: 三子表都是 Task 自身的子表 (Task.* 是 ref), 删除 Task 时一起消失
+  // 保留函数壳是给 removableCheck 留位 (返回空数组即"无外部业务引用阻挡")
+  return []
+}
+
+async function remove({ id, orgId, actor }) {
+  // ... 业务权限校验 + assertUnused (空跑) ...
+  const session = await mongoose.startSession()
+  try {
+    await session.withTransaction(async () => {
+      await Promise.all([
+        TaskItem.deleteMany({ org: orgId, task: id },    { session }),
+        TaskReview.deleteMany({ org: orgId, task: id },  { session }),
+        TaskComment.deleteMany({ org: orgId, task: id }, { session }),
+        Task.deleteOne({ _id: id, org: orgId },          { session })
+      ])
+    }, { readPreference: 'primary' })
+  } finally {
+    await session.endSession()
+  }
+  // controller 把 cascade 计数写到 req.body._cascade → auditTrail 自动捕获
+  // → AuditLog 单条复合日志 body 含 { _cascade: { taskItems, taskReviews, taskComments } }
 }
 ```
 
 **业务硬门**：`status=submitted`（待审）/`approved`（已完成）禁止物理删除，挡板提示走 `removableCheck`。
 
 **预检端点** `GET /tasks/:id/removable-check`：`task.read` 持有者即可调，前端 `DestructiveConfirm` 用 `:precheck` prop 接入。
+
+**为何用 transaction + cascade**：
+
+- **原子性**：要么全删要么全不删，避免"Task 没了但 Review 还在"的孤儿 ref
+- **审计完整**：`auditTrail` 中间件自动写 1 条 AuditLog，body 含 `_cascade` 计数；不需要 service 单独写业务日志（避免重复 actor/org 信息）
+- **决策点（用户 2026-08-06 拍板）**：三子表都级联删 / 事务保证 / 单条复合日志 withChild
 
 ---
 

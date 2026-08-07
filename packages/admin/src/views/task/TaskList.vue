@@ -123,7 +123,6 @@
           <el-button size="small" link @click.stop="goDetail(row, showArchived)">详情</el-button>
           <el-button v-if="canArchiveRow(row) && !row.archived" size="small" link type="warning" @click.stop="onArchive(row)">归档</el-button>
           <el-button v-if="canArchiveRow(row) && row.archived" size="small" link @click.stop="onUnarchive(row)">取消归档</el-button>
-          <el-button v-if="canArchiveRow(row)" size="small" link type="danger" @click.stop="onDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -209,8 +208,7 @@
       </div>
     </div>
 
-    <!-- 删除确认弹窗(超管+密码) -->
-    <DestructiveConfirm ref="dcRef" entity-label="任务" @confirm="doDelete" />
+    <!-- 删除确认仅在详情页 TaskDetail.vue 提供 -->
   </div>
 </template>
 
@@ -227,7 +225,6 @@ import {
   TASK_TYPES, TASK_TYPE_LABELS,
   TASK_PRIORITIES, TASK_PRIORITY_LABELS
 } from '@shared/enums.mjs'
-import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -429,21 +426,7 @@ async function onUnarchive(row) {
   await reload()
 }
 
-const dcRef = ref(null)
-async function onDelete(row) {
-  // 预检
-  const check = await taskApi.removableCheck(row._id)
-  if (!check.data?.canRemove) {
-    ElMessage.warning((check.data?.blockers || []).map((b) => b.hint).join('；'))
-    return
-  }
-  dcRef.value.open(row)
-}
-async function doDelete({ row, password }) {
-  await taskApi.remove(row._id, { password })
-  ElMessage.success('已删除')
-  await reload()
-}
+// 删除入口仅在详情页 TaskDetail.vue 提供 (避免双入口; 列表页只读 + 归档)
 
 watch(view, (v) => {
   router.replace({ query: { ...route.query, view: v } })
