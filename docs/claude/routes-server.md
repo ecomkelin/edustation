@@ -162,6 +162,8 @@ Auth 列简写:
 | R-0405 | GET | /students/:id/removable-check | PERM | student.read | 删除预检 | |
 | R-0406 | GET | /students/:id/profile | PERM | student.read | 学习画像 | 6 字段结构化 |
 | R-0407 | PUT | /students/:id/profile | PERM | student.write | 更新学习画像 | |
+| R-0408 | GET | /students/:id/overview | PERM | student.read | 学生详情页概览 (档案+监护人+学习画像+家长沟通画像+10 项 KPI) | 2026-08-07 立项; 仿 R-0217 user overview; Student 天然 org 隔离, 无 scope 区分; 越权返 404 (防 IDOR); 新建 `studentOverview.service.js` |
+| R-0409 | GET | /students/:id/related/:domain | PERM | student.read | 学生详情页分域明细 (分页) | 2026-08-07; 仿 R-0218 user related; domain ∈ `enrollments / lessonAttendances / studentProducts / orders / works / pointsTransactions / petEvents` (7 个), 返 `{items,total,page,pageSize}`; 未知 domain 返 400; pointsTransactions 不加 org 过滤 (PointsTransaction 无 org 字段), 与 R-0473 listMyKidsStats 跨 org 口径一致; 新增板块只改 service.HANDLERS 表, 不动路由 |
 | R-0410 | PUT | /students/:id/block | ADMIN | — | 黑名单 | 平台超管 |
 | R-0411 | PUT | /students/:id/unblock | ADMIN | — | 解黑名单 | 平台超管 |
 | R-0414 | PUT | /students/:id/guardians | ADMIN | — | 重绑监护人 | 平台超管 |

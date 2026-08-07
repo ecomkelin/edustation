@@ -26,6 +26,9 @@ const routes = [
       { path: 'users/:id', component: () => import('@/views/users/UserDetail.vue') },
       { path: 'positions', component: () => import('@/views/positions/Positions.vue') },
       { path: 'students', component: () => import('@/views/students/Students.vue') },
+      // 学生详情页 (2026-08-07): 仿 UserDetail 模式, 三个 tab (概览 / 业务 / 成长)
+      //   不加 meta.platform —— 机构管理员也要能进; 越权由后端 404 兜底
+      { path: 'students/:id', component: () => import('@/views/students/StudentDetail.vue') },
       { path: 'subjects', component: () => import('@/views/subjects/Subjects.vue') },
       // 2026-07-20: 学科详情页 - 基本信息只读 + 教学大纲 + 课件 + 误操删除
       { path: 'subjects/:id', component: () => import('@/views/subjects/SubjectDetail.vue') },

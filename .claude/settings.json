@@ -32,7 +32,20 @@
       "Bash(sed -n '/style/,$p')",
       "Bash(awk '/<style/,0' packages/admin/src/views/pet/tabs/PetSpeciesTab.vue)",
       "Bash(sed -i '' \"s|from '@vue/compiler-sfc'|from '/Users/kelin/prog/rgzw/edustation/node_modules/.pnpm/@vue+compiler-sfc@3.5.35/node_modules/@vue/compiler-sfc/dist/compiler-sfc.esm-browser.js'|\" /private/tmp/claude-501/-Users-kelin-prog-rgzw-edustation/42d4210f-9844-4e04-9754-129172757bbc/parse.mjs)",
-      "Bash(node /private/tmp/claude-501/-Users-kelin-prog-rgzw-edustation/42d4210f-9844-4e04-9754-129172757bbc/parse.mjs)"
+      "Bash(node /private/tmp/claude-501/-Users-kelin-prog-rgzw-edustation/42d4210f-9844-4e04-9754-129172757bbc/parse.mjs)",
+      "Bash(node -e \"require\\('./packages/server/src/modules/student/studentOverview.service.js'\\); console.log\\('OK: backend loads'\\)\")",
+      "Bash(node -e \"require\\('./packages/server/src/modules/student/student.controller.js'\\); console.log\\('OK: controller loads'\\)\")",
+      "Bash(node -e \"require\\('./packages/server/src/modules/student/student.routes.js'\\); console.log\\('OK: routes load'\\)\")",
+      "Bash(python3 -c \"import json, sys; print\\(json.load\\(sys.stdin\\).get\\('scripts', {}\\)\\)\")",
+      "Bash(node -e \"require\\('module-alias/register'\\); const s = require\\('./src/modules/student/studentOverview.service.js'\\); console.log\\('service OK; DOMAINS =', [...s.DOMAINS].join\\(', '\\)\\);\")",
+      "Bash(node -e \"require\\('module-alias/register'\\); const c = require\\('./src/modules/student/student.controller.js'\\); console.log\\('controller OK; new exports =', Object.keys\\(c\\).join\\(', '\\)\\);\")",
+      "Bash(node -e \"require\\('module-alias/register'\\); const r = require\\('./src/modules/student/student.routes.js'\\); console.log\\('routes OK'\\);\")",
+      "Bash(node -e \"require\\('module-alias/register'\\); try { const c = require\\('./src/modules/student/student.controller.js'\\); console.log\\('controller OK; new exports =', Object.keys\\(c\\).join\\(', '\\)\\); } catch \\(e\\) { console.error\\('FAIL:', e.message\\); }\")",
+      "Bash(node --check ./src/modules/student/studentOverview.service.js)",
+      "Bash(node --check ./src/modules/student/student.controller.js)",
+      "Bash(node --check ./src/modules/student/student.routes.js)",
+      "Bash(python3 -c \"import json, sys; d = json.load\\(sys.stdin\\); print\\('\\\\n'.join\\(f'{k}: {v}' for k, v in d.get\\('scripts', {}\\).items\\(\\)\\)\\)\")",
+      "Bash(node --check /Users/kelin/prog/rgzw/edustation/packages/server/src/modules/student/studentOverview.service.js)"
     ],
     "additionalDirectories": [
       "/Users/kelin/prog/rgzw/edustation"

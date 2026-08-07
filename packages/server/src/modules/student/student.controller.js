@@ -2,6 +2,7 @@
 
 const service = require('./student.service')
 const profile = require('./student.profile')
+const overviewService = require('./studentOverview.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => {
@@ -79,5 +80,23 @@ exports.getProfile = async (req, res) => {
 }
 exports.setProfile = async (req, res) => {
   const data = await profile.setProfile(req.params.id, req.orgId, req.body, req.user)
+  res.json(ApiResponse.ok(data))
+}
+
+// === 学生详情页 (2026-08-07 新增) ===
+// R-0408 GET /students/:id/overview
+exports.overview = async (req, res) => {
+  const data = await overviewService.overview({ studentId: req.params.id, orgId: req.orgId })
+  res.json(ApiResponse.ok(data))
+}
+// R-0409 GET /students/:id/related/:domain
+exports.related = async (req, res) => {
+  const data = await overviewService.related({
+    studentId: req.params.id,
+    orgId: req.orgId,
+    domain: req.params.domain,
+    page: req.query.page,
+    pageSize: req.query.pageSize
+  })
   res.json(ApiResponse.ok(data))
 }

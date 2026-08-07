@@ -6,7 +6,7 @@
     · 系统管理 → 游离用户 (/system/unaffiliated-users)     平台超管, ?from=unaffiliated
 
   数据源: R-0217 GET /users/:id/overview (档案 + 机构职位 + 有效权限 + 各域计数)
-          R-0218 GET /users/:id/related/:domain (各 tab 懒加载, 见 tabs/RelatedSection.vue)
+          R-0218 GET /users/:id/related/:domain (各 tab 懒加载, 通用外壳见 components/RelatedSection.vue)
 
   可见性由后端 resolveScope 决定, 前端只做呈现:
     scope=platform → 显示全部机构 + 「安全与审计」tab

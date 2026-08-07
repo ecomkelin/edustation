@@ -44,4 +44,16 @@ router.put('/:id/unblock', mws.requirePlatformAdmin, v.setBlocked, mws.validateR
 // R-0414 PUT /students/:id/guardians
 router.put('/:id/guardians', mws.requirePlatformAdmin, v.setGuardians, mws.validateRequest, asyncHandler(c.setGuardians))
 
+// === 学生详情页 (2026-08-07 新增) ===
+// R-0408 GET /students/:id/overview
+//   一次返 档案 + 监护人 + 学习画像 + 家长沟通画像 + 各域计数
+//   越权 (学员不属于当前 org) → 404 (与 R-0401 详情 404 口径一致, 防 IDOR 枚举)
+router.get('/:id/overview', mws.requirePermission('student.read'), asyncHandler(c.overview))
+// R-0409 GET /students/:id/related/:domain
+//   domain ∈ enrollments / lessonAttendances / studentProducts / orders /
+//             works / pointsTransactions / petEvents
+//   分页返 {items,total,page,pageSize}; 未知 domain 返 400
+//   注意: /:id/related/:domain (3 段) 与 /:id (1 段) 不冲突, 不必担心顺序
+router.get('/:id/related/:domain', mws.requirePermission('student.read'), asyncHandler(c.related))
+
 module.exports = router

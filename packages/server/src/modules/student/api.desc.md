@@ -193,3 +193,104 @@
 | 401 | 未登录 |
 | 403 | 权限不足 |
 | 404 | 学生不存在 |
+
+---
+
+## 9. 学生详情页 — 概览 (2026-08-07 新增)
+
+- **Method / Path**：`GET /api/v1/students/:id/overview`
+- **权限**：`student.read`
+- **说明**：学员详情页一次性聚合 — 档案 + 监护人 + 学习画像 + 家长沟通画像 + 10 项业务计数（用于 KPI 行）。学员不属于当前机构 → 404（防 IDOR 枚举）。
+- **成功响应** (`200 OK`)：
+
+```json
+{
+  "data": {
+    "profile": {
+      "id": "66ab12...",
+      "org": "6500...",
+      "name": "王兴宇",
+      "gender": "male",
+      "birthday": "2016-03-12",
+      "avatarSvgKey": "boy",
+      "school": { "id": "...", "name": "梓潼县人民小学", "type": "primary", "address": "..." },
+      "grade": "三年级",
+      "className": "2班",
+      "notes": "过敏: 鸡蛋",
+      "isActive": true,
+      "isBlocked": false,
+      "blockedAt": null,
+      "blockedReason": null,
+      "guardians": [
+        { "id": "...", "mobile": "138****5678", "realName": "王女士", "avatarSvgKey": "mom" }
+      ],
+      "guardianUser": "...",
+      "learningProfile": {
+        "personality": "...",
+        "learningGoal": "...",
+        "weakness": "...",
+        "classFeedback": "...",
+        "strengths": "...",
+        "followUp": "...",
+        "lastUpdatedBy": { "id": "...", "realName": "李老师" },
+        "lastUpdatedAt": "2026-07-28T..."
+      },
+      "createdAt": "2026-01-15T...",
+      "updatedAt": "2026-07-30T..."
+    },
+    "counters": {
+      "enrollments": 2,
+      "enrollmentsArchived": 1,
+      "lessonAttendances": 87,
+      "lessonAttendancesUpcoming": 5,
+      "studentProducts": 4,
+      "studentProductsActive": 3,
+      "orders": 5,
+      "works": 23,
+      "pointsBalance": 9620,
+      "petEvents": 41
+    },
+    "parentId": "...",
+    "parentProfile": {
+      "commStyle": "...",
+      "familyBg": "...",
+      "childFocus": "...",
+      "followUp": "...",
+      "lastUpdatedBy": { "id": "...", "realName": "..." },
+      "lastUpdatedAt": "..."
+    }
+  }
+}
+```
+
+`parentId` / `parentProfile` 为 null = 该学员未走招生流程（无主监护人手机号 / 或 Parent 不存在），前端据此禁用「家长画像」按钮。
+
+---
+
+## 10. 学生详情页 — 分域明细 (2026-08-07 新增)
+
+- **Method / Path**：`GET /api/v1/students/:id/related/:domain`
+- **权限**：`student.read`
+- **说明**：分页拉详情页 tab 数据。学员不属于当前机构 → 404。
+- **路径参数**：
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| domain | String | 见下表 7 个域 |
+
+| domain | 含义 | 数据源 | 排序 |
+| ------ | ---- | ------ | ---- |
+| enrollments | 在册开班（含历史） | CourseEnrollment | createdAt desc |
+| lessonAttendances | 考勤记录 | LessonAttendance | plannedStartTime desc |
+| studentProducts | 课包 | StudentProduct | active→remaining desc→createdAt desc |
+| orders | 订单 | Order | createdAt desc |
+| works | 作品（仅未归档） | StudentWork | createdAt desc |
+| pointsTransactions | 积分流水 | PointsTransaction（跨 org） | createdAt desc |
+| petEvents | 宠物事件 | PetEvent | createdAt desc |
+
+未知 `domain` → 400。
+
+- **查询参数**：`page`（默认 1）, `pageSize`（默认 10）。
+- **成功响应** (`200 OK`)：`{ data: { items: [...], total, page, pageSize } }`。
+
+各域 `items[]` 元素结构见 [studentOverview.service.js](./studentOverview.service.js) 的 `listXxx` 函数。

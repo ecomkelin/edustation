@@ -7,7 +7,8 @@
 <template>
   <div>
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'sessions', params, opts)"
+      :watch-key="userId"
       domain="sessions"
       title="登录会话"
       empty-text="该账号当前没有会话记录"
@@ -50,7 +51,8 @@
     />
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'audit', params, opts)"
+      :watch-key="userId"
       domain="audit"
       title="操作审计（最近在前）"
       empty-text="该账号没有留下操作记录"
@@ -86,7 +88,8 @@
     </div>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'consents', params, opts)"
+      :watch-key="userId"
       domain="consents"
       title="协议签署"
       empty-text="该账号没有签署记录"
@@ -125,7 +128,8 @@
 <script setup>
 import { useRouter } from 'vue-router'
 import { InfoFilled } from '@element-plus/icons-vue'
-import RelatedSection from './RelatedSection.vue'
+import { userApi } from '@/api/user'
+import RelatedSection from '@/components/RelatedSection.vue'
 import { formatDate } from '@/utils/format'
 
 const props = defineProps({

@@ -6,7 +6,8 @@
 <template>
   <div>
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'students', params, opts)"
+      :watch-key="userId"
       domain="students"
       title="监护的学生"
       empty-text="该账号不是任何学员的监护人"
@@ -42,7 +43,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'courseInstances', params, opts)"
+      :watch-key="userId"
       domain="courseInstances"
       title="任课的开班"
       empty-text="该账号不是任何开班的任课老师"
@@ -72,7 +74,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'lessonSchedules', params, opts)"
+      :watch-key="userId"
       domain="lessonSchedules"
       title="排课（近期在前，不含已归档）"
       empty-text="该账号没有排课"
@@ -101,7 +104,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'evaluations', params, opts)"
+      :watch-key="userId"
       domain="evaluations"
       title="写过的课评"
       empty-text="该账号没有写过课评"
@@ -126,7 +130,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'works', params, opts)"
+      :watch-key="userId"
       domain="works"
       title="上传的学员作品"
       empty-text="该账号没有上传过作品"
@@ -149,7 +154,8 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import RelatedSection from './RelatedSection.vue'
+import { userApi } from '@/api/user'
+import RelatedSection from '@/components/RelatedSection.vue'
 import { formatDate } from '@/utils/format'
 import { GENDER_LABEL, ATTENDANCE_STATUS_LABEL } from '@/utils/constants'
 

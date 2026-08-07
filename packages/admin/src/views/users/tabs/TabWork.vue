@@ -5,7 +5,8 @@
 <template>
   <div>
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'tasks', params, opts)"
+      :watch-key="userId"
       domain="tasks"
       title="任务（发起 / 执行 / 监督，不含已归档）"
       empty-text="该账号没有相关任务"
@@ -46,7 +47,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'parents', params, opts)"
+      :watch-key="userId"
       domain="parents"
       title="家长档案（推广 / 录入 / 跟进）"
       empty-text="该账号没有经手的家长档案"
@@ -77,7 +79,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'childLeads', params, opts)"
+      :watch-key="userId"
       domain="childLeads"
       title="潜客（录入 / 邀约 / 跟进）"
       empty-text="该账号没有经手的潜客"
@@ -108,7 +111,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'trialBookings', params, opts)"
+      :watch-key="userId"
       domain="trialBookings"
       title="试听（上课 / 谈单 / 创建）"
       empty-text="该账号没有经手的试听"
@@ -149,7 +153,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'financeTx', params, opts)"
+      :watch-key="userId"
       domain="financeTx"
       title="经手的财务流水"
       empty-text="该账号没有录入过财务流水"
@@ -178,7 +183,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'giftedProducts', params, opts)"
+      :watch-key="userId"
       domain="giftedProducts"
       title="经手的赠课"
       empty-text="该账号没有送过课包"
@@ -203,7 +209,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'refunds', params, opts)"
+      :watch-key="userId"
       domain="refunds"
       title="经手的退款"
       empty-text="该账号没有经手过退款"
@@ -234,7 +241,8 @@
     </RelatedSection>
 
     <RelatedSection
-      :user-id="userId"
+      :fetch="(params, opts) => userApi.related(userId, 'files', params, opts)"
+      :watch-key="userId"
       domain="files"
       title="上传的文件"
       empty-text="该账号没有上传过文件"
@@ -265,7 +273,8 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import RelatedSection from './RelatedSection.vue'
+import { userApi } from '@/api/user'
+import RelatedSection from '@/components/RelatedSection.vue'
 import { formatDate, formatMoney } from '@/utils/format'
 import {
   ORDER_STATUS_LABEL,

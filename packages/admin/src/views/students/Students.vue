@@ -28,7 +28,12 @@
       <el-button type="primary" @click="openCreate">新建学生</el-button>
     </el-space>
     <el-table :data="list" v-loading="loading" style="margin-top: 16px">
-      <el-table-column prop="name" label="姓名" width="120" />
+      <!-- 2026-08-07: 姓名点击进详情 (替代行操作的「详情」按钮, 减少噪声) -->
+      <el-table-column prop="name" label="姓名" width="120">
+        <template #default="{ row }">
+          <el-link type="primary" underline="never" @click="goDetail(row)">{{ row.name }}</el-link>
+        </template>
+      </el-table-column>
       <el-table-column label="性别" width="80">
         <template #default="{ row }">{{ GENDER_LABEL[row.gender] || '-' }}</template>
       </el-table-column>
@@ -81,7 +86,7 @@
           <span v-else style="color: #999">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="380" fixed="right">
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button
@@ -104,25 +109,8 @@
               @click="openParentProfile(row)"
             >家长画像{{ row.hasParentProfile ? '✓' : '' }}</el-button>
           </el-tooltip>
-          <el-button
-            v-if="auth.isPlatformAdmin"
-            size="small"
-            :type="row.isBlocked ? 'success' : 'warning'"
-            @click="toggleBlock(row)"
-          >
-            {{ row.isBlocked ? '解禁' : '禁用' }}
-          </el-button>
-          <!-- 「误操停用」:超管+密码+互锁(在册报名/未用完课包)预检 -->
-          <DestructiveConfirm
-            v-if="auth.isPlatformAdmin && row.isActive"
-            :target="`学生 ${row.name}`"
-            warning="中风险"
-            :precheck-notes="['无在册报名', '无未用完课包']"
-            :precheck="() => studentApi.removableCheck(row._id).then((r) => r.data)"
-            @confirm="(p) => onRemoveConfirm(row, p)"
-          >
-            <el-button size="small" type="danger">停用</el-button>
-          </DestructiveConfirm>
+          <!-- 2026-08-07: 「禁用 / 停用」按钮已挪到详情页 (StudentDetail.vue 左账号卡),
+               列表行不再承担这两个动作, 减少噪声 -->
         </template>
       </el-table-column>
     </el-table>
@@ -266,8 +254,8 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import DestructiveConfirm from '@/components/DestructiveConfirm.vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { studentApi } from '@/api/student'
 import { parentApi } from '@/api/parent'
 import { schoolApi } from '@/api/school'
@@ -275,13 +263,13 @@ import StudentProfileDialog from '@/components/Profile/StudentProfileDialog.vue'
 import ParentProfileDialog from '@/components/Profile/ParentProfileDialog.vue'
 import SvgAvatar from '@/components/Avatar/SvgAvatar.vue'
 import AvatarSvgPicker from '@/components/Avatar/AvatarSvgPicker.vue'
-import { handleRemoveError } from '@/utils/removable'
 import { userApi } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/utils/format'
 import { GENDER_LABEL, SCHOOL_TYPE_LABEL } from '@/utils/constants'
 
 const auth = useAuthStore()
+const router = useRouter()
 const list = ref([])
 const loading = ref(false)
 const dialog = ref(false)
@@ -417,6 +405,14 @@ async function loadSchools() {
   }
 }
 
+/**
+ * 跳转到学生详情页 (2026-08-07): R-0408 / R-0409
+ * 列表行「详情」按钮触发; 走 router.push 全页面跳转 (与 Users.vue goDetail 同范式)
+ */
+function goDetail(row) {
+  router.push(`/students/${row._id}`)
+}
+
 function openCreate() {
   Object.assign(form, {
     _id: '',
@@ -540,39 +536,8 @@ async function submit() {
   }
 }
 
-async function toggleBlock(row) {
-  const next = !row.isBlocked
-  const action = next ? '禁用' : '解禁'
-  try {
-    const { value: reason } = await ElMessageBox.prompt(
-      `确认要${action}该学生吗？${next ? '禁用后该学生将无法报名/下单,家长端不可见。' : '解禁后将恢复正常业务。'}`,
-      `${action}学生`,
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        inputPlaceholder: '请输入原因(可选)',
-        inputType: 'textarea'
-      }
-    )
-    await studentApi.setBlocked(row._id, next, reason || '')
-    ElMessage.success(`已${action}`)
-    load()
-  } catch (e) {
-    // 用户点击取消
-    if (e === 'cancel') return
-    ElMessage.error(e?.response?.data?.message || `${action}失败`)
-  }
-}
-
-async function onRemoveConfirm(row, { password }) {
-  try {
-    await studentApi.remove(row._id, { password })
-    ElMessage.success('已停用')
-    load()
-  } catch (e) {
-    await handleRemoveError(e, '无法删除 · 高风险', `学生 ${row.name}`)
-  }
-}
+// 2026-08-07: 列表行不再有「禁用 / 停用」按钮 (这两个动作已迁到详情页左账号卡);
+//   原 toggleBlock / onRemoveConfirm 函数及 DestructiveConfirm 组件已移除。
 
 onMounted(() => {
   load()
