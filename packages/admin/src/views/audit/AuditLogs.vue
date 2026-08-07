@@ -214,6 +214,7 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import auditApi from '@/api/audit'
@@ -221,6 +222,7 @@ import PageHelp from '@/components/PageHelp.vue'
 import { formatDate } from '@/utils/format'
 
 const auth = useAuthStore()
+const route = useRoute()
 
 // 筛选
 const dateRange = ref([]) // [from, to] ISO 字符串
@@ -390,6 +392,10 @@ function onExport() {
 }
 
 onMounted(() => {
+  // 2026-08-07: 支持 /system/audit-logs?userId=xxx 深链 —— 用户详情页「安全与审计」
+  //   tab 的「查看完整日志」按钮跳过来时带上, 直接把行为人筛选预置好
+  const qUserId = route.query.userId
+  if (qUserId) filters.value.userId = String(qUserId)
   loadOptions()
   load()
 })

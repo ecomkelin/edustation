@@ -30,6 +30,12 @@ router.put('/:id', mws.requirePermission('user.write'), v.update, mws.validateRe
 router.delete('/:id', mws.requirePlatformPassword, asyncHandler(c.remove))
 // R-0205 GET /users/:id/removable-check
 router.get('/:id/removable-check', mws.requirePermission('user.read'), asyncHandler(c.removableCheck))
+// 用户详情页聚合 (2026-08-07). 多段路径, 与单段通配 /:id 不冲突, 位置无所谓.
+// 可见性由 userOverview.service.resolveScope 统一守门 (非超管必须 UserOrgRel 归属, 否则 404).
+// R-0217 GET /users/:id/overview
+router.get('/:id/overview', mws.requirePermission('user.read'), asyncHandler(c.overview))
+// R-0218 GET /users/:id/related/:domain
+router.get('/:id/related/:domain', mws.requirePermission('user.read'), asyncHandler(c.related))
 // R-0216 POST /users/:id/change-password
 router.post('/:id/change-password', v.changePassword, mws.validateRequest, asyncHandler(c.changePassword))
 // R-0215 POST /users/:id/reset-password

@@ -137,5 +137,7 @@ StudentWorkSchema.index({ org: 1, lessonAttendance: 1 })
 StudentWorkSchema.index({ org: 1, archived: 1, createdAt: -1 })
 // 同一考勤下 title 不能重复
 StudentWorkSchema.index({ lessonAttendance: 1, title: 1 }, { unique: true })
+// 按上传人（用户详情页「教学记录」: 该老师传了哪些作品; 2026-08-07）
+StudentWorkSchema.index({ org: 1, uploadedBy: 1, createdAt: -1 })
 
 module.exports = model('StudentWork', StudentWorkSchema)

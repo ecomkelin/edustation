@@ -47,7 +47,7 @@
 | id | String | User._id |
 | mobile | String | 手机号 |
 | realName | String | 姓名 |
-| avatar | String\|null | 头像 |
+| avatarSvgKey | String | 头像枚举 key（2026-07-05 起不再是 URL/File ref） |
 | positions | Position[] | `{ id, name }` |
 | isMain | Boolean | 是否主机构 |
 | isActive | Boolean | 用户全局启用状态 |
@@ -201,15 +201,51 @@
 | id | String | User._id |
 | mobile | String | 手机号 |
 | realName | String | 姓名 |
-| avatar | String\|null | 头像 |
+| avatarSvgKey | String | 头像枚举 key（2026-07-05 起不再是 URL/File ref） |
 | idCard | String\|null | 身份证号（未脱敏，按需在前端展示时脱敏） |
 | region | {id,name}\|null | 现居地 |
 | isActive | Boolean | 用户全局启用状态 |
-| isPlatformAdmin | Boolean | 是否平台超管 |
 | currentOrgRel | Object\|null | 该用户**在当前 org** 的 rel；若为 `null` 表示未加入本机构，可直接 `POST /:id/org` |
 
 - **失败**：`404` —— 该手机号未注册。
 - **使用场景**：管理后台「添加已有用户」流程的前置查询。
+
+---
+
+## R-0217 `GET /users/:id/overview` —— 用户详情页聚合概览
+
+权限 `user.read`。用户详情页 (`admin /users/:id`) 的主数据源，一次拿全，不用前端拼 N 个接口。
+
+- **响应**：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| scope | `'platform'` \| `'org'` | 视角。前端据此决定是否渲染「安全与审计」tab、是否显示机构列 |
+| profile | Object | 账号档案。`wechat` 只给 `{openIdBound, unionIdBound}` 两个 bool，**不下发 openId 明文**；`lastActiveAt` 由最新 RefreshToken.createdAt 派生（User 没有 lastLoginAt 字段） |
+| orgs | Array | 机构 + 职位（含每个职位的 permissions）。**scope=org 时只有当前机构那一条** |
+| effectivePermissions | `{isPlatformAdmin, codes[]}` | 由 orgs[].positions[].permissions 聚合去重。超管返 `isPlatformAdmin:true` + 空 codes（其在 requirePermission 里被短路成 `['*']`，逐条列没意义） |
+| counters | Object | 18 项业务计数，一次 `Promise.all`。`sessions` / `auditLogs` 对非超管返 `null` |
+
+## R-0218 `GET /users/:id/related/:domain` —— 分域明细（分页）
+
+权限 `user.read`。query：`page` / `pageSize`（走 `normalizePagination`，pageSize 上限 200）。
+
+- **domain 取值**（16 个，统一返回 `{items, total, page, pageSize}`）：
+
+`students` `courseInstances` `lessonSchedules` `evaluations` `works` `tasks` `parents` `childLeads` `trialBookings` `financeTx` `giftedProducts` `refunds` `files` `consents` `sessions` `audit`
+
+- **`sessions` / `audit` 仅平台超管**（非超管 `403`）：RefreshToken 没有 org 字段、AuditLog 模块本身就是 platform-only，机构视角下无法安全裁剪。
+- 未知 domain → `400`。
+- `parents` / `childLeads` / `trialBookings` / `tasks` 的每行带 `roles[]`，标明该用户在这条记录里担任了哪些角色（一个人可能身兼两职）。
+
+## 可见性（R-0217 / R-0218 共用 `resolveScope`）
+
+| 调用者 | org 过滤 | 目标不属于本机构 |
+| ------ | -------- | ---------------- |
+| 平台超管 | 不加（全平台视角；游离用户也能看到其历史痕迹） | — |
+| 机构管理员 | 强制 `{ org: req.orgId }` | **404**（不是 403 —— 403 会泄露"这个账号在别家存在"，可被枚举；与 R-0206 lookup 同口径） |
+
+`orgs[]` 在机构视角下只返当前机构那一条，连"他还在别家"都不暴露。
 
 ---
 

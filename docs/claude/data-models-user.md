@@ -9,14 +9,20 @@
 
 **核心字段**：
 
-- `mobile`（unique）
-- `passwordHash`
+- `mobile`（unique，大陆 11 位手机号，登录主键）
+- `passwordHash`（`select: false`）
 - `realName`
-- `avatar`（File ref — 跨租户，diffSingle 维护）
-- `wechatUnionId`
+- `avatarSvgKey`（**2026-07-05 起不再是 File ref** — 改为 `shared/avatars.js` 里的预制 SVG 枚举 key，默认 `mom`；不走 File 体系，没有 scope=avatar 上传）
+- `idCard`（选填；填了则全局唯一，partial unique 排除 null）
+- `region`（Region ref — 现居地，与 `Org.region` 同源）
+- `wechatOpenId`（稀疏唯一 — **小程序登录实际用的身份标识**）
+- `wechatUnionId`（稀疏唯一 — 当前登录流程不用，保留给通知渠道 capability 派生）
+- `isPlatformAdmin` / `isActive` / `isBlocked` + `blockedAt` + `blockedReason`
 - `requirePasswordChange: Boolean`（新建家长首次登录强制改密用）
 
 > 敏感字段注意：见 [memory: mongoose-select-false-pitfall]，passwordHash 等 `select: false` 字段必须 `.select('+xxx')` 才能读到。
+
+> **没有 `lastLoginAt`，也没有 LoginLog 表**。要"最近活跃"只能取该用户最新一条 `RefreshToken.createdAt`（登录 / 自动续期都会写），且 RefreshToken 有 TTL 索引会自动清过期行 —— 所以它是"当前会话"而不是登录历史。用户详情页 R-0217 的 `profile.lastActiveAt` 就是这么派生的。
 
 ## UserOrgRel（用户-机构关系）
 
@@ -24,11 +30,18 @@
 - `org`（Org ref）
 - `positions`（[Position ref] — 数组，可同时挂多个职位）
 - `isMain`（是否主机构 — 切换机构时默认进入的）
+- `showAsTeacher`（2026-06 加 — 是否作为"名师"在 C 端机构主页 / 课程产品页对外展示；仅 clientLevel=0 的员工岗可开，家长岗由 service 兜底拒绝）
+
+唯一约束：`{user, org}` 唯一（同一用户在同一机构只有一条关系记录）。
 
 业务规则：
 
 - 一个 user 可以挂多个 org（多机构工作，如顾问兼课）
 - 一个 user 在某 org 下可有多个 position（如某教务同时是老师）
+- **平台超管没有 UserOrgRel**（天然跨机构，2026-07-22 起 `attachToOrg` 显式拒绝超管入机构）；因此超管在"游离用户"列表里出现是预期行为，不是脏数据
+- 家长沟通画像字段（commStyle / familyBg / childFocus / followUp）已搬到 `Parent` 表，不在这里
+
+> **User 是全系统关联面最广的实体**（35+ 个 model 引用它：监护人 / 任课老师 / 任务三角色 / 招生归因 / 财务经办 / 文件上传 …）。要一次看全某个人的所有痕迹，走用户详情页 R-0217 + R-0218，别自己一张张表拼。字段命名历史上长歪过几处，抄之前先核对：`StudentWork.uploadedBy` vs `File.uploader`、`Task.creator` vs `ChildLead.createdBy`、`LeadActivity.byUser` vs `FinanceTransaction.operator`、课评人在嵌套的 `LessonAttendance.evaluation.evaluatedBy`（不是顶层）、**`Order` 没有 createdBy / 销售字段**（归因只能走 `Parent.promoteBy` / `ChildLead.createdBy`）。
 
 ## Position（机构内职位）
 

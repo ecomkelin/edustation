@@ -140,5 +140,7 @@ TrialBookingSchema.index({ teacher: 1, scheduledAt: 1 })
 TrialBookingSchema.index({ org: 1, status: 1, subject: 1 })
 // 家长维度
 TrialBookingSchema.index({ parent: 1, status: 1, createdAt: -1 })
+// 按谈单老师（用户详情页「招生业绩」; teacher 已有 {teacher, scheduledAt} 索引; 2026-08-07）
+TrialBookingSchema.index({ org: 1, consultant: 1, scheduledAt: -1 })
 
 module.exports = model('TrialBooking', TrialBookingSchema)

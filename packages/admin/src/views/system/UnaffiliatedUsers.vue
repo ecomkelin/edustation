@@ -35,7 +35,9 @@
     <el-table :data="list" v-loading="loading" border>
       <el-table-column prop="realName" label="姓名" width="120">
         <template #default="{ row }">
-          <span>{{ row.realName || '—' }}</span>
+          <el-link type="primary" underline="never" @click="goDetail(row)">
+            {{ row.realName || row.mobile }}
+          </el-link>
         </template>
       </el-table-column>
       <el-table-column prop="mobile" label="手机号" width="140" />
@@ -77,8 +79,9 @@
           <span style="color: #666">{{ formatDate(row.createdAt) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="290" fixed="right">
         <template #default="{ row }">
+          <el-button size="small" type="primary" @click="goDetail(row)">详情</el-button>
           <el-button size="small" @click="openEdit(row)">编辑</el-button>
           <el-button size="small" type="warning" @click="openReset(row)">重置密码</el-button>
         </template>
@@ -101,87 +104,38 @@
       @size-change="reload"
     />
 
-    <el-dialog v-model="dialog" title="编辑游离用户" width="480px" @close="resetForm">
-      <el-alert
-        v-if="form.isSelf"
-        type="warning"
-        :closable="false"
-        show-icon
-        title="你正在编辑自己的账号"
-        description="不要禁用自己 (isActive), 否则会立即失去登录能力"
-        style="margin-bottom: 12px"
-      />
-      <el-alert
-        v-if="form.isPlatformAdmin && !form.isSelf"
-        type="warning"
-        :closable="false"
-        show-icon
-        title="该用户是平台超管"
-        description="修改其信息不影响其超管身份 (该字段本页面不允许改), 但请谨慎评估影响范围"
-        style="margin-bottom: 12px"
-      />
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
-        <el-form-item label="姓名" prop="realName">
-          <el-input v-model="form.realName" maxlength="50" />
-        </el-form-item>
-        <el-form-item label="手机号">
-          <el-input :model-value="form.mobile" disabled />
-        </el-form-item>
-        <el-form-item label="身份证号" prop="idCard">
-          <el-input v-model="form.idCard" placeholder="选填, 15 或 18 位" maxlength="18" />
-        </el-form-item>
-        <el-form-item label="现居地" prop="region">
-          <el-cascader
-            v-model="formRegion"
-            :options="regionTree"
-            :props="{ value: 'id', label: 'name', children: 'children', checkStrictly: true, emitPath: false }"
-            placeholder="请选择"
-            style="width: 100%"
-            clearable
-          />
-        </el-form-item>
-        <el-form-item label="启用">
-          <el-switch v-model="form.isActive" :disabled="form.isSelf" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">确定</el-button>
-      </template>
-    </el-dialog>
+    <!-- 2026-08-07: 编辑 / 重置密码弹窗抽成共用组件 (variant=orphan 走 R-0208 / R-0209) -->
+    <UserFormDialog
+      v-model="dialog"
+      mode="edit"
+      variant="orphan"
+      :user="editingUser"
+      @saved="load"
+    />
 
-    <el-dialog v-model="resetDialog" title="重置密码" width="380px">
-      <p style="margin: 0 0 12px; color: #909399; font-size: 13px">
-        将重置账号「{{ resetTarget?.realName || resetTarget?.mobile }}」的登录密码
-      </p>
-      <el-input v-model="newPassword" placeholder="新密码 (6-64)" show-password maxlength="64" />
-      <template #footer>
-        <el-button @click="resetDialog = false">取消</el-button>
-        <el-button type="primary" :loading="resetSaving" @click="doReset">确定</el-button>
-      </template>
-    </el-dialog>
+    <ResetPasswordDialog v-model="resetDialog" variant="orphan" :user="resetTarget" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { userApi } from '@/api/user'
-import { regionApi } from '@/api/region'
-import { useAuthStore } from '@/stores/auth'
 import PageHelp from '@/components/PageHelp.vue'
+import UserFormDialog from '@/views/users/UserFormDialog.vue'
+import ResetPasswordDialog from '@/views/users/ResetPasswordDialog.vue'
 
-const auth = useAuthStore()
+const router = useRouter()
 
 const list = ref([])
-const regionTree = ref([])
 const loading = ref(false)
+
+// 2026-08-07: 编辑 / 重置密码表单已抽到 users/ 下的共用组件 (详情页也用同一套),
+//   这里只留"开哪个弹窗、喂哪一行"。原来的 form / rules / submit / doReset 都搬走了。
 const dialog = ref(false)
-const saving = ref(false)
+const editingUser = ref(null)
 const resetDialog = ref(false)
-const resetSaving = ref(false)
-const newPassword = ref('')
-let resetTarget = null
+const resetTarget = ref(null)
 
 const filters = reactive({
   keyword: '',
@@ -191,33 +145,6 @@ const filters = reactive({
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-
-const formRef = ref()
-const form = reactive({
-  id: '',
-  realName: '',
-  mobile: '',
-  idCard: '',
-  region: null,
-  isActive: true,
-  isPlatformAdmin: false,
-  isSelf: false
-})
-const formRegion = ref(null)
-
-const rules = {
-  realName: [{ required: true, message: '请填写姓名', trigger: 'blur' }],
-  idCard: [
-    {
-      validator: (rule, value, cb) => {
-        if (!value) return cb()
-        if (!/^\d{15}(\d{2}[\dXx])?$/.test(value)) return cb(new Error('身份证号格式不正确'))
-        cb()
-      },
-      trigger: 'blur'
-    }
-  ]
-}
 
 function maskIdCard(v) {
   if (!v) return '—'
@@ -231,6 +158,11 @@ function formatDate(d) {
   if (Number.isNaN(dt.getTime())) return '—'
   const pad = (n) => String(n).padStart(2, '0')
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+}
+
+// 带 from=unaffiliated: 详情页据此把「返回」指回本页, 并知道走游离态的编辑/改密端点
+function goDetail(row) {
+  router.push({ path: `/users/${row.id}`, query: { from: 'unaffiliated' } })
 }
 
 async function load() {
@@ -256,89 +188,17 @@ function reload() {
   load()
 }
 
-async function loadRegions() {
-  const r = await regionApi.tree()
-  regionTree.value = r.data || []
-}
-
-function resetForm() {
-  formRef.value?.resetFields()
-  Object.assign(form, {
-    id: '',
-    realName: '',
-    mobile: '',
-    idCard: '',
-    region: null,
-    isActive: true,
-    isPlatformAdmin: false,
-    isSelf: false
-  })
-  formRegion.value = null
-}
-
 function openEdit(row) {
-  Object.assign(form, {
-    id: row.id,
-    realName: row.realName || '',
-    mobile: row.mobile,
-    idCard: row.idCard || '',
-    region: row.region ? row.region.id : null,
-    isActive: row.isActive !== false,
-    isPlatformAdmin: !!row.isPlatformAdmin,
-    isSelf: row.id === auth.user?.id
-  })
-  formRegion.value = row.region ? row.region.id : null
+  editingUser.value = row
   dialog.value = true
 }
 
-async function submit() {
-  if (!formRef.value) return
-  try {
-    await formRef.value.validate()
-  } catch (_) {
-    return
-  }
-  saving.value = true
-  try {
-    await userApi.updateUnaffiliated(form.id, {
-      realName: form.realName,
-      idCard: form.idCard || null,
-      region: formRegion.value || null,
-      isActive: form.isActive
-    })
-    ElMessage.success('已更新')
-    dialog.value = false
-    await load()
-  } finally {
-    saving.value = false
-  }
-}
-
 function openReset(row) {
-  resetTarget = row
-  newPassword.value = ''
+  resetTarget.value = row
   resetDialog.value = true
 }
 
-async function doReset() {
-  if (!newPassword.value || newPassword.value.length < 6) {
-    ElMessage.warning('新密码至少 6 位')
-    return
-  }
-  resetSaving.value = true
-  try {
-    await userApi.resetPasswordUnaffiliated(resetTarget.id, newPassword.value)
-    ElMessage.success('密码已重置')
-    resetDialog.value = false
-  } finally {
-    resetSaving.value = false
-  }
-}
-
-onMounted(async () => {
-  await loadRegions()
-  await load()
-})
+onMounted(load)
 </script>
 
 <style scoped>

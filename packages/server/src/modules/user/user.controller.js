@@ -1,6 +1,7 @@
 'use strict'
 
 const service = require('./user.service')
+const overviewService = require('./userOverview.service')
 const ApiResponse = require('@utils/ApiResponse')
 
 exports.list = async (req, res) => {
@@ -9,7 +10,7 @@ exports.list = async (req, res) => {
 }
 
 exports.detail = async (req, res) => {
-  const data = await service.detail(req.params.id, req.orgId)
+  const data = await service.detail(req.params.id, req.orgId, !!req.user.isPlatformAdmin)
   res.json(ApiResponse.ok(data))
 }
 
@@ -44,7 +45,13 @@ exports.resetPassword = async (req, res) => {
 }
 
 exports.setPositions = async (req, res) => {
-  const data = await service.setPositions(req.params.id, req.orgId, req.body.positions)
+  // isPlatformAdmin 必须透传: service 里的 sensitive 权限闸门要靠它放行超管 (2026-08-07 修)
+  const data = await service.setPositions(
+    req.params.id,
+    req.orgId,
+    req.body.positions,
+    !!req.user.isPlatformAdmin
+  )
   res.json(ApiResponse.ok(data))
 }
 
@@ -94,4 +101,31 @@ exports.updateUnaffiliated = async (req, res) => {
 exports.resetPasswordUnaffiliated = async (req, res) => {
   await service.resetPassword(req.params.id, null, req.body.newPassword)
   res.json(ApiResponse.ok())
+}
+
+// ─── 用户详情页聚合 (2026-08-07) ───────────────────────────────
+// 可见性完全交给 userOverview.service.resolveScope 处理:
+//   平台超管 → 全平台视角; 机构管理员 → 强制 { org: req.orgId } 且目标必须属于本机构 (否则 404)
+
+// R-0217 GET /users/:id/overview
+exports.overview = async (req, res) => {
+  const data = await overviewService.overview({
+    userId: req.params.id,
+    orgId: req.orgId,
+    isPlatformAdmin: !!req.user.isPlatformAdmin
+  })
+  res.json(ApiResponse.ok(data))
+}
+
+// R-0218 GET /users/:id/related/:domain
+exports.related = async (req, res) => {
+  const data = await overviewService.related({
+    userId: req.params.id,
+    orgId: req.orgId,
+    isPlatformAdmin: !!req.user.isPlatformAdmin,
+    domain: req.params.domain,
+    page: req.query.page,
+    pageSize: req.query.pageSize
+  })
+  res.json(ApiResponse.ok(data))
 }

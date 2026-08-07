@@ -23,5 +23,15 @@ export const userApi = {
   listUnaffiliated: (params) => http.get('/users/unaffiliated', { params }),
   updateUnaffiliated: (id, data) => http.put(`/users/unaffiliated/${id}`, data),
   resetPasswordUnaffiliated: (id, newPassword) =>
-    http.post(`/users/unaffiliated/${id}/reset-password`, { newPassword })
+    http.post(`/users/unaffiliated/${id}/reset-password`, { newPassword }),
+  // 用户详情页 (2026-08-07): R-0217 概览 / R-0218 分域明细
+  //   可见性由后端 resolveScope 决定 —— 超管看全平台, 机构管理员只看当前机构 (越权返 404)
+  overview: (id) => http.get(`/users/${id}/overview`),
+  // domain ∈ students|courseInstances|lessonSchedules|evaluations|works|tasks|
+  //          parents|childLeads|trialBookings|financeTx|giftedProducts|refunds|
+  //          files|consents|sessions|audit
+  //   sessions / audit 仅平台超管 (非超管 403), 前端已按 scope 隐藏对应 tab;
+  //   兜底命中 403 时调用方传 { silent: true } 自行降级, 不弹 toast
+  related: (id, domain, params, opts = {}) =>
+    http.get(`/users/${id}/related/${domain}`, { params, ...opts })
 }

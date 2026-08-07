@@ -82,5 +82,7 @@ FinanceTransactionSchema.index({ org: 1, reason: 1, occurredAt: -1 })
 FinanceTransactionSchema.index({ org: 1, transferGroupId: 1 })
 // 订单反向查询（订单详情显示"已记账"）
 // 索引已在 relatedOrder 字段定义中包含
+// 按经办人（用户详情页「财务足迹」: 该员工录了哪些流水; 2026-08-07）
+FinanceTransactionSchema.index({ org: 1, operator: 1, occurredAt: -1 })
 
 module.exports = model('FinanceTransaction', FinanceTransactionSchema)

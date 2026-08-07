@@ -55,7 +55,7 @@ Auth 列简写:
 | MM | 模块 | URL 前缀 | 文件 | 端点数 |
 |----|---|---|---|---:|
 | 01 | auth + captcha | /auth /captcha | auth/, captcha/ | 8 |
-| 02 | user | /users | user/ | 16 |
+| 02 | user | /users | user/ | 19 |
 | 03 | position | /positions | position/ | 8 |
 | 04 | student | /students | student/ | 12 |
 | 05 | subject | /subjects | subject/ | 6 |
@@ -115,10 +115,10 @@ Auth 列简写:
 | ID | Method | Path | Auth | Permission | Function | 备注 |
 |---|---|---|---|---|---|---|
 | R-0200 | GET | /users | PERM | user.read | 列表 | |
-| R-0201 | GET | /users/:id | PERM | user.read | 详情 | |
+| R-0201 | GET | /users/:id | PERM | user.read | 详情 | **2026-08-07: 非超管强制 `UserOrgRel.exists({user,org})` 校验, 不属于本机构返 404 (补 2026-08-05 审计 S1 漏掉的一条 —— 当时补了 R-0203/0206/0215, 唯独 detail 没补)** |
 | R-0202 | POST | /users | PERM | user.write | 新建 | |
 | R-0203 | PUT | /users/:id | PERM | user.write | 更新 | 2026-08-05: service 加 `UserOrgRel.exists({user,org})` 校验, 防跨机构越权 (审计 S1) |
-| R-0204 | DELETE | /users/:id | ADMIN_PWD | — | 物理删除 | 高风险 |
+| R-0204 | DELETE | /users/:id | ADMIN_PWD | — | 物理删除 | 高风险; **2026-08-07: `userUsageChecks` 的 LessonAttendance 过滤字段 `evaluatedBy` → `evaluation.evaluatedBy` (嵌套字段写错, countDocuments 恒 0 → 「课评人不可移出机构」这条互锁自上线起从未生效)** |
 | R-0205 | GET | /users/:id/removable-check | PERM | user.read | 删除预检 | |
 | R-0206 | GET | /users/lookup | PERM | user.read | 按手机号查 | 2026-08-05: 强制 org 归属校验, 不属于本机构 (含平台超管) 返 404; 不再返回 isPlatformAdmin 字段 (审计 S1) |
 | R-0207 | GET | /users/unaffiliated | ADMIN | — | 游离用户列表 | 平台超管 |
@@ -126,9 +126,12 @@ Auth 列简写:
 | R-0209 | POST | /users/unaffiliated/:id/reset-password | ADMIN | — | 重置游离用户密码 | 平台超管 |
 | R-0210 | PUT | /users/:id/block | ADMIN | — | 黑名单 | 平台超管 |
 | R-0211 | PUT | /users/:id/unblock | ADMIN | — | 解黑名单 | 平台超管 |
-| R-0212 | PUT | /users/:id/positions | PERM | user.write | 调整职位 | **2026-08-05: 聚合传入 positions 的 permissions, 校验不绕过 sensitive 闸门 (审计 M17 pet.write/article.write/video.write 仅超管可 grant)** |
-| R-0213 | POST | /users/:id/org | PERM | user.write | 关联到机构 | |
+| R-0212 | PUT | /users/:id/positions | PERM | user.write | 调整职位 | **2026-08-05: 聚合传入 positions 的 permissions, 校验不绕过 sensitive 闸门 (审计 M17 pet.write/article.write/video.write 仅超管可 grant)**; **2026-08-07 修: `actor` 写死 `{isPlatformAdmin:false}` 是没接线的桩 → 连平台超管也被 403 死锁 (只要目标职位含任一 sensitive 权限就谁都存不了)。改由 controller 透传 `req.user.isPlatformAdmin`, 兑现注释里原本的设计意图; 机构管理员仍被挡** |
+| R-0213 | PUT | /users/:id/teacher-flag | PERM | user.write | 切换对外名师 | 2026-06 加; 写 `UserOrgRel.showAsTeacher`; service 兜底拒 clientLevel>0 的家长岗。**2026-08-07 补录: 本行此前在文档中整个缺失, 导致 /:id/org 的编号与代码注释对不上** |
+| R-0214 | POST | /users/:id/org | PERM | user.write | 关联到机构 | **2026-08-07 更正: 文档原记为 R-0213, 与 `user.routes.js` 注释 (R-0214) 冲突。以 call site 注释为准改文档, PP 不重排** |
 | R-0215 | POST | /users/:id/reset-password | PERM | user.resetPassword | 管理员重置密码 | 2026-08-05: service 加 `UserOrgRel.exists({user,org})` 校验, 防止改别机构/超管密码 (审计 S1) |
+| R-0217 | GET | /users/:id/overview | PERM | user.read | **用户详情页聚合概览** | 2026-08-07 立项。一次返 档案 + 机构职位 + 有效权限码 + 18 项业务计数 (Promise.all)。可见性由 `userOverview.service.resolveScope` 统一守门: 平台超管 = 全平台视角 (不加 org 过滤, 游离用户也能看到其历史痕迹); 机构管理员 = 强制 `{org: req.orgId}` 且目标必须属于本机构, 否则 **404 (不是 403, 防账号枚举, 同 R-0206 口径)**; `orgs[]` 只返当前机构那一条, 连"他还在别家"都不暴露; `counters.sessions/auditLogs` 对非超管返 null |
+| R-0218 | GET | /users/:id/related/:domain | PERM | user.read | **用户详情页分域明细 (分页)** | 2026-08-07 立项。domain ∈ `students / courseInstances / lessonSchedules / evaluations / works / tasks / parents / childLeads / trialBookings / financeTx / giftedProducts / refunds / files / consents / sessions / audit` (16 个), 统一返 `{items,total,page,pageSize}`。**`sessions` / `audit` 仅平台超管 (非超管 403)** —— RefreshToken 无 org 字段、AuditLog 模块本就 platform-only, 机构视角无法安全裁剪。未知 domain 返 400。新增板块只改 service 的 HANDLERS 表, 不再动路由 |
 | R-0216 | POST | /users/:id/change-password | PERM | — | 管理员代改密码 | **2026-08-05: 改密后撤销该用户所有 refresh token (审计 M16 与 auth.changePassword 行为对齐)** |
 
 ### MM=03 position (URL: /positions)
@@ -765,6 +768,7 @@ Auth 列简写:
 
 | 日期 | 改动 | R 编号 | 操作 |
 |---|---|---|---|
+| 2026-08-07 | **用户详情页 (UserDetail) 上线** + 3 个既存缺陷修复。新增 R-0217 `/users/:id/overview` (档案+机构职位+有效权限+18 计数) 与 R-0218 `/users/:id/related/:domain` (16 域分页明细), 聚合逻辑另起 `modules/user/userOverview.service.js` (`user.service.js` 已 563 行不再塞); 可见性由 `resolveScope` 单点守门 (超管全平台 / 机构管理员强制 org 裁剪 + 越权 404); `sessions`+`audit` 两域 platform-only (无 org 维度)。**顺带修**: ① R-0201 detail 缺 `UserOrgRel` 归属校验 (2026-08-05 审计 S1 漏网, 任何持 user.read 的机构管理员可读别机构/超管档案); ② `userUsageChecks` 的 LessonAttendance 过滤字段写成顶层 `evaluatedBy` 而非 `evaluation.evaluatedBy` → 课评人互锁恒 0 从未生效; ③ R-0212 `setPositions` 的 `actor` 是写死 `false` 的桩 → 目标职位含 sensitive 权限时连超管都 403 死锁, 改为透传 `req.user.isPlatformAdmin`。前端 `UserFormDialog` 仅在职位真变时才打 R-0212 (职位没动 ≠ 提权, 否则机构管理员改个姓名都会被闸门挡)。models 补 6 个索引 (StudentWork.uploadedBy / LessonAttendance.evaluation.evaluatedBy / StudentProduct.giftedBy / FinanceTransaction.operator / TrialBooking.consultant / Student.guardians)。文档补录 R-0213 teacher-flag (原缺失) 并把 /:id/org 更正为 R-0214 | R-0217 / R-0218 新增; R-0201 / R-0204 / R-0212 修改; R-0213 / R-0214 编号更正 | add/modify |
 | 2026-08-02 | 任务「执行人/监督人」下拉空 + 显示 raw id 修复 (3 层根因): ① seed `castOidsDeep` 不转**数组里的 hex 字符串元素** → `user_org_rels.positions` 落库成 string[] → `user.service.list` 的 `positions:{$in:[ObjectId]}` 0 结果 (同批受害: `course_products.subjects` / `child_leads.trialSubjects`, 已就地 cast); ② `task.service.assertUsersInOrg` 过滤 `UserOrgRel.isActive:true` 但该字段**不存在** → 建任务必 400「用户不属于本机构或已停用」, 改为 rel 只判归属 + `User.isActive` 判停用 (finance `validateRelatedStaff` 同款 bug 一并修, 且其 staff 判据 `clientLevel>0` 写反, 应为 =0); ③ 新增 R-3924 让无 user.read 的岗位 (财务) 也能拉到员工候选; admin TaskCreate/TaskTemplateEdit 改打 R-3924 + 下拉显示「姓名 + 岗位灰字」+ 加载失败不再静默吞 + 默认监督人只取 options 内存在的 id | R-3924 | add |
 | 2026-07-14 | Templates UI v0.9.2 + R-4018 + seed 拆 safe/nuke: 加「全部重置」按钮 (批量清空本机构覆盖, R-4018 一次性 deleteMany); 拆 `db:seeds` → `db:seed:safe` (idempotent 9 条, 默认) + `db:seed:nuke` (`--force` 强制, dropDatabase 不可逆); `initial.seed.run({force:true})` 守卫无 force 抛错, 防误跑 | R-4018 | add |
 | 2026-07-14 | Templates UI v0.9.1 重做 + R-4017 新增: 移除"新建模板"按钮 (防止孤儿模板), 隐藏渠道列 (MVP 仅 inbox), "覆盖"→"重置" (语义修正 + 二级 confirm), "触发时机"+"接收人 chip" 双维自然语言展示 (constants/notificationTriggers.js 字表), type 字符串改成只读灰字 (供客服/开发定位); R-4017 DELETE /templates/:type/:channel 幂等删本机构覆盖 → 回退平台默认; data-models-notification.md §3.5 加"新增 type 三处同步"硬约束 | R-4017 | add |

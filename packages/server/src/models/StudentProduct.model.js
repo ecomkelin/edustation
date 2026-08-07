@@ -98,5 +98,7 @@ StudentProductSchema.index({ org: 1, isActive: 1 })
 StudentProductSchema.index({ expireDate: 1 })
 // 按 source 过滤（如家长端"我的赠课"）
 StudentProductSchema.index({ org: 1, source: 1 })
+// 按赠课经办人（用户详情页「财务足迹」: 该员工送了哪些课; 2026-08-07）
+StudentProductSchema.index({ org: 1, giftedBy: 1 })
 
 module.exports = model('StudentProduct', StudentProductSchema)

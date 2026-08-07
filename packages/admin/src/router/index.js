@@ -20,6 +20,10 @@ const routes = [
       { path: 'categories', component: () => import('@/views/categories/Categories.vue') },
       { path: 'regions', component: () => import('@/views/regions/Regions.vue') },
       { path: 'users', component: () => import('@/views/users/Users.vue') },
+      // 2026-08-07: 用户详情独立页 (可深链 + 承载全部写操作)。
+      //   两个入口共用: 机构管理→用户管理 / 系统管理→游离用户 (后者带 ?from=unaffiliated)
+      //   不加 meta.platform —— 机构管理员也要能进; 越权由后端 UserOrgRel 归属校验兜底 (404)
+      { path: 'users/:id', component: () => import('@/views/users/UserDetail.vue') },
       { path: 'positions', component: () => import('@/views/positions/Positions.vue') },
       { path: 'students', component: () => import('@/views/students/Students.vue') },
       { path: 'subjects', component: () => import('@/views/subjects/Subjects.vue') },

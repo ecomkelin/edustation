@@ -93,5 +93,7 @@ StudentSchema.index({ guardians: 1 })
 StudentSchema.index({ org: 1, isBlocked: 1 })
 // 按机构 + 学校聚合（"这所小学在我这报了多少学生"）
 StudentSchema.index({ org: 1, school: 1 })
+// 按机构 + 监护人（用户详情页「监护学生」; 单字段 {guardians:1} 在带 org 过滤时不够用; 2026-08-07）
+StudentSchema.index({ org: 1, guardians: 1 })
 
 module.exports = model('Student', StudentSchema)

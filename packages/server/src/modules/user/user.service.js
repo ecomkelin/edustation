@@ -189,7 +189,17 @@ async function list({ orgId, keyword, userType, position, region, isActive, role
   return { items, total, page: p.page, pageSize: p.pageSize }
 }
 
-async function detail(userId, orgId) {
+async function detail(userId, orgId, isPlatformAdmin = false) {
+  // 2026-08-07: 跨机构越权堵口 —— 补 2026-08-05 审计 S1 漏掉的一条。
+  //   当时把 update(R-0203) / lookupByMobile(R-0206) / resetPassword(R-0215) 都加了
+  //   UserOrgRel 归属校验, 唯独 detail(R-0201) 没加, 于是任何持 user.read 的机构管理员
+  //   仍可用任意 userId 读到别机构 (含平台超管) 的档案。
+  //   一律返 404 而非 403 —— 403 会泄露"这个账号在别家存在", 可被用来枚举 (同 R-0206 口径)。
+  if (!isPlatformAdmin) {
+    const inOrg = await UserOrgRel.exists({ user: userId, org: orgId })
+    if (!inOrg) throw ApiError.notFound('用户不存在')
+  }
+
   const user = await User.findById(userId)
     .populate('region', 'name level code')
     .select('mobile realName avatarSvgKey idCard region isActive isPlatformAdmin isBlocked blockedAt blockedReason createdAt')
@@ -330,7 +340,10 @@ function userUsageChecks(orgId, userId) {
       label: '排课(任课老师)', hint: '请先把该员工从排课中移除后再解绑'
     },
     {
-      model: LessonAttendance, filter: { org: orgId, evaluatedBy: userId },
+      // 2026-08-07 修: 字段是嵌套的 evaluation.evaluatedBy, 不是顶层 evaluatedBy
+      //   (见 LessonAttendance.model.js)。原写法 countDocuments 恒返 0,
+      //   "该老师写过课评所以不能移出机构"这条互锁从上线起就没生效过。
+      model: LessonAttendance, filter: { org: orgId, 'evaluation.evaluatedBy': userId },
       label: '考勤(课评人)', hint: '历史课评留有该员工痕迹, 请保留其与机构的归属'
     },
     {
@@ -407,7 +420,7 @@ async function resetPassword(userId, orgId, newPassword) {
   return { success: true }
 }
 
-async function setPositions(userId, orgId, positions) {
+async function setPositions(userId, orgId, positions, isPlatformAdmin = false) {
   if (positions.length) {
     const valid = await Position.countDocuments({ _id: { $in: positions }, org: orgId })
     if (valid !== positions.length) throw ApiError.badRequest('包含不合法职位')
@@ -418,9 +431,12 @@ async function setPositions(userId, orgId, positions) {
   //   即使本机构的 Position 表里有超管预先建的含 sensitive 权限的职位,
   //   普通管理员也可把自己/他人 setPositions 到该职位, 等同绕过 sensitive 闸门.
   //   解决方案: 聚合 permissions 后调 assertNoSensitivePermissionsEscalation (与 position.service.create 同款).
-  //   注意: 超管仍可绕过 (position.service 内的 isPlatformAdmin 短路), 与一致行为对齐.
-  const actor = { isPlatformAdmin: false }
-  if (!actor.isPlatformAdmin && positions.length) {
+  //
+  // 2026-08-07 修: actor 之前写死 `{ isPlatformAdmin: false }` —— 是个没接线的桩。
+  //   注释说"超管仍可绕过", 但代码里超管也被判成非超管, 于是只要目标职位含任一
+  //   sensitive 权限, **任何人**(含平台超管)都存不了职位, 403 死锁。
+  //   现在由 controller 透传 req.user.isPlatformAdmin, 兑现原本的设计意图。
+  if (!isPlatformAdmin && positions.length) {
     const positionsDoc = await Position.find({ _id: { $in: positions } })
       .select('permissions').lean()
     const aggregatedPerms = []

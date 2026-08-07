@@ -109,5 +109,7 @@ LessonAttendanceSchema.index({ org: 1, studentProduct: 1 })
 // 2026-08-05: 修正 — LessonAttendance 没有 plannedStartTime 字段 (该字段在 LessonSchedule),
 //   之前索引引用不存在的字段 → 该索引永远不命中, 纯写入负担. 改为实际存在的 actualEndTime (按完成时间排序).
 LessonAttendanceSchema.index({ org: 1, archived: 1, status: 1, actualEndTime: -1 })
+// 按课评人（用户详情页「教学记录」+ user.remove 互锁的 evaluation.evaluatedBy 查询; 2026-08-07）
+LessonAttendanceSchema.index({ org: 1, 'evaluation.evaluatedBy': 1 })
 
 module.exports = model('LessonAttendance', LessonAttendanceSchema)
