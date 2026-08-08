@@ -23,6 +23,23 @@
           />
         </el-select>
       </el-form-item>
+      <el-form-item label="课程产品">
+        <el-select
+          v-model="filter.courseProduct"
+          clearable
+          filterable
+          placeholder="全部课程产品"
+          style="width: 220px"
+          @change="load"
+        >
+          <el-option
+            v-for="p in products"
+            :key="p._id"
+            :label="productFilterLabel(p)"
+            :value="p._id"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="来源">
         <el-select v-model="filter.source" clearable placeholder="全部" style="width: 140px" @change="load">
           <el-option label="订单" value="order" />
@@ -379,6 +396,7 @@ const total = ref(0)
 
 const filter = reactive({
   student: '',
+  courseProduct: '',
   source: '',
   isActive: ''
 })
@@ -415,11 +433,21 @@ function productLabel(p) {
   return `${p.name} · ${lessons}${days}`
 }
 
+// 课程产品筛选下拉的 label：仅显示名称（含下架角标，便于筛选历史下架产品时区分）
+//   - 已下架产品在筛选下拉里仍出现，方便查"曾经买过这款产品但已下架"的学生课包
+//   - 名字前用 ⏸ 标识已下架；下拉列表项本身需要可读，下架标志不喧宾夺主
+function productFilterLabel(p) {
+  if (!p) return ''
+  const base = p.name || '—'
+  return p.isActive === false ? `${base}（已下架）` : base
+}
+
 async function load() {
   loading.value = true
   try {
     const params = { page: page.value, pageSize: pageSize.value }
     if (filter.student) params.student = filter.student
+    if (filter.courseProduct) params.courseProduct = filter.courseProduct
     if (filter.source) params.source = filter.source
     if (filter.isActive) params.isActive = filter.isActive
     const r = await studentProductApi.list(params)
@@ -437,6 +465,7 @@ async function load() {
 
 function resetFilters() {
   filter.student = ''
+  filter.courseProduct = ''
   filter.source = ''
   filter.isActive = ''
   page.value = 1 // 重置筛选回到第一页

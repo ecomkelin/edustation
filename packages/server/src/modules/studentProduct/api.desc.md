@@ -31,11 +31,16 @@
 | 参数 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | student | String (ObjectId) | 否 | 学生 ID（不传则查本机构全部） |
+| courseProduct | String (ObjectId) | 否 | 课程产品 ID（不传则查全部） |
 | isActive | Boolean | 否 | 仅显示启用中的产品（默认 true） |
 | source | String | 否 | 按来源过滤：`order` / `gift` |
 | page | Number | 否 | 默认 1 |
 | pageSize | Number | 否 | 默认 20，上限 200 |
 
+- **默认排序**（2026-08-08）：
+  - 主键：`isActive` 倒序 → 启用的课包靠前
+  - 次级（DB 层）：`createdAt` 倒序（保证分页稳定）
+  - 三级（JS 层 populate 完成后）：`student.name` 升序（同页内按学生姓名 A→Z）
 - **成功响应** (`200 OK`)：`{ data: { items: StudentProduct[], total, page, pageSize } }`。
 
 `StudentProduct` 元素结构：

@@ -10,7 +10,7 @@ export const studentApi = {
   removableCheck: (id) => http.get(`/students/${id}/removable-check`),
   setGuardians: (id, guardians) => http.put(`/students/${id}/guardians`, { guardians }),
   setBlocked: (id, isBlocked, reason = '') =>
-    http.put(`/students/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked: true, reason }),
+    http.put(`/students/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked, reason }),
   me: () => http.get('/students/me'),
 
   // 学生学习画像 (2026-06 新增) — 6 字段结构化画像, 与 notes (过敏史) 完全独立

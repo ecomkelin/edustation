@@ -95,7 +95,9 @@
               {{ profile.isBlocked ? '解除黑名单' : '加入黑名单' }}
             </el-button>
 
-            <!-- 「误操停用」: 超管+密码+互锁(在册报名/未用完课包)预检 (CLAUDE.md §8.1) -->
+            <!-- 「删除学员」: 超管+密码+互锁(在册报名/未用完课包)预检 (CLAUDE.md §8.1)
+                 业务上是软删 (Student.isActive=false, 历史数据保留);
+                 文案叫「删除」是用户视角 —— 该学员从业务中移除, 跟破坏性操作 UX 一致 -->
             <DestructiveConfirm
               v-if="auth.isPlatformAdmin && profile.isActive"
               :target="`学生 ${profile.name}`"
@@ -104,7 +106,7 @@
               :precheck="() => studentApi.removableCheck(profile.id).then((r) => r.data)"
               @confirm="(p) => onRemoveConfirm(p)"
             >
-              <el-button type="danger" plain>停用</el-button>
+              <el-button type="danger" plain>删除</el-button>
             </DestructiveConfirm>
           </div>
         </el-card>
@@ -352,10 +354,10 @@ async function onToggleBlock() {
 async function onRemoveConfirm({ password }) {
   try {
     await studentApi.remove(profile.id, { password })
-    ElMessage.success('已停用')
+    ElMessage.success('已删除')
     router.push('/students')
   } catch (e) {
-    await handleRemoveError(e, '无法停用 · 中风险', `学生 ${profile.name}`)
+    await handleRemoveError(e, '无法删除 · 中风险', `学生 ${profile.name}`)
   }
 }
 

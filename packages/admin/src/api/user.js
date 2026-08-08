@@ -18,7 +18,7 @@ export const userApi = {
     http.put(`/users/${id}/teacher-flag`, { showAsTeacher: !!showAsTeacher }),
   attachToOrg: (id, data) => http.post(`/users/${id}/org`, data),
   setBlocked: (id, isBlocked, reason = '') =>
-    http.put(`/users/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked: true, reason }),
+    http.put(`/users/${id}/${isBlocked ? 'block' : 'unblock'}`, { isBlocked, reason }),
   // 游离用户 (2026-06): 不属于任何机构的孤儿账号, 仅平台超管
   listUnaffiliated: (params) => http.get('/users/unaffiliated', { params }),
   updateUnaffiliated: (id, data) => http.put(`/users/unaffiliated/${id}`, data),

@@ -45,7 +45,8 @@
       "Bash(node --check ./src/modules/student/student.controller.js)",
       "Bash(node --check ./src/modules/student/student.routes.js)",
       "Bash(python3 -c \"import json, sys; d = json.load\\(sys.stdin\\); print\\('\\\\n'.join\\(f'{k}: {v}' for k, v in d.get\\('scripts', {}\\).items\\(\\)\\)\\)\")",
-      "Bash(node --check /Users/kelin/prog/rgzw/edustation/packages/server/src/modules/student/studentOverview.service.js)"
+      "Bash(node --check /Users/kelin/prog/rgzw/edustation/packages/server/src/modules/student/studentOverview.service.js)",
+      "Bash(node -c /Users/kelin/prog/rgzw/edustation/packages/server/src/modules/studentProduct/studentProduct.service.js)"
     ],
     "additionalDirectories": [
       "/Users/kelin/prog/rgzw/edustation"

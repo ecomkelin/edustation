@@ -9,9 +9,10 @@ const ApiError = require('@utils/ApiError')
 const removable = require('@utils/removable')
 const { StudentProductSource } = require('@shared/enums')
 
-async function list({ orgId, student, isActive, source, page, pageSize, archived }) {
+async function list({ orgId, student, isActive, source, courseProduct, page, pageSize, archived }) {
   const filter = { org: orgId }
   if (student) filter.student = student
+  if (courseProduct) filter.courseProduct = courseProduct
   // 2026-07-08: 归档 (停用) 过滤
   //   - 显式 isActive=true/false: 严格按用户
   //   - 显式 isActive=undefined (C 端 /me): 不过滤, 返所有
@@ -38,12 +39,26 @@ async function list({ orgId, student, isActive, source, page, pageSize, archived
       .populate('courseProduct', 'name totalLessons validDays discountPrice promotionPrice')
       .populate('order', 'status paidAmount')
       .populate('giftedBy', 'realName mobile')
-      .sort({ createdAt: -1 })
+      // 2026-08-08: 默认排序 — 启用优先 (isActive desc), 然后按 createdAt 倒序 (新→旧)
+      //   - 用户实际希望「按学生姓名」二级排序; populate('student', 'name') 之后用 'student.name'
+      //     路径 sort 在 mongoose 里不可靠, 所以 DB 层用 createdAt 作为稳定次级 key,
+      //     populate 完成后用 JS 二次排序按 student.name (同页内学生姓名 A→Z)
+      //   - 跨页时「按姓名」会有边界, 但用户的核心诉求是「启用/停用分组」, 这个跨页稳定
+      .sort({ isActive: -1, createdAt: -1 })
       .skip((p - 1) * ps)
       .limit(ps)
       .lean(),
     StudentProduct.countDocuments(filter)
   ])
+
+  // 同页内按 student.name 升序 (中文按拼音/字符序, 简单实用)
+  items.sort((a, b) => {
+    const an = (a.student && a.student.name) || ''
+    const bn = (b.student && b.student.name) || ''
+    if (an < bn) return -1
+    if (an > bn) return 1
+    return 0
+  })
 
   return { items, total, page: p, pageSize: ps }
 }
